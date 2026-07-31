@@ -1009,6 +1009,100 @@ impl Material3D {
         }
     }
 
+    /// Texture slot ids `[base_color, metallic_roughness, normal, occlusion,
+    /// emissive]` read straight off the variant. `standard_params()` would
+    /// build (and clone) a whole `StandardMaterial3D` — including the
+    /// `vertex_modifiers` Cow — just to expose these five ids; hot per-draw
+    /// paths use this instead. Mirrors the slot mapping of
+    /// [`Material3D::standard_params`].
+    #[inline]
+    pub fn texture_slots(&self) -> [u32; 5] {
+        match self {
+            Material3D::Standard(params) => [
+                params.base_color_texture,
+                params.metallic_roughness_texture,
+                params.normal_texture,
+                params.occlusion_texture,
+                params.emissive_texture,
+            ],
+            Material3D::Unlit(params) => [
+                params.base_color_texture,
+                MATERIAL_TEXTURE_NONE,
+                MATERIAL_TEXTURE_NONE,
+                MATERIAL_TEXTURE_NONE,
+                MATERIAL_TEXTURE_NONE,
+            ],
+            Material3D::Toon(params) => [
+                params.base_color_texture,
+                MATERIAL_TEXTURE_NONE,
+                MATERIAL_TEXTURE_NONE,
+                MATERIAL_TEXTURE_NONE,
+                MATERIAL_TEXTURE_NONE,
+            ],
+            Material3D::HandDrawn(params) => [
+                params.base_color_texture,
+                MATERIAL_TEXTURE_NONE,
+                MATERIAL_TEXTURE_NONE,
+                MATERIAL_TEXTURE_NONE,
+                MATERIAL_TEXTURE_NONE,
+            ],
+            Material3D::PixelSurface(params) => [
+                params.base_color_texture,
+                MATERIAL_TEXTURE_NONE,
+                MATERIAL_TEXTURE_NONE,
+                MATERIAL_TEXTURE_NONE,
+                MATERIAL_TEXTURE_NONE,
+            ],
+            Material3D::Custom(params) => [
+                params.surface.base_color_texture,
+                params.surface.metallic_roughness_texture,
+                params.surface.normal_texture,
+                params.surface.occlusion_texture,
+                params.surface.emissive_texture,
+            ],
+        }
+    }
+
+    /// Base-color texture slot id without building `standard_params()`.
+    #[inline]
+    pub fn base_color_texture_slot(&self) -> u32 {
+        match self {
+            Material3D::Standard(params) => params.base_color_texture,
+            Material3D::Unlit(params) => params.base_color_texture,
+            Material3D::Toon(params) => params.base_color_texture,
+            Material3D::HandDrawn(params) => params.base_color_texture,
+            Material3D::PixelSurface(params) => params.base_color_texture,
+            Material3D::Custom(params) => params.surface.base_color_texture,
+        }
+    }
+
+    /// Alpha mode (0=OPAQUE, 1=MASK, 2=BLEND) without building
+    /// `standard_params()`.
+    #[inline]
+    pub fn alpha_mode(&self) -> u8 {
+        match self {
+            Material3D::Standard(params) => params.alpha_mode,
+            Material3D::Unlit(params) => params.alpha_mode,
+            Material3D::Toon(params) => params.alpha_mode,
+            Material3D::HandDrawn(params) => params.alpha_mode,
+            Material3D::PixelSurface(params) => params.alpha_mode,
+            Material3D::Custom(params) => params.surface.alpha_mode,
+        }
+    }
+
+    /// Double-sided flag without building `standard_params()`.
+    #[inline]
+    pub fn double_sided(&self) -> bool {
+        match self {
+            Material3D::Standard(params) => params.double_sided,
+            Material3D::Unlit(params) => params.double_sided,
+            Material3D::Toon(params) => params.double_sided,
+            Material3D::HandDrawn(params) => params.double_sided,
+            Material3D::PixelSurface(params) => params.double_sided,
+            Material3D::Custom(params) => params.surface.double_sided,
+        }
+    }
+
     #[inline]
     pub fn vertex_modifiers(&self) -> &[VertexModifier3D] {
         match self {

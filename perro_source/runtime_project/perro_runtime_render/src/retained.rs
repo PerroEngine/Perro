@@ -831,6 +831,10 @@ impl Render3DState {
     }
 
     pub fn note_removed_node(&mut self, node: NodeID) {
+        // Runs for every removed node (all worlds). The main extract pass only
+        // evicts main-world entries, so the camera-stream path (sub-view world
+        // multimeshes) relies on this hook to drop its pose-cache entries.
+        self.dense_instance_pose_cache.remove(&node);
         self.mesh_sources.remove(&node);
         self.material_surface_sources.remove(&node);
         self.material_surface_overrides.remove(&node);

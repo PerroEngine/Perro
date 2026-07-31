@@ -1,22 +1,37 @@
 use super::*;
 
 impl Gpu3D {
-    pub(in super::super) fn resolve_mesh_range(
+    /// Resolve a mesh id/source into its buffer range through the caller-held
+    /// cache (the prepare loop `mem::take`s `custom_mesh_ranges` so the hit
+    /// path can hand out `&MeshAssetRange` instead of cloning 3 Arcs per draw
+    /// per frame).
+    #[allow(clippy::too_many_arguments)]
+    pub(in super::super) fn resolve_mesh_range<'cache>(
         &mut self,
+        cache: &'cache mut AHashMap<MeshID, (u64, MeshAssetRange)>,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         resources: &ResourceStore,
         mesh_id: MeshID,
         source: &str,
         static_mesh_lookup: Option<StaticMeshLookup>,
-    ) -> Option<MeshAssetRange> {
-        if let Some(range) = self.builtin_mesh_ranges.get(source).copied() {
+    ) -> Option<&'cache MeshAssetRange> {
+        let revision = resources.mesh_revision(mesh_id);
+        if cache
+            .get(&mesh_id)
+            .is_some_and(|(cached_revision, _)| *cached_revision == revision)
+        {
+            return cache.get(&mesh_id).map(|(_, range)| range);
+        }
+        // Miss path (new mesh or revision bump) is cold; the double map lookup
+        // below keeps the hot hit path above borrow-check friendly.
+        let range = if let Some(range) = self.builtin_mesh_ranges.get(source).copied() {
             let (bounds_center, bounds_radius) = self
                 .builtin_mesh_bounds
                 .get(source)
                 .copied()
                 .unwrap_or(([0.0, 0.0, 0.0], 1.0));
-            return Some(MeshAssetRange {
+            MeshAssetRange {
                 full: range,
                 surface_ranges: Arc::from([range]),
                 meshlets: self
@@ -31,37 +46,35 @@ impl Gpu3D {
                 blend_shape_target_count: 0,
                 blend_shape_vertex_start: 0,
                 blend_shape_vertex_count: 0,
-            });
-        }
-        let revision = resources.mesh_revision(mesh_id);
-        if let Some((cached_revision, range)) = self.custom_mesh_ranges.get(&mesh_id).cloned()
-            && cached_revision == revision
-        {
-            return Some(range);
-        }
-        let decoded = if let Some(mesh) = resources.runtime_mesh_data_by_id(mesh_id) {
-            load_mesh_from_source_no_dynamic_lods(source, static_mesh_lookup, Some(mesh.as_ref()))?
+            }
         } else {
-            let runtime_mesh = resources.runtime_mesh_data(source);
-            if let Some(mesh) = runtime_mesh {
+            let decoded = if let Some(mesh) = resources.runtime_mesh_data_by_id(mesh_id) {
                 load_mesh_from_source_no_dynamic_lods(
                     source,
                     static_mesh_lookup,
                     Some(mesh.as_ref()),
                 )?
             } else {
-                load_mesh_from_source(
-                    source,
-                    static_mesh_lookup,
-                    None,
-                    self.meshlets_enabled && self.dev_meshlets,
-                )?
-            }
+                let runtime_mesh = resources.runtime_mesh_data(source);
+                if let Some(mesh) = runtime_mesh {
+                    load_mesh_from_source_no_dynamic_lods(
+                        source,
+                        static_mesh_lookup,
+                        Some(mesh.as_ref()),
+                    )?
+                } else {
+                    load_mesh_from_source(
+                        source,
+                        static_mesh_lookup,
+                        None,
+                        self.meshlets_enabled && self.dev_meshlets,
+                    )?
+                }
+            };
+            self.append_mesh_data(device, queue, source, decoded)?
         };
-        let range = self.append_mesh_data(device, queue, source, decoded)?;
-        self.custom_mesh_ranges
-            .insert(mesh_id, (revision, range.clone()));
-        Some(range)
+        cache.insert(mesh_id, (revision, range));
+        cache.get(&mesh_id).map(|(_, range)| range)
     }
 
     pub(in super::super) fn resolve_builtin_mesh_asset(

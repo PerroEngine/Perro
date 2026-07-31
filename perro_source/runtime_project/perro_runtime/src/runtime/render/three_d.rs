@@ -53,8 +53,9 @@ fn mirror_matrix_3d(flip_x: bool, flip_y: bool, flip_z: bool) -> Mat4 {
 mod helpers;
 use helpers::*;
 pub(crate) use helpers::{
-    build_skeleton_palette, derived_particle_budget as derived_particle_budget_3d,
-    resolve_particle_profile, resolve_particle_render_mode, resolve_particle_sim_mode,
+    build_skeleton_palette, dense_instance_signature,
+    derived_particle_budget as derived_particle_budget_3d, resolve_particle_profile,
+    resolve_particle_render_mode, resolve_particle_sim_mode,
 };
 
 #[path = "three_d/assets.rs"]

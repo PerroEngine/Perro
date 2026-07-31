@@ -145,6 +145,11 @@ pub struct GpuWater {
     readback_water_accum: HashMap<NodeID, f32>,
     readback_water_interval: HashMap<NodeID, f32>,
     readback_scheduled_nodes: Vec<NodeID>,
+    // Retired snapshot buffers from completed readbacks; `request_readback`
+    // swaps them back in so pending snapshots reuse capacity instead of
+    // cloning the node/query vecs per encode.
+    readback_nodes_pool: Vec<NodeID>,
+    readback_queries_pool: Vec<WaterReadbackQuery>,
     readback_copy_encoded: bool,
     staged_waters: Vec<WaterGpu>,
     staged_render_chunks: Vec<WaterRenderChunkGpu>,
@@ -604,6 +609,8 @@ impl GpuWater {
             readback_water_accum: HashMap::new(),
             readback_water_interval: HashMap::new(),
             readback_scheduled_nodes: Vec::new(),
+            readback_nodes_pool: Vec::new(),
+            readback_queries_pool: Vec::new(),
             readback_copy_encoded: false,
             staged_waters: Vec::new(),
             staged_render_chunks: Vec::new(),
@@ -1227,11 +1234,21 @@ impl GpuWater {
         slice.map_async(wgpu::MapMode::Read, move |result| {
             let _ = tx.send(result);
         });
+        // Move the staged snapshot into the pending readback and hand the live
+        // vecs pooled (empty) buffers; prepare() rebuilds them from scratch
+        // every frame before the next encode, so nothing reads them after this
+        // point in the frame.
+        let mut nodes = std::mem::take(&mut self.readback_nodes_pool);
+        nodes.clear();
+        std::mem::swap(&mut nodes, &mut self.readback_nodes);
+        let mut queries = std::mem::take(&mut self.readback_queries_pool);
+        queries.clear();
+        std::mem::swap(&mut queries, &mut self.readback_queries);
         self.readback_pending = Some(PendingWaterReadback {
             rx,
             mapped_bytes: byte_count,
-            nodes: self.readback_nodes.clone(),
-            queries: self.readback_queries.clone(),
+            nodes,
+            queries,
             water_sample_count: self.readback_water_sample_count,
         });
         self.readback_copy_encoded = false;
@@ -1463,6 +1480,7 @@ impl GpuWater {
                 let Ok(data) = slice.get_mapped_range() else {
                     // Range failure after a successful map means the buffer
                     // is destroyed (device loss); unmap would panic.
+                    self.retire_readback_snapshot(pending);
                     return;
                 };
                 let cells: &[[f32; 4]] = bytemuck::cast_slice(&data);
@@ -1476,15 +1494,25 @@ impl GpuWater {
                 );
                 drop(data);
                 self.readback_buffer.unmap();
+                self.retire_readback_snapshot(pending);
             }
             // Failed map: the buffer never reached the mapped state (device
             // loss destroys it); unmapping trips wgpu's destroyed-buffer
             // validation and panics the app.
             Ok(Err(_)) | Err(mpsc::TryRecvError::Disconnected) => {
-                self.readback_pending = None;
+                if let Some(pending) = self.readback_pending.take() {
+                    self.retire_readback_snapshot(pending);
+                }
             }
             Err(mpsc::TryRecvError::Empty) => {}
         }
+    }
+
+    /// Return a completed snapshot's buffers to the pool so the next
+    /// `request_readback` reuses their capacity instead of allocating.
+    fn retire_readback_snapshot(&mut self, pending: PendingWaterReadback) {
+        self.readback_nodes_pool = pending.nodes;
+        self.readback_queries_pool = pending.queries;
     }
 }
 

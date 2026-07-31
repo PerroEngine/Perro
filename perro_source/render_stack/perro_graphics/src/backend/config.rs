@@ -80,6 +80,7 @@ impl PerroGraphics {
             late_overlay_point_lights_cache: Vec::new(),
             late_overlay_point_lights_cache_revision: u64::MAX,
             late_overlay_shadow_casters_cache: Vec::new(),
+            late_overlay_shadow_casters_cache_revision: u64::MAX,
             late_overlay_rects_cache: Vec::new(),
             used_texture_refs_cache: AHashMap::new(),
             used_mesh_refs_cache: AHashMap::new(),

@@ -115,38 +115,65 @@ impl Runtime {
                             },
                             StreamMeshInstanceKind::Dense {
                                 instance_scale: mesh.instance_scale.max(0.0001),
-                                // slice iter is TrustedLen: collects into
-                                // the Arc directly (no Vec round trip).
-                                poses: mesh
-                                    .instances
-                                    .iter()
-                                    .map(|instance| DenseInstancePose3D {
-                                        position: [
-                                            instance.transform.position.x,
-                                            instance.transform.position.y,
-                                            instance.transform.position.z,
-                                        ],
-                                        scale: [
-                                            instance.transform.scale.x,
-                                            instance.transform.scale.y,
-                                            instance.transform.scale.z,
-                                        ],
-                                        rotation: [
-                                            instance.transform.rotation.x,
-                                            instance.transform.rotation.y,
-                                            instance.transform.rotation.z,
-                                            instance.transform.rotation.w,
-                                        ],
-                                        has_blend_shape_weight_override: instance
-                                            .blend_shape_weights
-                                            .is_some(),
-                                        blend_shape_weights: instance
-                                            .blend_shape_weights
-                                            .clone()
-                                            .map(Arc::<[f32]>::from)
-                                            .unwrap_or_else(empty_arc_slice),
-                                    })
-                                    .collect(),
+                                // Shares the main extract path's per-node
+                                // signature cache: unchanged instance sets
+                                // hand back the retained Arc (refcount bump)
+                                // instead of re-collecting dense poses + the
+                                // per-instance blend-weight Arcs every stream
+                                // refresh. Poses are stream-independent (raw
+                                // local instance data), so one entry serves
+                                // the main pass and every stream.
+                                poses: {
+                                    let signature = dense_instance_signature(&mesh.instances);
+                                    if let Some(cached) =
+                                        self.render_3d.dense_instance_pose_cache.get(&node)
+                                        && cached.signature == signature
+                                    {
+                                        cached.poses.clone()
+                                    } else {
+                                        // slice iter is TrustedLen: collects
+                                        // into the Arc directly (no Vec round
+                                        // trip).
+                                        let poses: Arc<[DenseInstancePose3D]> = mesh
+                                            .instances
+                                            .iter()
+                                            .map(|instance| DenseInstancePose3D {
+                                                position: [
+                                                    instance.transform.position.x,
+                                                    instance.transform.position.y,
+                                                    instance.transform.position.z,
+                                                ],
+                                                scale: [
+                                                    instance.transform.scale.x,
+                                                    instance.transform.scale.y,
+                                                    instance.transform.scale.z,
+                                                ],
+                                                rotation: [
+                                                    instance.transform.rotation.x,
+                                                    instance.transform.rotation.y,
+                                                    instance.transform.rotation.z,
+                                                    instance.transform.rotation.w,
+                                                ],
+                                                has_blend_shape_weight_override: instance
+                                                    .blend_shape_weights
+                                                    .is_some(),
+                                                blend_shape_weights: instance
+                                                    .blend_shape_weights
+                                                    .clone()
+                                                    .map(Arc::<[f32]>::from)
+                                                    .unwrap_or_else(empty_arc_slice),
+                                            })
+                                            .collect();
+                                        self.render_3d.dense_instance_pose_cache.insert(
+                                            node,
+                                            crate::runtime::state::DenseInstancePoseCache {
+                                                signature,
+                                                poses: poses.clone(),
+                                            },
+                                        );
+                                        poses
+                                    }
+                                },
                             },
                         ))
                     }

@@ -105,11 +105,13 @@ impl Gpu3D {
         material: &Material3D,
         static_texture_lookup: Option<StaticTextureLookup>,
     ) -> MaterialTextureKey {
-        let params = material.standard_params();
-        let mut key = if matches!(material, Material3D::Standard(_)) {
-            MaterialTextureKey::from_standard(&params)
+        // Slot ids read straight off the variant; `standard_params()` would
+        // clone the whole StandardMaterial3D (vertex_modifiers Cow included)
+        // per call.
+        let mut key = if let Material3D::Standard(params) = material {
+            MaterialTextureKey::from_standard(params)
         } else {
-            MaterialTextureKey::from_base(params.base_color_texture)
+            MaterialTextureKey::from_base(material.base_color_texture_slot())
         };
         let Material3D::Custom(custom) = material else {
             return key;
@@ -310,11 +312,11 @@ impl Gpu3D {
         queue: &wgpu::Queue,
         shared_textures: &mut SharedTextureStore,
         resources: &ResourceStore,
-        material: &StandardMaterial3D,
+        texture_slots: [u32; 5],
         mesh_source: &str,
         static_texture_lookup: Option<StaticTextureLookup>,
     ) {
-        let key = MaterialTextureKey::from_standard(material);
+        let key = MaterialTextureKey::from_standard_slots(texture_slots);
         for slot in key.slots.iter().take(5).copied() {
             self.ensure_material_texture_slot(
                 device,

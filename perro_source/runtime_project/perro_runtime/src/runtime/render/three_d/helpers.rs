@@ -505,7 +505,7 @@ pub(crate) fn derived_particle_budget(spawn_rate: f32, lifetime_max: f32) -> u32
     budget.clamp(1, 1_000_000)
 }
 
-pub(super) fn dense_instance_signature(instances: &[perro_nodes::MultiMeshInstancePose]) -> u64 {
+pub(crate) fn dense_instance_signature(instances: &[perro_nodes::MultiMeshInstancePose]) -> u64 {
     let mut hash = 0xcbf29ce484222325u64 ^ instances.len() as u64;
     for instance in instances {
         let position = instance.transform.position;

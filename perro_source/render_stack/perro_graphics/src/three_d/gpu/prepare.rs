@@ -650,6 +650,13 @@ impl Gpu3D {
         let Some(default_mesh) = self.resolve_builtin_mesh_asset("__cube__") else {
             return;
         };
+        // Hoisted once per prepare: the per-draw arms below hand out
+        // references instead of rebuilding these builtin assets per draw.
+        let quad_mesh = self.resolve_builtin_mesh_asset("__quad__");
+        let cylinder_mesh = self.resolve_builtin_mesh_asset("__cylinder__");
+        // Cache moved out of self so resolve_mesh_range can return `&` into it
+        // while the loop keeps calling `&mut self` methods; restored below.
+        let mut custom_mesh_ranges = std::mem::take(&mut self.custom_mesh_ranges);
         let mut debug_points_start: Option<u32> = None;
         let mut debug_points_count: u32 = 0;
         let mut debug_points_double_sided = false;
@@ -689,9 +696,10 @@ impl Gpu3D {
                 Draw3DKind::DebugEdgeCylinder => "__cylinder__",
             };
             let flat_builtin_double_sided = builtin_flat_mesh_double_sided(mesh_source);
-            let mesh_asset = match draw.kind {
+            let mesh_asset: &MeshAssetRange = match draw.kind {
                 Draw3DKind::Mesh(mesh_id) => self
                     .resolve_mesh_range(
+                        &mut custom_mesh_ranges,
                         device,
                         queue,
                         resources,
@@ -699,22 +707,18 @@ impl Gpu3D {
                         mesh_source,
                         static_mesh_lookup,
                     )
-                    .unwrap_or_else(|| default_mesh.clone()),
-                Draw3DKind::CameraStreamQuad { .. } => self
-                    .resolve_builtin_mesh_asset("__quad__")
-                    .unwrap_or_else(|| default_mesh.clone()),
-                Draw3DKind::DebugPointCube => self
-                    .resolve_builtin_mesh_asset("__cube__")
-                    .unwrap_or_else(|| default_mesh.clone()),
-                Draw3DKind::DebugEdgeCylinder => self
-                    .resolve_builtin_mesh_asset("__cylinder__")
-                    .unwrap_or_else(|| default_mesh.clone()),
+                    .unwrap_or(&default_mesh),
+                Draw3DKind::CameraStreamQuad { .. } => quad_mesh.as_ref().unwrap_or(&default_mesh),
+                Draw3DKind::DebugPointCube => &default_mesh,
+                Draw3DKind::DebugEdgeCylinder => {
+                    cylinder_mesh.as_ref().unwrap_or(&default_mesh)
+                }
             };
             let lod_model = draw
                 .instance_mats
                 .first()
                 .or_else(|| draw.dense_multimesh.as_ref().map(|dense| &dense.node_model));
-            let active_lod = select_mesh_lod(&mesh_asset, lod_model, camera.position, draw.lod);
+            let active_lod = select_mesh_lod(mesh_asset, lod_model, camera.position, draw.lod);
             surface_entries.clear();
             match draw.kind {
                 Draw3DKind::DebugPointCube => {
@@ -830,13 +834,12 @@ impl Gpu3D {
                 let draw_model = Mat4::from_cols_array_2d(&dense.node_model);
                 for entry in surface_entries.iter() {
                     let material: &Material3D = &entry.material;
-                    let params = material.standard_params();
                     self.ensure_standard_material_texture_slots(
                         device,
                         queue,
                         shared_textures,
                         resources,
-                        &params,
+                        material.texture_slots(),
                         mesh_source,
                         static_texture_lookup,
                     );
@@ -932,7 +935,7 @@ impl Gpu3D {
                             draw.blend_shape_weights.as_ref()
                         };
                         let blend_meta_id = self.staged_blend_shape_instance_meta.len() as u32;
-                        self.stage_blend_shape_instance(&mesh_asset, weights);
+                        self.stage_blend_shape_instance(mesh_asset, weights);
                         let (position, rotation, scale) = match &cached_geom {
                             Some(geom) => {
                                 let g = geom[index];
@@ -978,7 +981,7 @@ impl Gpu3D {
                                     material.vertex_modifiers(),
                                     mesh_asset.bounds_radius,
                                 ),
-                            double_sided: params.double_sided
+                            double_sided: material.double_sided()
                                 || mirrored_winding
                                 || flat_builtin_double_sided,
                             mesh_blend: resolved_mesh_blend_active(resolved_blend)
@@ -1077,19 +1080,18 @@ impl Gpu3D {
                     let material: &Material3D = &surface_entries[0].material;
                     let (custom_params_offset, custom_params_len) =
                         self.stage_custom_params(material);
-                    let standard_params = material.standard_params();
                     self.ensure_material_texture_slot(
                         device,
                         queue,
                         shared_textures,
                         resources,
-                        standard_params.base_color_texture,
+                        material.base_color_texture_slot(),
                         mesh_source,
                         static_texture_lookup,
                     );
                     if debug_point_instances.is_empty() {
                         debug_points_double_sided =
-                            material.standard_params().double_sided || self.meshlet_debug_view;
+                            material.double_sided() || self.meshlet_debug_view;
                         debug_points_local_center = mesh_asset.bounds_center;
                     }
                     for model in instance_mats.iter().copied() {
@@ -1115,19 +1117,18 @@ impl Gpu3D {
                     let material: &Material3D = &surface_entries[0].material;
                     let (custom_params_offset, custom_params_len) =
                         self.stage_custom_params(material);
-                    let standard_params = material.standard_params();
                     self.ensure_material_texture_slot(
                         device,
                         queue,
                         shared_textures,
                         resources,
-                        standard_params.base_color_texture,
+                        material.base_color_texture_slot(),
                         mesh_source,
                         static_texture_lookup,
                     );
                     if debug_edge_instances.is_empty() {
                         debug_edges_double_sided =
-                            material.standard_params().double_sided || self.meshlet_debug_view;
+                            material.double_sided() || self.meshlet_debug_view;
                         debug_edges_local_center = mesh_asset.bounds_center;
                     }
                     for model in instance_mats.iter().copied() {
@@ -1152,13 +1153,18 @@ impl Gpu3D {
                 } else {
                     for entry in surface_entries.iter() {
                         let material: &Material3D = &entry.material;
-                        let standard_params = material.standard_params();
+                        // Per-surface flag/slot reads off the variant; building
+                        // standard_params() here cloned the vertex_modifiers
+                        // Cow per surface per frame.
+                        let material_alpha_mode = material.alpha_mode();
+                        let material_double_sided = material.double_sided();
+                        let material_texture_slots = material.texture_slots();
                         self.ensure_standard_material_texture_slots(
                             device,
                             queue,
                             shared_textures,
                             resources,
-                            &standard_params,
+                            material_texture_slots,
                             mesh_source,
                             static_texture_lookup,
                         );
@@ -1207,7 +1213,7 @@ impl Gpu3D {
                         let instance_start = self.staged_instance_transforms.len() as u32;
                         let caster_debug = self.shadow_caster_debug_view
                             && draw.cast_shadows
-                            && standard_params.alpha_mode == 0
+                            && material_alpha_mode == 0
                             && !is_camera_stream_quad;
                         for model in instance_mats.iter().copied() {
                             let instance = build_instance(
@@ -1235,7 +1241,7 @@ impl Gpu3D {
                             self.staged_skinned_instance_meta
                                 .push(instance.skinned_meta);
                             self.stage_blend_shape_instance(
-                                &mesh_asset,
+                                mesh_asset,
                                 draw.blend_shape_weights.as_ref(),
                             );
                         }
@@ -1264,20 +1270,20 @@ impl Gpu3D {
                                     mesh: mesh_range,
                                     instance_start,
                                     instance_count,
-                                    double_sided: standard_params.double_sided
+                                    double_sided: material_double_sided
                                         || self.meshlet_debug_view
                                         || mirrored_winding
                                         || flat_builtin_double_sided,
                                     packed_lod,
                                     material_kind,
-                                    alpha_mode: standard_params.alpha_mode,
-                                    base_color_texture_slot: standard_params.base_color_texture,
+                                    alpha_mode: material_alpha_mode,
+                                    base_color_texture_slot: material_texture_slots[0],
                                     material_texture_key,
                                     local_bounds: occlusion_bounds,
                                     occlusion_query,
                                     disable_hiz_occlusion: uses_custom_shader
                                         || !material.vertex_modifiers().is_empty()
-                                        || standard_params.alpha_mode == 2
+                                        || material_alpha_mode == 2
                                         || resolved_mesh_blend_active(resolved_blend),
                                     casts_shadows: draw.cast_shadows && !is_camera_stream_quad,
                                     receives_shadows: draw.receive_shadows,
@@ -1300,13 +1306,17 @@ impl Gpu3D {
                 }
             } else {
                 let material: &Material3D = &surface_entries[0].material;
-                let standard_params = material.standard_params();
+                // Flag/slot reads off the variant; building standard_params()
+                // here cloned the vertex_modifiers Cow per draw per frame.
+                let material_alpha_mode = material.alpha_mode();
+                let material_double_sided = material.double_sided();
+                let material_texture_slots = material.texture_slots();
                 self.ensure_standard_material_texture_slots(
                     device,
                     queue,
                     shared_textures,
                     resources,
-                    &standard_params,
+                    material_texture_slots,
                     mesh_source,
                     static_texture_lookup,
                 );
@@ -1343,7 +1353,7 @@ impl Gpu3D {
                 let instance_mats = draw.instance_mats.as_ref();
                 let caster_debug = self.shadow_caster_debug_view
                     && draw.cast_shadows
-                    && standard_params.alpha_mode == 0
+                    && material_alpha_mode == 0
                     && !is_camera_stream_quad;
                 let meshlet_casts_shadows = draw.cast_shadows && !self.disable_meshlet_shadows;
                 let render_path = if skeleton_count > 0 {
@@ -1397,7 +1407,7 @@ impl Gpu3D {
                         self.staged_skinned_instance_meta
                             .push(instance.skinned_meta);
                         self.stage_blend_shape_instance(
-                            &mesh_asset,
+                            mesh_asset,
                             draw.blend_shape_weights.as_ref(),
                         );
                     }
@@ -1459,7 +1469,7 @@ impl Gpu3D {
                             self.staged_skinned_instance_meta
                                 .push(instance.skinned_meta);
                             self.stage_blend_shape_instance(
-                                &mesh_asset,
+                                mesh_asset,
                                 draw.blend_shape_weights.as_ref(),
                             );
                         }
@@ -1491,19 +1501,19 @@ impl Gpu3D {
                             instance_start,
                             instance_count,
                             packed_lod: false,
-                            double_sided: standard_params.double_sided
+                            double_sided: material_double_sided
                                 || self.meshlet_debug_view
                                 || mirrored_winding
                                 || flat_builtin_double_sided,
                             material_kind: material_kind.clone(),
-                            alpha_mode: standard_params.alpha_mode,
-                            base_color_texture_slot: standard_params.base_color_texture,
+                            alpha_mode: material_alpha_mode,
+                            base_color_texture_slot: material_texture_slots[0],
                             material_texture_key,
                             local_bounds: (occlusion_center, occlusion_radius),
                             occlusion_query,
                             disable_hiz_occlusion: uses_custom_shader
                                 || !material.vertex_modifiers().is_empty()
-                                || standard_params.alpha_mode == 2
+                                || material_alpha_mode == 2
                                 || resolved_mesh_blend_active(resolved_blend),
                             casts_shadows: meshlet_casts_shadows,
                             receives_shadows: draw.receive_shadows,
@@ -1527,6 +1537,7 @@ impl Gpu3D {
             self.last_draw_multimesh_param_ranges
                 .push(draw_multimesh_param_start..(self.staged_multimesh_draw_params.len() as u32));
         }
+        self.custom_mesh_ranges = custom_mesh_ranges;
         self.mesh_blend_scratch = mesh_blends;
         self.surface_entries_scratch = surface_entries;
         // Drop pose-pack cache entries for pose Arcs not present this build so the

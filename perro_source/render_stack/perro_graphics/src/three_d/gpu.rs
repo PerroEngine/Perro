@@ -85,12 +85,25 @@ impl MaterialTextureKey {
     }
 
     fn from_standard(material: &StandardMaterial3D) -> Self {
-        let mut key = Self::from_base(material.base_color_texture);
+        Self::from_standard_slots([
+            material.base_color_texture,
+            material.metallic_roughness_texture,
+            material.normal_texture,
+            material.occlusion_texture,
+            material.emissive_texture,
+        ])
+    }
+
+    /// Same layout as [`Self::from_standard`] fed by
+    /// `Material3D::texture_slots()`; hot paths use this to skip building a
+    /// `StandardMaterial3D`.
+    fn from_standard_slots(slots: [u32; 5]) -> Self {
+        let mut key = Self::from_base(slots[0]);
         key.standard = true;
-        key.slots[1] = linear_material_texture_slot(material.metallic_roughness_texture);
-        key.slots[2] = linear_material_texture_slot(material.normal_texture);
-        key.slots[3] = linear_material_texture_slot(material.occlusion_texture);
-        key.slots[4] = material.emissive_texture;
+        key.slots[1] = linear_material_texture_slot(slots[1]);
+        key.slots[2] = linear_material_texture_slot(slots[2]);
+        key.slots[3] = linear_material_texture_slot(slots[3]);
+        key.slots[4] = slots[4];
         key
     }
 

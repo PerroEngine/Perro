@@ -478,6 +478,7 @@ pub struct PerroGraphics {
     late_overlay_point_lights_cache: Vec<Light2DState>,
     late_overlay_point_lights_cache_revision: u64,
     late_overlay_shadow_casters_cache: Vec<ShadowCaster2DState>,
+    late_overlay_shadow_casters_cache_revision: u64,
     late_overlay_rects_cache: Vec<RectInstanceGpu>,
     used_texture_refs_cache: AHashMap<TextureID, u32>,
     used_mesh_refs_cache: AHashMap<MeshID, u32>,

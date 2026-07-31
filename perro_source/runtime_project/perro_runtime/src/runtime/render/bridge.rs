@@ -30,7 +30,8 @@ use crate::runtime::render_2d::{
     water_render_size as water_render_size_2d, water_shape_state as water_shape_state_2d,
 };
 use crate::runtime::render_3d::{
-    derived_particle_budget_3d, resolve_particle_profile as resolve_particle_profile_3d,
+    dense_instance_signature, derived_particle_budget_3d,
+    resolve_particle_profile as resolve_particle_profile_3d,
     resolve_particle_render_mode as resolve_particle_render_mode_3d,
     resolve_particle_sim_mode as resolve_particle_sim_mode_3d, sky_3d_state_matches,
     water_idle_mode_state as water_idle_mode_state_3d, water_render_size as water_render_size_3d,

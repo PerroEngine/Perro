@@ -345,9 +345,17 @@ impl PerroGraphics {
                 .extend(self.late_overlay_2d.lights());
             self.late_overlay_point_lights_cache_revision = late_overlay_point_lights_revision;
         }
-        self.late_overlay_shadow_casters_cache.clear();
-        self.late_overlay_shadow_casters_cache
-            .extend(self.late_overlay_2d.shadow_casters());
+        // Revision covers both caster maps behind `shadow_casters()`
+        // (retained casters + tilemap casters): every mutation path bumps it,
+        // so an unchanged revision means an unchanged snapshot.
+        let late_overlay_shadow_casters_revision =
+            self.late_overlay_2d.retained_shadow_casters_revision();
+        if late_overlay_shadow_casters_revision != self.late_overlay_shadow_casters_cache_revision {
+            self.late_overlay_shadow_casters_cache.clear();
+            self.late_overlay_shadow_casters_cache
+                .extend(self.late_overlay_2d.shadow_casters());
+            self.late_overlay_shadow_casters_cache_revision = late_overlay_shadow_casters_revision;
+        }
         let resources = &self.resources;
         self.renderer_ui.set_nine_slice_texture_sizes(|texture| {
             let Some(data) = resources.decoded_texture_data(texture) else {
