@@ -149,14 +149,15 @@ pub fn generate_static_localizations(
         .collect();
     hash_rows.sort_by_key(|(hash, _)| *hash);
 
-    let mut string_index_by_value = HashMap::<String, usize>::new();
-    let mut strings = Vec::<String>::new();
+    // Keyed by reference into `dense_locale_tables`: pooling never clones.
+    let mut string_index_by_value = HashMap::<&str, usize>::new();
+    let mut strings = Vec::<&str>::new();
     for table in &dense_locale_tables {
         for value in table {
-            if !string_index_by_value.contains_key(value) {
+            if !string_index_by_value.contains_key(value.as_str()) {
                 let idx = strings.len();
-                string_index_by_value.insert(value.clone(), idx);
-                strings.push(value.clone());
+                string_index_by_value.insert(value, idx);
+                strings.push(value);
             }
         }
     }
@@ -170,7 +171,7 @@ pub fn generate_static_localizations(
                 .iter()
                 .map(|value| {
                     string_index_by_value
-                        .get(value)
+                        .get(value.as_str())
                         .copied()
                         .expect("string index missing")
                 })

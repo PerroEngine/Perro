@@ -391,7 +391,13 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
         let state = PROJECT_ASSET_STATE
             .read()
             .expect("required value must be present");
-        (state.root.clone(), state.demo, state.demo_excludes.clone())
+        // Excludes are only consulted on the demo path; skip the clone otherwise.
+        let excludes = if state.demo {
+            state.demo_excludes.clone()
+        } else {
+            Vec::new()
+        };
+        (state.root.clone(), state.demo, excludes)
     };
     if demo
         && let Some(relative) = path.strip_prefix("res://")

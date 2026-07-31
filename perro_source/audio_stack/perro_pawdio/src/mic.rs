@@ -624,7 +624,7 @@ fn match_device_index(names: &[&str], wanted: &str) -> Option<usize> {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn mic_devices() -> Result<Vec<MicDevice>, String> {
     let inputs = enumerate_inputs()?;
-    let names: Vec<String> = inputs.iter().map(|input| input.name.clone()).collect();
+    let names: Vec<&str> = inputs.iter().map(|input| input.name.as_str()).collect();
     let labels = dedupe_labels(&names);
     let mut default_taken = false;
     let devices = inputs
@@ -746,12 +746,12 @@ pub fn mic_devices() -> Result<Vec<MicDevice>, String> {
 
 /// Menu labels that stay distinct when a backend lists twin devices.
 #[cfg(not(target_arch = "wasm32"))]
-fn dedupe_labels(names: &[String]) -> Vec<String> {
+fn dedupe_labels(names: &[&str]) -> Vec<String> {
     let mut labels = Vec::with_capacity(names.len());
     for (index, name) in names.iter().enumerate() {
         let seen = names[..index].iter().filter(|prev| *prev == name).count();
         if seen == 0 {
-            labels.push(name.clone());
+            labels.push((*name).to_string());
         } else {
             labels.push(format!("{name} #{}", seen + 1));
         }
@@ -2144,12 +2144,7 @@ mod capture_tests {
 
     #[test]
     fn labels_disambiguate_twin_devices() {
-        let names = [
-            "USB Mic".to_string(),
-            "Built-in".to_string(),
-            "USB Mic".to_string(),
-            "USB Mic".to_string(),
-        ];
+        let names = ["USB Mic", "Built-in", "USB Mic", "USB Mic"];
         assert_eq!(
             dedupe_labels(&names),
             vec!["USB Mic", "Built-in", "USB Mic #2", "USB Mic #3"]

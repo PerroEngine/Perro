@@ -82,12 +82,11 @@ impl PerroAssetsArchive {
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "File not found"))?;
 
         let range = checked_entry_range(self.data.len(), entry)?;
-        let mut data_buf = self.data[range].to_vec();
 
-        // Decompress if needed
+        // Decompress if needed (straight from the archive slice, no staging copy)
         if entry.flags & FLAG_COMPRESSED != 0 {
             let expected_size = checked_decompressed_size(entry.original_size)?;
-            let decompressed = decompress_zlib_limited(&data_buf, expected_size)?;
+            let decompressed = decompress_zlib_limited(&self.data[range], expected_size)?;
 
             if decompressed.len() as u64 != entry.original_size {
                 return Err(io::Error::new(
@@ -99,10 +98,10 @@ impl PerroAssetsArchive {
                     ),
                 ));
             }
-            data_buf = decompressed;
+            return Ok(decompressed);
         }
 
-        Ok(data_buf)
+        Ok(self.data[range].to_vec())
     }
 
     /// Get a direct slice (only works for uncompressed files)

@@ -150,3 +150,8 @@ required-features = ["bench"]
 name = "timer_hotpaths"
 harness = false
 required-features = ["bench"]
+
+[[bench]]
+name = "animation_tree_pose"
+harness = false
+required-features = ["bench"]

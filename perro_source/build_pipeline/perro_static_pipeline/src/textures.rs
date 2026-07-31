@@ -73,11 +73,11 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
                 .ok_or_else(|| io::Error::other(format!("failed to decode image `{res_path}`")))?;
             let (mut flags, packed_raw) = pack_texture_payload(&raw_rgba);
             let compressed = compress_zlib_best(&packed_raw)?;
-            let payload = if compressed.len() < packed_raw.len() {
-                compressed
+            let payload: &[u8] = if compressed.len() < packed_raw.len() {
+                &compressed
             } else {
                 flags |= PTEX_FLAG_PAYLOAD_RAW;
-                packed_raw.clone()
+                &packed_raw
             };
 
             let mut ptex = Vec::with_capacity(24 + payload.len());
@@ -89,7 +89,7 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
                 &((flags & PTEX_FLAG_FORMAT_MASK) | (flags & PTEX_FLAG_PAYLOAD_RAW)).to_le_bytes(),
             );
             ptex.extend_from_slice(&(packed_raw.len() as u32).to_le_bytes());
-            ptex.extend_from_slice(&payload);
+            ptex.extend_from_slice(payload);
             Ok((rel, res_path, len, mtime, ptex))
         })
         .collect::<io::Result<Vec<_>>>()?;

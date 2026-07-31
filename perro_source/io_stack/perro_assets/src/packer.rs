@@ -1,5 +1,6 @@
 use rayon::prelude::*;
 use std::{
+    borrow::Cow,
     collections::{HashMap, HashSet},
     fs,
     io::{self, Cursor, Seek, SeekFrom, Write},
@@ -41,9 +42,11 @@ struct PerroAssetsEntry {
     meta: PerroAssetsEntryMeta,
 }
 
-struct ProcessedFile {
+struct ProcessedFile<'a> {
     rel_path: String,
-    data: Vec<u8>,
+    // Borrowed straight out of the previous archive on stat-match reuse;
+    // owned only for freshly read + packed sources.
+    data: Cow<'a, [u8]>,
     flags: u32,
     original_size: u64,
     // (len, mtime nanos) recorded in the stat sidecar; None skips recording
@@ -83,6 +86,8 @@ fn file_stat(path: &Path) -> Option<(u64, u128)> {
 }
 
 /// Previous archive + its stat sidecar, loaded for compressed-byte reuse.
+/// Index keys are res-relative paths (the archive's `res/` prefix is stripped
+/// on load so per-file lookups need no allocation).
 struct ReusedArchive {
     stats: HashMap<String, (u64, u128)>,
     index: HashMap<String, PerroAssetsEntryMeta>,
@@ -117,7 +122,11 @@ fn load_reuse_archive(output: &Path, stat_path: &Path) -> Option<ReusedArchive> 
     let mut index = HashMap::with_capacity(header.file_count as usize);
     for _ in 0..header.file_count {
         let (path, meta) = read_index_entry(&mut cursor).ok()?;
-        index.insert(path, meta);
+        let key = match path.strip_prefix("res/") {
+            Some(rel) => rel.to_string(),
+            None => path,
+        };
+        index.insert(key, meta);
     }
     Some(ReusedArchive {
         stats,
@@ -126,7 +135,7 @@ fn load_reuse_archive(output: &Path, stat_path: &Path) -> Option<ReusedArchive> 
     })
 }
 
-fn write_stat_manifest(path: &Path, files: &[ProcessedFile]) -> io::Result<()> {
+fn write_stat_manifest(path: &Path, files: &[ProcessedFile<'_>]) -> io::Result<()> {
     let mut out = stat_manifest_header();
     out.push('\n');
     for file in files {
@@ -176,19 +185,19 @@ pub fn build_perro_assets_archive(
 
     let processed_files = rel_paths
         .into_par_iter()
-        .map(|rel_path| -> io::Result<ProcessedFile> {
+        .map(|rel_path| -> io::Result<ProcessedFile<'_>> {
             let full_path = res_dir.join(&rel_path);
             let stat = file_stat(&full_path);
             // Unchanged stat: lift the already-compressed bytes straight out
-            // of the previous archive.
+            // of the previous archive (borrowed, no per-file copy).
             if let (Some(reuse), Some(stat)) = (reuse.as_ref(), stat)
                 && reuse.stats.get(&rel_path) == Some(&stat)
-                && let Some(meta) = reuse.index.get(&format!("res/{rel_path}"))
+                && let Some(meta) = reuse.index.get(&rel_path)
                 && let Some(data) = reuse.entry_slice(meta)
             {
                 return Ok(ProcessedFile {
                     rel_path,
-                    data: data.to_vec(),
+                    data: Cow::Borrowed(data),
                     flags: meta.flags,
                     original_size: meta.original_size,
                     stat: Some(stat),
@@ -210,7 +219,7 @@ pub fn build_perro_assets_archive(
             }
             Ok(ProcessedFile {
                 rel_path,
-                data,
+                data: Cow::Owned(data),
                 flags,
                 original_size,
                 stat,
@@ -302,8 +311,8 @@ pub fn build_compressed_perro_archive_from_entries(
     write_output_if_changed(output, &best)
 }
 
-struct ReadArchiveEntry {
-    virtual_path: String,
+struct ReadArchiveEntry<'a> {
+    virtual_path: &'a str,
     raw: Vec<u8>,
     // Present only when zlib actually shrank the payload.
     compressed: Option<Vec<u8>>,
@@ -312,14 +321,14 @@ struct ReadArchiveEntry {
 /// Read and per-entry-compress every source exactly once, sorted by path.
 fn read_archive_entries(
     entries: &[(String, std::path::PathBuf)],
-) -> io::Result<Vec<ReadArchiveEntry>> {
-    let mut sorted = entries.to_vec();
+) -> io::Result<Vec<ReadArchiveEntry<'_>>> {
+    let mut sorted: Vec<&(String, PathBuf)> = entries.iter().collect();
     sorted.sort_by(|a, b| a.0.cmp(&b.0));
     sorted
         .into_par_iter()
         .map(
-            |(virtual_path, source_path)| -> io::Result<ReadArchiveEntry> {
-                let raw = fs::read(&source_path)?;
+            |(virtual_path, source_path)| -> io::Result<ReadArchiveEntry<'_>> {
+                let raw = fs::read(source_path)?;
                 let compressed = compress_zlib_best(&raw)?;
                 let compressed = (compressed.len() < raw.len()).then_some(compressed);
                 Ok(ReadArchiveEntry {
@@ -344,7 +353,7 @@ fn wrap_compressed_archive(raw: &[u8]) -> io::Result<Vec<u8>> {
 
 fn write_perro_archive_from_bytes<W: Write + Seek>(
     writer: &mut W,
-    entries: &[ReadArchiveEntry],
+    entries: &[ReadArchiveEntry<'_>],
     compress_entries: bool,
 ) -> io::Result<()> {
     let header = PerroAssetsHeader {
@@ -355,7 +364,7 @@ fn write_perro_archive_from_bytes<W: Write + Seek>(
     };
     write_header(writer, &header)?;
 
-    let mut index_entries = Vec::<PerroAssetsEntry>::with_capacity(entries.len());
+    let mut index_entries = Vec::<(&str, PerroAssetsEntryMeta)>::with_capacity(entries.len());
     for entry in entries {
         let (data, flags) = match (&entry.compressed, compress_entries) {
             (Some(compressed), true) => (compressed.as_slice(), FLAG_COMPRESSED),
@@ -363,20 +372,20 @@ fn write_perro_archive_from_bytes<W: Write + Seek>(
         };
         let offset = writer.stream_position()?;
         writer.write_all(data)?;
-        index_entries.push(PerroAssetsEntry {
-            path: entry.virtual_path.clone(),
-            meta: PerroAssetsEntryMeta {
+        index_entries.push((
+            entry.virtual_path,
+            PerroAssetsEntryMeta {
                 offset,
                 size: data.len() as u64,
                 original_size: entry.raw.len() as u64,
                 flags,
             },
-        });
+        ));
     }
 
     let index_offset = writer.stream_position()?;
-    for entry in &index_entries {
-        write_index_entry(writer, &entry.path, &entry.meta)?;
+    for (path, meta) in &index_entries {
+        write_index_entry(writer, path, meta)?;
     }
 
     writer.seek(SeekFrom::Start(0))?;

@@ -1,17 +1,18 @@
+use std::borrow::Cow;
 use std::time::Duration;
 #[cfg(feature = "profile")]
 use std::time::Instant;
 
-pub(crate) fn decode_static_pawdio(blob: &[u8]) -> Result<(Vec<u8>, Duration), String> {
+pub(crate) fn decode_static_pawdio(blob: &[u8]) -> Result<(Cow<'_, [u8]>, Duration), String> {
     const HEADER_LEN: usize = 18;
     if blob.is_empty() {
-        return Ok((Vec::new(), Duration::ZERO));
+        return Ok((Cow::Borrowed(&[]), Duration::ZERO));
     }
     if blob.len() < HEADER_LEN {
         return Err("static audio blob too small".to_string());
     }
     if &blob[..6] != perro_asset_formats::pawdio::MAGIC {
-        return Ok((blob.to_vec(), Duration::ZERO));
+        return Ok((Cow::Borrowed(blob), Duration::ZERO));
     }
     let version = u32::from_le_bytes([blob[6], blob[7], blob[8], blob[9]]);
     if version != perro_asset_formats::pawdio::VERSION {
@@ -35,7 +36,7 @@ pub(crate) fn decode_static_pawdio(blob: &[u8]) -> Result<(Vec<u8>, Duration), S
                 decompressed.len()
             ));
         }
-        return Ok((decompressed, decompress_elapsed));
+        return Ok((Cow::Owned(decompressed), decompress_elapsed));
     }
 
     if payload.len() != raw_len {
@@ -44,5 +45,5 @@ pub(crate) fn decode_static_pawdio(blob: &[u8]) -> Result<(Vec<u8>, Duration), S
             payload.len()
         ));
     }
-    Ok((payload.to_vec(), Duration::ZERO))
+    Ok((Cow::Borrowed(payload), Duration::ZERO))
 }

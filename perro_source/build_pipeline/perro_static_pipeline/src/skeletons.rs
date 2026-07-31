@@ -573,11 +573,11 @@ fn encode_pskel2d(bones: &[Bone2DLiteral]) -> io::Result<Vec<u8>> {
 fn encode_pskel_blob(version: u32, bone_count: usize, raw: &[u8]) -> io::Result<Vec<u8>> {
     let compressed = compress_zlib_best(raw)?;
     let mut flags = 0u32;
-    let payload = if compressed.len() < raw.len() {
-        compressed
+    let payload: &[u8] = if compressed.len() < raw.len() {
+        &compressed
     } else {
         flags |= PSKEL_FLAG_PAYLOAD_RAW;
-        raw.to_vec()
+        raw
     };
     let mut out = Vec::with_capacity(5 + 4 * std::mem::size_of::<u32>() + payload.len());
     out.extend_from_slice(PSKEL_MAGIC);
@@ -585,7 +585,7 @@ fn encode_pskel_blob(version: u32, bone_count: usize, raw: &[u8]) -> io::Result<
     out.extend_from_slice(&(bone_count as u32).to_le_bytes());
     out.extend_from_slice(&(raw.len() as u32).to_le_bytes());
     out.extend_from_slice(&flags.to_le_bytes());
-    out.extend_from_slice(&payload);
+    out.extend_from_slice(payload);
     Ok(out)
 }
 

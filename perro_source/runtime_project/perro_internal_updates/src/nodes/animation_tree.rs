@@ -1,15 +1,13 @@
 use crate::prelude::*;
 use perro_animation::{
-    AnimationBoneSelector, AnimationClip, AnimationObjectKey, AnimationObjectTrack,
-    AnimationTrackValue, AnimationTreeAsset, AnimationTreeGraphNode, AnimationTreeMask,
-    AnimationTreeNodeKind,
+    AnimationBoneSelector, AnimationClip, AnimationTrackValue, AnimationTreeAsset,
+    AnimationTreeGraphNode, AnimationTreeMask, AnimationTreeNodeKind,
 };
 use perro_nodes::AnimationTree;
 use perro_nodes::animation_tree::AnimationTreeSlotPlayback;
 use perro_scene::{Node3DField, NodeField};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 type SelfNodeType = AnimationTree;
 
@@ -119,7 +117,7 @@ pub fn internal_fixed_update<RT, R, IP>(
 {
 }
 
-fn sync_slots<RT>(ctx: &mut RuntimeWindow<'_, RT>, id: NodeID, asset: &Arc<AnimationTreeAsset>)
+fn sync_slots<RT>(ctx: &mut RuntimeWindow<'_, RT>, id: NodeID, asset: &AnimationTreeAsset)
 where
     RT: RuntimeAPI + ?Sized,
 {
@@ -335,7 +333,7 @@ where
 }
 
 fn sample_clip_pose(
-    clip: &Arc<AnimationClip>,
+    clip: &AnimationClip,
     frame: u32,
     bindings: &[perro_nodes::animation_player::AnimationObjectBinding],
 ) -> Pose {
@@ -582,29 +580,15 @@ fn apply_pose<RT, R>(
     R: ResourceAPI + ?Sized,
 {
     for track in pose.tracks.values() {
-        let key = AnimationObjectKey {
-            frame: 0,
-            mode: perro_animation::AnimationKeyMode::Closed,
-            interpolation: perro_animation::AnimationInterpolation::Step,
-            ease: perro_animation::AnimationEase::Linear,
-            value: track.value.clone(),
-        };
-        let anim_track = AnimationObjectTrack {
-            object: track.object.clone(),
-            field: track.field,
-            bone_target: track.bone_target.clone(),
-            transform2d_mask: track.transform2d_mask,
-            transform3d_mask: track.transform3d_mask,
-            interpolation: perro_animation::AnimationInterpolation::Step,
-            ease: perro_animation::AnimationEase::Linear,
-            keys: Cow::Owned(vec![key]),
-        };
-        super::animation_player::apply_track(
+        super::animation_player::apply_track_value(
             ctx,
             res,
             track.node,
-            &anim_track,
-            0,
+            track.field,
+            track.bone_target.as_ref(),
+            track.transform2d_mask,
+            track.transform3d_mask,
+            &track.value,
             applied_transforms,
         );
     }

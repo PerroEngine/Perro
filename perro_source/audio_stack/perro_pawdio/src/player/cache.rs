@@ -28,7 +28,11 @@ impl BarkPlayer {
                 SourceLoadStats::cache_hit(),
             ));
         }
-        let (bytes, load_stats) = if let Some(lookup) = static_audio_lookup {
+        // Cow keeps uncompressed static blobs borrowed until the single
+        // Arc::from below, so that path copies once instead of twice.
+        let (bytes, load_stats): (std::borrow::Cow<'_, [u8]>, _) = if let Some(lookup) =
+            static_audio_lookup
+        {
             #[cfg(feature = "profile")]
             let lookup_begin = Instant::now();
             let looked_up = lookup(source_hash);
@@ -60,9 +64,9 @@ impl BarkPlayer {
             };
             #[cfg(not(feature = "profile"))]
             let stats = SourceLoadStats;
-            (disk, stats)
+            (std::borrow::Cow::Owned(disk), stats)
         };
-        let shared: Arc<[u8]> = Arc::from(bytes.into_boxed_slice());
+        let shared: Arc<[u8]> = Arc::from(bytes);
         let source_key: Arc<str> = Arc::from(source);
         let asset_epoch = state.next_cache_epoch.max(1);
         state.next_cache_epoch = state.next_cache_epoch.wrapping_add(1).max(1);

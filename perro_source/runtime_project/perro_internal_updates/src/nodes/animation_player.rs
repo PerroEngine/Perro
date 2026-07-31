@@ -23,7 +23,6 @@ use perro_scene::{
 };
 use std::collections::{HashMap, hash_map::DefaultHasher};
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
 
 type SelfNodeType = AnimationPlayer;
 

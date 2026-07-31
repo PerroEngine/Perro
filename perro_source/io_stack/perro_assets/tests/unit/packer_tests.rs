@@ -3,7 +3,7 @@ use crate::archive::PerroAssetsArchive;
 use crate::common::PERRO_ASSETS_COMPRESSED_MAGIC;
 use std::collections::HashSet;
 use std::fs;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[test]
 fn pmat_is_skipped_as_compiled_resource() {
@@ -62,6 +62,89 @@ fn compressed_archive_roundtrips() {
             .read_file("res/payload.bin")
             .expect("test setup/result must succeed"),
         vec![b'x'; 4096]
+    );
+
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// Release-mode timing harness (no criterion dep): builds an archive with ~50
+/// compressed entries and times `read_file` over all entries, plus a no-change
+/// incremental repack. Run explicitly:
+/// `cargo test --release -p perro_assets -- --ignored --nocapture timing_harness`
+#[test]
+#[ignore = "timing harness; run explicitly with --ignored --nocapture"]
+fn timing_harness_read_file_and_incremental_repack() {
+    let root = std::env::temp_dir().join(format!("perro_assets_timing_{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    let res_dir = root.join("res");
+    fs::create_dir_all(&res_dir).expect("test setup/result must succeed");
+
+    // ~50 compressed files, mixed entropy (~32 KiB raw -> roughly half-size
+    // compressed) so the compressed payload itself is non-trivial.
+    const FILE_COUNT: usize = 50;
+    const FILE_BYTES: usize = 32 * 1024;
+    let mut paths = Vec::with_capacity(FILE_COUNT);
+    for i in 0..FILE_COUNT {
+        let mut body = Vec::with_capacity(FILE_BYTES);
+        let mut x: u32 = 0x9e37_79b9 ^ (i as u32).wrapping_mul(0x85eb_ca6b);
+        while body.len() < FILE_BYTES {
+            x = x.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            body.extend_from_slice(&x.to_le_bytes());
+            body.extend_from_slice(&[0u8; 4]);
+        }
+        let name = format!("data_{i:02}.txt");
+        fs::write(res_dir.join(&name), body).expect("test setup/result must succeed");
+        paths.push(format!("res/{name}"));
+    }
+
+    let output = root.join("assets.perro");
+    build_perro_assets_archive(&output, &res_dir, &root, &[])
+        .expect("test setup/result must succeed");
+
+    let archive =
+        PerroAssetsArchive::open_from_file(&output).expect("test setup/result must succeed");
+
+    // Warmup + sanity: every entry reads back non-empty.
+    let mut total_bytes = 0usize;
+    for p in &paths {
+        total_bytes += archive
+            .read_file(p)
+            .expect("test setup/result must succeed")
+            .len();
+    }
+    assert!(total_bytes > 0);
+
+    const ITERS: usize = 1000;
+    let start = Instant::now();
+    let mut sink = 0usize;
+    for _ in 0..ITERS {
+        for p in &paths {
+            sink += archive
+                .read_file(p)
+                .expect("test setup/result must succeed")
+                .len();
+        }
+    }
+    let elapsed = start.elapsed();
+    println!(
+        "read_file: {ITERS} iters x {FILE_COUNT} entries = {} reads in {:?} ({:.2} ns/read, sink {sink})",
+        ITERS * FILE_COUNT,
+        elapsed,
+        elapsed.as_nanos() as f64 / (ITERS * FILE_COUNT) as f64
+    );
+
+    // No-change incremental repack: every entry served from the reuse path.
+    const REPACK_ITERS: usize = 200;
+    let start = Instant::now();
+    for _ in 0..REPACK_ITERS {
+        build_perro_assets_archive(&output, &res_dir, &root, &[])
+            .expect("test setup/result must succeed");
+    }
+    let elapsed = start.elapsed();
+    println!(
+        "incremental repack (no change): {REPACK_ITERS} iters in {:?} ({:.2} us/repack)",
+        elapsed,
+        elapsed.as_micros() as f64 / REPACK_ITERS as f64
     );
 
     let _ = fs::remove_dir_all(&root);
