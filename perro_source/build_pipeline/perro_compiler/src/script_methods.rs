@@ -1238,9 +1238,9 @@ fn generate_var_match_fns(
     out
 }
 
-fn module_name_from_rel(rel: &str) -> String {
-    let mut out = String::with_capacity(rel.len());
-    for c in rel.chars() {
+fn module_ident_from_path_part(part: &str) -> String {
+    let mut out = String::with_capacity(part.len());
+    for c in part.chars() {
         if c.is_ascii_alphanumeric() {
             out.push(c.to_ascii_lowercase());
         } else {
@@ -1257,10 +1257,6 @@ fn module_name_from_rel(rel: &str) -> String {
         name.insert(0, '_');
     }
     name
-}
-
-fn module_short_name_from_rel(rel: &str) -> String {
-    module_name_from_rel(rel.strip_suffix(".rs").unwrap_or(rel))
 }
 
 fn generated_script_rel(rel: &str) -> String {

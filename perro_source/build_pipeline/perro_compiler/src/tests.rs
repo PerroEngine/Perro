@@ -6,10 +6,10 @@ mod tests {
         compile_scripts_with_profile, emit_static_steam_app_id_fn, emit_web_route_html_files,
         export_project_android_bundle, generate_call_param_binding, generate_dlc_static_modules,
         generate_embedded_entry_files, generate_perro_assets, generate_project_static_modules,
-        module_name_from_rel, module_short_name_from_rel, native_output_artifact_name,
-        native_output_folder_name, normalize_cargo_output_paths, steam_runtime_library_name,
-        sweep_unknown_embedded_entries, sync_android_project_manifest, sync_dlc_scripts,
-        sync_scripts, target_binary_name, target_slug_from_triple, transpile_frontend_script,
+        module_ident_from_path_part, native_output_artifact_name, native_output_folder_name,
+        normalize_cargo_output_paths, steam_runtime_library_name, sweep_unknown_embedded_entries,
+        sync_android_project_manifest, sync_dlc_scripts, sync_scripts, target_binary_name,
+        target_slug_from_triple, transpile_frontend_script,
         transpile_frontend_script_with_scene_vars, transpiled_exports_script_ctor,
         validate_native_target_triple, web_route_html_path, write_scripts_lib,
     };
@@ -454,6 +454,40 @@ lifecycle!({});
         ensure_project_toml(&root, "Generated Dynamic Scripts").expect("project toml");
         ensure_project_scaffold(&root, "Generated Dynamic Scripts").expect("scaffold");
         create_static_embed_fixture(&root);
+
+        let canyon = root.join("res/scripts/shared/canyon");
+        std::fs::create_dir_all(&canyon).expect("nested script dirs");
+        std::fs::write(
+            canyon.join("mod.rs"),
+            "pub const CANYON_VERSION: u32 = 1;\n",
+        )
+        .expect("canyon module body");
+        std::fs::write(canyon.join("rng.rs"), "pub struct StableRng;\n").expect("rng module");
+        std::fs::write(
+            canyon.join("validator.rs"),
+            "pub fn validate_canyon_plan() {}\n",
+        )
+        .expect("validator module");
+        std::fs::write(
+            canyon.join("generator.rs"),
+            "use super::rng::StableRng;\nuse super::validator::validate_canyon_plan;\npub fn generate_canyon_plan() { let _ = StableRng; validate_canyon_plan(); }\n",
+        )
+        .expect("generator module");
+        std::fs::write(
+            root.join("res/scripts/shared/game_rules.rs"),
+            "use super::canyon::generator::generate_canyon_plan;\npub fn apply_rules() { generate_canyon_plan(); }\n",
+        )
+        .expect("game rules module");
+        std::fs::write(
+            root.join("res/scripts/nested_consumer.rs"),
+            "use crate::scripts::shared::game_rules::apply_rules;\npub fn run() { apply_rules(); }\n",
+        )
+        .expect("crate path consumer");
+        std::fs::write(
+            root.join("res/perro_api.rs"),
+            "pub const PROJECT_MODULE_SHADOW: bool = true;\n",
+        )
+        .expect("extern crate shadow module");
 
         compile_scripts_with_profile(&root, ScriptsBuildProfile::Debug)
             .expect("compile dynamic scripts");

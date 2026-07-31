@@ -1515,8 +1515,10 @@ pub const fn lookup_audio(_path_hash: u64) -> &'static [u8] {
 
 fn default_scripts_lib_rs() -> String {
     r#"use perro_runtime::RuntimeScriptApi;
+#[cfg(not(feature = "dynamic-scripts"))]
 use perro_api::scripting::ScriptConstructor;
 
+#[cfg(not(feature = "dynamic-scripts"))]
 pub static SCRIPT_REGISTRY: &[(u64, ScriptConstructor<RuntimeScriptApi>)] = &[];
 
 #[cfg(feature = "dynamic-scripts")]

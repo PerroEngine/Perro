@@ -1,27 +1,27 @@
-use crate::scripts_app_editor_app_rs as editor_app;
-use crate::scripts_app_editor_manager_rs as editor_manager;
-use crate::scripts_app_editor_project_rs as editor_project;
-use crate::scripts_assets_editor_assets_rs::*;
-use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
-use crate::scripts_assets_editor_files_rs as editor_files;
-use crate::scripts_editor_main_rs::{
+use crate::scripts::app::editor_app as editor_app;
+use crate::scripts::app::editor_manager as editor_manager;
+use crate::scripts::app::editor_project as editor_project;
+use crate::scripts::assets::editor_assets::*;
+use crate::scripts::assets::editor_file_watch as editor_file_watch;
+use crate::scripts::assets::editor_files as editor_files;
+use crate::scripts::editor::main::{
     EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_INSPECTOR_PICKER_ROWS,
     MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_OUTPUT_MESSAGES, MAX_RECENT, MAX_TABS,
     RECENT_PROJECTS_PATH, cached_scene_doc,
     cached_scene_doc_shared, cached_scene_node,
 };
-use crate::scripts_scene_editor_animation_rs::*;
-use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
-use crate::scripts_scene_editor_nav_rs::*;
-use crate::scripts_scene_editor_nodes_rs::*;
-use crate::scripts_scene_editor_scene_deps_rs as editor_scene_deps;
-use crate::scripts_scene_editor_scene_rs as editor_scene;
-use crate::scripts_scene_editor_viewport_rs::*;
-use crate::scripts_ui_bitmask_rs::{ensure_inspector_bitmask_grid, update_inspector_bitmask_grid};
-use crate::scripts_ui_editor_inspector_values_rs::*;
-use crate::scripts_ui_editor_view_rs as editor_view;
-use crate::scripts_ui_theme_rs as theme;
-use crate::scripts_ui_inspector_value_row_rs::{
+use crate::scripts::scene::editor_animation::*;
+use crate::scripts::scene::editor_gizmos as editor_gizmos;
+use crate::scripts::scene::editor_nav::*;
+use crate::scripts::scene::editor_nodes::*;
+use crate::scripts::scene::editor_scene_deps as editor_scene_deps;
+use crate::scripts::scene::editor_scene as editor_scene;
+use crate::scripts::scene::editor_viewport::*;
+use crate::scripts::ui::bitmask::{ensure_inspector_bitmask_grid, update_inspector_bitmask_grid};
+use crate::scripts::ui::editor_inspector_values::*;
+use crate::scripts::ui::editor_view as editor_view;
+use crate::scripts::ui::theme as theme;
+use crate::scripts::ui::inspector_value_row::{
     apply_inspector_value_row_panel, clear_inspector_value_rows, ensure_inspector_matrix_grid,
     ensure_inspector_value_row, hide_inspector_value_rows_from, inspector_value_row_inner,
     place_inspector_value_row,
@@ -453,7 +453,7 @@ fn refresh_chrome_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
         view.bottom_dock_open && view.anim_drawer_open,
     );
     set_label(ctx, "anim_drawer_title", &view.anim_title);
-    crate::scripts_scene_editor_animation_rs::refresh_anim_drawer_widgets(ctx);
+    crate::scripts::scene::editor_animation::refresh_anim_drawer_widgets(ctx);
     set_ui_node_size(ctx, "activity_bar", (layout.activity_w, 1.0));
     set_ui_node_size(ctx, "left_panel", (layout.left_w, 1.0));
     set_ui_node_size(ctx, "center_stack", (layout.center_w, 1.0));
@@ -2542,8 +2542,8 @@ fn inspector_anim_field_picker_entries(state: &EditorState) -> Vec<InspectorPick
     let is_skeleton = node.data.node_type.is_a(perro_scene::NodeType::Skeleton2D)
         || node.data.node_type.is_a(perro_scene::NodeType::Skeleton3D);
     if is_skeleton && !state.anim_selected_bone_name.is_empty() {
-        for sub in crate::scripts_scene_editor_panim_rs::BONE_TRACK_SUBFIELDS {
-            let field = crate::scripts_scene_editor_panim_rs::bone_track_field(
+        for sub in crate::scripts::scene::editor_panim::BONE_TRACK_SUBFIELDS {
+            let field = crate::scripts::scene::editor_panim::bone_track_field(
                 &state.anim_selected_bone_name,
                 sub,
             );
@@ -2554,7 +2554,7 @@ fn inspector_anim_field_picker_entries(state: &EditorState) -> Vec<InspectorPick
         }
     }
     entries.extend(
-        crate::scripts_scene_editor_panim_rs::animatable_fields(node.data.type_name())
+        crate::scripts::scene::editor_panim::animatable_fields(node.data.type_name())
             .into_iter()
             .map(|field| InspectorPickerEntry {
                 value: field.to_string(),

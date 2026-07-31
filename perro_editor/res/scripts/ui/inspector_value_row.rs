@@ -1,7 +1,7 @@
-use crate::scripts_app_editor_app_rs as editor_app;
-use crate::scripts_ui_editor_inspector_values_rs::InspectorValueRow;
-use crate::scripts_ui_editor_ui_rs::{find_named, set_ui_display};
-use crate::scripts_ui_theme_rs as theme;
+use crate::scripts::app::editor_app as editor_app;
+use crate::scripts::ui::editor_inspector_values::InspectorValueRow;
+use crate::scripts::ui::editor_ui::{find_named, set_ui_display};
+use crate::scripts::ui::theme as theme;
 use perro_api::prelude::*;
 use std::borrow::Cow;
 use std::sync::{Mutex, OnceLock};

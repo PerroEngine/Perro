@@ -8,14 +8,14 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use crate::scripts_assets_editor_assets_rs::*;
-use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
-use crate::scripts_scene_editor_animation_rs::*;
-use crate::scripts_scene_editor_nav_rs::*;
-use crate::scripts_scene_editor_nodes_rs::*;
-use crate::scripts_scene_editor_viewport_rs::*;
-use crate::scripts_ui_editor_inspector_values_rs::*;
-use crate::scripts_ui_editor_ui_rs::*;
+use crate::scripts::assets::editor_assets::*;
+use crate::scripts::assets::editor_file_watch as editor_file_watch;
+use crate::scripts::scene::editor_animation::*;
+use crate::scripts::scene::editor_nav::*;
+use crate::scripts::scene::editor_nodes::*;
+use crate::scripts::scene::editor_viewport::*;
+use crate::scripts::ui::editor_inspector_values::*;
+use crate::scripts::ui::editor_ui::*;
 
 type SelfNodeType = UiPanel;
 

@@ -1,14 +1,24 @@
+#[cfg(feature = "playback")]
 mod codec;
+#[cfg(feature = "playback")]
 mod controller;
+#[cfg(feature = "playback")]
 mod dsp;
+#[cfg(feature = "playback")]
 mod internal;
 mod math;
+#[cfg(feature = "playback")]
 mod mic;
 pub mod midi;
+#[cfg(not(feature = "playback"))]
+mod null;
+#[cfg(feature = "playback")]
 mod player;
 mod types;
 
+#[cfg(feature = "playback")]
 pub use controller::{AudioController, AudioEnqueueError, AudioEnqueueResult, AudioSourceHandle};
+#[cfg(feature = "playback")]
 pub use mic::{
     MicChannels, MicClip, MicDenoiseSettings, MicDevice, MicRecorder, MicSettings, mic_devices,
     resolve_mic_device,
@@ -16,14 +26,21 @@ pub use mic::{
 pub use midi::{
     MidiChannel, MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound, Note, program,
 };
+#[cfg(not(feature = "playback"))]
+pub use null::{
+    AudioController, AudioEnqueueError, AudioEnqueueResult, AudioLengthProber, AudioSourceHandle,
+    BarkPlayer, MicChannels, MicClip, MicDenoiseSettings, MicDevice, MicRecorder, MicSettings,
+    mic_devices, resolve_mic_device,
+};
 pub use perro_ids::SoundFontID;
+#[cfg(feature = "playback")]
 pub use player::BarkPlayer;
 pub use types::{
     Audio2D, Audio3D, AudioCompression, AudioEq, AudioListener2D, AudioListener3D, AudioPan,
     AudioPlaybackRequest, SpatialAudioParams,
 };
 
-#[cfg(test)]
+#[cfg(all(test, feature = "playback"))]
 mod tests {
     use crate::codec::decode_static_pawdio;
     use crate::{Audio2D, Audio3D, AudioListener2D, AudioListener3D};

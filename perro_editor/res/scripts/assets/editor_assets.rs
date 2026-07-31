@@ -1,9 +1,9 @@
-use crate::scripts_app_editor_app_rs as editor_app;
-use crate::scripts_app_editor_manager_rs as editor_manager;
-use crate::scripts_app_editor_project_rs as editor_project;
-use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
-use crate::scripts_assets_editor_files_rs as editor_files;
-use crate::scripts_editor_main_rs::{
+use crate::scripts::app::editor_app as editor_app;
+use crate::scripts::app::editor_manager as editor_manager;
+use crate::scripts::app::editor_project as editor_project;
+use crate::scripts::assets::editor_file_watch as editor_file_watch;
+use crate::scripts::assets::editor_files as editor_files;
+use crate::scripts::editor::main::{
     EditorState, FILE_WATCH_INTERVAL_FRAMES, LIST_DOUBLE_CLICK_FRAMES, MAX_FILES,
     MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
     SceneSession, arm_or_confirm_destructive_action, cached_scene_doc, cached_scene_doc_shared,
@@ -11,15 +11,15 @@ use crate::scripts_editor_main_rs::{
     clear_destructive_confirmation, clear_scene_doc_cache, restore_scene_session,
     set_state_scene_doc, set_state_scene_doc_loaded,
 };
-use crate::scripts_scene_editor_animation_rs::*;
-use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
-use crate::scripts_scene_editor_nav_rs::*;
-use crate::scripts_scene_editor_nodes_rs::*;
-use crate::scripts_scene_editor_scene_deps_rs as editor_scene_deps;
-use crate::scripts_scene_editor_scene_rs as editor_scene;
-use crate::scripts_scene_editor_viewport_rs::*;
-use crate::scripts_ui_editor_ui_rs::*;
-use crate::scripts_ui_editor_view_rs as editor_view;
+use crate::scripts::scene::editor_animation::*;
+use crate::scripts::scene::editor_gizmos as editor_gizmos;
+use crate::scripts::scene::editor_nav::*;
+use crate::scripts::scene::editor_nodes::*;
+use crate::scripts::scene::editor_scene_deps as editor_scene_deps;
+use crate::scripts::scene::editor_scene as editor_scene;
+use crate::scripts::scene::editor_viewport::*;
+use crate::scripts::ui::editor_ui::*;
+use crate::scripts::ui::editor_view as editor_view;
 use perro_api::prelude::*;
 use perro_api::scene::{
     SceneDoc, SceneFieldName, SceneKey, SceneNodeData, SceneNodeEntry, SceneValue, SceneValueKey,
@@ -61,7 +61,7 @@ pub fn open_project<API: ScriptAPI + ?Sized>(
         scene_paths.len()
     );
 
-    crate::scripts_ui_editor_inspector_values_rs::clear_script_schema_cache();
+    crate::scripts::ui::editor_inspector_values::clear_script_schema_cache();
     load_editor_shell(ctx)?;
 
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
@@ -660,7 +660,7 @@ pub fn open_animation_path<API: ScriptAPI + ?Sized>(
                 state.active_asset_path = anim_path.to_string();
                 state.active_glb_path.clear();
                 state.active_glb_summary.clear();
-                crate::scripts_scene_editor_animation_rs::load_anim_text_into_state(
+                crate::scripts::scene::editor_animation::load_anim_text_into_state(
                     state, anim_path, text,
                 );
                 state.log = format!(

@@ -1,25 +1,25 @@
-use crate::scripts_app_editor_app_rs as editor_app;
-use crate::scripts_app_editor_manager_rs as editor_manager;
-use crate::scripts_app_editor_project_rs as editor_project;
-use crate::scripts_assets_editor_assets_rs::*;
-use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
-use crate::scripts_assets_editor_files_rs as editor_files;
-use crate::scripts_editor_main_rs::{
+use crate::scripts::app::editor_app as editor_app;
+use crate::scripts::app::editor_manager as editor_manager;
+use crate::scripts::app::editor_project as editor_project;
+use crate::scripts::assets::editor_assets::*;
+use crate::scripts::assets::editor_file_watch as editor_file_watch;
+use crate::scripts::assets::editor_files as editor_files;
+use crate::scripts::editor::main::{
     EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_ANIM_MARKERS, MAX_ANIM_TRACKS, MAX_ANIM_UNDO,
     MAX_FILES, MAX_INSPECTOR_PICKER_ROWS, MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS,
     RECENT_PROJECTS_PATH, cached_scene_doc, cached_scene_doc_shared, set_state_scene_doc,
 };
-use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
-use crate::scripts_scene_editor_panim_rs as panim;
-use crate::scripts_ui_theme_rs as theme;
-use crate::scripts_scene_editor_nav_rs::*;
-use crate::scripts_scene_editor_nodes_rs::*;
-use crate::scripts_scene_editor_scene_deps_rs as editor_scene_deps;
-use crate::scripts_scene_editor_scene_rs as editor_scene;
-use crate::scripts_scene_editor_viewport_rs::*;
-use crate::scripts_ui_editor_inspector_values_rs::*;
-use crate::scripts_ui_editor_ui_rs::*;
-use crate::scripts_ui_editor_view_rs as editor_view;
+use crate::scripts::scene::editor_gizmos as editor_gizmos;
+use crate::scripts::scene::editor_panim as panim;
+use crate::scripts::ui::theme as theme;
+use crate::scripts::scene::editor_nav::*;
+use crate::scripts::scene::editor_nodes::*;
+use crate::scripts::scene::editor_scene_deps as editor_scene_deps;
+use crate::scripts::scene::editor_scene as editor_scene;
+use crate::scripts::scene::editor_viewport::*;
+use crate::scripts::ui::editor_inspector_values::*;
+use crate::scripts::ui::editor_ui::*;
+use crate::scripts::ui::editor_view as editor_view;
 use perro_api::prelude::*;
 use perro_api::scene::{
     Parser, SceneDoc, SceneFieldName, SceneKey, SceneNodeData, SceneNodeEntry, SceneValue,
@@ -1769,7 +1769,7 @@ pub fn choose_inspector_picker_row<API: ScriptAPI + ?Sized>(
                 SceneValue::Key(SceneValueKey::from(value.clone()))
             };
             if row.source == "custom_icon" {
-                crate::scripts_ui_editor_inspector_values_rs::write_node_custom_icon(
+                crate::scripts::ui::editor_inspector_values::write_node_custom_icon(
                     node,
                     Some(&value),
                 );

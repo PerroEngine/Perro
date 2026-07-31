@@ -59,8 +59,10 @@ web-time = "1.1.0"
 criterion = "0.5"
 
 [features]
+default = ["audio"]
+audio = ["perro_pawdio/playback"]
 bench = []
-profile = ["perro_pawdio/profile"]
+profile = ["audio", "perro_pawdio/profile"]
 mic-asio = ["perro_pawdio/mic-asio"]
 mic-jack = ["perro_pawdio/mic-jack"]
 steamworks = ["dep:perro_steamworks", "perro_steamworks/steamworks-runtime"]

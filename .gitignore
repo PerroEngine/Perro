@@ -6,3 +6,6 @@
 # Generated website bundles
 /perro_website/**/*.js
 /perro_website/**/*.wasm
+
+# editor-generated project glue
+.perro/

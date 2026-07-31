@@ -25,6 +25,26 @@ impl Transform2D {
         }
     }
 
+    /// Returns an interpolated copy between this transform and `to`.
+    ///
+    /// Position and scale use linear interpolation. Rotation follows the
+    /// shortest angular path in radians.
+    #[inline]
+    pub fn lerped(self, to: Self, t: f32) -> Self {
+        Self {
+            position: self.position.lerped(to.position, t),
+            scale: self.scale.lerped(to.scale, t),
+            rotation: self.rotation + wrap_angle(to.rotation - self.rotation) * t,
+        }
+    }
+
+    /// Interpolates this transform toward `to` in place.
+    #[inline]
+    pub fn lerp(&mut self, to: Self, t: f32) -> &mut Self {
+        *self = self.lerped(to, t);
+        self
+    }
+
     /// Convert to a Mat3 for transformations (TRS order)
     #[inline]
     pub fn to_mat3(&self) -> Mat3 {
@@ -259,6 +279,38 @@ mod tests {
 
         assert!(rebuilt.rotation.is_finite());
         assert_mat3_close(rebuilt.to_mat3(), source.to_mat3());
+    }
+
+    #[test]
+    fn lerped_blends_full_transform_over_shortest_rotation_path() {
+        let from = Transform2D::new(
+            Vector2::new(0.0, 2.0),
+            170.0_f32.to_radians(),
+            Vector2::new(1.0, 2.0),
+        );
+        let to = Transform2D::new(
+            Vector2::new(10.0, 6.0),
+            (-170.0_f32).to_radians(),
+            Vector2::new(3.0, 4.0),
+        );
+
+        let mid = from.lerped(to, 0.5);
+
+        assert_eq!(mid.position, Vector2::new(5.0, 4.0));
+        assert_eq!(mid.scale, Vector2::new(2.0, 3.0));
+        assert!((mid.rotation - std::f32::consts::PI).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn lerp_mutates_and_returns_self() {
+        let mut transform = Transform2D::IDENTITY;
+        let to = Transform2D::new(Vector2::new(4.0, 8.0), 1.0, Vector2::new(3.0, 5.0));
+
+        transform.lerp(to, 0.25);
+
+        assert_eq!(transform.position, Vector2::new(1.0, 2.0));
+        assert_eq!(transform.scale, Vector2::new(1.5, 2.0));
+        assert_eq!(transform.rotation, 0.25);
     }
 
     fn assert_mat3_close_eps(actual: Mat3, expected: Mat3, eps: f32) {

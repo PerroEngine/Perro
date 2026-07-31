@@ -130,7 +130,7 @@ perro_resource_api = { version = "0.1.0", path = "perro_source/api_modules/perro
 perro_runtime_api = { version = "0.1.0", path = "perro_source/api_modules/perro_runtime_api" }
 perro_web = { version = "0.1.0", path = "perro_source/api_modules/perro_web" }
 perro_steamworks = { version = "0.1.0", path = "perro_source/api_modules/perro_steamworks", default-features = false }
-perro_pawdio = { version = "0.1.0", path = "perro_source/audio_stack/perro_pawdio" }
+perro_pawdio = { version = "0.1.0", path = "perro_source/audio_stack/perro_pawdio", default-features = false }
 perro_compiler = { version = "0.1.0", path = "perro_source/build_pipeline/perro_compiler" }
 perro_static_pipeline = { version = "0.1.0", path = "perro_source/build_pipeline/perro_static_pipeline" }
 perro_animation = { version = "0.1.0", path = "perro_source/core/perro_animation" }
@@ -158,7 +158,7 @@ perro_wgsl = { version = "0.1.0", path = "perro_source/render_stack/perro_wgsl" 
 perro_internal_updates = { version = "0.1.0", path = "perro_source/runtime_project/perro_internal_updates" }
 perro_physics = { version = "0.1.0", path = "perro_source/runtime_project/perro_physics" }
 perro_project = { version = "0.1.0", path = "perro_source/runtime_project/perro_project" }
-perro_runtime = { version = "0.1.0", path = "perro_source/runtime_project/perro_runtime" }
+perro_runtime = { version = "0.1.0", path = "perro_source/runtime_project/perro_runtime", default-features = false }
 perro_runtime_render = { version = "0.1.0", path = "perro_source/runtime_project/perro_runtime_render" }
 perro_scene = { version = "0.1.0", path = "perro_source/runtime_project/perro_scene" }
 perro_scripting = { version = "0.1.0", path = "perro_source/script_stack/perro_scripting" }

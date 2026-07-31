@@ -69,6 +69,7 @@ impl AudioPan {
         Self { x, y, z }
     }
 
+    #[cfg(feature = "playback")]
     pub(crate) fn clamped(self) -> Self {
         Self {
             x: self.x.clamp(-1.0, 1.0),

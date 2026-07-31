@@ -24,6 +24,26 @@ impl Transform3D {
         }
     }
 
+    /// Returns an interpolated copy between this transform and `to`.
+    ///
+    /// Position and scale use linear interpolation. Rotation uses quaternion
+    /// spherical interpolation for the shortest, constant-speed angular path.
+    #[inline]
+    pub fn lerped(self, to: Self, t: f32) -> Self {
+        Self {
+            position: self.position.lerped(to.position, t),
+            scale: self.scale.lerped(to.scale, t),
+            rotation: self.rotation.slerped(to.rotation, t),
+        }
+    }
+
+    /// Interpolates this transform toward `to` in place.
+    #[inline]
+    pub fn lerp(&mut self, to: Self, t: f32) -> &mut Self {
+        *self = self.lerped(to, t);
+        self
+    }
+
     /// Convert to a Mat4 for transformations (TRS order)
     #[inline]
     pub fn to_mat4(&self) -> Mat4 {
@@ -289,6 +309,42 @@ mod tests {
         assert!((t.forward() - Vector3::new(0.0, 0.0, -1.0)).length() < 1.0e-6);
         assert!((t.right() - Vector3::new(1.0, 0.0, 0.0)).length() < 1.0e-6);
         assert!((t.up() - Vector3::new(0.0, 1.0, 0.0)).length() < 1.0e-6);
+    }
+
+    #[test]
+    fn lerped_blends_full_transform_with_spherical_rotation() {
+        let from = Transform3D::new(
+            Vector3::new(0.0, 2.0, 4.0),
+            Quaternion::IDENTITY,
+            Vector3::new(1.0, 2.0, 3.0),
+        );
+        let to_rotation = quat_from_axis_angle(Vector3::new(0.0, 1.0, 0.0), std::f32::consts::PI);
+        let to = Transform3D::new(
+            Vector3::new(10.0, 6.0, 0.0),
+            to_rotation,
+            Vector3::new(3.0, 4.0, 5.0),
+        );
+
+        let mid = from.lerped(to, 0.5);
+
+        assert_eq!(mid.position, Vector3::new(5.0, 4.0, 2.0));
+        assert_eq!(mid.scale, Vector3::new(2.0, 3.0, 4.0));
+        assert_eq!(mid.rotation, from.rotation.slerped(to_rotation, 0.5));
+    }
+
+    #[test]
+    fn lerp_mutates_and_returns_self() {
+        let mut transform = Transform3D::IDENTITY;
+        let to = Transform3D::new(
+            Vector3::new(4.0, 2.0, 8.0),
+            Quaternion::IDENTITY,
+            Vector3::new(3.0, 3.0, 3.0),
+        );
+
+        transform.lerp(to, 0.25);
+
+        assert_eq!(transform.position, Vector3::new(1.0, 0.5, 2.0));
+        assert_eq!(transform.scale, Vector3::new(1.5, 1.5, 1.5));
     }
 
     #[test]

@@ -1,8 +1,10 @@
-use crate::scripts_assets_editor_assets_rs::*;
-use crate::scripts_editor_main_rs::{EditorState, cached_scene_doc, cached_scene_doc_shared, set_state_scene_doc};
-use crate::scripts_scene_editor_animation_rs::*;
-use crate::scripts_scene_editor_viewport_rs::*;
-use crate::scripts_ui_editor_ui_rs::*;
+use crate::scripts::assets::editor_assets::*;
+use crate::scripts::editor::main::{
+    EditorState, cached_scene_doc, cached_scene_doc_shared, set_state_scene_doc,
+};
+use crate::scripts::scene::editor_animation::*;
+use crate::scripts::scene::editor_viewport::*;
+use crate::scripts::ui::editor_ui::*;
 use perro_api::prelude::*;
 use perro_api::scene::{Parser, SceneDoc, SceneFieldName, SceneKey, SceneValue, SceneValueKey};
 use std::borrow::Cow;
@@ -1607,7 +1609,6 @@ struct ScriptSchema {
 struct ScriptImports {
     named: BTreeMap<String, String>,
     globs: Vec<String>,
-    script_modules_glob: bool,
 }
 
 #[derive(Clone)]
@@ -1841,7 +1842,7 @@ fn parse_script_schema(
     }
     ScriptSchema {
         root_module: root_module.to_string(),
-        imports: parse_script_imports(source),
+        imports: parse_script_imports(source, module),
         structs,
         enums,
     }
@@ -1980,7 +1981,7 @@ fn attr_has_variant_derive(attr: &str) -> bool {
         .any(|item| matches!(item, "Variant" | "DeriveVariant"))
 }
 
-fn parse_script_imports(source: &str) -> ScriptImports {
+fn parse_script_imports(source: &str, current_module: &str) -> ScriptImports {
     let mut imports = ScriptImports::default();
     for line in source.lines() {
         let line = strip_line_comment(line).trim();
@@ -1988,20 +1989,15 @@ fn parse_script_imports(source: &str) -> ScriptImports {
             continue;
         };
         rest = rest.trim_end_matches(';').trim();
-        if rest == "crate::script_modules::*" {
-            imports.script_modules_glob = true;
+        let Some(rest) = resolve_script_import_path(current_module, rest) else {
             continue;
-        }
-        if let Some(module) = rest
-            .strip_prefix("crate::")
-            .and_then(|value| value.strip_suffix("::*"))
-        {
+        };
+        if let Some(module) = rest.strip_suffix("::*") {
             imports.globs.push(module.to_string());
             continue;
         }
         if let Some(inner) = rest
-            .strip_prefix("crate::")
-            .and_then(|value| value.strip_suffix('}'))
+            .strip_suffix('}')
             .and_then(|value| value.split_once("::{"))
         {
             let (module, names) = inner;
@@ -2018,10 +2014,7 @@ fn parse_script_imports(source: &str) -> ScriptImports {
             }
             continue;
         }
-        if let Some((module, name)) = rest
-            .strip_prefix("crate::")
-            .and_then(|value| value.rsplit_once("::"))
-        {
+        if let Some((module, name)) = rest.rsplit_once("::") {
             let name = name
                 .split_once(" as ")
                 .map(|(_, alias)| alias)
@@ -2030,6 +2023,29 @@ fn parse_script_imports(source: &str) -> ScriptImports {
         }
     }
     imports
+}
+
+fn resolve_script_import_path(current_module: &str, path: &str) -> Option<String> {
+    if let Some(path) = path.strip_prefix("crate::") {
+        return Some(path.to_string());
+    }
+    if let Some(path) = path.strip_prefix("self::") {
+        return Some(format!("{current_module}::{path}"));
+    }
+    if !path.starts_with("super::") {
+        return None;
+    }
+
+    let mut module = current_module.split("::").collect::<Vec<_>>();
+    let mut rest = path;
+    while let Some(next) = rest.strip_prefix("super::") {
+        module.pop()?;
+        rest = next;
+    }
+    if !rest.is_empty() {
+        module.push(rest);
+    }
+    Some(module.join("::"))
 }
 
 fn parse_enum_name(line: &str) -> Option<String> {
@@ -2675,7 +2691,7 @@ fn resolve_script_type<'a, T: ScriptTypeDef>(
     }
     let (name, type_args) = type_name_and_args(&ty);
     if ty.contains("::")
-        && let Some(module) = module_from_qualified_type(&ty)
+        && let Some(module) = module_from_qualified_type(&ty, &schema.root_module)
     {
         return resolve_defs_in_module(defs_by_name, &name, &module, &type_args);
     }
@@ -2868,8 +2884,8 @@ fn push_substituted_token(
     token.clear();
 }
 
-fn module_from_qualified_type(ty: &str) -> Option<String> {
-    let rest = ty.strip_prefix("crate::")?;
+fn module_from_qualified_type(ty: &str, current_module: &str) -> Option<String> {
+    let rest = resolve_script_import_path(current_module, ty)?;
     let (module, _name) = rest.rsplit_once("::")?;
     Some(module.to_string())
 }
@@ -2883,8 +2899,25 @@ fn module_short_name_from_script_path(path: &str) -> String {
 }
 
 fn module_name_from_rel(rel: &str) -> String {
-    let mut out = String::with_capacity(rel.len());
-    for ch in rel.chars() {
+    let mut parts = rel
+        .strip_suffix(".rs")
+        .unwrap_or(rel)
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    if parts.last().is_some_and(|part| *part == "mod") {
+        parts.pop();
+    }
+    parts
+        .into_iter()
+        .map(module_name_part)
+        .collect::<Vec<_>>()
+        .join("::")
+}
+
+fn module_name_part(part: &str) -> String {
+    let mut out = String::with_capacity(part.len());
+    for ch in part.chars() {
         if ch.is_ascii_alphanumeric() {
             out.push(ch.to_ascii_lowercase());
         } else {
@@ -2900,11 +2933,72 @@ fn module_name_from_rel(rel: &str) -> String {
     if name.chars().next().is_some_and(|ch| ch.is_ascii_digit()) {
         name.insert(0, '_');
     }
+    if matches!(
+        name.as_str(),
+        "abstract"
+            | "as"
+            | "async"
+            | "await"
+            | "become"
+            | "box"
+            | "break"
+            | "const"
+            | "continue"
+            | "crate"
+            | "do"
+            | "dyn"
+            | "else"
+            | "enum"
+            | "extern"
+            | "false"
+            | "final"
+            | "fn"
+            | "for"
+            | "gen"
+            | "if"
+            | "impl"
+            | "in"
+            | "let"
+            | "loop"
+            | "macro"
+            | "match"
+            | "mod"
+            | "move"
+            | "mut"
+            | "override"
+            | "priv"
+            | "pub"
+            | "ref"
+            | "return"
+            | "self"
+            | "static"
+            | "struct"
+            | "super"
+            | "trait"
+            | "true"
+            | "try"
+            | "type"
+            | "typeof"
+            | "union"
+            | "unsafe"
+            | "unsized"
+            | "use"
+            | "virtual"
+            | "where"
+            | "while"
+            | "yield"
+    ) {
+        name.push('_');
+    }
     name
 }
 
 fn module_short_name_from_rel(rel: &str) -> String {
-    module_name_from_rel(rel.strip_suffix(".rs").unwrap_or(rel))
+    module_name_from_rel(rel)
+        .rsplit("::")
+        .next()
+        .unwrap_or_default()
+        .to_string()
 }
 
 fn last_type_segment(ty: &str) -> &str {
@@ -4551,7 +4645,7 @@ fn write_selected_inspector_bitmask<API: ScriptAPI + ?Sized>(
     })
     .unwrap_or(false);
     if changed {
-        crate::scripts_ui_bitmask_rs::update_inspector_bitmask_grid(ctx, idx, value);
+        crate::scripts::ui::bitmask::update_inspector_bitmask_grid(ctx, idx, value);
         if !sync_bitmask_preview(ctx, &row, &value_for_preview) {
             rebuild_preview(ctx);
         }

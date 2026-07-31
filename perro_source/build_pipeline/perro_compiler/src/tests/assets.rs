@@ -121,14 +121,11 @@ mod assets {
     }
 
     #[test]
-    fn module_short_name_drops_rs_suffix() {
+    fn module_name_sanitizes_path_part() {
         assert_eq!(
-            module_name_from_rel("scripts/personality_module.rs"),
-            "scripts_personality_module_rs"
+            module_ident_from_path_part("Personality-Module"),
+            "personality_module"
         );
-        assert_eq!(
-            module_short_name_from_rel("scripts/personality_module.rs"),
-            "scripts_personality_module"
-        );
+        assert_eq!(module_ident_from_path_part("9lives"), "_9lives");
     }
 }

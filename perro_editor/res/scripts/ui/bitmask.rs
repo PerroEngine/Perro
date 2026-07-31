@@ -1,5 +1,5 @@
-use crate::scripts_app_editor_app_rs as editor_app;
-use crate::scripts_ui_editor_ui_rs::find_named;
+use crate::scripts::app::editor_app as editor_app;
+use crate::scripts::ui::editor_ui::find_named;
 use perro_api::prelude::*;
 
 const BITMASK_TEMPLATE_ROOT: &str = "bitmask_root";

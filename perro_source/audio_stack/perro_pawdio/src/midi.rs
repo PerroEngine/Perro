@@ -1,30 +1,46 @@
+#[cfg(feature = "playback")]
 use crossbeam_channel::Receiver;
+#[cfg(feature = "playback")]
 use midly::{MetaMessage, MidiMessage, Smf, Timing, TrackEventKind};
 use perro_ids::AudioBusID;
 use perro_ids::SoundFontID;
+#[cfg(feature = "playback")]
 use rodio::Source;
+#[cfg(feature = "playback")]
 use rustysynth::{
     MidiFile as RustyMidiFile, MidiFileSequencer, SoundFont, Synthesizer, SynthesizerSettings,
 };
+#[cfg(feature = "playback")]
 use std::collections::HashMap;
+#[cfg(feature = "playback")]
 use std::f32::consts::TAU;
+#[cfg(feature = "playback")]
 use std::io::Cursor;
+#[cfg(feature = "playback")]
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use crate::types::AudioPan;
 
 pub const SAMPLE_RATE: u32 = 44_100;
+#[cfg(feature = "playback")]
 const BUILT_IN_MIXER_MAX_VOICES: usize = 4096;
 // Drain control channels every N samples (~1.45ms @ 44.1kHz) instead of a
 // try_recv per sample; matches the PARAM_REFRESH_SAMPLES cadence in dsp.rs.
+#[cfg(feature = "playback")]
 const CONTROL_DRAIN_SAMPLES: u32 = 64;
 // Frames per rustysynth render block; drained sample-wise by `next`.
+#[cfg(feature = "playback")]
 const RENDER_BLOCK_FRAMES: usize = 64;
+#[cfg(feature = "playback")]
 const SINE_TABLE_SIZE: usize = 2048;
+#[cfg(feature = "playback")]
 const SINE_TABLE_MASK: usize = SINE_TABLE_SIZE - 1;
+#[cfg(feature = "playback")]
 const ATTACK_STEP: f32 = 128.0 / SAMPLE_RATE as f32;
+#[cfg(feature = "playback")]
 const RELEASE_STEP: f32 = 1.0 / (SAMPLE_RATE as f32 * 0.18);
+#[cfg(feature = "playback")]
 const OUTPUT_GAIN: f32 = 0.18;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -366,12 +382,14 @@ pub struct MidiFileRequest<'a> {
     pub pan: AudioPan,
 }
 
+#[cfg(feature = "playback")]
 #[derive(Clone, Copy, Debug)]
 pub enum MidiControl {
     Release,
     Stop,
 }
 
+#[cfg(feature = "playback")]
 #[derive(Clone, Copy, Debug)]
 pub enum MidiMixerControl {
     Note(MidiMixerNote),
@@ -379,6 +397,7 @@ pub enum MidiMixerControl {
     Stop,
 }
 
+#[cfg(feature = "playback")]
 #[derive(Clone, Copy, Debug)]
 pub enum SoundFontMixerControl {
     Note(SoundFontMixerNote),
@@ -386,6 +405,7 @@ pub enum SoundFontMixerControl {
     Stop,
 }
 
+#[cfg(feature = "playback")]
 #[derive(Clone, Copy, Debug)]
 pub struct SoundFontMixerNote {
     pub id: u64,
@@ -397,6 +417,7 @@ pub struct SoundFontMixerNote {
     pub program: MidiProgram,
 }
 
+#[cfg(feature = "playback")]
 #[derive(Clone, Copy, Debug)]
 pub struct MidiMixerNote {
     pub id: u64,
@@ -408,18 +429,21 @@ pub struct MidiMixerNote {
     pub volume: f32,
 }
 
+#[cfg(feature = "playback")]
 #[derive(Clone, Copy)]
 struct MidiEvent {
     sample: u64,
     kind: MidiEventKind,
 }
 
+#[cfg(feature = "playback")]
 #[doc(hidden)]
 pub struct BuiltInMidiFileData {
     events: Arc<[MidiEvent]>,
     end_sample: u64,
 }
 
+#[cfg(feature = "playback")]
 #[derive(Clone, Copy)]
 enum MidiEventKind {
     NoteOn {
@@ -433,6 +457,7 @@ enum MidiEventKind {
     Program(MidiProgram),
 }
 
+#[cfg(feature = "playback")]
 #[derive(Clone, Copy)]
 enum WaveKind {
     Sine,
@@ -442,6 +467,7 @@ enum WaveKind {
     Noise,
 }
 
+#[cfg(feature = "playback")]
 struct Voice {
     id: Option<u64>,
     note: Note,
@@ -458,6 +484,7 @@ struct Voice {
     noise: u32,
 }
 
+#[cfg(feature = "playback")]
 impl Voice {
     fn new(note: Note, velocity: u8, volume: f32, program: MidiProgram) -> Self {
         Self::new_internal(None, note, velocity, volume, program, None)
@@ -554,6 +581,7 @@ impl Voice {
 /// Resolve the shared sine table once, at source construction (off the audio
 /// thread). Voices then index the borrowed table directly, so the per-sample
 /// path skips the `OnceLock` acquire-load + branch entirely.
+#[cfg(feature = "playback")]
 fn sine_table() -> &'static [f32; SINE_TABLE_SIZE] {
     SINE_TABLE.get_or_init(|| {
         let mut table = [0.0f32; SINE_TABLE_SIZE];
@@ -567,13 +595,16 @@ fn sine_table() -> &'static [f32; SINE_TABLE_SIZE] {
 }
 
 #[inline]
+#[cfg(feature = "playback")]
 fn fast_sine(table: &[f32; SINE_TABLE_SIZE], phase: f32) -> f32 {
     let idx = ((phase * (SINE_TABLE_SIZE as f32 / TAU)) as usize) & SINE_TABLE_MASK;
     table[idx]
 }
 
+#[cfg(feature = "playback")]
 static SINE_TABLE: OnceLock<[f32; SINE_TABLE_SIZE]> = OnceLock::new();
 
+#[cfg(feature = "playback")]
 pub struct BuiltInMidiMixerSource {
     voices: Vec<Voice>,
     voice_index: HashMap<u64, usize>,
@@ -583,6 +614,7 @@ pub struct BuiltInMidiMixerSource {
     control_counter: u32,
 }
 
+#[cfg(feature = "playback")]
 impl BuiltInMidiMixerSource {
     pub fn new(rx: Receiver<MidiMixerControl>) -> Self {
         Self {
@@ -639,6 +671,7 @@ impl BuiltInMidiMixerSource {
     }
 }
 
+#[cfg(feature = "playback")]
 impl Iterator for BuiltInMidiMixerSource {
     type Item = f32;
 
@@ -669,6 +702,7 @@ impl Iterator for BuiltInMidiMixerSource {
     }
 }
 
+#[cfg(feature = "playback")]
 impl Source for BuiltInMidiMixerSource {
     fn current_frame_len(&self) -> Option<usize> {
         None
@@ -687,6 +721,7 @@ impl Source for BuiltInMidiMixerSource {
     }
 }
 
+#[cfg(feature = "playback")]
 fn program_wave(program: MidiProgram) -> WaveKind {
     match program.0 {
         16..=23 | 80..=87 => WaveKind::Square,
@@ -697,6 +732,7 @@ fn program_wave(program: MidiProgram) -> WaveKind {
     }
 }
 
+#[cfg(feature = "playback")]
 pub struct BuiltInMidiSource {
     voices: Vec<Voice>,
     events: Arc<[MidiEvent]>,
@@ -712,6 +748,7 @@ pub struct BuiltInMidiSource {
     control_counter: u32,
 }
 
+#[cfg(feature = "playback")]
 impl BuiltInMidiSource {
     pub fn note(request: MidiNoteRequest, rx: Receiver<MidiControl>) -> Self {
         let mut source = Self {
@@ -838,6 +875,7 @@ impl BuiltInMidiSource {
     }
 }
 
+#[cfg(feature = "playback")]
 impl Iterator for BuiltInMidiSource {
     type Item = f32;
 
@@ -881,6 +919,7 @@ impl Iterator for BuiltInMidiSource {
     }
 }
 
+#[cfg(feature = "playback")]
 impl Source for BuiltInMidiSource {
     fn current_frame_len(&self) -> Option<usize> {
         None
@@ -903,6 +942,7 @@ impl Source for BuiltInMidiSource {
 /// Reusable stereo render block: rustysynth renders up to
 /// [`RENDER_BLOCK_FRAMES`] frames at once and `next` drains them sample-wise,
 /// replacing the old per-sample `render(&mut [f32; 1], ..)` calls.
+#[cfg(feature = "playback")]
 struct StereoBlock {
     left: [f32; RENDER_BLOCK_FRAMES],
     right: [f32; RENDER_BLOCK_FRAMES],
@@ -912,6 +952,7 @@ struct StereoBlock {
     pos: usize,
 }
 
+#[cfg(feature = "playback")]
 impl StereoBlock {
     fn new() -> Self {
         Self {
@@ -944,6 +985,7 @@ impl StereoBlock {
     }
 }
 
+#[cfg(feature = "playback")]
 pub struct RustyNoteMixerSource {
     synth: Synthesizer,
     rx: Receiver<SoundFontMixerControl>,
@@ -954,6 +996,7 @@ pub struct RustyNoteMixerSource {
     block: StereoBlock,
 }
 
+#[cfg(feature = "playback")]
 impl RustyNoteMixerSource {
     pub fn new(font: Arc<SoundFont>, rx: Receiver<SoundFontMixerControl>) -> Result<Self, String> {
         let settings = SynthesizerSettings::new(SAMPLE_RATE as i32);
@@ -1015,6 +1058,7 @@ impl RustyNoteMixerSource {
     }
 }
 
+#[cfg(feature = "playback")]
 impl Iterator for RustyNoteMixerSource {
     type Item = f32;
 
@@ -1044,6 +1088,7 @@ impl Iterator for RustyNoteMixerSource {
     }
 }
 
+#[cfg(feature = "playback")]
 impl Source for RustyNoteMixerSource {
     fn current_frame_len(&self) -> Option<usize> {
         None
@@ -1065,6 +1110,7 @@ impl Source for RustyNoteMixerSource {
 /// Finite single-note soundfont source for spatial playback: renders one note
 /// on a dedicated synthesizer and ends once the release tail falls silent, so
 /// its per-note sink drains and gets pruned.
+#[cfg(feature = "playback")]
 pub struct RustyNoteSource {
     synth: Synthesizer,
     rx: Receiver<MidiControl>,
@@ -1079,6 +1125,7 @@ pub struct RustyNoteSource {
     block: StereoBlock,
 }
 
+#[cfg(feature = "playback")]
 impl RustyNoteSource {
     const SILENCE_FLOOR: f32 = 1.0e-4;
     const SILENCE_END_SAMPLES: u32 = SAMPLE_RATE / 8;
@@ -1134,6 +1181,7 @@ impl RustyNoteSource {
     }
 }
 
+#[cfg(feature = "playback")]
 impl Iterator for RustyNoteSource {
     type Item = f32;
 
@@ -1204,6 +1252,7 @@ impl Iterator for RustyNoteSource {
     }
 }
 
+#[cfg(feature = "playback")]
 impl Source for RustyNoteSource {
     fn current_frame_len(&self) -> Option<usize> {
         None
@@ -1222,6 +1271,7 @@ impl Source for RustyNoteSource {
     }
 }
 
+#[cfg(feature = "playback")]
 pub struct RustyFileSource {
     sequencer: MidiFileSequencer,
     rx: Receiver<MidiControl>,
@@ -1230,6 +1280,7 @@ pub struct RustyFileSource {
     block: StereoBlock,
 }
 
+#[cfg(feature = "playback")]
 impl RustyFileSource {
     pub fn new(
         font: Arc<SoundFont>,
@@ -1253,6 +1304,7 @@ impl RustyFileSource {
     }
 }
 
+#[cfg(feature = "playback")]
 impl Iterator for RustyFileSource {
     type Item = f32;
 
@@ -1281,6 +1333,7 @@ impl Iterator for RustyFileSource {
     }
 }
 
+#[cfg(feature = "playback")]
 impl Source for RustyFileSource {
     fn current_frame_len(&self) -> Option<usize> {
         None
@@ -1301,11 +1354,13 @@ impl Source for RustyFileSource {
     }
 }
 
+#[cfg(feature = "playback")]
 fn duration_samples(duration: Duration) -> u64 {
     (duration.as_secs_f64() * SAMPLE_RATE as f64).max(0.0) as u64
 }
 
 #[doc(hidden)]
+#[cfg(feature = "playback")]
 pub fn parse_built_in_midi_file(bytes: &[u8]) -> Result<Arc<BuiltInMidiFileData>, String> {
     let smf = Smf::parse(bytes).map_err(|err| err.to_string())?;
     let ticks_per_beat = match smf.header.timing {
@@ -1367,7 +1422,7 @@ pub fn parse_built_in_midi_file(bytes: &[u8]) -> Result<Arc<BuiltInMidiFileData>
     }))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "playback"))]
 mod tests {
     use super::*;
 

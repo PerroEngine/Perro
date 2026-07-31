@@ -638,10 +638,78 @@ mod locking_paths {
         assert!(generated.contains("perro_script_abi_descriptor_v2"));
         assert!(generated.contains("ScriptAbiDescriptor::v2()"));
         assert!(generated.contains("-> *const ScriptAbiDescriptorHeader"));
+        assert!(generated.contains(
+            "#[cfg(not(feature = \"dynamic-scripts\"))]\npub static SCRIPT_REGISTRY"
+        ));
         assert!(generated.contains("#[cfg(feature = \"dynamic-scripts\")]"));
         assert!(generated.contains("DYNAMIC_SCRIPT_REGISTRY"));
         assert!(generated.contains("perro_create_script_dynamic as DynamicScriptConstructor"));
 
         std::fs::remove_dir_all(root).expect("remove script ABI fixture");
+    }
+
+    #[test]
+    fn generated_scripts_lib_exports_nested_module_paths() {
+        let root = unique_temp_dir("perro_compiler_nested_script_modules");
+        let src = root.join("src");
+        write_scripts_lib(
+            &src,
+            &[
+                "mod.rs".to_string(),
+                "scripts/shared/canyon/mod.rs".to_string(),
+                "scripts/shared/canyon/plan.rs".to_string(),
+                "scripts/shared/canyon/rng.rs".to_string(),
+                "systems.rs".to_string(),
+                "systems/health.rs".to_string(),
+                "top.rs".to_string(),
+                "type/match.rs".to_string(),
+            ],
+            &["scripts/shared/canyon/rng.rs".to_string()],
+            "res://",
+        )
+        .expect("write scripts lib");
+        let generated = std::fs::read_to_string(src.join("lib.rs")).expect("read scripts lib");
+
+        assert!(generated.contains("include!(\"mod.gen.rs\");"));
+        assert!(generated.contains(
+            "pub mod scripts {\n    pub mod shared {\n        pub mod canyon {\n            include!(\"scripts/shared/canyon/mod.gen.rs\");\n            pub mod plan {\n                include!(\"scripts/shared/canyon/plan.gen.rs\");\n            }\n            pub mod rng {\n                include!(\"scripts/shared/canyon/rng.gen.rs\");\n"
+        ));
+        assert!(generated.contains(
+            "pub mod systems {\n    include!(\"systems.gen.rs\");\n    pub mod health {\n        include!(\"systems/health.gen.rs\");\n    }\n}"
+        ));
+        assert!(generated.contains("pub mod top {\n    include!(\"top.gen.rs\");\n}"));
+        assert!(generated.contains(
+            "pub mod type_ {\n    pub mod match_ {\n        include!(\"type/match.gen.rs\");"
+        ));
+        assert!(
+            generated
+                .contains("scripts::shared::canyon::rng::perro_create_script as ScriptConstructor")
+        );
+        assert!(!generated.contains("scripts_shared_canyon_rng_rs"));
+        assert!(!generated.contains("pub mod script_modules"));
+
+        std::fs::remove_dir_all(root).expect("remove nested modules fixture");
+    }
+
+    #[test]
+    fn generated_scripts_lib_rejects_duplicate_module_bodies() {
+        let root = unique_temp_dir("perro_compiler_duplicate_script_modules");
+        let src = root.join("src");
+        let err = write_scripts_lib(
+            &src,
+            &["foo.rs".to_string(), "foo/mod.rs".to_string()],
+            &[],
+            "res://",
+        )
+        .expect_err("duplicate module body must fail");
+
+        assert!(err.to_string().contains("script module path collision"));
+        assert!(err.to_string().contains("res://foo.rs"));
+        assert!(err.to_string().contains("res://foo/mod.rs"));
+        assert!(err.to_string().contains("crate::foo"));
+
+        if root.exists() {
+            std::fs::remove_dir_all(root).expect("remove duplicate modules fixture");
+        }
     }
 }
