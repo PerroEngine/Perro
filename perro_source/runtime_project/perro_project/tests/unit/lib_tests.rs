@@ -292,7 +292,7 @@ fn static_project_config_keeps_anti_alias() {
 }
 
 #[test]
-fn parse_project_toml_ssao_defaults_medium() {
+fn parse_project_toml_ssao_defaults_low() {
     let toml = r#"
 [project]
 name = "Game"
@@ -302,7 +302,7 @@ main_scene = "res://main.scn"
 aspect_ratio = "16:9"
 "#;
     let parsed = parse_project_toml(toml).expect("parse default ssao");
-    assert_eq!(parsed.ssao, SsaoQuality::Medium);
+    assert_eq!(parsed.ssao, SsaoQuality::Low);
     assert_eq!(parsed.hdr, perro_structs::HdrMode::Auto);
 }
 
@@ -1512,8 +1512,11 @@ main_scene = "res://main.scn"
     assert_eq!(cfg.virtual_width, 1920);
     assert_eq!(cfg.virtual_height, 1080);
     assert!(!cfg.vsync);
-    assert!(cfg.msaa);
-    assert_eq!(cfg.ssao, SsaoQuality::Medium);
+    // Light-but-good default tier: no msaa (fxaa is the AA default), low ssao.
+    assert!(!cfg.msaa);
+    assert_eq!(cfg.ssao, SsaoQuality::Low);
+    assert_eq!(cfg.shadow_quality, ShadowQuality::Low);
+    assert_eq!(cfg.anti_alias, AntiAlias::Fxaa);
 }
 
 #[test]

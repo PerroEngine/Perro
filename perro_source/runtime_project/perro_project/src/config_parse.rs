@@ -21,8 +21,8 @@ vsync = false
 anti_alias = "fxaa"              # off | fxaa (default) | msaa2 | msaa4 (smaa/taa planned)
                                  # replaces legacy `msaa = true/false` (still parses; msaa=true => msaa4)
 msaa_2d = false                  # MSAA for sessions that never use the 3D pipeline
-ssao = "medium"                  # off | low | medium | high | ultra
-shadow_quality = "medium"        # low (4-tap PCF, half-size maps) | medium (4-tap) | high (9-tap)
+ssao = "low"                     # off | low (default) | medium | high | ultra
+shadow_quality = "low"           # low (4-tap PCF, half-size maps, default) | medium (4-tap, full-size) | high (9-tap)
 occlusion_culling = "gpu"        # cpu | gpu | off
 particle_sim_default = "gpu"     # cpu | hybrid | gpu
 texture_filter = "linear_mipmap" # nearest | linear | linear_mipmap | anisotropic
@@ -210,11 +210,13 @@ pub fn parse_project_toml_with_demo(
     let target_fixed_update = parse_target_fixed_update(runtime_table)?;
     let physics_gravity = parse_physics_gravity(physics_table)?;
     let physics_coef = parse_physics_coef(physics_table)?;
-    let msaa = parse_bool_with_default(graphics_table, "msaa", true)?;
+    // Absent keys land on the light-but-good tier: fxaa + low ssao + low
+    // shadows. Heavier tiers are explicit opt-ins in project.toml.
+    let msaa = parse_bool_with_default(graphics_table, "msaa", false)?;
     let msaa_2d = parse_bool_with_default(graphics_table, "msaa_2d", false)?;
     let anti_alias = parse_anti_alias(graphics_table)?;
-    let ssao = parse_ssao_with_default(graphics_table, "ssao", SsaoQuality::Medium)?;
-    let shadow_quality = parse_shadow_quality_with_default(graphics_table, ShadowQuality::Medium)?;
+    let ssao = parse_ssao_with_default(graphics_table, "ssao", SsaoQuality::Low)?;
+    let shadow_quality = parse_shadow_quality_with_default(graphics_table, ShadowQuality::Low)?;
     let meshlets = parse_bool_with_default(graphics_table, "meshlets", false)?;
     let dev_meshlets = parse_bool_with_default(graphics_table, "dev_meshlets", false)?;
     let release_meshlets = parse_bool_with_default(graphics_table, "release_meshlets", true)?;

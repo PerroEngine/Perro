@@ -15,8 +15,8 @@ pub enum OcclusionCulling {
 /// default), High = 9-tap PCF at full sizes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ShadowQuality {
-    Low,
     #[default]
+    Low,
     Medium,
     High,
 }
@@ -71,8 +71,8 @@ impl AntiAlias {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SsaoQuality {
     Off,
-    Low,
     #[default]
+    Low,
     Medium,
     High,
     Ultra,
@@ -339,11 +339,13 @@ impl StaticProjectConfig {
             target_fixed_update: Some(60.0),
             physics_gravity: -9.81,
             physics_coef: 1.0,
-            msaa: true,
+            // Light-but-good default tier: fxaa (cheap AA), low ssao, low
+            // shadow atlas. Heavier tiers are opt-in per project.
+            msaa: false,
             msaa_2d: false,
             anti_alias: AntiAlias::Fxaa,
-            ssao: SsaoQuality::Medium,
-            shadow_quality: ShadowQuality::Medium,
+            ssao: SsaoQuality::Low,
+            shadow_quality: ShadowQuality::Low,
             meshlets: false,
             dev_meshlets: false,
             release_meshlets: true,
@@ -729,11 +731,13 @@ impl ProjectConfig {
             target_fixed_update: Some(60.0),
             physics_gravity: -9.81,
             physics_coef: 1.0,
-            msaa: true,
+            // Light-but-good default tier: fxaa (cheap AA), low ssao, low
+            // shadow atlas. Heavier tiers are opt-in per project.
+            msaa: false,
             msaa_2d: false,
             anti_alias: AntiAlias::Fxaa,
-            ssao: SsaoQuality::Medium,
-            shadow_quality: ShadowQuality::Medium,
+            ssao: SsaoQuality::Low,
+            shadow_quality: ShadowQuality::Low,
             meshlets: false,
             dev_meshlets: false,
             release_meshlets: true,
