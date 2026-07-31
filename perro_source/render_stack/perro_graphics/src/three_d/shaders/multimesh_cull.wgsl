@@ -12,17 +12,24 @@ struct FrustumCullParams {
     _pad2: u32,
 }
 
+// Layout must byte-match MultiMeshDrawParamGpu (three_d/gpu.rs) and the
+// MultiMeshDrawParam struct in multimesh.wgsl — 96 bytes. The cull only
+// reads the model rows and scale_bits, but every field shifts the stride.
 struct MultiMeshDrawParam {
     model_row_0: vec4<f32>,
     model_row_1: vec4<f32>,
     model_row_2: vec4<f32>,
+    custom_params: vec2<u32>,
     packed_color: u32,
+    packed_pbr_params_0: u32,
     packed_emissive: u32,
+    packed_material_params: u32,
     scale_bits: u32,
     packed_blend_params: u32,
-    custom_params: vec2<u32>,
     packed_bleed: u32,
-    _pad: u32,
+    pad_0: u32,
+    pad_1: u32,
+    pad_2: u32,
 }
 
 // Packed CPU layout (40 bytes). Rotation snorm16x4 stored as raw words; the

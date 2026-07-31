@@ -1515,6 +1515,53 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         parse_and_validate(culling::MULTIMESH_CULL_WGSL, "multimesh cull");
     }
 
+    // The cull shader keeps its own copy of MultiMeshDrawParam; a stride or
+    // offset drift against the render shader's copy (and MultiMeshDrawParamGpu
+    // on the CPU) makes every draw_id > 0 read garbage bounding spheres, which
+    // shows up as instances popping out by camera angle.
+    #[test]
+    fn multimesh_cull_draw_param_layout_matches_render_shader() {
+        fn draw_param_layout(wgsl: &str, label: &str) -> (Vec<(String, u32)>, u32) {
+            let module = naga::front::wgsl::parse_str(wgsl)
+                .unwrap_or_else(|err| panic!("{label}: {err}"));
+            for (_, ty) in module.types.iter() {
+                if ty.name.as_deref() == Some("MultiMeshDrawParam")
+                    && let naga::TypeInner::Struct { members, span } = &ty.inner
+                {
+                    let fields = members
+                        .iter()
+                        .map(|m| (m.name.clone().unwrap_or_default(), m.offset))
+                        .collect();
+                    return (fields, *span);
+                }
+            }
+            panic!("{label}: MultiMeshDrawParam struct not found");
+        }
+        let render_wgsl = sanitize_reserved_meta_identifier(regular::multimesh_wgsl());
+        let (render_fields, render_span) = draw_param_layout(&render_wgsl, "multimesh render");
+        let (cull_fields, cull_span) =
+            draw_param_layout(culling::MULTIMESH_CULL_WGSL, "multimesh cull");
+        // CPU MultiMeshDrawParamGpu (three_d/gpu.rs) is 96 bytes.
+        assert_eq!(render_span, 96, "render draw param span");
+        assert_eq!(cull_span, 96, "cull draw param span");
+        for (render, cull) in render_fields.iter().zip(cull_fields.iter()) {
+            assert_eq!(
+                render.1, cull.1,
+                "offset drift: render {render:?} vs cull {cull:?}"
+            );
+        }
+        // scale_bits is the only packed field the cull actually reads; pin its
+        // offset explicitly so a rename in either copy cannot hide a shift.
+        assert_eq!(
+            cull_fields
+                .iter()
+                .find(|(name, _)| name == "scale_bits")
+                .map(|(_, offset)| *offset),
+            Some(72),
+            "cull scale_bits offset"
+        );
+    }
+
     #[test]
     fn hiz_downsample_wgsl_validates() {
         parse_and_validate(culling::HIZ_DEPTH_COPY_WGSL, "hiz depth copy");

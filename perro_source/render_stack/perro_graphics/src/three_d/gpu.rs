@@ -494,6 +494,10 @@ struct MultiMeshDrawParamGpu {
     _pad: [u32; 3],
 }
 
+// Byte-mirrored by MultiMeshDrawParam in multimesh.wgsl AND multimesh_cull.wgsl
+// (the cull shader keeps its own copy); all three must stay 96 bytes.
+const _: () = assert!(std::mem::size_of::<MultiMeshDrawParamGpu>() == 96);
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct BlendShapeDeltaGpu {
