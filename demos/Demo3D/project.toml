@@ -20,7 +20,11 @@ vsync = false
 
 # Mesh blend screen-space seam pass also works with MSAA; keep Demo3D
 # single-sample for stable docs captures and lower GPU load.
-msaa = false
+# Perf-isolation tier: everything off/low to baseline the feature stack cost.
+# Swap anti_alias to "fxaa"/"smaa"/"taa" and ssao to "low" for the normal look.
+anti_alias = "off"
+ssao = "off"
+shadow_quality = "low"
 
 meshlets = false
 dev_meshlets = false
