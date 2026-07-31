@@ -433,6 +433,13 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 // green-as-luma and early-exit threshold documentation.
 const FXAA_WGSL: &str = include_str!("fxaa.wgsl");
 
+// SMAA 1x pass chain; see the three wgsl files for the algorithm, threshold
+// and min-work-gating documentation (branch early-outs instead of a stencil
+// prepass) and smaa_lut.rs for the procedural lookup textures.
+const SMAA_EDGE_WGSL: &str = include_str!("smaa_edge.wgsl");
+const SMAA_WEIGHTS_WGSL: &str = include_str!("smaa_weights.wgsl");
+const SMAA_BLEND_WGSL: &str = include_str!("smaa_blend.wgsl");
+
 const EXPOSURE_WGSL: &str = r#"
 struct ExposureConfig {
     dimensions: vec2<u32>,
@@ -636,6 +643,8 @@ impl PresentProcessor {
             output_format,
             fxaa_active: false,
             fxaa: None,
+            smaa_active: false,
+            smaa: None,
         }
     }
 
@@ -646,6 +655,16 @@ impl PresentProcessor {
         self.fxaa_active = active;
         if !active {
             self.fxaa = None;
+        }
+    }
+
+    /// Turn the SMAA stage on/off; same pay-for-use lifecycle as
+    /// `set_fxaa_active` (off drops targets, pipelines and lookup textures;
+    /// on allocates nothing until the first apply() that runs the passes).
+    pub(super) fn set_smaa_active(&mut self, active: bool) {
+        self.smaa_active = active;
+        if !active {
+            self.smaa = None;
         }
     }
 
@@ -758,6 +777,122 @@ impl PresentProcessor {
         });
     }
 
+    /// Lazily (re)build SMAA resources for the current render size. The
+    /// pipelines, layouts, samplers and lookup textures survive resizes;
+    /// only the three render-size targets and their bind groups rebuild
+    /// when dimensions change.
+    fn ensure_smaa(&mut self, queue: &wgpu::Queue, dimensions: [u32; 2]) {
+        let size = [dimensions[0].max(1), dimensions[1].max(1)];
+        if self.smaa.as_ref().is_some_and(|smaa| smaa.size == size) {
+            return;
+        }
+        let device = self.device.clone();
+        let core = match self.smaa.take() {
+            Some(prev) => prev.core,
+            None => create_smaa_core(&device, queue, self.output_format),
+        };
+
+        let make_target = |label: &str, format: wgpu::TextureFormat| {
+            device.create_texture(&wgpu::TextureDescriptor {
+                label: Some(label),
+                size: wgpu::Extent3d {
+                    width: size[0],
+                    height: size[1],
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            })
+        };
+        // Render-resolution chain: tonemapped LDR input, RG8 edges mask,
+        // RGBA8 blending weights (both trackers of the render size).
+        let ldr_target = make_target("perro_smaa_ldr_target", self.output_format);
+        let ldr_view = ldr_target.create_view(&wgpu::TextureViewDescriptor::default());
+        let edges_target = make_target("perro_smaa_edges_target", wgpu::TextureFormat::Rg8Unorm);
+        let edges_view = edges_target.create_view(&wgpu::TextureViewDescriptor::default());
+        let weights_target =
+            make_target("perro_smaa_weights_target", wgpu::TextureFormat::Rgba8Unorm);
+        let weights_view = weights_target.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let edge_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_smaa_edge_bg"),
+            layout: &core.edge_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&ldr_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&core.nearest_sampler),
+                },
+            ],
+        });
+        let weights_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_smaa_weights_bg"),
+            layout: &core.weights_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&edges_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&core.area_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&core.search_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::Sampler(&core.nearest_sampler),
+                },
+            ],
+        });
+        let blend_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_smaa_blend_bg"),
+            layout: &core.blend_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&ldr_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&weights_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        });
+
+        self.smaa = Some(SmaaResources {
+            core,
+            _ldr_target: ldr_target,
+            ldr_view,
+            _edges_target: edges_target,
+            edges_view,
+            _weights_target: weights_target,
+            weights_view,
+            edge_bind_group,
+            weights_bind_group,
+            blend_bind_group,
+            size,
+        });
+    }
+
     pub(super) fn create_bind_group(
         &self,
         device: &wgpu::Device,
@@ -820,7 +955,9 @@ impl PresentProcessor {
         settings: PresentExposureSettings,
         hdr_status: HdrStatus,
     ) {
-        if self.fxaa_active {
+        if self.smaa_active {
+            self.ensure_smaa(queue, dimensions);
+        } else if self.fxaa_active {
             self.ensure_fxaa(dimensions);
         }
         let output = PresentOutputConfig {
@@ -871,16 +1008,26 @@ impl PresentProcessor {
         } else {
             write_manual_exposure(queue, self, settings.exposure);
         }
-        // With FXAA active the tonemap resolves into the render-resolution LDR
-        // FXAA target; the FXAA pass then reads it and writes the swapchain
-        // (doing the upscale when the render size is capped). UI composites
-        // onto the swapchain after this whole method, so it stays un-blurred.
-        let fxaa = if self.fxaa_active {
+        // With FXAA or SMAA active the tonemap resolves into a
+        // render-resolution LDR target; the AA pass chain then reads it and
+        // writes the swapchain (doing the upscale when the render size is
+        // capped). UI composites onto the swapchain after this whole method,
+        // so it stays un-blurred. The modes are mutually exclusive (one
+        // anti_alias config value); SMAA wins if both flags are ever set.
+        let smaa = if self.smaa_active {
+            self.smaa.as_ref()
+        } else {
+            None
+        };
+        let fxaa = if smaa.is_none() && self.fxaa_active {
             self.fxaa.as_ref()
         } else {
             None
         };
-        let tonemap_view = fxaa.map_or(output_view, |fxaa| &fxaa.target_view);
+        let tonemap_view = smaa
+            .map(|smaa| &smaa.ldr_view)
+            .or_else(|| fxaa.map(|fxaa| &fxaa.target_view))
+            .unwrap_or(output_view);
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("perro_present_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -922,6 +1069,265 @@ impl PresentProcessor {
             pass.set_bind_group(0, &fxaa.bind_group, &[]);
             pass.draw(0..3, 0..1);
         }
+        if let Some(smaa) = smaa {
+            let run_pass = |encoder: &mut wgpu::CommandEncoder,
+                            label: &str,
+                            view: &wgpu::TextureView,
+                            pipeline: &wgpu::RenderPipeline,
+                            bind_group: &wgpu::BindGroup| {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some(label),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                        depth_slice: None,
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                pass.set_pipeline(pipeline);
+                pass.set_bind_group(0, bind_group, &[]);
+                pass.draw(0..3, 0..1);
+            };
+            // Pass 1: luma edge detection (LDR -> RG8 edges mask).
+            run_pass(
+                encoder,
+                "perro_smaa_edge_pass",
+                &smaa.edges_view,
+                &smaa.core.edge_pipeline,
+                &smaa.edge_bind_group,
+            );
+            // Pass 2: blending-weight calculation (edges + LUTs -> RGBA8
+            // weights; early-outs per pixel on a zero edges mask).
+            run_pass(
+                encoder,
+                "perro_smaa_weights_pass",
+                &smaa.weights_view,
+                &smaa.core.weights_pipeline,
+                &smaa.weights_bind_group,
+            );
+            // Pass 3: neighborhood blending (LDR + weights -> swapchain,
+            // upscaling when the render size is capped; early-outs per pixel
+            // on zero weights).
+            run_pass(
+                encoder,
+                "perro_smaa_blend_pass",
+                output_view,
+                &smaa.core.blend_pipeline,
+                &smaa.blend_bind_group,
+            );
+        }
+    }
+}
+
+fn smaa_texture_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+            view_dimension: wgpu::TextureViewDimension::D2,
+            multisampled: false,
+        },
+        count: None,
+    }
+}
+
+fn smaa_sampler_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+        count: None,
+    }
+}
+
+/// Fullscreen-triangle post pipeline shared by the three SMAA passes.
+fn create_smaa_pipeline(
+    device: &wgpu::Device,
+    label: &str,
+    shader_src: &str,
+    bgl: &wgpu::BindGroupLayout,
+    target_format: wgpu::TextureFormat,
+) -> wgpu::RenderPipeline {
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some(label),
+        source: wgpu::ShaderSource::Wgsl(shader_src.into()),
+    });
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some(label),
+        bind_group_layouts: &[Some(bgl)],
+        immediate_size: 0,
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(label),
+        layout: Some(&layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            buffers: &[],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: target_format,
+                blend: Some(wgpu::BlendState::REPLACE),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
+/// Size-independent SMAA setup: generates + uploads the two lookup textures
+/// (procedural, cached process-wide in smaa_lut.rs), creates the nearest
+/// sampler and builds the three pass pipelines.
+fn create_smaa_core(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    output_format: wgpu::TextureFormat,
+) -> SmaaCore {
+    let nearest_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("perro_smaa_nearest_sampler"),
+        address_mode_u: wgpu::AddressMode::ClampToEdge,
+        address_mode_v: wgpu::AddressMode::ClampToEdge,
+        address_mode_w: wgpu::AddressMode::ClampToEdge,
+        mag_filter: wgpu::FilterMode::Nearest,
+        min_filter: wgpu::FilterMode::Nearest,
+        mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+        ..Default::default()
+    });
+
+    let upload_lut = |label: &str,
+                      format: wgpu::TextureFormat,
+                      width: u32,
+                      height: u32,
+                      bytes_per_texel: u32,
+                      data: &[u8]| {
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(label),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            data,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(width * bytes_per_texel),
+                rows_per_image: Some(height),
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        texture
+    };
+    let area_tex = upload_lut(
+        "perro_smaa_area_tex",
+        wgpu::TextureFormat::Rg8Unorm,
+        smaa_lut::AREA_TEX_WIDTH,
+        smaa_lut::AREA_TEX_HEIGHT,
+        2,
+        smaa_lut::area_tex_bytes(),
+    );
+    let area_view = area_tex.create_view(&wgpu::TextureViewDescriptor::default());
+    let search_tex = upload_lut(
+        "perro_smaa_search_tex",
+        wgpu::TextureFormat::R8Unorm,
+        smaa_lut::SEARCH_TEX_WIDTH,
+        smaa_lut::SEARCH_TEX_HEIGHT,
+        1,
+        smaa_lut::search_tex_bytes(),
+    );
+    let search_view = search_tex.create_view(&wgpu::TextureViewDescriptor::default());
+
+    let edge_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("perro_smaa_edge_bgl"),
+        entries: &[smaa_texture_entry(0), smaa_sampler_entry(1)],
+    });
+    let weights_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("perro_smaa_weights_bgl"),
+        entries: &[
+            smaa_texture_entry(0),
+            smaa_texture_entry(1),
+            smaa_texture_entry(2),
+            smaa_sampler_entry(3),
+            smaa_sampler_entry(4),
+        ],
+    });
+    let blend_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("perro_smaa_blend_bgl"),
+        entries: &[
+            smaa_texture_entry(0),
+            smaa_texture_entry(1),
+            smaa_sampler_entry(2),
+        ],
+    });
+
+    let edge_pipeline = create_smaa_pipeline(
+        device,
+        "perro_smaa_edge_pipeline",
+        SMAA_EDGE_WGSL,
+        &edge_bgl,
+        wgpu::TextureFormat::Rg8Unorm,
+    );
+    let weights_pipeline = create_smaa_pipeline(
+        device,
+        "perro_smaa_weights_pipeline",
+        SMAA_WEIGHTS_WGSL,
+        &weights_bgl,
+        wgpu::TextureFormat::Rgba8Unorm,
+    );
+    let blend_pipeline = create_smaa_pipeline(
+        device,
+        "perro_smaa_blend_pipeline",
+        SMAA_BLEND_WGSL,
+        &blend_bgl,
+        output_format,
+    );
+
+    SmaaCore {
+        edge_pipeline,
+        edge_bgl,
+        weights_pipeline,
+        weights_bgl,
+        blend_pipeline,
+        blend_bgl,
+        nearest_sampler,
+        _area_tex: area_tex,
+        area_view,
+        _search_tex: search_tex,
+        search_view,
     }
 }
 
@@ -1188,6 +1594,41 @@ mod tests {
         assert!(FXAA_WGSL.contains("return rgb.g;"));
         assert!(FXAA_WGSL.contains("EDGE_THRESHOLD_MIN"));
         assert!(FXAA_WGSL.contains("luma_max * EDGE_THRESHOLD_MAX"));
+    }
+
+    #[test]
+    fn smaa_shaders_parse_and_validate() {
+        for (name, src) in [
+            ("edge", SMAA_EDGE_WGSL),
+            ("weights", SMAA_WEIGHTS_WGSL),
+            ("blend", SMAA_BLEND_WGSL),
+        ] {
+            let module = naga::front::wgsl::parse_str(src)
+                .unwrap_or_else(|err| panic!("SMAA {name} WGSL parses: {err}"));
+            naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap_or_else(|err| panic!("SMAA {name} WGSL validates: {err}"));
+        }
+    }
+
+    #[test]
+    fn smaa_uses_green_luma_with_documented_gating() {
+        // Green-as-luma (consistent with FXAA), the standard SMAA thresholds
+        // and the branch-based min-work gating are load-bearing for pass
+        // cost/quality; keep them from silently regressing.
+        assert!(SMAA_EDGE_WGSL.contains("point_sampler, uv, 0.0).g;"));
+        assert!(SMAA_EDGE_WGSL.contains("const SMAA_THRESHOLD: f32 = 0.1;"));
+        assert!(
+            SMAA_EDGE_WGSL.contains("const SMAA_LOCAL_CONTRAST_ADAPTATION_FACTOR: f32 = 2.0;")
+        );
+        // Weights pass early-outs on the zero edges mask (no searches), the
+        // blend pass on zero weights (center-color return).
+        assert!(SMAA_WEIGHTS_WGSL.contains("if e.g > 0.0 {"));
+        assert!(SMAA_WEIGHTS_WGSL.contains("if e.r > 0.0 {"));
+        assert!(SMAA_BLEND_WGSL.contains("< 0.00001 {"));
     }
 
     #[test]

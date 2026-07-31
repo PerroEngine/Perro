@@ -68,7 +68,7 @@ trademark = ""
 aspect_ratio = "16:9"            # "WIDTH:HEIGHT" game shape
 vsync = false
 hdr = "auto"                     # auto | on | off
-anti_alias = "fxaa"              # off | fxaa | msaa2 | msaa4 (smaa/taa planned)
+anti_alias = "fxaa"              # off | fxaa | smaa | msaa2 | msaa4 (taa planned)
 ssao = "medium"                  # off | low | medium | high | ultra
 occlusion_culling = "gpu"        # cpu | gpu | off
 particle_sim_default = "gpu"     # cpu | hybrid | gpu
@@ -154,7 +154,7 @@ Empty identity string = none. Legacy `[metadata]` table still parses; `[project]
 | `aspect_ratio`         | string | `"16:9"`          | `"WIDTH:HEIGHT"`             |
 | `vsync`                | bool   | `false`           | `true` / `false`             |
 | `hdr`                  | string | `"auto"`          | `"auto"`, `"on"`, `"off"` |
-| `anti_alias`           | string | `"fxaa"`          | `"off"`, `"fxaa"`, `"msaa2"`, `"msaa4"` (`"smaa"`/`"taa"` parse, warn, fall back to fxaa) |
+| `anti_alias`           | string | `"fxaa"`          | `"off"`, `"fxaa"`, `"smaa"`, `"msaa2"`, `"msaa4"` (`"taa"` parses, warns, falls back to fxaa) |
 | `msaa`                 | bool   | legacy            | `true` / `false` (superseded by `anti_alias`) |
 | `ssao`                 | string | `"medium"`        | `"off"`, `"low"`, `"medium"`, `"high"`, `"ultra"` |
 | `occlusion_culling`    | string | `"gpu"`           | `"cpu"`, `"gpu"`, `"off"`    |
@@ -177,9 +177,16 @@ choice with `hdr_set!(ctx.res, HdrMode::...)`.
 - `"fxaa"` (default): FXAA 3.11-quality post pass on the tonemapped scene, before the UI
   composites, so UI stays sharp. Costs a few texture taps per pixel with an early exit on
   flat regions; its GPU resources only allocate while the pass actually runs.
-- `"msaa2"` / `"msaa4"`: hardware MSAA at 2x/4x samples. FXAA turns off automatically.
+- `"smaa"`: SMAA 1x, a three-pass morphological chain on the same tonemapped scene (UI stays
+  sharp here too). Reconstructs edge shapes instead of blurring along them, so gradients on
+  long edges and diagonals come out noticeably cleaner than FXAA at roughly 2-3x its GPU
+  cost — still cheaper than `msaa4` on most GPUs, and it also applies to alpha-tested and
+  shader-created edges that MSAA misses. Both lookup tables it needs are generated on the
+  CPU the first time the pass runs; like FXAA, all its GPU resources only exist while the
+  mode is active.
+- `"msaa2"` / `"msaa4"`: hardware MSAA at 2x/4x samples. FXAA/SMAA turn off automatically.
 - `"off"`: no anti-aliasing.
-- `"smaa"` / `"taa"`: accepted but not implemented yet; parsing warns
+- `"taa"`: accepted but not implemented yet; parsing warns
   `not yet implemented, falling back to fxaa`.
 
 Back-compat with the legacy `msaa` bool: when `anti_alias` is absent, an explicit

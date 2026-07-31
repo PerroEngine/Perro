@@ -45,6 +45,8 @@ mod image_save;
 use image_save::{CameraImageSaveRequest, PendingCameraImageSave};
 #[path = "gpu/present.rs"]
 mod present;
+#[path = "gpu/smaa_lut.rs"]
+mod smaa_lut;
 #[path = "water_flip_gpu.rs"]
 mod water_flip_gpu;
 #[path = "water_gpu.rs"]
@@ -410,6 +412,10 @@ struct PresentProcessor {
     // actually runs the pass (pay-for-use) and drop when it turns off.
     fxaa_active: bool,
     fxaa: Option<FxaaResources>,
+    // SMAA gate; same lifecycle as the FXAA gate (config + sample count 1),
+    // mutually exclusive with FXAA by construction (one anti_alias mode).
+    smaa_active: bool,
+    smaa: Option<SmaaResources>,
 }
 
 /// Lazily allocated FXAA stage: the present pass tonemaps into `target`
@@ -421,6 +427,45 @@ struct FxaaResources {
     _target: wgpu::Texture,
     target_view: wgpu::TextureView,
     bind_group: wgpu::BindGroup,
+    size: [u32; 2],
+}
+
+/// Size-independent SMAA pieces: the three pipelines + layouts, the nearest
+/// sampler (SearchTex must never blend adjacent step counts) and the two
+/// procedurally generated lookup textures (see smaa_lut.rs). Survives
+/// resizes; only rebuilt after a full SMAA off/on cycle.
+struct SmaaCore {
+    edge_pipeline: wgpu::RenderPipeline,
+    edge_bgl: wgpu::BindGroupLayout,
+    weights_pipeline: wgpu::RenderPipeline,
+    weights_bgl: wgpu::BindGroupLayout,
+    blend_pipeline: wgpu::RenderPipeline,
+    blend_bgl: wgpu::BindGroupLayout,
+    nearest_sampler: wgpu::Sampler,
+    _area_tex: wgpu::Texture,
+    area_view: wgpu::TextureView,
+    _search_tex: wgpu::Texture,
+    search_view: wgpu::TextureView,
+}
+
+/// Lazily allocated SMAA 1x stage: the present pass tonemaps into the LDR
+/// target, then three passes run — edge detection (RG8 edges target),
+/// blending-weight calculation (RGBA8 weights target, fed by the lookup
+/// textures in `core`), and neighborhood blending back out to the swapchain
+/// (doing the upscale when the render size is capped, like FXAA). The
+/// render-size targets and bind groups rebuild when dimensions change; only
+/// exists while SMAA runs.
+struct SmaaResources {
+    core: SmaaCore,
+    _ldr_target: wgpu::Texture,
+    ldr_view: wgpu::TextureView,
+    _edges_target: wgpu::Texture,
+    edges_view: wgpu::TextureView,
+    _weights_target: wgpu::Texture,
+    weights_view: wgpu::TextureView,
+    edge_bind_group: wgpu::BindGroup,
+    weights_bind_group: wgpu::BindGroup,
+    blend_bind_group: wgpu::BindGroup,
     size: [u32; 2],
 }
 
@@ -579,6 +624,8 @@ pub struct Gpu {
     // FXAA requested by config; the present processor's active flag follows
     // `fxaa_requested && sample_count == 1` across sample-count changes.
     fxaa_requested: bool,
+    // Same gate for SMAA (anti_alias = "smaa"); never both true with FXAA.
+    smaa_requested: bool,
     shadow_pcf_high: bool,
     msaa_color: Option<MsaaColorTarget>,
     post: PostProcessor,
@@ -656,6 +703,9 @@ pub struct GpuConfig {
     /// FXAA present pass requested (anti_alias = "fxaa"). Only runs while the
     /// live sample count is 1; resources allocate lazily on first use.
     pub fxaa: bool,
+    /// SMAA 1x present passes requested (anti_alias = "smaa"). Same gating
+    /// and lazy-allocation rules as `fxaa`; the two are mutually exclusive.
+    pub smaa: bool,
     pub vsync_enabled: bool,
     pub meshlets_enabled: bool,
     pub dev_meshlets: bool,

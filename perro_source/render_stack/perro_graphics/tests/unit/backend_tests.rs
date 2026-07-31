@@ -1617,3 +1617,24 @@ fn post_processing_commands_update_global_post_processing_state() {
     graphics.draw_frame();
     assert!(graphics.global_post_processing.is_empty());
 }
+
+#[test]
+fn with_anti_alias_flags_post_modes_exclusively() {
+    use super::AntiAliasMode;
+    // SMAA: post pass flagged, single-sampled, FXAA off.
+    let graphics = PerroGraphics::new().with_anti_alias(AntiAliasMode::Smaa);
+    assert!(graphics.smaa_enabled);
+    assert!(!graphics.fxaa_enabled);
+    assert_eq!(graphics.smoothing_samples, 1);
+    // Mode switch to MSAA drops both post-pass requests (the GPU side then
+    // drops the lazily allocated resources via set_smaa_active(false)).
+    let graphics = graphics.with_anti_alias(AntiAliasMode::Msaa4);
+    assert!(!graphics.smaa_enabled);
+    assert!(!graphics.fxaa_enabled);
+    assert_eq!(graphics.smoothing_samples, 4);
+    // And back to FXAA: exclusive with SMAA.
+    let graphics = graphics.with_anti_alias(AntiAliasMode::Fxaa);
+    assert!(graphics.fxaa_enabled);
+    assert!(!graphics.smaa_enabled);
+    assert_eq!(graphics.smoothing_samples, 1);
+}

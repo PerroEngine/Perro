@@ -32,9 +32,11 @@ impl ShadowQuality {
 }
 
 /// Engine anti-aliasing mode. `Fxaa` is the default: a cheap post pass on
-/// the tonemapped scene. `Msaa2`/`Msaa4` use hardware multisampling instead
-/// (never both). `Smaa`/`Taa` parse for forward compat but fall back to
-/// `Fxaa` with a warning until implemented.
+/// the tonemapped scene. `Smaa` is the higher-quality SMAA 1x post chain
+/// (better edge gradients, ~2-3x the FXAA cost). `Msaa2`/`Msaa4` use
+/// hardware multisampling instead (never combined with the post passes).
+/// `Taa` parses for forward compat but falls back to `Fxaa` with a warning
+/// until implemented.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AntiAlias {
     Off,

@@ -92,6 +92,12 @@ impl Gpu {
         self.surface_view_format = selection.view_format;
         self.surface.configure(&self.device, &self.config);
         self.present = PresentProcessor::new(&self.device, self.surface_view_format);
+        // The rebuilt processor starts with every AA stage off; re-apply the
+        // config + sample-count gates so FXAA/SMAA survive output changes.
+        self.present
+            .set_fxaa_active(self.fxaa_requested && self.sample_count == 1);
+        self.present
+            .set_smaa_active(self.smaa_requested && self.sample_count == 1);
         self.present_scene_bind_group = self
             .present
             .create_bind_group(&self.device, self.post.scene_view());
@@ -267,6 +273,7 @@ impl Gpu {
         let post = PostProcessor::new(&device, &queue, render_format, render_width, render_height);
         let mut present = PresentProcessor::new(&device, surface_view_format);
         present.set_fxaa_active(cfg.fxaa && sample_count == 1);
+        present.set_smaa_active(cfg.smaa && sample_count == 1);
         let camera_stream_tonemap = CameraStreamTonemap::new(&device, render_format);
         let present_scene_bind_group = present.create_bind_group(&device, post.scene_view());
         let gpu_timer = timestamp_query_enabled.then(|| GpuTimestampTimer::new(&device, &queue));
@@ -289,6 +296,7 @@ impl Gpu {
             sample_count_3d_target: normalize_sample_count(cfg.smoothing_samples_3d),
             sample_count_3d_applied: cfg.smoothing_samples_3d == cfg.smoothing_samples,
             fxaa_requested: cfg.fxaa,
+            smaa_requested: cfg.smaa,
             shadow_pcf_high: cfg.shadow_quality == crate::ShadowQuality::High,
             msaa_color,
             post,
@@ -440,10 +448,12 @@ impl Gpu {
             return;
         }
         self.sample_count = sample_count;
-        // FXAA never stacks on MSAA: the pass follows the live sample count
-        // (e.g. the 2D->3D latch turning MSAA on drops the FXAA resources).
+        // FXAA/SMAA never stack on MSAA: the passes follow the live sample
+        // count (e.g. the 2D->3D latch turning MSAA on drops the resources).
         self.present
             .set_fxaa_active(self.fxaa_requested && sample_count == 1);
+        self.present
+            .set_smaa_active(self.smaa_requested && sample_count == 1);
         self.post_view_generation = next_nonzero_generation(self.post_view_generation);
         if let Some(two_d) = self.two_d.as_mut() {
             two_d.set_sample_count(&self.device, self.render_format, sample_count);

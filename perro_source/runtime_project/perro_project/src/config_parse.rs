@@ -18,7 +18,7 @@ startup_splash = "res://icon.png"
 [graphics]
 aspect_ratio = "16:9"            # "WIDTH:HEIGHT" game shape
 vsync = false
-anti_alias = "fxaa"              # off | fxaa (default) | msaa2 | msaa4 (smaa/taa planned)
+anti_alias = "fxaa"              # off | fxaa (default) | smaa | msaa2 | msaa4 (taa planned)
                                  # replaces legacy `msaa = true/false` (still parses; msaa=true => msaa4)
 msaa_2d = false                  # MSAA for sessions that never use the 3D pipeline
 ssao = "low"                     # off | low (default) | medium | high | ultra
@@ -1079,9 +1079,9 @@ fn parse_ssao_with_default(
 /// `graphics.anti_alias`. When the key is absent, an explicit legacy
 /// `msaa = true` maps to `msaa4`; everything else (explicit `msaa = false`
 /// or no key at all) gets the `fxaa` default. When both keys are present,
-/// `anti_alias` wins. `smaa`/`taa` are accepted but not implemented yet:
-/// they warn and resolve to `fxaa` at parse time, so downstream consumers
-/// (codegen, runtime) only ever see implemented modes from project.toml.
+/// `anti_alias` wins. `taa` is accepted but not implemented yet: it warns
+/// and resolves to `fxaa` at parse time, so downstream consumers (codegen,
+/// runtime) only ever see implemented modes from project.toml.
 fn parse_anti_alias(
     table: &toml::map::Map<String, Value>,
 ) -> Result<AntiAlias, ProjectError> {
@@ -1094,23 +1094,24 @@ fn parse_anti_alias(
     let Some(raw) = value.as_str() else {
         return Err(ProjectError::InvalidField(
             "graphics.anti_alias",
-            "must be one of: off, fxaa, msaa2, msaa4, smaa, taa".to_string(),
+            "must be one of: off, fxaa, smaa, msaa2, msaa4, taa".to_string(),
         ));
     };
     match raw.trim().to_ascii_lowercase().as_str() {
         "off" => Ok(AntiAlias::Off),
         "fxaa" => Ok(AntiAlias::Fxaa),
+        "smaa" => Ok(AntiAlias::Smaa),
         "msaa2" => Ok(AntiAlias::Msaa2),
         "msaa4" => Ok(AntiAlias::Msaa4),
-        mode @ ("smaa" | "taa") => {
+        "taa" => {
             eprintln!(
-                "perro: project.toml: graphics.anti_alias = \"{mode}\" not yet implemented, falling back to fxaa"
+                "perro: project.toml: graphics.anti_alias = \"taa\" not yet implemented, falling back to fxaa"
             );
             Ok(AntiAlias::Fxaa)
         }
         _ => Err(ProjectError::InvalidField(
             "graphics.anti_alias",
-            "must be one of: off, fxaa, msaa2, msaa4, smaa, taa".to_string(),
+            "must be one of: off, fxaa, smaa, msaa2, msaa4, taa".to_string(),
         )),
     }
 }
