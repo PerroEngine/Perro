@@ -910,14 +910,21 @@ impl Runtime {
         let Some(skeleton_id) = node.skeleton else {
             return Some(mesh);
         };
-        self.skin_query_mesh(mesh.as_ref(), skeleton_id)
-            .map(Arc::new)
+        self.skin_query_mesh(mesh, skeleton_id)
     }
 
     /// Build posed query geometry with the same joint palette contract as GPU
     /// skinning. This correctness-first path rebuilds acceleration data once per
     /// public query; node mutation revision still caches node lookup data.
-    fn skin_query_mesh(&self, mesh: &QueryMeshData, skeleton_id: NodeID) -> Option<QueryMeshData> {
+    ///
+    /// Takes + returns `Arc` so the empty-palette path (skeleton w/o bones)
+    /// hands the caller's Arc straight back instead of deep-copying the whole
+    /// mesh (9 Vecs) for an identity skin.
+    fn skin_query_mesh(
+        &self,
+        mesh: Arc<QueryMeshData>,
+        skeleton_id: NodeID,
+    ) -> Option<Arc<QueryMeshData>> {
         if mesh.vertices.len() > MAX_SKIN_QUERY_VERTICES
             || mesh.joints.len() != mesh.vertices.len()
             || mesh.weights.len() != mesh.vertices.len()
@@ -926,9 +933,9 @@ impl Runtime {
         }
         let palette = self.skin_query_palette(skeleton_id)?;
         if palette.is_empty() {
-            return Some(clone_query_mesh(mesh));
+            return Some(mesh);
         }
-        skin_query_mesh_with_palette(mesh, &palette)
+        skin_query_mesh_with_palette(&mesh, &palette).map(Arc::new)
     }
 
     fn skin_query_palette(&self, skeleton_id: NodeID) -> Option<Vec<Mat4>> {

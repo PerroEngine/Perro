@@ -173,8 +173,7 @@ impl Runtime {
                 continue;
             }
             let strength = portal.strength;
-            let targets = portal.targets.clone();
-            if targets.is_empty() {
+            if portal.targets.is_empty() {
                 continue;
             }
             let Some(entry_transform) = self.get_global_transform_2d(portal_id) else {
@@ -199,11 +198,18 @@ impl Runtime {
                     }
                     let entry = from + sweep * t;
                     let local_entry = inverse_transform_point_2d(entry_transform, entry);
+                    // Re-fetch the portal node here so the targets Vec is only
+                    // cloned when this candidate actually wins, not per portal.
+                    let Some(SceneNodeData::AudioPortal2D(portal)) =
+                        self.nodes.get(portal_id).map(|n| &n.data)
+                    else {
+                        continue;
+                    };
                     best = Some(AudioPortalHit2D {
                         portal_id,
                         local_entry,
                         local_dir: inverse_transform_dir_2d(entry_transform, dir),
-                        targets: targets.clone(),
+                        targets: portal.targets.clone(),
                         strength,
                         distance,
                     });
@@ -365,8 +371,7 @@ impl Runtime {
                 continue;
             }
             let strength = portal.strength;
-            let targets = portal.targets.clone();
-            if targets.is_empty() {
+            if portal.targets.is_empty() {
                 continue;
             }
             let Some(entry_transform) = self.get_global_transform_3d(portal_id) else {
@@ -391,11 +396,18 @@ impl Runtime {
                     }
                     let entry = from + sweep * t;
                     let local_entry = inverse_transform_point_3d(entry_transform, entry);
+                    // Re-fetch the portal node here so the targets Vec is only
+                    // cloned when this candidate actually wins, not per portal.
+                    let Some(SceneNodeData::AudioPortal3D(portal)) =
+                        self.nodes.get(portal_id).map(|n| &n.data)
+                    else {
+                        continue;
+                    };
                     best = Some(AudioPortalHit3D {
                         portal_id,
                         local_entry,
                         local_dir: inverse_transform_dir_3d(entry_transform, dir),
-                        targets: targets.clone(),
+                        targets: portal.targets.clone(),
                         strength,
                         distance,
                     });

@@ -447,7 +447,7 @@ impl Renderer3D {
         // the draws, then hand the emptied Vec back so capacity persists.
         let mut queued = std::mem::take(&mut self.queued_draws);
         let used_sequential_draw_fast_path = if let Some((fast_stats, fast_changed)) =
-            self.try_apply_sequential_draw_packets(queued.as_slice(), resources)
+            self.try_apply_sequential_draw_packets(queued.as_mut_slice(), resources)
         {
             stats = fast_stats;
             draws_changed = fast_changed;
@@ -537,9 +537,11 @@ impl Renderer3D {
         (self.camera.clone(), stats, lighting)
     }
 
+    // Takes `queued` mutably so accepted draws can be moved (not cloned) into
+    // the sorted cache; the caller clears the queue right after this returns.
     fn try_apply_sequential_draw_packets(
         &mut self,
-        queued: &[Draw3DInstance],
+        queued: &mut [Draw3DInstance],
         resources: &ResourceStore,
     ) -> Option<(Renderer3DStats, bool)> {
         if queued.len() != self.retained_draws_sorted_cache.len() {
@@ -555,13 +557,18 @@ impl Renderer3D {
 
         let mut stats = Renderer3DStats::default();
         let mut draws_changed = false;
-        for (index, draw) in queued.iter().enumerate() {
+        for (index, draw) in queued.iter_mut().enumerate() {
             let (material_ready, mesh_ready, draw_ready) = draw_readiness(draw, resources);
             if draw_ready {
                 let changed = self.retained_draws_sorted_cache[index] != *draw;
                 if changed {
-                    self.retained_draws_sorted_cache[index] = draw.clone();
-                    self.upsert_retained_draw(draw.clone());
+                    // One logical update, one clone: move the new draw into
+                    // the sorted-cache slot (the stale value lands in the
+                    // soon-cleared queue slot), then hand the retained store
+                    // a clone of it.
+                    std::mem::swap(&mut self.retained_draws_sorted_cache[index], draw);
+                    let owned = self.retained_draws_sorted_cache[index].clone();
+                    self.upsert_retained_draw(owned);
                     draws_changed = true;
                 }
                 stats.accepted_draws = stats.accepted_draws.saturating_add(1);

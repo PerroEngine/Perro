@@ -7,7 +7,9 @@ impl Runtime {
         sound: &mut ActiveSpatialSound,
         physics_hit: Option<perro_runtime_api::sub_apis::PhysicsRayHit2D>,
         listener: perro_pawdio::AudioListener2D,
-        listener_options: perro_structs::AudioListenerOptions,
+        // Borrow so hot callers (scene.rs listener-field loop) pass `&` w/o
+        // cloning; audio.rs (off-limits here) still passes an owned clone.
+        listener_options: impl std::borrow::Borrow<perro_structs::AudioListenerOptions>,
     ) -> Option<PropagationResult> {
         let listener_pos = Vector2::new(listener.position[0], listener.position[1]);
         let range = sound.options.range.max(0.0001);
@@ -212,7 +214,8 @@ impl Runtime {
         } else {
             AudioEffectZoneMix::default()
         };
-        let listener_effects = listener_effect_mix(listener_options, sound.options.audio_layer);
+        let listener_effects =
+            listener_effect_mix(listener_options.borrow(), sound.options.audio_layer);
         low_pass = low_pass.max(zone.dampening).max(sound.effects.low_pass);
         low_pass = low_pass.max(listener_effects.dampening);
         reflection = reflection
@@ -263,7 +266,8 @@ impl Runtime {
         sound: &mut ActiveSpatialSound,
         hit: Option<perro_runtime_api::sub_apis::PhysicsRayHit3D>,
         listener: perro_pawdio::AudioListener3D,
-        listener_options: perro_structs::AudioListenerOptions,
+        // Borrow: see solve_2d.
+        listener_options: impl std::borrow::Borrow<perro_structs::AudioListenerOptions>,
     ) -> Option<PropagationResult> {
         let listener_pos = Vector3::new(
             listener.position[0],
@@ -470,7 +474,8 @@ impl Runtime {
         } else {
             AudioEffectZoneMix::default()
         };
-        let listener_effects = listener_effect_mix(listener_options, sound.options.audio_layer);
+        let listener_effects =
+            listener_effect_mix(listener_options.borrow(), sound.options.audio_layer);
         low_pass = low_pass.max(zone.dampening).max(sound.effects.low_pass);
         low_pass = low_pass.max(listener_effects.dampening);
         reflection = reflection

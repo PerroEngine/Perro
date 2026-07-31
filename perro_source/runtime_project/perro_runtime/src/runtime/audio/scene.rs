@@ -221,8 +221,7 @@ impl Runtime {
                 AudioRaycastResult::TwoD(Some(hit)) if hit.distance <= distance + 0.25 => Some(hit),
                 _ => None,
             };
-            if let Some(result) = self.solve_2d(pos, sound, hit, listener, listener_options.clone())
-            {
+            if let Some(result) = self.solve_2d(pos, sound, hit, listener, &listener_options) {
                 self.apply_spatial_result(sound, result);
             }
         }
@@ -315,8 +314,7 @@ impl Runtime {
                 }
                 _ => None,
             };
-            if let Some(result) = self.solve_3d(pos, sound, hit, listener, listener_options.clone())
-            {
+            if let Some(result) = self.solve_3d(pos, sound, hit, listener, &listener_options) {
                 self.apply_spatial_result(sound, result);
             }
         }

@@ -454,8 +454,11 @@ pub(in super::super) fn build_instance(
                     params.emissive_factor,
                     0u32,
                 ),
-                Material3D::Custom(_) => {
-                    let params = material.standard_params();
+                Material3D::Custom(custom) => {
+                    // Read the surface fields in place; `standard_params()`
+                    // would clone the whole StandardMaterial3D (including the
+                    // vertex_modifiers Cow) per instance.
+                    let params = &custom.surface;
                     (
                         params.base_color_factor,
                         pack_standard_pbr_params(
@@ -471,19 +474,66 @@ pub(in super::super) fn build_instance(
                 }
             }
         };
-    let params = material.standard_params();
+    // Read the handful of flag/param fields straight off the material
+    // variant; `standard_params()` would build (and clone) an entire
+    // StandardMaterial3D per instance just to expose them.
+    let (flat_shading, base_color_texture, alpha_mode, alpha_cutoff, double_sided) = match material
+    {
+        Material3D::Standard(p) => (
+            p.flat_shading,
+            p.base_color_texture,
+            p.alpha_mode,
+            p.alpha_cutoff,
+            p.double_sided,
+        ),
+        Material3D::Unlit(p) => (
+            p.flat_shading,
+            p.base_color_texture,
+            p.alpha_mode,
+            p.alpha_cutoff,
+            p.double_sided,
+        ),
+        Material3D::Toon(p) => (
+            p.flat_shading,
+            p.base_color_texture,
+            p.alpha_mode,
+            p.alpha_cutoff,
+            p.double_sided,
+        ),
+        Material3D::HandDrawn(p) => (
+            p.flat_shading,
+            p.base_color_texture,
+            p.alpha_mode,
+            p.alpha_cutoff,
+            p.double_sided,
+        ),
+        Material3D::PixelSurface(p) => (
+            p.flat_shading,
+            p.base_color_texture,
+            p.alpha_mode,
+            p.alpha_cutoff,
+            p.double_sided,
+        ),
+        Material3D::Custom(c) => (
+            c.surface.flat_shading,
+            c.surface.base_color_texture,
+            c.surface.alpha_mode,
+            c.surface.alpha_cutoff,
+            c.surface.double_sided,
+        ),
+    };
     let mut material_flags = debug_flags;
     let mirrored_winding = Mat4::from_cols_array_2d(&model).determinant() < 0.0;
     if mirrored_winding {
         material_flags |= MATERIAL_FLAG_MIRRORED_WINDING;
     }
-    if params.flat_shading {
+    if flat_shading {
         material_flags |= MATERIAL_FLAG_FLAT_SHADING;
     }
-    if params.base_color_texture != MATERIAL_TEXTURE_NONE {
+    if base_color_texture != MATERIAL_TEXTURE_NONE {
         material_flags |= MATERIAL_FLAG_HAS_BASE_COLOR_TEXTURE;
     }
-    if matches!(material, Material3D::Standard(_)) {
+    if let Material3D::Standard(params) = material {
         if params.metallic_roughness_texture != MATERIAL_TEXTURE_NONE {
             material_flags |= MATERIAL_FLAG_HAS_METALLIC_ROUGHNESS_TEXTURE;
         }
@@ -527,9 +577,9 @@ pub(in super::super) fn build_instance(
         packed_pbr_params_1: packed_pbr_params_1 | packed_blend_params,
         packed_emissive: pack_emissive_hdr(emissive_factor),
         packed_material_params: pack_material_params(
-            params.alpha_mode,
-            params.alpha_cutoff,
-            params.double_sided || mirrored_winding,
+            alpha_mode,
+            alpha_cutoff,
+            double_sided || mirrored_winding,
             material_flags,
         ),
     };
@@ -843,7 +893,11 @@ pub(in super::super) fn apply_overrides(
             }
         }
         Material3D::Custom(custom) => {
-            let mut params = custom.params.clone().into_owned();
+            // Take the params out instead of cloning: on the `Cow::Owned`
+            // path this moves the existing Vec (no copy); on the borrowed
+            // path `into_owned` performs the one unavoidable allocation.
+            let mut params =
+                std::mem::replace(&mut custom.params, Cow::Borrowed(&[])).into_owned();
             for ovr in overrides {
                 params.push(perro_render_bridge::CustomMaterialParam3D {
                     name: Some(ovr.name.clone()),

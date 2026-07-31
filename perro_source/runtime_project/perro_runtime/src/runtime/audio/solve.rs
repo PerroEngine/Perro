@@ -121,15 +121,15 @@ fn smooth_openness(prev: f32, next: f32) -> f32 {
 }
 
 fn listener_effect_mix(
-    options: perro_structs::AudioListenerOptions,
+    options: &perro_structs::AudioListenerOptions,
     audio_layer: BitMask,
 ) -> AudioEffectZoneMix {
     if options.audio_mask.intersects(audio_layer) {
         return AudioEffectZoneMix::default();
     }
     let mut mix = AudioEffectZoneMix::default();
-    for effect in options.effects {
-        mix.apply(effect);
+    for effect in &options.effects {
+        mix.apply(*effect);
     }
     mix
 }
