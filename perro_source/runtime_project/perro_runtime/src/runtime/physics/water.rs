@@ -224,7 +224,7 @@ pub(super) fn blend_water_candidates_2d(
             }
             cursor += 1;
         }
-        out.push(blend_water_group_2d(&candidates, &group));
+        out.push(blend_water_group_2d(candidates, &group));
     }
     out
 }
@@ -261,7 +261,7 @@ pub(super) fn blend_water_candidates_3d(
             }
             cursor += 1;
         }
-        out.push(blend_water_group_3d(&candidates, &group));
+        out.push(blend_water_group_3d(candidates, &group));
     }
     out
 }

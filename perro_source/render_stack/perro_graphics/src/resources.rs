@@ -821,7 +821,7 @@ impl ResourceStore {
             })
             .collect();
         // oldest (largest stamp age) first.
-        candidates.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+        candidates.sort_unstable_by_key(|candidate| std::cmp::Reverse(candidate.0));
         for (_, len, id) in candidates {
             if self.decoded_texture_bytes <= max_bytes {
                 break;

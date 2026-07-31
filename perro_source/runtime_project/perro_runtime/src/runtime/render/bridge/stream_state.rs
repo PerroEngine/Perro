@@ -32,8 +32,7 @@ impl Runtime {
         let mut computed = std::mem::take(&mut self.render_ui.nested_rect_computed_scratch);
         let mut scales = std::mem::take(&mut self.render_ui.nested_rect_scales_scratch);
         let mut auto = std::mem::take(&mut self.render_ui.nested_rect_auto_scratch);
-        for idx in 0..members.len() {
-            let node = members[idx];
+        for &node in members.iter() {
             let Some(scene_node) = self.nodes.get(node) else {
                 continue;
             };

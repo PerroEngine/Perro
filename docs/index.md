@@ -39,6 +39,7 @@ Avoid using history pages as current guidance.
 - [Install + tools](../perro_book/install.md)
 - [First project](../perro_book/first_project.md)
 - [Perro CLI](tools/perro_cli.md)
+- [Perro Editor](tools/perro_editor.md)
 - [`project.toml`](project/project_toml.md)
 - [Feature matrix](project/feature_matrix.md)
 
@@ -70,9 +71,14 @@ Avoid using history pages as current guidance.
 
 - [Resource management](resources/resource_management.md)
 - [Materials](resources/materials.md)
+- [Material files](resources/pmat.md)
 - [Shaders](resources/shaders.md)
 - [Animation](resources/animation.md)
+- [Animation files](resources/panim.md)
 - [Audio](resources/audio.md)
+- [SSAO](resources/ssao.md)
+- [2D shadows](resources/shadows2d.md)
+- [Navigation meshes](resources/pnav.md)
 
 ### Platforms
 

@@ -885,7 +885,7 @@ impl GpuUi {
                 },
                 aspect: wgpu::TextureAspect::All,
             },
-            &rgba,
+            rgba,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(size[0].max(1) * 4),
@@ -1011,7 +1011,7 @@ impl GpuUi {
                 },
                 aspect: wgpu::TextureAspect::All,
             },
-            &rgba,
+            rgba,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(size[0].max(1) * 4),

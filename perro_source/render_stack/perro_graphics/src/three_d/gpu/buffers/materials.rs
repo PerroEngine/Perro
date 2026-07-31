@@ -199,6 +199,7 @@ impl Gpu3D {
         self.material_texture_bind_groups.insert(key, bind_group);
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(in super::super) fn ensure_material_texture_slot(
         &mut self,
         device: &wgpu::Device,
@@ -302,6 +303,7 @@ impl Gpu3D {
         self.evict_material_texture_bind_groups_for_slot(slot);
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(in super::super) fn ensure_standard_material_texture_slots(
         &mut self,
         device: &wgpu::Device,
@@ -326,6 +328,7 @@ impl Gpu3D {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(in super::super) fn ensure_material_texture_source(
         &mut self,
         device: &wgpu::Device,

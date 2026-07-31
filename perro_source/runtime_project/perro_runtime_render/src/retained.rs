@@ -1081,16 +1081,22 @@ mod tests {
         let base = retained_mesh_state(MeshBlendOptions3D::default());
         assert_eq!(base, retained_mesh_state(MeshBlendOptions3D::default()));
 
-        let mut slope = MeshBlendOptions3D::default();
-        slope.slope_factor = 0.0;
+        let slope = MeshBlendOptions3D {
+            slope_factor: 0.0,
+            ..MeshBlendOptions3D::default()
+        };
         assert_ne!(base, retained_mesh_state(slope));
 
-        let mut strength = MeshBlendOptions3D::default();
-        strength.strength = 0.5;
+        let strength = MeshBlendOptions3D {
+            strength: 0.5,
+            ..MeshBlendOptions3D::default()
+        };
         assert_ne!(base, retained_mesh_state(strength));
 
-        let mut salt = MeshBlendOptions3D::default();
-        salt.salt_instances = false;
+        let salt = MeshBlendOptions3D {
+            salt_instances: false,
+            ..MeshBlendOptions3D::default()
+        };
         assert_ne!(base, retained_mesh_state(salt));
     }
 

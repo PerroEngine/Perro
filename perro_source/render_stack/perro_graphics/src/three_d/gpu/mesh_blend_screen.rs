@@ -919,10 +919,12 @@ mod tests {
 
     #[test]
     fn blend_params_ext_clamps_and_gates() {
-        let mut blend = MeshBlendOptions3D::default();
-        blend.slope_factor = 100.0;
-        blend.strength = -3.0;
-        blend.salt_instances = false;
+        let mut blend = MeshBlendOptions3D {
+            slope_factor: 100.0,
+            strength: -3.0,
+            salt_instances: false,
+            ..MeshBlendOptions3D::default()
+        };
         let packed = pack_mesh_blend_params_ext(blend);
         let ext = unpack_mesh_blend_params_ext(packed);
         assert_eq!(ext[0], 8.0);
