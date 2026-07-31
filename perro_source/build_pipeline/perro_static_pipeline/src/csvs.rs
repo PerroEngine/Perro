@@ -185,8 +185,9 @@ fn emit_csv_table(
     );
 
     let mut row_cell_refs = Vec::<usize>::new();
-    let mut unique_rows = Vec::<Vec<String>>::new();
-    let mut unique_row_by_values = HashMap::<Vec<String>, usize>::new();
+    // Keyed by reference into `table.rows`: dedupe never clones a row.
+    let mut unique_rows = Vec::<&Vec<String>>::new();
+    let mut unique_row_by_values = HashMap::<&Vec<String>, usize>::new();
     let mut primary_index = Vec::<(u64, usize, String)>::new();
     let mut seen_primary = std::collections::HashSet::<&str>::new();
     for values in &table.rows {
@@ -195,8 +196,8 @@ fn emit_csv_table(
             *existing
         } else {
             let next = unique_rows.len();
-            unique_row_by_values.insert(values.clone(), next);
-            unique_rows.push(values.clone());
+            unique_row_by_values.insert(values, next);
+            unique_rows.push(values);
             next
         };
         row_cell_refs.push(row_cell_ref);

@@ -178,12 +178,12 @@ fn escape_str(input: &str) -> String {
     out
 }
 
-fn select_pawdio_payload(raw: &[u8]) -> io::Result<(u32, Vec<u8>)> {
+fn select_pawdio_payload(raw: &[u8]) -> io::Result<(u32, std::borrow::Cow<'_, [u8]>)> {
     let compressed = compress_zlib_best(raw)?;
     if compressed.len() < raw.len() {
-        Ok((FLAG_ZLIB, compressed))
+        Ok((FLAG_ZLIB, std::borrow::Cow::Owned(compressed)))
     } else {
-        Ok((0u32, raw.to_vec()))
+        Ok((0u32, std::borrow::Cow::Borrowed(raw)))
     }
 }
 

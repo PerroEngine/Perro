@@ -8,6 +8,7 @@ use perro_runtime_api::sub_apis::{
 };
 use perro_structs::{BitMask, Vector2, Vector3};
 use rayon::prelude::*;
+use std::borrow::Cow;
 #[cfg(feature = "profile")]
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
@@ -745,8 +746,8 @@ fn eval_not_expr(
     }
 }
 
-struct QueryPlan {
-    optimized_expr: Option<QueryExpr>,
+struct QueryPlan<'a> {
+    optimized_expr: Option<Cow<'a, QueryExpr>>,
     estimated_cost_per_node: u32,
     exact_type_mask: QueryTypeMask,
     base_type_mask: QueryTypeMask,
@@ -755,27 +756,28 @@ struct QueryPlan {
     has_type_filter: bool,
 }
 
-impl QueryPlan {
-    fn from_query(expr: &Option<QueryExpr>) -> Self {
+impl<'a> QueryPlan<'a> {
+    fn from_query(expr: &'a Option<QueryExpr>) -> Self {
         // Masks + cost don't depend on child order, so compute frm the
         // original (borrowed) expr -- no need to wait on optimize's clone.
         let exact_type_mask = allowed_type_mask(expr.as_ref(), TypeFilterKind::Exact);
         let base_type_mask = allowed_type_mask(expr.as_ref(), TypeFilterKind::Base);
         // Reorder only possible 4 All/Any w/ >1 child; single/no-clause exprs
-        // skip the recursive rebuild+sort entirely (was an unconditional
-        // clone-heavy walk even when there was nothing to reorder).
-        let optimized: Option<QueryExpr> = expr.as_ref().map(|e| {
+        // skip the recursive rebuild+sort entirely. The plan never outlives
+        // the query call, so the common no-rewrite case borrows the caller's
+        // expr (Cow::Borrowed) and pays 0 clones; only exprs that actually
+        // get reordered or stripped materialize an owned tree.
+        let optimized_expr: Option<Cow<'a, QueryExpr>> = expr.as_ref().and_then(|e| {
             if expr_may_reorder(e) {
-                optimize_expr(e)
+                strip_redundant_type_filters_owned(optimize_expr(e)).map(Cow::Owned)
             } else {
-                e.clone()
+                strip_redundant_type_filters_borrowed(e)
             }
         });
-        // Move (not clone) into strip; it hands the same value back untouched
-        // when nothing gets stripped, so the common case pays 1 clone total
-        // (the line above) instead of 2.
-        let optimized_expr = optimized.and_then(strip_redundant_type_filters_owned);
-        let estimated_cost_per_node = optimized_expr.as_ref().map(expr_cost).unwrap_or(1);
+        let estimated_cost_per_node = optimized_expr
+            .as_deref()
+            .map(expr_cost)
+            .unwrap_or(1);
         let has_type_filter =
             exact_type_mask != QueryTypeMask::all() || base_type_mask != QueryTypeMask::all();
         Self {
@@ -800,6 +802,33 @@ fn expr_may_reorder(expr: &QueryExpr) -> bool {
 /// caller pays 0 extra clones instead of 1. Only `All` children actually
 /// ever get removed; every other shape is either dropped whole (all-filter)
 /// or passed through unchanged w/o rebuild.
+/// Borrowing variant of the strip pass for the no-reorder fast path: returns
+/// `Cow::Borrowed` when stripping would not change the expr (the overwhelming
+/// common case, 0 clones), clones + delegates to the owned pass only when a
+/// rewrite is actually needed.
+fn strip_redundant_type_filters_borrowed(expr: &QueryExpr) -> Option<Cow<'_, QueryExpr>> {
+    if type_filter_only(expr) {
+        return None;
+    }
+    if strip_would_change(expr) {
+        strip_redundant_type_filters_owned(expr.clone()).map(Cow::Owned)
+    } else {
+        Some(Cow::Borrowed(expr))
+    }
+}
+
+/// Cheap read-only walk mirroring `strip_redundant_type_filters_owned`:
+/// true iff the strip pass would remove or rebuild anything. Only `All`
+/// children are ever stripped, so only `All` needs recursion.
+fn strip_would_change(expr: &QueryExpr) -> bool {
+    match expr {
+        QueryExpr::All(children) => children
+            .iter()
+            .any(|child| type_filter_only(child) || strip_would_change(child)),
+        _ => false,
+    }
+}
+
 fn strip_redundant_type_filters_owned(expr: QueryExpr) -> Option<QueryExpr> {
     if type_filter_only(&expr) {
         return None;

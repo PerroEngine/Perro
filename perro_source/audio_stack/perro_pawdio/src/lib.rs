@@ -39,7 +39,7 @@ mod tests {
         blob.extend_from_slice(&raw);
 
         let (decoded, _) = decode_static_pawdio(&blob).expect("decode pawdio v1");
-        assert_eq!(decoded, raw);
+        assert_eq!(decoded.as_ref(), &raw[..]);
     }
 
     #[test]

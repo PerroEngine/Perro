@@ -686,18 +686,6 @@ pub(super) fn build_query_mesh_data(
     )
 }
 
-pub(super) fn clone_query_mesh(mesh: &QueryMeshData) -> QueryMeshData {
-    build_query_mesh_data_with_skin(
-        mesh.vertices.clone(),
-        mesh.uv0.clone(),
-        mesh.paint_uv.clone(),
-        mesh.joints.clone(),
-        mesh.weights.clone(),
-        mesh.triangles.clone(),
-    )
-    .expect("valid cached query mesh")
-}
-
 pub(super) fn skin_query_mesh_with_palette(
     mesh: &QueryMeshData,
     palette: &[Mat4],

@@ -322,10 +322,6 @@ fn normalize_type(ty: &str) -> String {
     ty.chars().filter(|c| !c.is_whitespace()).collect()
 }
 
-fn supported_fields(fields: &[ScriptField]) -> Vec<ScriptField> {
-    fields.to_vec()
-}
-
 fn member_const_name(field_name: &str) -> String {
     let mut out = String::from("__PERRO_VAR_");
     for c in field_name.chars() {

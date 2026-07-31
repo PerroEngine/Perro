@@ -3,6 +3,7 @@ use perro_io::{ResolvedPath, clear_dlc_mounts, mount_dlc_disk, resolve_path};
 use perro_nodes::{Node3D, SceneNode, SceneNodeData};
 use perro_scripting::{ScriptBehavior, ScriptContext, ScriptFlags, ScriptLifecycle};
 use perro_variant::{SceneVariantResolver, Variant};
+use std::rc::Rc;
 use std::sync::{
     Arc, LazyLock, Mutex,
     atomic::{AtomicUsize, Ordering},
@@ -706,7 +707,7 @@ fn script_update_schedules_toggle_at_runtime() {
     for id in [a, b] {
         runtime.scripts.insert(
             id,
-            Arc::new(CountScript {
+            Rc::new(CountScript {
                 update_count: Arc::clone(&update_count),
                 fixed_count: Arc::clone(&fixed_count),
             }),

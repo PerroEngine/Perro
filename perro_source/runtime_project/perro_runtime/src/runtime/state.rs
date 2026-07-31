@@ -9,7 +9,7 @@ use perro_input_api::InputSnapshot;
 use perro_nodes::Spatial;
 use perro_scripting::{DynamicScriptConstructor, ScriptConstructor};
 use perro_structs::{Transform2D, Transform3D};
-use std::{path::PathBuf, sync::Arc};
+use std::{path::PathBuf, rc::Rc};
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 type DynamicScriptLibrary = libloading::Library;
 #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
@@ -36,7 +36,7 @@ pub(crate) struct ScriptRuntimeState {
     pub(crate) static_script_registry: &'static [(u64, ScriptConstructor<RuntimeScriptApi>)],
     /// Dev/DLC constructors; these override matching release entries.
     pub(crate) dynamic_script_registry: AHashMap<u64, DynamicScriptConstructor<RuntimeScriptApi>>,
-    pub(crate) script_behavior_cache: AHashMap<u64, Arc<RuntimeScriptBehavior>>,
+    pub(crate) script_behavior_cache: AHashMap<u64, Rc<RuntimeScriptBehavior>>,
 }
 
 impl ScriptRuntimeState {
@@ -62,7 +62,7 @@ impl ScriptRuntimeState {
 impl Drop for ScriptRuntimeState {
     fn drop(&mut self) {
         // Dynamic behavior trait objects carry drop/vtable pointers into the
-        // scripts library. Destroy every Arc before unloading that library.
+        // scripts library. Destroy every Rc before unloading that library.
         self.dynamic_script_registry.clear();
         self.script_behavior_cache.clear();
         self.script_libraries.clear();
@@ -231,7 +231,7 @@ pub(crate) struct SignalRuntimeState {
     pub(crate) registry: SignalRegistry,
     pub(crate) emit_scratch: Vec<SignalConnection>,
     pub(crate) param_scratch: Vec<perro_variant::Variant>,
-    pub(crate) queued_ui_signals: Vec<(SignalID, Arc<[perro_variant::Variant]>)>,
+    pub(crate) queued_ui_signals: Vec<(SignalID, Rc<[perro_variant::Variant]>)>,
 }
 
 impl SignalRuntimeState {

@@ -154,10 +154,7 @@ fn optimize_animation_track_keys(track: &mut AnimationObjectTrack) {
     let mut keys = track.keys.to_vec();
     let mut index = 1usize;
     while index + 1 < keys.len() {
-        let prev = &keys[index - 1];
-        let middle = &keys[index];
-        let next = &keys[index + 1];
-        if is_redundant_middle_key(prev, middle, next) {
+        if is_redundant_middle_key(&keys[index - 1..=index + 1]) {
             keys.remove(index);
             index = index.saturating_sub(1).max(1);
         } else {
@@ -167,19 +164,18 @@ fn optimize_animation_track_keys(track: &mut AnimationObjectTrack) {
     track.keys = Cow::Owned(keys);
 }
 
-fn is_redundant_middle_key(
-    prev: &AnimationObjectKey,
-    middle: &AnimationObjectKey,
-    next: &AnimationObjectKey,
-) -> bool {
+/// `window` is the contiguous `[prev, middle, next]` sub-slice of the track.
+fn is_redundant_middle_key(window: &[AnimationObjectKey]) -> bool {
+    let [prev, middle, next] = window else {
+        return false;
+    };
     if prev.frame >= middle.frame || middle.frame >= next.frame {
         return false;
     }
 
-    let trio = [prev.clone(), middle.clone(), next.clone()];
     let pair = [prev.clone(), next.clone()];
     for frame in prev.frame..=next.frame {
-        let Some(a) = sample_track_value_from_keys(&trio, frame) else {
+        let Some(a) = sample_track_value_from_keys(window, frame) else {
             return false;
         };
         let Some(b) = sample_track_value_from_keys(&pair, frame) else {

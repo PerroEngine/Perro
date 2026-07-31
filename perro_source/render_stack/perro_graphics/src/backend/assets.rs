@@ -298,11 +298,28 @@ impl PerroGraphics {
             self.frame_rects_cache
                 .extend_from_slice(self.renderer_2d.frame_shapes());
         }
-        self.late_overlay_rects_cache.clear();
-        self.late_overlay_rects_cache
-            .extend_from_slice(self.late_overlay_2d.retained_rects());
-        self.late_overlay_rects_cache
-            .extend_from_slice(self.late_overlay_2d.frame_shapes());
+        let late_overlay_retained_rect_count = self.late_overlay_2d.retained_rects().len();
+        let late_overlay_frame_shape_count = self.late_overlay_2d.frame_shapes().len();
+        let late_overlay_total_rect_count =
+            late_overlay_retained_rect_count + late_overlay_frame_shape_count;
+        if late_overlay_frame_shape_count == 0
+            && !late_overlay_upload.full_reupload
+            && late_overlay_upload.dirty_ranges.is_empty()
+            && self.late_overlay_rects_cache.len() == late_overlay_retained_rect_count
+        {
+            // Retained rect buffer already mirrors late-overlay renderer state.
+        } else {
+            self.late_overlay_rects_cache.clear();
+            if self.late_overlay_rects_cache.capacity() < late_overlay_total_rect_count {
+                self.late_overlay_rects_cache.reserve(
+                    late_overlay_total_rect_count - self.late_overlay_rects_cache.capacity(),
+                );
+            }
+            self.late_overlay_rects_cache
+                .extend_from_slice(self.late_overlay_2d.retained_rects());
+            self.late_overlay_rects_cache
+                .extend_from_slice(self.late_overlay_2d.frame_shapes());
+        }
         let late_overlay_sprites_revision = self.late_overlay_2d.retained_sprites_revision();
         if late_overlay_sprites_revision != self.late_overlay_sprites_cache_revision {
             self.late_overlay_sprites_cache.clear();

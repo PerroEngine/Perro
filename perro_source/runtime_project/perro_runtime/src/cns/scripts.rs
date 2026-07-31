@@ -17,7 +17,7 @@ use perro_scripting::{ScriptBehavior, ScriptContext};
 use perro_variant::{SceneAssetKind, SceneVariantResolver, Variant};
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 use std::{env, fs, path::PathBuf};
-use std::{path::Path, sync::Arc};
+use std::{path::Path, rc::Rc};
 
 struct RuntimeSceneVariantResolver<'a> {
     api: &'a crate::RuntimeResourceApi,
@@ -44,6 +44,7 @@ impl SceneVariantResolver for RuntimeSceneVariantResolver<'_> {
 #[cfg(test)]
 mod scene_variant_resolver_tests {
     use super::*;
+    use std::sync::Arc;
 
     fn resource_api() -> Arc<crate::RuntimeResourceApi> {
         crate::RuntimeResourceApi::new(None, None, None, None, None, None, None, None)
@@ -150,13 +151,13 @@ impl Runtime {
             .ok_or_else(|| {
                 format!("script hash `{script_path_hash}` is not present in script registry")
             })?;
-        let behavior: Arc<dyn ScriptBehavior<crate::runtime::RuntimeScriptApi>> =
+        let behavior: Rc<dyn ScriptBehavior<crate::runtime::RuntimeScriptApi>> =
             if let Some(cached) = self
                 .script_runtime
                 .script_behavior_cache
                 .get(&script_path_hash)
             {
-                Arc::clone(cached)
+                Rc::clone(cached)
             } else {
                 let raw = ctor.call();
                 if raw.is_null() {
@@ -169,11 +170,11 @@ impl Runtime {
                 // by generated script glue and return null on failure.
                 let behavior: Box<dyn ScriptBehavior<crate::runtime::RuntimeScriptApi>> =
                     unsafe { Box::from_raw(raw) };
-                let behavior: Arc<dyn ScriptBehavior<crate::runtime::RuntimeScriptApi>> =
+                let behavior: Rc<dyn ScriptBehavior<crate::runtime::RuntimeScriptApi>> =
                     behavior.into();
                 self.script_runtime
                     .script_behavior_cache
-                    .insert(script_path_hash, Arc::clone(&behavior));
+                    .insert(script_path_hash, Rc::clone(&behavior));
                 behavior
             };
         let state = behavior.create_state();
@@ -188,7 +189,7 @@ impl Runtime {
         } else {
             self.script_runtime.script_instance_dlc_mounts.remove(&node);
         }
-        self.scripts.insert(node, Arc::clone(&behavior), state);
+        self.scripts.insert(node, Rc::clone(&behavior), state);
         let resource_api = self.resource_api.clone();
         let mut resolver = RuntimeSceneVariantResolver {
             api: resource_api.as_ref(),

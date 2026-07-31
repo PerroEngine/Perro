@@ -204,6 +204,49 @@ fn strip_projected_quad(draw: &UiDraw) -> Option<UiDraw> {
     }
 }
 
+/// Alloc-free equivalent of `cached == strip_projected_quad(draw)` for the
+/// per-frame compare path: field-wise match of a cached (unprojected) label
+/// against a live label, ignoring `projected_quad`. Exhaustive destructure so
+/// a new `UiLabelDraw` field fails compilation here instead of silently
+/// skipping the compare.
+fn cached_matches_unprojected_label(cached: &UiDraw, label: &UiLabelDraw) -> bool {
+    let UiDraw::Label(cached) = cached else {
+        return false;
+    };
+    let UiLabelDraw {
+        rect,
+        clip_rect,
+        text,
+        color,
+        font_size,
+        font,
+        wrap_width,
+        h_align,
+        v_align,
+        backdrop_color,
+        corner_radii,
+        padding,
+        projected_quad: _,
+        depth_test,
+        fit_content,
+    } = label;
+    cached.projected_quad.is_none()
+        && cached.rect == *rect
+        && cached.clip_rect == *clip_rect
+        && cached.text == *text
+        && cached.color == *color
+        && cached.font_size == *font_size
+        && cached.font == *font
+        && cached.wrap_width == *wrap_width
+        && cached.h_align == *h_align
+        && cached.v_align == *v_align
+        && cached.backdrop_color == *backdrop_color
+        && cached.corner_radii == *corner_radii
+        && cached.padding == *padding
+        && cached.depth_test == *depth_test
+        && cached.fit_content == *fit_content
+}
+
 fn deep_clone_primitives(primitives: &[Arc<ClippedPrimitive>]) -> Vec<ClippedPrimitive> {
     primitives
         .iter()
@@ -450,10 +493,9 @@ impl EpaintUiPainter {
                     staged.push((*node, NodeTess::Cached));
                     continue;
                 }
-                if let Some(stripped) = strip_projected_quad(draw)
-                    && cached.draw == stripped
-                    && let UiDraw::Label(label) = draw
+                if let UiDraw::Label(label) = draw
                     && let Some(quad) = label.projected_quad
+                    && cached_matches_unprojected_label(&cached.draw, label)
                 {
                     staged.push((*node, NodeTess::CachedProjected { quad }));
                     continue;

@@ -6,7 +6,7 @@ use perro_resource_api::ResourceWindow;
 use perro_runtime_api::{RuntimeWindow, sub_apis::ScriptAPI};
 use perro_scripting::ScriptContext;
 use perro_variant::Variant;
-use std::sync::Arc;
+use std::rc::Rc;
 
 use crate::Runtime;
 
@@ -79,7 +79,7 @@ pub fn bench_insert_state_script(runtime: &mut Runtime, id: NodeID) {
 
     runtime.scripts.insert(
         id,
-        Arc::new(BenchStateScript),
+        Rc::new(BenchStateScript),
         Box::<BenchScriptState>::default(),
     );
 }
@@ -205,7 +205,7 @@ impl Runtime {
             {
                 Some(instance) => (
                     instance_index,
-                    Arc::clone(&instance.behavior),
+                    Rc::clone(&instance.behavior),
                     instance.behavior.script_flags(),
                 ),
                 None => return,
@@ -245,7 +245,7 @@ impl Runtime {
             {
                 Some(instance) => (
                     instance_index,
-                    Arc::clone(&instance.behavior),
+                    Rc::clone(&instance.behavior),
                     instance.behavior.script_flags(),
                 ),
                 None => return,
@@ -293,7 +293,7 @@ impl Runtime {
     #[inline(always)]
     /// Call a scheduled update script with prebuilt resource/input windows.
     ///
-    /// The behavior `Arc` is cloned before creating `RuntimeWindow`. That ends
+    /// The behavior `Rc` is cloned before creating `RuntimeWindow`. That ends
     /// the immutable borrow of `self.scripts`, so the callback can receive a
     /// mutable runtime window while still holding a stable behavior handle.
     pub(crate) fn call_update_script_scheduled_with_context(
@@ -308,7 +308,7 @@ impl Runtime {
             id,
             crate::cns::script_collection::ScheduleKind::Update,
         ) {
-            Some(instance) => Arc::clone(&instance.behavior),
+            Some(instance) => Rc::clone(&instance.behavior),
             None => return,
         };
         self.push_active_script_with_context(instance_index, id, self.script_callback_context());
@@ -342,7 +342,7 @@ impl Runtime {
             id,
             crate::cns::script_collection::ScheduleKind::Fixed,
         ) {
-            Some(instance) => Arc::clone(&instance.behavior),
+            Some(instance) => Rc::clone(&instance.behavior),
             None => return,
         };
         self.push_active_script_with_context(instance_index, id, self.script_callback_context());
@@ -474,7 +474,7 @@ impl ScriptAPI for Runtime {
         let (instance_index, behavior) = match self.scripts.instance_index_for_id(script_id) {
             Some(i) => {
                 let behavior = match self.scripts.get_instance_scheduled_indexed(i, script_id) {
-                    Some(instance) => Arc::clone(&instance.behavior),
+                    Some(instance) => Rc::clone(&instance.behavior),
                     None => return Variant::Null,
                 };
                 (i, behavior)
@@ -669,7 +669,7 @@ mod active_script_stack_tests {
         let id = NodeID::new(1);
         runtime
             .scripts
-            .insert(id, Arc::new(SelfRemovingScript), Box::new(()));
+            .insert(id, Rc::new(SelfRemovingScript), Box::new(()));
 
         assert!(runtime.remove_script_instance(id));
 
@@ -692,7 +692,7 @@ mod active_script_stack_tests {
         let id = runtime.nodes.insert(SceneNode::new(SceneNodeData::Node));
         runtime
             .scripts
-            .insert(id, Arc::new(ReattachingRemovalScript), Box::new(()));
+            .insert(id, Rc::new(ReattachingRemovalScript), Box::new(()));
 
         assert!(runtime.remove_script_instance(id));
 
@@ -884,7 +884,7 @@ mod active_script_stack_tests {
         ] {
             runtime.scripts.insert(
                 id,
-                Arc::new(ChainScript {
+                Rc::new(ChainScript {
                     role,
                     a,
                     b,

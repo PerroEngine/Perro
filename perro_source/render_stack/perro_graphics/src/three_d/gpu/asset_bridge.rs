@@ -44,7 +44,7 @@ pub(super) fn build_mesh_lod_ranges(args: BuildMeshLodRangesArgs<'_>) -> Vec<Mes
             .min(decoded_surfaces.len())
             .min(uploaded_surfaces.len());
         let surfaces = if surface_start < surface_end {
-            Arc::from(uploaded_surfaces[surface_start..surface_end].to_vec())
+            Arc::from(&uploaded_surfaces[surface_start..surface_end])
         } else {
             Arc::from([lod_full])
         };
@@ -54,7 +54,7 @@ pub(super) fn build_mesh_lod_ranges(args: BuildMeshLodRangesArgs<'_>) -> Vec<Mes
             .min(decoded_meshlets.len())
             .min(uploaded_meshlets.len());
         let meshlets = if meshlet_start < meshlet_end {
-            Arc::from(uploaded_meshlets[meshlet_start..meshlet_end].to_vec())
+            Arc::from(&uploaded_meshlets[meshlet_start..meshlet_end])
         } else {
             Arc::from([])
         };

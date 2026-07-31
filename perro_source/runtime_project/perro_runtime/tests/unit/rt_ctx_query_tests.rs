@@ -153,12 +153,16 @@ fn query_plan_strips_global_type_filters_from_eval_expr() {
         QueryExpr::BaseType(vec![NodeType::Node3D]),
         QueryExpr::Name(vec!["enemy".to_string()]),
     ]);
-    let plan = QueryPlan::from_query(&Some(expr));
+    let expr = Some(expr);
+    let plan = QueryPlan::from_query(&expr);
 
     assert!(plan.exact_type_mask.contains_type(NodeType::MeshInstance3D));
     assert!(!plan.exact_type_mask.contains_type(NodeType::Node3D));
     assert!(plan.base_type_mask.contains_type(NodeType::MeshInstance3D));
-    assert!(matches!(plan.optimized_expr, Some(QueryExpr::Name(_))));
+    assert!(matches!(
+        plan.optimized_expr.as_deref(),
+        Some(QueryExpr::Name(_))
+    ));
     assert_eq!(plan.estimated_cost_per_node, 5);
 }
 
@@ -168,9 +172,13 @@ fn query_plan_keeps_mixed_any_type_filters_branch_local() {
         QueryExpr::IsType(vec![NodeType::MeshInstance3D]),
         QueryExpr::Name(vec!["enemy".to_string()]),
     ]);
-    let plan = QueryPlan::from_query(&Some(expr));
+    let expr = Some(expr);
+    let plan = QueryPlan::from_query(&expr);
 
-    assert!(matches!(plan.optimized_expr, Some(QueryExpr::Any(_))));
+    assert!(matches!(
+        plan.optimized_expr.as_deref(),
+        Some(QueryExpr::Any(_))
+    ));
 }
 
 #[test]

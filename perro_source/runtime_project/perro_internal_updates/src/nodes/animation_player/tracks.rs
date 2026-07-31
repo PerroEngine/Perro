@@ -21,7 +21,7 @@ pub(in super::super) fn step_animation_player<RT>(
     ctx: &mut RuntimeWindow<'_, RT>,
     id: NodeID,
     animation_id: AnimationID,
-    clip: &Arc<perro_animation::AnimationClip>,
+    clip: &perro_animation::AnimationClip,
     delta_seconds: f32,
 ) -> Option<AnimationStep>
 where
@@ -107,7 +107,7 @@ where
 pub(in super::super) fn apply_clip_frame<RT>(
     ctx: &mut RuntimeWindow<'_, RT>,
     res: &ResourceWindow<'_, impl ResourceAPI + ?Sized>,
-    clip: &Arc<perro_animation::AnimationClip>,
+    clip: &perro_animation::AnimationClip,
     frame: u32,
     bindings: &[AnimationObjectBinding],
     applied_transforms: &mut Vec<AppliedAnimationTransform>,
@@ -142,7 +142,7 @@ pub(in super::super) fn apply_clip_frame<RT>(
 /// N heavy borrows + N subtree rerender walks down to 1 each per skeleton.
 pub(in super::super) fn apply_bone_tracks_batched<RT>(
     ctx: &mut RuntimeWindow<'_, RT>,
-    clip: &Arc<perro_animation::AnimationClip>,
+    clip: &perro_animation::AnimationClip,
     frame: u32,
     bindings: &[AnimationObjectBinding],
 ) where
@@ -215,7 +215,7 @@ pub(in super::super) fn frame_has_event(
 
 pub(in super::super) fn apply_frame_events<RT>(
     ctx: &mut RuntimeWindow<'_, RT>,
-    clip: &Arc<perro_animation::AnimationClip>,
+    clip: &perro_animation::AnimationClip,
     frame: u32,
     bindings: &[AnimationObjectBinding],
 ) where
@@ -604,38 +604,75 @@ pub(in super::super) fn apply_track<RT>(
     let Some(value) = sample_track_value(track, frame) else {
         return;
     };
+    apply_track_value(
+        ctx,
+        res,
+        node_id,
+        track.field,
+        track.bone_target.as_ref(),
+        track.transform2d_mask,
+        track.transform3d_mask,
+        &value,
+        applied_transforms,
+    );
+}
 
-    if let Some(bone_target) = &track.bone_target {
-        apply_skeleton_bone_track(ctx, node_id, bone_target, track, &value);
+/// Value-application core shared by `apply_track` (sample-then-apply) and the
+/// AnimationTree pose path (`apply_pose`), which already holds a computed
+/// value and passes it here directly — no synthetic single-key track, no
+/// per-track allocs.
+#[allow(clippy::too_many_arguments)]
+pub(in super::super) fn apply_track_value<RT>(
+    ctx: &mut RuntimeWindow<'_, RT>,
+    res: &ResourceWindow<'_, impl ResourceAPI + ?Sized>,
+    node_id: NodeID,
+    field: NodeField,
+    bone_target: Option<&perro_animation::AnimationBoneTarget>,
+    transform2d_mask: u8,
+    transform3d_mask: u8,
+    value: &AnimationTrackValue,
+    applied_transforms: &mut Vec<AppliedAnimationTransform>,
+) where
+    RT: RuntimeAPI + ?Sized,
+{
+    if let Some(bone_target) = bone_target {
+        apply_skeleton_bone_track(
+            ctx,
+            node_id,
+            bone_target,
+            transform2d_mask,
+            transform3d_mask,
+            value,
+        );
         return;
     }
 
-    match track.field {
+    match field {
         NodeField::Node2D(Node2DField::Position)
         | NodeField::Node2D(Node2DField::Rotation)
         | NodeField::Node2D(Node2DField::Scale) => {
-            if let AnimationTrackValue::Transform2D(value) = value {
+            if let &AnimationTrackValue::Transform2D(value) = value {
                 let _ = with_base_node_mut!(ctx, Node2D, node_id, |node| {
                     let previous = previous_transform_2d(applied_transforms, node_id);
                     node.transform = apply_transform_offset_2d(
                         node.transform,
                         previous,
                         value,
-                        track.transform2d_mask,
+                        transform2d_mask,
                     );
                     save_transform_2d(applied_transforms, node_id, value);
                 });
             }
         }
         NodeField::Node2D(Node2DField::Visible) => {
-            if let AnimationTrackValue::Bool(value) = value {
+            if let &AnimationTrackValue::Bool(value) = value {
                 let _ = with_base_node_mut!(ctx, Node2D, node_id, |node| {
                     node.visible = value;
                 });
             }
         }
         NodeField::Node2D(Node2DField::ZIndex) => {
-            if let Some(value) = as_i32_track(&value) {
+            if let Some(value) = as_i32_track(value) {
                 let _ = with_base_node_mut!(ctx, Node2D, node_id, |node| {
                     node.z_index = value;
                 });
@@ -644,21 +681,21 @@ pub(in super::super) fn apply_track<RT>(
         NodeField::Node3D(Node3DField::Position)
         | NodeField::Node3D(Node3DField::Rotation)
         | NodeField::Node3D(Node3DField::Scale) => {
-            if let AnimationTrackValue::Transform3D(value) = value {
+            if let &AnimationTrackValue::Transform3D(value) = value {
                 let _ = with_base_node_mut!(ctx, Node3D, node_id, |node| {
                     let previous = previous_transform_3d(applied_transforms, node_id);
                     node.transform = apply_transform_offset_3d(
                         node.transform,
                         previous,
                         value,
-                        track.transform3d_mask,
+                        transform3d_mask,
                     );
                     save_transform_3d(applied_transforms, node_id, value);
                 });
             }
         }
         NodeField::Node3D(Node3DField::Visible) => {
-            if let AnimationTrackValue::Bool(value) = value {
+            if let &AnimationTrackValue::Bool(value) = value {
                 let _ = with_base_node_mut!(ctx, Node3D, node_id, |node| {
                     node.visible = value;
                 });
@@ -693,7 +730,7 @@ pub(in super::super) fn apply_track<RT>(
             }
         }
         NodeField::Camera3D(channel) => {
-            if let Some(v) = as_f32_track(&value) {
+            if let Some(v) = as_f32_track(value) {
                 let _ = with_base_node_mut!(ctx, Camera3D, node_id, |camera| match channel {
                     Camera3DField::Zoom => apply_camera_zoom(camera, v),
                     Camera3DField::PerspectiveFovYDegrees => {
@@ -805,7 +842,7 @@ pub(in super::super) fn apply_track<RT>(
                 });
             }
             if matches!(channel, Camera3DField::Active)
-                && let AnimationTrackValue::Bool(active) = value
+                && let &AnimationTrackValue::Bool(active) = value
             {
                 let _ = with_base_node_mut!(ctx, Camera3D, node_id, |camera| {
                     camera.active = active;
@@ -814,7 +851,7 @@ pub(in super::super) fn apply_track<RT>(
         }
         NodeField::Light3D(channel) => match channel {
             Light3DField::Color => {
-                if let AnimationTrackValue::Vec3(color) = value {
+                if let &AnimationTrackValue::Vec3(color) = value {
                     let c = Color::rgb(color[0], color[1], color[2]);
                     if with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.color = c).is_none()
                         && with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.color = c)
@@ -827,7 +864,7 @@ pub(in super::super) fn apply_track<RT>(
                 }
             }
             Light3DField::Intensity => {
-                if let Some(v) = as_f32_track(&value)
+                if let Some(v) = as_f32_track(value)
                     && with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.intensity = v).is_none()
                     && with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.intensity = v)
                         .is_none()
@@ -838,7 +875,7 @@ pub(in super::super) fn apply_track<RT>(
                 }
             }
             Light3DField::Active => {
-                if let AnimationTrackValue::Bool(v) = value
+                if let &AnimationTrackValue::Bool(v) = value
                     && with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.active = v).is_none()
                     && with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.active = v).is_none()
                     && with_base_node_mut!(ctx, SpotLight3D, node_id, |n| n.active = v).is_none()
@@ -847,7 +884,7 @@ pub(in super::super) fn apply_track<RT>(
                 }
             }
             Light3DField::CastShadows => {
-                if let AnimationTrackValue::Bool(v) = value
+                if let &AnimationTrackValue::Bool(v) = value
                     && with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.cast_shadows = v)
                         .is_none()
                     && with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.cast_shadows = v)
@@ -861,7 +898,7 @@ pub(in super::super) fn apply_track<RT>(
                 }
             }
             Light3DField::ShadowStrength => {
-                if let Some(v) = as_f32_track(&value)
+                if let Some(v) = as_f32_track(value)
                     && with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.shadow_strength = v)
                         .is_none()
                     && with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.shadow_strength = v)
@@ -872,7 +909,7 @@ pub(in super::super) fn apply_track<RT>(
                 }
             }
             Light3DField::ShadowDepthBias => {
-                if let Some(v) = as_f32_track(&value)
+                if let Some(v) = as_f32_track(value)
                     && with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.shadow_depth_bias = v)
                         .is_none()
                     && with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.shadow_depth_bias = v)
@@ -883,7 +920,7 @@ pub(in super::super) fn apply_track<RT>(
                 }
             }
             Light3DField::ShadowNormalBias => {
-                if let Some(v) = as_f32_track(&value)
+                if let Some(v) = as_f32_track(value)
                     && with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.shadow_normal_bias = v)
                         .is_none()
                     && with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.shadow_normal_bias = v)
@@ -898,14 +935,14 @@ pub(in super::super) fn apply_track<RT>(
             Light3DField::RenderLayers => {}
         },
         NodeField::PointLight3D(PointLight3DField::Range) => {
-            if let Some(v) = as_f32_track(&value) {
+            if let Some(v) = as_f32_track(value) {
                 let _ = with_base_node_mut!(ctx, PointLight3D, node_id, |node| {
                     node.range = v;
                 });
             }
         }
         NodeField::SpotLight3D(channel) => {
-            if let Some(v) = as_f32_track(&value) {
+            if let Some(v) = as_f32_track(value) {
                 let _ = with_base_node_mut!(ctx, SpotLight3D, node_id, |node| match channel {
                     SpotLight3DField::Range => node.range = v,
                     SpotLight3DField::InnerAngleRadians => node.inner_angle_radians = v,
@@ -1038,7 +1075,8 @@ pub(in super::super) fn apply_skeleton_bone_track<RT>(
     ctx: &mut RuntimeWindow<'_, RT>,
     node_id: NodeID,
     bone_target: &perro_animation::AnimationBoneTarget,
-    track: &AnimationObjectTrack,
+    transform2d_mask: u8,
+    transform3d_mask: u8,
     value: &AnimationTrackValue,
 ) where
     RT: RuntimeAPI + ?Sized,
@@ -1047,13 +1085,13 @@ pub(in super::super) fn apply_skeleton_bone_track<RT>(
         AnimationTrackValue::Transform2D(pose) => {
             let pose = *pose;
             with_base_node_mut!(ctx, Skeleton2D, node_id, |skeleton| {
-                apply_bone_pose_2d(skeleton, bone_target, pose, track.transform2d_mask);
+                apply_bone_pose_2d(skeleton, bone_target, pose, transform2d_mask);
             })
         }
         AnimationTrackValue::Transform3D(pose) => {
             let pose = *pose;
             with_base_node_mut!(ctx, Skeleton3D, node_id, |skeleton| {
-                apply_bone_pose_3d(skeleton, bone_target, pose, track.transform3d_mask);
+                apply_bone_pose_3d(skeleton, bone_target, pose, transform3d_mask);
             })
         }
         _ => return,

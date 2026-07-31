@@ -110,7 +110,7 @@ fn transpile_frontend_script_with_scene_vars(
     } else {
         parse_struct_fields(&source, &state_ty)
     };
-    let exposed_fields = supported_fields(&state_fields);
+    let exposed_fields = state_fields;
     let nested_fields = parse_local_nested_fields(&source, &exposed_fields);
     // pub-only sets drive ALL glue: get/set/call + scene inject.
     // non-pub members = internal only (with_state!/self.method), zero glue.

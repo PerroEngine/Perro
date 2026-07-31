@@ -14,7 +14,7 @@ use perro_structs::{
 };
 use perro_variant::Variant;
 use std::borrow::Cow;
-use std::sync::Arc;
+use std::rc::Rc;
 
 use super::scene::IntoScenePath;
 
@@ -354,7 +354,7 @@ where
 #[derive(Clone)]
 pub struct NodeRootPatch {
     node_type: NodeType,
-    apply: Arc<dyn Fn(&mut SceneNodeData) -> bool>,
+    apply: Rc<dyn Fn(&mut SceneNodeData) -> bool>,
 }
 
 impl std::fmt::Debug for NodeRootPatch {
@@ -373,7 +373,7 @@ impl NodeRootPatch {
     {
         Self {
             node_type: T::NODE_TYPE,
-            apply: Arc::new(move |data| T::with_mut(data, |node| apply(node)).is_some()),
+            apply: Rc::new(move |data| T::with_mut(data, |node| apply(node)).is_some()),
         }
     }
 
