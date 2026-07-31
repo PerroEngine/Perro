@@ -472,6 +472,27 @@ impl Gpu {
         }
         timing.prepare_3d = prepare_3d_start.elapsed();
 
+        // TAA sub-pixel camera jitter: advance the Halton(2,3) sequence every
+        // frame (static frames skip prepare, but the jitter must still move
+        // for the history to accumulate sub-pixel detail) and patch only the
+        // GPU camera uniform. Main pass, depth prepass, water and decals all
+        // read that uniform, so they jitter together; shadows, frustum/HiZ
+        // culling, CPU occlusion, SSAO and the sky uniform keep unjittered
+        // matrices (see apply_taa_jitter). Camera streams render through
+        // their own Gpu3D instances and never jitter.
+        let taa_run = self.present.taa_active() && self.three_d.is_some();
+        if let Some(three_d) = self.three_d.as_mut() {
+            let jitter_ndc = taa_run.then(|| {
+                let jitter_px = taa_jitter_offset(self.taa_frame_index);
+                self.taa_frame_index = self.taa_frame_index.wrapping_add(1);
+                [
+                    2.0 * jitter_px[0] / self.render_width.max(1) as f32,
+                    2.0 * jitter_px[1] / self.render_height.max(1) as f32,
+                ]
+            });
+            three_d.apply_taa_jitter(&self.queue, jitter_ndc);
+        }
+
         let (base_camera_post_chain, base_camera_post_enabled) =
             if PostProcessor::has_effects(camera_3d.post_processing.as_ref()) {
                 (camera_3d.post_processing.as_ref(), true)
@@ -1539,6 +1560,30 @@ impl Gpu {
         }
         timing.accessibility = accessibility_start.elapsed();
 
+        // TAA resolve inputs: UNJITTERED current/previous view-proj (same
+        // rule the 3D prepare uses) + scene depth. At 1x — the only sample
+        // count TAA runs at — the depth prepass texture IS the scene depth
+        // target, so by this point it holds final opaque depth with no copy.
+        let taa_frame = if taa_run {
+            let current_view_proj = crate::three_d::gpu::compute_view_proj_mat(
+                &camera_3d,
+                self.render_width,
+                self.render_height,
+            );
+            let prev_view_proj = self.taa_prev_view_proj.unwrap_or(current_view_proj);
+            self.taa_prev_view_proj = Some(current_view_proj);
+            let inv = current_view_proj.inverse();
+            self.three_d.as_ref().map(|three_d| PresentTaaFrame {
+                depth_view: three_d.depth_prepass_view().clone(),
+                inv_view_proj: if inv.is_finite() { inv } else { Mat4::IDENTITY }
+                    .to_cols_array_2d(),
+                prev_view_proj: prev_view_proj.to_cols_array_2d(),
+            })
+        } else {
+            self.taa_prev_view_proj = None;
+            None
+        };
+
         if !direct_present && !msaa_direct_present {
             let final_bind_group = match current_tex {
                 FrameTex::Scene => &self.present_scene_bind_group,
@@ -1585,6 +1630,7 @@ impl Gpu {
                 frame_delta_seconds,
                 exposure_settings,
                 self.hdr_status,
+                taa_frame.as_ref(),
             );
             swap_view = Some(view);
             frame = Some(acquired);

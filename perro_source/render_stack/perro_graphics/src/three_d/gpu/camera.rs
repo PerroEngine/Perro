@@ -1,7 +1,7 @@
 use super::environment::ENV_SPECULAR_MIP_COUNT;
 use super::*;
 
-pub(super) fn compute_view_proj_mat(camera: &Camera3DState, width: u32, height: u32) -> Mat4 {
+pub(crate) fn compute_view_proj_mat(camera: &Camera3DState, width: u32, height: u32) -> Mat4 {
     let w = width.max(1) as f32;
     let h = height.max(1) as f32;
     let aspect = w / h;

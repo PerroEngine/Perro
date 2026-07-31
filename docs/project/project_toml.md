@@ -68,7 +68,7 @@ trademark = ""
 aspect_ratio = "16:9"            # "WIDTH:HEIGHT" game shape
 vsync = false
 hdr = "auto"                     # auto | on | off
-anti_alias = "fxaa"              # off | fxaa | smaa | msaa2 | msaa4 (taa planned)
+anti_alias = "fxaa"              # off | fxaa | smaa | taa | msaa2 | msaa4
 ssao = "medium"                  # off | low | medium | high | ultra
 occlusion_culling = "gpu"        # cpu | gpu | off
 particle_sim_default = "gpu"     # cpu | hybrid | gpu
@@ -154,7 +154,7 @@ Empty identity string = none. Legacy `[metadata]` table still parses; `[project]
 | `aspect_ratio`         | string | `"16:9"`          | `"WIDTH:HEIGHT"`             |
 | `vsync`                | bool   | `false`           | `true` / `false`             |
 | `hdr`                  | string | `"auto"`          | `"auto"`, `"on"`, `"off"` |
-| `anti_alias`           | string | `"fxaa"`          | `"off"`, `"fxaa"`, `"smaa"`, `"msaa2"`, `"msaa4"` (`"taa"` parses, warns, falls back to fxaa) |
+| `anti_alias`           | string | `"fxaa"`          | `"off"`, `"fxaa"`, `"smaa"`, `"taa"`, `"msaa2"`, `"msaa4"` |
 | `msaa`                 | bool   | legacy            | `true` / `false` (superseded by `anti_alias`) |
 | `ssao`                 | string | `"medium"`        | `"off"`, `"low"`, `"medium"`, `"high"`, `"ultra"` |
 | `occlusion_culling`    | string | `"gpu"`           | `"cpu"`, `"gpu"`, `"off"`    |
@@ -184,10 +184,20 @@ choice with `hdr_set!(ctx.res, HdrMode::...)`.
   shader-created edges that MSAA misses. Both lookup tables it needs are generated on the
   CPU the first time the pass runs; like FXAA, all its GPU resources only exist while the
   mode is active.
-- `"msaa2"` / `"msaa4"`: hardware MSAA at 2x/4x samples. FXAA/SMAA turn off automatically.
+- `"taa"`: temporal AA (v1). Renders the scene with a sub-pixel camera jitter
+  (Halton 2,3 over 8 frames) and blends each frame into a reprojected history buffer
+  (90% history / 10% current, 3x3 neighborhood clamp), which gives the best shimmer
+  reduction of all the modes — it smooths specular/vegetation crawl and shader-created
+  edges that FXAA/SMAA can only soften spatially. The v1 resolve reprojects through the
+  camera only (no per-object motion vectors yet), so fast-moving objects can leave a
+  short ghosting trail bounded by the neighborhood clamp; camera motion reprojects
+  correctly, and the history rejects on depth disocclusions, off-screen reprojection,
+  resizes, and 3D-scene gaps. Runs post-tonemap before the UI composites (UI stays
+  sharp), and like the other post modes its GPU resources (two history targets + LDR
+  copy) only exist while the mode is active.
+- `"msaa2"` / `"msaa4"`: hardware MSAA at 2x/4x samples. FXAA/SMAA/TAA turn off
+  automatically.
 - `"off"`: no anti-aliasing.
-- `"taa"`: accepted but not implemented yet; parsing warns
-  `not yet implemented, falling back to fxaa`.
 
 Back-compat with the legacy `msaa` bool: when `anti_alias` is absent, an explicit
 `msaa = true` maps to `"msaa4"` (the old behavior) and `msaa = false` (or no key) gets the

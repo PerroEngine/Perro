@@ -1636,5 +1636,16 @@ fn with_anti_alias_flags_post_modes_exclusively() {
     let graphics = graphics.with_anti_alias(AntiAliasMode::Fxaa);
     assert!(graphics.fxaa_enabled);
     assert!(!graphics.smaa_enabled);
+    assert!(!graphics.taa_enabled);
     assert_eq!(graphics.smoothing_samples, 1);
+    // TAA: post pass flagged, single-sampled, others off.
+    let graphics = graphics.with_anti_alias(AntiAliasMode::Taa);
+    assert!(graphics.taa_enabled);
+    assert!(!graphics.fxaa_enabled);
+    assert!(!graphics.smaa_enabled);
+    assert_eq!(graphics.smoothing_samples, 1);
+    // Mode switch away drops the TAA request (the GPU side then drops the
+    // history pair + pipelines via set_taa_active(false)).
+    let graphics = graphics.with_anti_alias(AntiAliasMode::Off);
+    assert!(!graphics.taa_enabled);
 }

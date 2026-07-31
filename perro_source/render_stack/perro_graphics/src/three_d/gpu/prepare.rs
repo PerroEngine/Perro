@@ -119,6 +119,16 @@ impl Gpu3D {
         // extraction below all reuse them instead of recomputing per consumer.
         let view_proj = compute_view_proj_mat(&camera, width, height);
         let inv_view_proj = view_proj.inverse();
+        // Everything below (uniform, sky, frustum extraction, HiZ, shadows,
+        // occlusion) consumes the UNJITTERED matrices; when TAA runs, the
+        // per-frame `apply_taa_jitter` call re-patches only the two matrix
+        // slots of the GPU camera uniform with the sub-pixel jitter.
+        self.taa_base_view_proj = view_proj;
+        self.taa_base_inv_view_proj = if inv_view_proj.is_finite() {
+            inv_view_proj
+        } else {
+            Mat4::IDENTITY
+        };
         let mut uniform = build_scene_uniform(&camera, lighting, view_proj, inv_view_proj);
         if !self.ibl_maps.active() {
             uniform.ibl_params[0] = 0.0;
@@ -1981,6 +1991,60 @@ impl Gpu3D {
                 mesh.blend_shape_vertex_start,
                 mesh.blend_shape_vertex_count,
             ],
+        }
+    }
+}
+
+impl Gpu3D {
+    /// Per-frame TAA camera jitter. `Some(offset)` patches the GPU camera
+    /// uniform's `view_proj`/`inv_view_proj` slots with a sub-pixel NDC
+    /// translation of the unjittered matrices cached by `prepare` (the main
+    /// pass, depth prepass, water pass and decals all read that uniform, so
+    /// they jitter together); `None` restores the unjittered matrices once.
+    ///
+    /// Runs outside `prepare` on purpose: static frames skip prepare, but the
+    /// jitter must advance every frame for TAA to accumulate sub-pixel detail.
+    /// Nothing CPU-side reads the patched values — shadow fitting, frustum
+    /// culling, HiZ and CPU occlusion all consume the unjittered locals.
+    pub(crate) fn apply_taa_jitter(&mut self, queue: &wgpu::Queue, jitter_ndc: Option<[f32; 2]>) {
+        match jitter_ndc {
+            Some([jx, jy]) => {
+                let jittered =
+                    Mat4::from_translation(Vec3::new(jx, jy, 0.0)) * self.taa_base_view_proj;
+                let inv = jittered.inverse();
+                let inv = if inv.is_finite() {
+                    inv
+                } else {
+                    self.taa_base_inv_view_proj
+                };
+                queue.write_buffer(
+                    &self.camera_buffer,
+                    SCENE_VIEW_PROJ_OFFSET,
+                    bytemuck::bytes_of(&jittered.to_cols_array_2d()),
+                );
+                queue.write_buffer(
+                    &self.camera_buffer,
+                    SCENE_INV_VIEW_PROJ_OFFSET,
+                    bytemuck::bytes_of(&inv.to_cols_array_2d()),
+                );
+                self.taa_jitter_applied = true;
+            }
+            None => {
+                if !self.taa_jitter_applied {
+                    return;
+                }
+                queue.write_buffer(
+                    &self.camera_buffer,
+                    SCENE_VIEW_PROJ_OFFSET,
+                    bytemuck::bytes_of(&self.taa_base_view_proj.to_cols_array_2d()),
+                );
+                queue.write_buffer(
+                    &self.camera_buffer,
+                    SCENE_INV_VIEW_PROJ_OFFSET,
+                    bytemuck::bytes_of(&self.taa_base_inv_view_proj.to_cols_array_2d()),
+                );
+                self.taa_jitter_applied = false;
+            }
         }
     }
 }

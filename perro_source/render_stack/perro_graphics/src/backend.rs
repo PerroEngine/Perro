@@ -396,14 +396,18 @@ pub enum ShadowQuality {
 
 /// Engine anti-aliasing mode. `Fxaa` runs a post pass on the tonemapped
 /// output; `Smaa` runs the higher-quality SMAA 1x three-pass chain there
-/// instead; `Msaa2`/`Msaa4` use hardware multisampling. The post modes and
-/// MSAA never combine: any sample count > 1 disables the post passes.
+/// instead; `Taa` is temporal AA v1 (camera-reprojection history resolve +
+/// sub-pixel camera jitter — best shimmer reduction, moving objects can
+/// ghost until per-object motion vectors land); `Msaa2`/`Msaa4` use hardware
+/// multisampling. The post modes and MSAA never combine: any sample count
+/// > 1 disables the post passes.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum AntiAliasMode {
     Off,
     #[default]
     Fxaa,
     Smaa,
+    Taa,
     Msaa2,
     Msaa4,
 }
@@ -414,7 +418,7 @@ impl AntiAliasMode {
         match self {
             Self::Msaa2 => 2,
             Self::Msaa4 => 4,
-            Self::Off | Self::Fxaa | Self::Smaa => 1,
+            Self::Off | Self::Fxaa | Self::Smaa | Self::Taa => 1,
         }
     }
 }
@@ -459,6 +463,9 @@ pub struct PerroGraphics {
     // SMAA 1x requested by config (anti_alias = "smaa"); same sample-count
     // gate, mutually exclusive with FXAA (one anti_alias mode).
     smaa_enabled: bool,
+    // TAA v1 requested by config (anti_alias = "taa"); same sample-count
+    // gate, exclusive with FXAA/SMAA (one anti_alias mode).
+    taa_enabled: bool,
     static_texture_lookup: Option<StaticTextureLookup>,
     static_font_lookup: Option<StaticFontLookup>,
     static_mesh_lookup: Option<StaticMeshLookup>,

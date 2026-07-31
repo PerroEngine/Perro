@@ -40,6 +40,7 @@ impl PerroGraphics {
             smoothing_2d_samples: 1,
             fxaa_enabled: false,
             smaa_enabled: false,
+            taa_enabled: false,
             static_texture_lookup: None,
             static_font_lookup: None,
             static_mesh_lookup: None,
@@ -132,12 +133,13 @@ impl PerroGraphics {
     }
 
     /// Project `graphics.anti_alias` mode: sets the 3D sample count
-    /// (msaa2/msaa4 -> 2/4, off/fxaa/smaa -> 1) and flags the matching
-    /// present pass. FXAA/SMAA resources stay unallocated unless the mode
-    /// requests them (at most one of the two is ever enabled).
+    /// (msaa2/msaa4 -> 2/4, off/fxaa/smaa/taa -> 1) and flags the matching
+    /// present pass. FXAA/SMAA/TAA resources stay unallocated unless the
+    /// mode requests them (at most one of the three is ever enabled).
     pub fn with_anti_alias(mut self, mode: AntiAliasMode) -> Self {
         self.fxaa_enabled = matches!(mode, AntiAliasMode::Fxaa);
         self.smaa_enabled = matches!(mode, AntiAliasMode::Smaa);
+        self.taa_enabled = matches!(mode, AntiAliasMode::Taa);
         self.set_smoothing_samples(mode.sample_count());
         self
     }

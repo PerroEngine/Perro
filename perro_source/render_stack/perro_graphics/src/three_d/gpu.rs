@@ -218,6 +218,9 @@ mod targets;
 use asset_bridge::*;
 pub(crate) use asset_bridge::{load_mesh3d_from_source, validate_mesh_source};
 use camera::*;
+// TAA reprojection (gpu/frame.rs) needs the same unjittered view-proj rule
+// the 3D prepare uses; re-exported so present-time code never re-derives it.
+pub(crate) use camera::compute_view_proj_mat;
 pub(crate) use pipeline_registry::{PipelineRegistry, PipelineRegistryCache};
 use decals::{create_decal_buffer, create_decal_texture_array};
 use draw::*;
@@ -376,6 +379,11 @@ struct SceneGlobalsGpu {
 const SCENE_GLOBALS_TAIL_BYTES: u64 = std::mem::size_of::<SceneGlobalsGpu>() as u64;
 const SCENE_GLOBALS_OFFSET: u64 =
     std::mem::size_of::<Scene3DUniform>() as u64 - SCENE_GLOBALS_TAIL_BYTES;
+// TAA jitter patch offsets: only the two matrices are rewritten per frame,
+// so the sub-pixel jitter never touches the CPU-side uniform copy (shadows,
+// frustum culling and HiZ keep consuming the unjittered matrices).
+const SCENE_VIEW_PROJ_OFFSET: u64 = std::mem::offset_of!(Scene3DUniform, view_proj) as u64;
+const SCENE_INV_VIEW_PROJ_OFFSET: u64 = std::mem::offset_of!(Scene3DUniform, inv_view_proj) as u64;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
@@ -1110,6 +1118,14 @@ pub struct Gpu3D {
     depth_view: wgpu::TextureView,
     depth_prepass_texture: wgpu::Texture,
     depth_prepass_view: wgpu::TextureView,
+    // Unjittered camera matrices from the last prepare; `apply_taa_jitter`
+    // patches the GPU uniform from these every frame while TAA runs (and
+    // restores them when it stops). CPU-side consumers (shadow fitting,
+    // frustum culling, HiZ, CPU occlusion) only ever see the unjittered
+    // matrices.
+    taa_base_view_proj: Mat4,
+    taa_base_inv_view_proj: Mat4,
+    taa_jitter_applied: bool,
     // Lazily allocated 1x-only scene-depth copy for the 3D water pass, which
     // samples scene depth while depth-testing (illegal against the shared
     // prepass texture in one pass). None while no 3D water renders.

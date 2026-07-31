@@ -258,8 +258,8 @@ fn parse_project_toml_accepts_all_anti_alias_modes() {
         ("msaa4", AntiAlias::Msaa4),
         // SMAA 1x is implemented: parses to the real mode, no fallback warn.
         ("smaa", AntiAlias::Smaa),
-        // Not implemented yet: parse warns + resolves to the FXAA fallback.
-        ("taa", AntiAlias::Fxaa),
+        // TAA v1 is implemented: parses to the real mode, no fallback warn.
+        ("taa", AntiAlias::Taa),
     ] {
         let toml = anti_alias_toml(&format!("anti_alias = \"{raw}\""));
         let parsed = parse_project_toml(&toml).expect("parse anti_alias");

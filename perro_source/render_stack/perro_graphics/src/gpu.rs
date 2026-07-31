@@ -416,6 +416,10 @@ struct PresentProcessor {
     // mutually exclusive with FXAA by construction (one anti_alias mode).
     smaa_active: bool,
     smaa: Option<SmaaResources>,
+    // TAA gate; same lifecycle (config + sample count 1), mutually exclusive
+    // with FXAA/SMAA by construction (one anti_alias mode).
+    taa_active: bool,
+    taa: Option<TaaResources>,
 }
 
 /// Lazily allocated FXAA stage: the present pass tonemaps into `target`
@@ -467,6 +471,56 @@ struct SmaaResources {
     weights_bind_group: wgpu::BindGroup,
     blend_bind_group: wgpu::BindGroup,
     size: [u32; 2],
+}
+
+/// Size-independent TAA pieces: the resolve + blit pipelines/layouts and the
+/// per-frame reprojection uniform buffer. Survives resizes; only rebuilt
+/// after a full TAA off/on cycle.
+struct TaaCore {
+    resolve_pipeline: wgpu::RenderPipeline,
+    resolve_bgl: wgpu::BindGroupLayout,
+    blit_pipeline: wgpu::RenderPipeline,
+    blit_bgl: wgpu::BindGroupLayout,
+    uniform_buffer: wgpu::Buffer,
+}
+
+/// Lazily allocated TAA v1 stage (camera-reprojection only, no per-object
+/// motion vectors — moving objects ghost within the neighborhood clamp; see
+/// taa.wgsl). The present pass tonemaps into the render-resolution LDR
+/// target; the resolve pass reads it + scene depth + the previous history
+/// texture and writes the blended result into the other history texture
+/// (rgb = resolved color, a = device depth for next frame's disocclusion
+/// test); the blit pass then copies/upscales that history to the swapchain.
+/// The ping-pong pair means no extra copy: next frame samples what this
+/// frame rendered. Only exists while TAA runs; render-size targets and the
+/// blit bind groups rebuild when dimensions change (history restarts from
+/// the current frame via `history_valid`).
+struct TaaResources {
+    core: TaaCore,
+    _ldr_target: wgpu::Texture,
+    ldr_view: wgpu::TextureView,
+    _history: [wgpu::Texture; 2],
+    history_views: [wgpu::TextureView; 2],
+    // Bind group for blitting history[i] to the swapchain.
+    blit_bind_groups: [wgpu::BindGroup; 2],
+    // Index of the history texture holding LAST frame's resolve (the read
+    // side); this frame resolves into the other one, then the index flips.
+    history_index: usize,
+    // False on (re)creation and whenever a frame runs without scene depth;
+    // the next resolve then blends 0% history (clean restart, no stale
+    // ghosting after resizes or 3D-scene switches).
+    history_valid: bool,
+    size: [u32; 2],
+}
+
+/// Per-frame inputs for the TAA resolve, built in `Gpu::render` while the 3D
+/// pipeline is live: the scene depth view (at 1x this aliases the depth
+/// prepass texture, so it holds final opaque scene depth by present time)
+/// and the UNJITTERED current/previous camera matrices for reprojection.
+struct PresentTaaFrame {
+    depth_view: wgpu::TextureView,
+    inv_view_proj: [[f32; 4]; 4],
+    prev_view_proj: [[f32; 4]; 4],
 }
 
 struct PresentBindGroups {
@@ -626,6 +680,14 @@ pub struct Gpu {
     fxaa_requested: bool,
     // Same gate for SMAA (anti_alias = "smaa"); never both true with FXAA.
     smaa_requested: bool,
+    // Same gate for TAA (anti_alias = "taa"); exclusive with FXAA/SMAA.
+    taa_requested: bool,
+    // Halton(2,3) jitter sequence position; advances every rendered frame
+    // while TAA runs so the sub-pixel offsets cycle through all 8 samples.
+    taa_frame_index: u32,
+    // Previous frame's UNJITTERED view-proj for the resolve reprojection.
+    // None while TAA is off or no 3D pipeline ran last frame.
+    taa_prev_view_proj: Option<Mat4>,
     shadow_pcf_high: bool,
     msaa_color: Option<MsaaColorTarget>,
     post: PostProcessor,
@@ -706,6 +768,9 @@ pub struct GpuConfig {
     /// SMAA 1x present passes requested (anti_alias = "smaa"). Same gating
     /// and lazy-allocation rules as `fxaa`; the two are mutually exclusive.
     pub smaa: bool,
+    /// TAA v1 present passes requested (anti_alias = "taa"). Same gating and
+    /// lazy-allocation rules; exclusive with `fxaa`/`smaa`.
+    pub taa: bool,
     pub vsync_enabled: bool,
     pub meshlets_enabled: bool,
     pub dev_meshlets: bool,

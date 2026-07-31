@@ -287,24 +287,17 @@ fn effective_anti_alias(mode: perro_runtime::AntiAlias) -> perro_runtime::AntiAl
     }
 }
 
-/// Runtime -> graphics anti-alias mapping. `Taa` is accepted by the config
-/// layer but not implemented yet; project.toml parsing already resolves it
-/// to `Fxaa` with a warning, so hitting it here means a programmatic config
-/// — warn again and fall back the same way.
+/// Runtime -> graphics anti-alias mapping (1:1; every config mode is
+/// implemented graphics-side, including TAA v1 — plain render passes, so it
+/// runs on wasm too).
 fn graphics_anti_alias(mode: perro_runtime::AntiAlias) -> perro_graphics::AntiAliasMode {
     match mode {
         perro_runtime::AntiAlias::Off => perro_graphics::AntiAliasMode::Off,
         perro_runtime::AntiAlias::Fxaa => perro_graphics::AntiAliasMode::Fxaa,
         perro_runtime::AntiAlias::Smaa => perro_graphics::AntiAliasMode::Smaa,
+        perro_runtime::AntiAlias::Taa => perro_graphics::AntiAliasMode::Taa,
         perro_runtime::AntiAlias::Msaa2 => perro_graphics::AntiAliasMode::Msaa2,
         perro_runtime::AntiAlias::Msaa4 => perro_graphics::AntiAliasMode::Msaa4,
-        perro_runtime::AntiAlias::Taa => {
-            eprintln!(
-                "perro: anti_alias = \"{}\" not yet implemented, falling back to fxaa",
-                mode.as_str()
-            );
-            perro_graphics::AntiAliasMode::Fxaa
-        }
     }
 }
 
@@ -352,6 +345,7 @@ mod tests {
             perro_runtime::AntiAlias::Off,
             perro_runtime::AntiAlias::Fxaa,
             perro_runtime::AntiAlias::Smaa,
+            perro_runtime::AntiAlias::Taa,
             perro_runtime::AntiAlias::Msaa2,
             perro_runtime::AntiAlias::Msaa4,
         ] {
@@ -360,21 +354,22 @@ mod tests {
     }
 
     #[test]
-    fn anti_alias_maps_to_graphics_modes_with_fxaa_fallback() {
+    fn anti_alias_maps_to_graphics_modes() {
         use perro_graphics::AntiAliasMode;
         use perro_runtime::AntiAlias;
         assert_eq!(graphics_anti_alias(AntiAlias::Off), AntiAliasMode::Off);
         assert_eq!(graphics_anti_alias(AntiAlias::Fxaa), AntiAliasMode::Fxaa);
         assert_eq!(graphics_anti_alias(AntiAlias::Smaa), AntiAliasMode::Smaa);
+        // TAA v1 is implemented: maps to the real mode, no fallback warn.
+        assert_eq!(graphics_anti_alias(AntiAlias::Taa), AntiAliasMode::Taa);
         assert_eq!(graphics_anti_alias(AntiAlias::Msaa2), AntiAliasMode::Msaa2);
         assert_eq!(graphics_anti_alias(AntiAlias::Msaa4), AntiAliasMode::Msaa4);
-        // Not implemented yet: warn + fall back to the FXAA default.
-        assert_eq!(graphics_anti_alias(AntiAlias::Taa), AntiAliasMode::Fxaa);
         // MSAA sample counts derive from the mode (bool msaa -> 4 is legacy).
         assert_eq!(AntiAliasMode::Msaa2.sample_count(), 2);
         assert_eq!(AntiAliasMode::Msaa4.sample_count(), 4);
         assert_eq!(AntiAliasMode::Fxaa.sample_count(), 1);
         assert_eq!(AntiAliasMode::Smaa.sample_count(), 1);
+        assert_eq!(AntiAliasMode::Taa.sample_count(), 1);
     }
 
     #[cfg(target_arch = "wasm32")]

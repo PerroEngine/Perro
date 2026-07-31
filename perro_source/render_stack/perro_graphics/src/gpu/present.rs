@@ -440,6 +440,82 @@ const SMAA_EDGE_WGSL: &str = include_str!("smaa_edge.wgsl");
 const SMAA_WEIGHTS_WGSL: &str = include_str!("smaa_weights.wgsl");
 const SMAA_BLEND_WGSL: &str = include_str!("smaa_blend.wgsl");
 
+// TAA v1 resolve pass; see taa.wgsl for the camera-reprojection algorithm,
+// the no-motion-vectors tradeoff and the rejection rules.
+const TAA_WGSL: &str = include_str!("taa.wgsl");
+
+// History blend factor: 90% history / 10% current per frame (standard TAA
+// starting point — fast enough convergence at 60fps, strong shimmer
+// suppression; the neighborhood clamp bounds the added latency/ghosting).
+const TAA_HISTORY_BLEND: f32 = 0.9;
+// Device-z disocclusion threshold. Loose on purpose: device z is nonlinear
+// and the history alpha stores it in f16, so a tight threshold would
+// misfire at distance; the neighborhood clamp catches what slips through.
+const TAA_DEPTH_REJECT: f32 = 0.01;
+// History/resolve target format: filterable + renderable everywhere (core
+// WebGPU), enough precision for HDR-headroom LDR values, and f16 alpha
+// carries the depth for the disocclusion test.
+const TAA_HISTORY_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+
+/// Halton(2,3) 8-sample sub-pixel jitter offsets in [-0.5, 0.5) pixels.
+/// Standard TAA sequence: low-discrepancy so 8 frames cover the pixel
+/// footprint evenly; index wraps so any u32 frame counter can drive it.
+pub(super) fn taa_jitter_offset(frame_index: u32) -> [f32; 2] {
+    fn halton(mut index: u32, base: u32) -> f32 {
+        let mut f = 1.0f32;
+        let mut result = 0.0f32;
+        while index > 0 {
+            f /= base as f32;
+            result += f * (index % base) as f32;
+            index /= base;
+        }
+        result
+    }
+    let index = (frame_index % 8) + 1;
+    [halton(index, 2) - 0.5, halton(index, 3) - 0.5]
+}
+
+// Fullscreen blit: TAA resolves into the render-resolution history texture,
+// this pass copies its rgb to the swapchain (linear upscale when the render
+// size is capped, matching the FXAA/SMAA output stage).
+const TAA_BLIT_WGSL: &str = r#"
+@group(0) @binding(0) var src_tex: texture_2d<f32>;
+@group(0) @binding(1) var src_sampler: sampler;
+
+struct VsOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) vid: u32) -> VsOut {
+    var pos = array<vec2<f32>, 3>(
+        vec2<f32>(-1.0, -3.0),
+        vec2<f32>(3.0, 1.0),
+        vec2<f32>(-1.0, 1.0),
+    );
+    var out: VsOut;
+    out.pos = vec4<f32>(pos[vid], 0.0, 1.0);
+    out.uv = (out.pos.xy * vec2<f32>(0.5, -0.5)) + vec2<f32>(0.5, 0.5);
+    return out;
+}
+
+@fragment
+fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+    // Alpha carries scene depth for the resolve history; drop it here.
+    return vec4<f32>(textureSampleLevel(src_tex, src_sampler, in.uv, 0.0).rgb, 1.0);
+}
+"#;
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct TaaUniformGpu {
+    inv_view_proj: [[f32; 4]; 4],
+    prev_view_proj: [[f32; 4]; 4],
+    // [history blend, depth reject threshold, 0, 0].
+    params: [f32; 4],
+}
+
 const EXPOSURE_WGSL: &str = r#"
 struct ExposureConfig {
     dimensions: vec2<u32>,
@@ -645,6 +721,8 @@ impl PresentProcessor {
             fxaa: None,
             smaa_active: false,
             smaa: None,
+            taa_active: false,
+            taa: None,
         }
     }
 
@@ -666,6 +744,20 @@ impl PresentProcessor {
         if !active {
             self.smaa = None;
         }
+    }
+
+    /// Turn the TAA stage on/off; same pay-for-use lifecycle as the other AA
+    /// stages (off drops the history pair, pipelines and uniform buffer; on
+    /// allocates nothing until the first apply() that runs the passes).
+    pub(super) fn set_taa_active(&mut self, active: bool) {
+        self.taa_active = active;
+        if !active {
+            self.taa = None;
+        }
+    }
+
+    pub(super) fn taa_active(&self) -> bool {
+        self.taa_active
     }
 
     /// Lazily (re)build FXAA resources for the current render size. The
@@ -893,6 +985,185 @@ impl PresentProcessor {
         });
     }
 
+    /// Lazily (re)build TAA resources for the current render size. The
+    /// pipelines, layouts and uniform buffer survive resizes; the LDR target,
+    /// history pair and blit bind groups rebuild when dimensions change
+    /// (which also invalidates the history so no stale image is reprojected
+    /// across a resize).
+    fn ensure_taa(&mut self, dimensions: [u32; 2]) {
+        let size = [dimensions[0].max(1), dimensions[1].max(1)];
+        if self.taa.as_ref().is_some_and(|taa| taa.size == size) {
+            return;
+        }
+        let device = self.device.clone();
+        let core = match self.taa.take() {
+            Some(prev) => prev.core,
+            None => create_taa_core(&device, self.output_format),
+        };
+
+        let make_target = |label: &str, format: wgpu::TextureFormat| {
+            device.create_texture(&wgpu::TextureDescriptor {
+                label: Some(label),
+                size: wgpu::Extent3d {
+                    width: size[0],
+                    height: size[1],
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            })
+        };
+        let ldr_target = make_target("perro_taa_ldr_target", self.output_format);
+        let ldr_view = ldr_target.create_view(&wgpu::TextureViewDescriptor::default());
+        let history_a = make_target("perro_taa_history_a", TAA_HISTORY_FORMAT);
+        let history_b = make_target("perro_taa_history_b", TAA_HISTORY_FORMAT);
+        let history_views = [
+            history_a.create_view(&wgpu::TextureViewDescriptor::default()),
+            history_b.create_view(&wgpu::TextureViewDescriptor::default()),
+        ];
+        let blit_bind_groups = [0usize, 1].map(|i| {
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("perro_taa_blit_bg"),
+                layout: &core.blit_bgl,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&history_views[i]),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                ],
+            })
+        });
+
+        self.taa = Some(TaaResources {
+            core,
+            _ldr_target: ldr_target,
+            ldr_view,
+            _history: [history_a, history_b],
+            history_views,
+            blit_bind_groups,
+            history_index: 0,
+            history_valid: false,
+            size,
+        });
+    }
+
+    /// Encode the TAA resolve + blit for this frame: reproject/blend into the
+    /// write half of the history pair, then blit it to the swapchain. The
+    /// resolve bind group is created per frame on purpose — the depth view is
+    /// borrowed from the 3D pass (its texture can be recreated behind our
+    /// back) and the history pair ping-pongs every frame, so caching would
+    /// need invalidation tracking for little gain (one small bind group).
+    fn encode_taa(
+        &mut self,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        frame: &PresentTaaFrame,
+        output_view: &wgpu::TextureView,
+    ) {
+        let Some(taa) = self.taa.as_mut() else {
+            return;
+        };
+        let uniform = TaaUniformGpu {
+            inv_view_proj: frame.inv_view_proj,
+            prev_view_proj: frame.prev_view_proj,
+            params: [
+                if taa.history_valid {
+                    TAA_HISTORY_BLEND
+                } else {
+                    0.0
+                },
+                TAA_DEPTH_REJECT,
+                0.0,
+                0.0,
+            ],
+        };
+        queue.write_buffer(&taa.core.uniform_buffer, 0, bytemuck::bytes_of(&uniform));
+
+        let read = taa.history_index;
+        let write = read ^ 1;
+        let resolve_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_taa_resolve_bg"),
+            layout: &taa.core.resolve_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&taa.ldr_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&taa.history_views[read]),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&frame.depth_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: taa.core.uniform_buffer.as_entire_binding(),
+                },
+            ],
+        });
+        let run_pass = |encoder: &mut wgpu::CommandEncoder,
+                        label: &str,
+                        view: &wgpu::TextureView,
+                        pipeline: &wgpu::RenderPipeline,
+                        bind_group: &wgpu::BindGroup| {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some(label),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(0, bind_group, &[]);
+            pass.draw(0..3, 0..1);
+        };
+        // Pass 1: reproject + blend into the write half of the history pair
+        // (rgb = resolved color, a = device depth for next frame's reject).
+        run_pass(
+            encoder,
+            "perro_taa_resolve_pass",
+            &taa.history_views[write],
+            &taa.core.resolve_pipeline,
+            &resolve_bind_group,
+        );
+        // Pass 2: blit the fresh history to the swapchain (upscaling when the
+        // render size is capped). Next frame samples it as history — the
+        // ping-pong swap below makes that read side without any copy.
+        run_pass(
+            encoder,
+            "perro_taa_blit_pass",
+            output_view,
+            &taa.core.blit_pipeline,
+            &taa.blit_bind_groups[write],
+        );
+        taa.history_index = write;
+        taa.history_valid = true;
+    }
+
     pub(super) fn create_bind_group(
         &self,
         device: &wgpu::Device,
@@ -954,7 +1225,19 @@ impl PresentProcessor {
         delta_seconds: f32,
         settings: PresentExposureSettings,
         hdr_status: HdrStatus,
+        taa_frame: Option<&PresentTaaFrame>,
     ) {
+        // TAA needs scene depth; frames without a live 3D pipeline (2D-only
+        // scenes) tonemap straight to the swapchain and drop history validity
+        // so the accumulation restarts cleanly when 3D returns.
+        let taa_run = self.taa_active && taa_frame.is_some();
+        if taa_run {
+            self.ensure_taa(dimensions);
+        } else if self.taa_active
+            && let Some(taa) = self.taa.as_mut()
+        {
+            taa.history_valid = false;
+        }
         if self.smaa_active {
             self.ensure_smaa(queue, dimensions);
         } else if self.fxaa_active {
@@ -1008,24 +1291,28 @@ impl PresentProcessor {
         } else {
             write_manual_exposure(queue, self, settings.exposure);
         }
-        // With FXAA or SMAA active the tonemap resolves into a
+        // With FXAA, SMAA or TAA active the tonemap resolves into a
         // render-resolution LDR target; the AA pass chain then reads it and
         // writes the swapchain (doing the upscale when the render size is
         // capped). UI composites onto the swapchain after this whole method,
         // so it stays un-blurred. The modes are mutually exclusive (one
-        // anti_alias config value); SMAA wins if both flags are ever set.
-        let smaa = if self.smaa_active {
+        // anti_alias config value); TAA wins over SMAA wins over FXAA if
+        // several flags are ever set.
+        let taa = if taa_run { self.taa.as_ref() } else { None };
+        let smaa = if taa.is_none() && self.smaa_active {
             self.smaa.as_ref()
         } else {
             None
         };
-        let fxaa = if smaa.is_none() && self.fxaa_active {
+        let fxaa = if taa.is_none() && smaa.is_none() && self.fxaa_active {
             self.fxaa.as_ref()
         } else {
             None
         };
-        let tonemap_view = smaa
-            .map(|smaa| &smaa.ldr_view)
+        let taa_encode = taa.is_some();
+        let tonemap_view = taa
+            .map(|taa| &taa.ldr_view)
+            .or_else(|| smaa.map(|smaa| &smaa.ldr_view))
             .or_else(|| fxaa.map(|fxaa| &fxaa.target_view))
             .unwrap_or(output_view);
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1122,6 +1409,11 @@ impl PresentProcessor {
                 &smaa.core.blend_pipeline,
                 &smaa.blend_bind_group,
             );
+        }
+        // TAA resolve + blit (mutually exclusive with the blocks above; runs
+        // after them only to end their borrows before taking &mut self).
+        if taa_encode && let Some(frame) = taa_frame {
+            self.encode_taa(queue, encoder, frame, output_view);
         }
     }
 }
@@ -1328,6 +1620,75 @@ fn create_smaa_core(
         area_view,
         _search_tex: search_tex,
         search_view,
+    }
+}
+
+/// Size-independent TAA setup: the resolve + blit pipelines/layouts and the
+/// reprojection uniform buffer. The fullscreen-triangle pipeline shape is
+/// shared with the SMAA passes via `create_smaa_pipeline`.
+fn create_taa_core(device: &wgpu::Device, output_format: wgpu::TextureFormat) -> TaaCore {
+    let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("perro_taa_uniform"),
+        size: std::mem::size_of::<TaaUniformGpu>() as u64,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let resolve_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("perro_taa_resolve_bgl"),
+        entries: &[
+            // Current LDR + history are read with textureLoad/explicit-LOD
+            // sampling; depth is Depth32Float bound as unfilterable float.
+            smaa_texture_entry(0),
+            smaa_texture_entry(1),
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            smaa_sampler_entry(3),
+            wgpu::BindGroupLayoutEntry {
+                binding: 4,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(
+                        std::mem::size_of::<TaaUniformGpu>() as u64
+                    ),
+                },
+                count: None,
+            },
+        ],
+    });
+    let blit_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("perro_taa_blit_bgl"),
+        entries: &[smaa_texture_entry(0), smaa_sampler_entry(1)],
+    });
+    let resolve_pipeline = create_smaa_pipeline(
+        device,
+        "perro_taa_resolve_pipeline",
+        TAA_WGSL,
+        &resolve_bgl,
+        TAA_HISTORY_FORMAT,
+    );
+    let blit_pipeline = create_smaa_pipeline(
+        device,
+        "perro_taa_blit_pipeline",
+        TAA_BLIT_WGSL,
+        &blit_bgl,
+        output_format,
+    );
+    TaaCore {
+        resolve_pipeline,
+        resolve_bgl,
+        blit_pipeline,
+        blit_bgl,
+        uniform_buffer,
     }
 }
 
@@ -1636,8 +1997,82 @@ mod tests {
         use crate::AntiAliasMode;
         assert_eq!(AntiAliasMode::Off.sample_count(), 1);
         assert_eq!(AntiAliasMode::Fxaa.sample_count(), 1);
+        assert_eq!(AntiAliasMode::Smaa.sample_count(), 1);
+        assert_eq!(AntiAliasMode::Taa.sample_count(), 1);
         assert_eq!(AntiAliasMode::Msaa2.sample_count(), 2);
         assert_eq!(AntiAliasMode::Msaa4.sample_count(), 4);
+    }
+
+    #[test]
+    fn taa_shaders_parse_and_validate() {
+        for (name, src) in [("resolve", TAA_WGSL), ("blit", TAA_BLIT_WGSL)] {
+            let module = naga::front::wgsl::parse_str(src)
+                .unwrap_or_else(|err| panic!("TAA {name} WGSL parses: {err}"));
+            naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap_or_else(|err| panic!("TAA {name} WGSL validates: {err}"));
+        }
+    }
+
+    #[test]
+    fn taa_resolve_keeps_documented_rejection_and_clamp() {
+        // Camera-reprojection through world space, the off-screen/behind-
+        // camera rejects, the depth-disocclusion reject via history alpha and
+        // the 3x3 neighborhood clamp are load-bearing for v1 stability; keep
+        // them from silently regressing.
+        assert!(TAA_WGSL.contains("cfg.inv_view_proj * vec4<f32>(ndc, 1.0)"));
+        assert!(TAA_WGSL.contains("cfg.prev_view_proj * vec4<f32>(world_pos, 1.0)"));
+        assert!(TAA_WGSL.contains("if prev_clip.w > 1.0e-6"));
+        assert!(TAA_WGSL.contains("prev_uv.x < 0.0 || prev_uv.x > 1.0"));
+        assert!(TAA_WGSL.contains("abs(history.a - prev_depth_expected) > cfg.params.y"));
+        assert!(TAA_WGSL.contains("clamp(history.rgb, c_min, c_max)"));
+        // Output alpha must carry device depth for next frame's reject; the
+        // blit pass must drop it.
+        assert!(TAA_WGSL.contains("return vec4<f32>(resolved, depth);"));
+        assert!(TAA_BLIT_WGSL.contains(".rgb, 1.0);"));
+    }
+
+    #[test]
+    fn taa_jitter_follows_halton_2_3_eight_sample_cycle() {
+        // Halton(2,3) for indices 1..=8, offset to [-0.5, 0.5).
+        let expected_x = [
+            0.5f32,
+            0.25,
+            0.75,
+            0.125,
+            0.625,
+            0.375,
+            0.875,
+            0.0625,
+        ];
+        let expected_y = [
+            1.0f32 / 3.0,
+            2.0 / 3.0,
+            1.0 / 9.0,
+            4.0 / 9.0,
+            7.0 / 9.0,
+            2.0 / 9.0,
+            5.0 / 9.0,
+            8.0 / 9.0,
+        ];
+        for i in 0..8u32 {
+            let [jx, jy] = taa_jitter_offset(i);
+            assert!(
+                (jx - (expected_x[i as usize] - 0.5)).abs() < 1.0e-6,
+                "halton2 sample {i}"
+            );
+            assert!(
+                (jy - (expected_y[i as usize] - 0.5)).abs() < 1.0e-6,
+                "halton3 sample {i}"
+            );
+            // Sub-pixel bound: every offset stays inside the pixel footprint.
+            assert!(jx.abs() <= 0.5 && jy.abs() <= 0.5, "sample {i} in bounds");
+            // The sequence wraps every 8 frames (u32 counter safe).
+            assert_eq!(taa_jitter_offset(i), taa_jitter_offset(i + 8));
+        }
     }
 
     #[test]
