@@ -624,6 +624,9 @@ impl Runtime {
         self.render_2d.note_removed_node(node);
         self.render_3d.note_removed_node(node);
         self.render_ui.note_removed_node(node);
+        // Request ids carry the node id + generation, so nothing takes these
+        // results once the node is gone; drop them with the node.
+        self.render.remove_node_requests(node);
         self.locale_text.remove_node_bindings(node);
         if matches!(
             ty,

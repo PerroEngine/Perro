@@ -285,6 +285,37 @@ impl BarkPlayer {
                 i += 1;
             }
         }
+        Self::prune_idle_midi_mixers_locked(state, Instant::now());
+    }
+
+    // Note mixers are keyed by bus + quantized pan, so they outlive the notes
+    // that created them. Drop the ones whose notes have all finished: each one
+    // pins a sink, an unbounded control channel and a mixer source.
+    pub(super) fn prune_idle_midi_mixers_locked(state: &mut AudioState, now: Instant) {
+        let mut i = 0usize;
+        while i < state.built_in_midi_mixers.len() {
+            let key = state.built_in_midi_mixers[i].key;
+            let tracked = state.built_in_midi_notes.values().any(|held| *held == key);
+            if midi_mixer_is_idle(state.built_in_midi_mixers[i].busy_until, now, tracked) {
+                let removed = Self::remove_built_in_midi_mixer_locked(state, i);
+                let _ = removed.control.send(MidiMixerControl::Stop);
+                removed.sink.stop();
+            } else {
+                i += 1;
+            }
+        }
+        let mut i = 0usize;
+        while i < state.soundfont_midi_mixers.len() {
+            let key = state.soundfont_midi_mixers[i].key;
+            let tracked = state.soundfont_midi_notes.values().any(|held| *held == key);
+            if midi_mixer_is_idle(state.soundfont_midi_mixers[i].busy_until, now, tracked) {
+                let removed = Self::remove_soundfont_midi_mixer_locked(state, i);
+                let _ = removed.control.send(SoundFontMixerControl::Stop);
+                removed.sink.stop();
+            } else {
+                i += 1;
+            }
+        }
     }
 
     pub(super) fn get_or_load_soundfont_locked(

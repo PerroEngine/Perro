@@ -460,6 +460,7 @@ impl Runtime {
             playback_id,
             elapsed_since_prop: f32::MAX,
             remaining,
+            unknown_length_elapsed: 0.0,
             last_result: None,
             aperture_2d: None,
             aperture_3d: None,
@@ -514,6 +515,7 @@ impl Runtime {
             playback_id,
             elapsed_since_prop: f32::MAX,
             remaining,
+            unknown_length_elapsed: 0.0,
             last_result: None,
             aperture_2d: None,
             aperture_3d: None,
@@ -556,7 +558,10 @@ impl Runtime {
             last_3d,
             playback_id,
             elapsed_since_prop: f32::MAX,
+            // Midi files have no queryable length; the propagation tick pins a
+            // fallback TTL so a non-looped song does not track forever.
             remaining: None,
+            unknown_length_elapsed: 0.0,
             last_result: None,
             aperture_2d: None,
             aperture_3d: None,

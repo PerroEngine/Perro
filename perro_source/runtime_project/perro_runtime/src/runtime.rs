@@ -984,7 +984,14 @@ impl Runtime {
     pub(crate) fn apply_loaded_skeleton_bones(&mut self) {
         self.resource_api.poll_skeleton_bone_loads();
         let mut changed_2d = Vec::new();
+        // Nodes freed before their async bone load landed: the entry can never
+        // resolve, so drop it instead of rescanning it every frame forever.
+        let mut dropped_2d = Vec::new();
         for (node, (source, overrides)) in &self.pending_skeleton_sources_2d {
+            if self.nodes.get(*node).is_none() {
+                dropped_2d.push(*node);
+                continue;
+            }
             if let Some(bones) = self.resource_api.cached_bones_2d(source)
                 && let Some(scene_node) = self.nodes.get_mut_untracked(*node)
                 && let perro_nodes::SceneNodeData::Skeleton2D(skeleton) = &mut scene_node.data
@@ -994,13 +1001,21 @@ impl Runtime {
                 changed_2d.push(*node);
             }
         }
+        for node in &dropped_2d {
+            self.pending_skeleton_sources_2d.remove(node);
+        }
         for node in &changed_2d {
             self.pending_skeleton_sources_2d.remove(node);
             self.mark_transform_dirty_recursive(*node);
         }
 
         let mut changed_3d = Vec::new();
+        let mut dropped_3d = Vec::new();
         for (node, (source, overrides)) in &self.pending_skeleton_sources_3d {
+            if self.nodes.get(*node).is_none() {
+                dropped_3d.push(*node);
+                continue;
+            }
             if let Some(bones) = self.resource_api.cached_bones_3d(source)
                 && let Some(scene_node) = self.nodes.get_mut_untracked(*node)
                 && let perro_nodes::SceneNodeData::Skeleton3D(skeleton) = &mut scene_node.data
@@ -1010,6 +1025,9 @@ impl Runtime {
                 scene_loader::prepare::apply_bone_pose_overrides_3d(skeleton, overrides);
                 changed_3d.push(*node);
             }
+        }
+        for node in &dropped_3d {
+            self.pending_skeleton_sources_3d.remove(node);
         }
         for node in &changed_3d {
             self.pending_skeleton_sources_3d.remove(node);

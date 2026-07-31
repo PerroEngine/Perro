@@ -1076,6 +1076,30 @@ fn sprite_keeps_retained_texture_while_replacement_texture_is_pending() {
 }
 
 #[test]
+fn removing_a_node_drops_its_texture_source_and_render_requests() {
+    let mut runtime = Runtime::new();
+    let node = NodeAPI::create::<Sprite2D>(&mut runtime);
+    let kept = NodeAPI::create::<Sprite2D>(&mut runtime);
+
+    runtime
+        .render_2d
+        .texture_sources
+        .insert(node, "res://sprites/gone.png".to_owned());
+    runtime
+        .render_2d
+        .texture_sources
+        .insert(kept, "res://sprites/kept.png".to_owned());
+    let request = perro_runtime_render::sprite_2d_texture_request(node);
+    runtime.render.mark_inflight(request);
+
+    assert!(NodeAPI::remove_node(&mut runtime, node));
+
+    assert!(!runtime.render_2d.texture_sources.contains_key(&node));
+    assert!(runtime.render_2d.texture_sources.contains_key(&kept));
+    assert!(!runtime.render.is_inflight(request));
+}
+
+#[test]
 fn animated_sprite_advances_frame_and_emits_region() {
     let mut runtime = Runtime::new();
     let mut sprite = AnimatedSprite2D::new();

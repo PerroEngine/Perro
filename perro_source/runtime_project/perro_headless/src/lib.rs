@@ -120,6 +120,12 @@ fn run_runtime(mut runtime: Runtime) {
     let mut last = Instant::now();
     let mut accumulator = Duration::ZERO;
     let mut requests = Vec::new();
+    // No renderer here, but the runtime still queues render commands (node
+    // teardown, camera streams, audio-driven draws). Nothing drains them in a
+    // headless build, so the queue grows for the life of the process -- drain
+    // + drop it every tick. The inflight/resolved request maps stay empty:
+    // they are only filled from the extract passes perro_app drives.
+    let mut render_commands = Vec::new();
     while running.load(Ordering::SeqCst) {
         let frame_start = Instant::now();
         let delta = frame_start
@@ -132,6 +138,8 @@ fn run_runtime(mut runtime: Runtime) {
             runtime.fixed_update(fixed_delta);
             accumulator -= step;
         }
+        runtime.drain_render_commands(&mut render_commands);
+        render_commands.clear();
         runtime.drain_window_requests(&mut requests);
         if requests
             .iter()

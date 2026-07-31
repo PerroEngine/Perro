@@ -19,6 +19,13 @@ fn looped_audio() -> RuntimeAudio<'static> {
     }
 }
 
+fn one_shot_audio() -> RuntimeAudio<'static> {
+    RuntimeAudio {
+        looped: false,
+        ..looped_audio()
+    }
+}
+
 // Build a StaticBody2D wall (Quad collider) centered at `pos` with the given
 // half-extents. Returns the body id.
 fn wall_2d(runtime: &mut Runtime, pos: Vector2, width: f32, height: f32) -> NodeID {
@@ -1292,6 +1299,67 @@ fn removed_attached_source_clears_3d_audio_debug_rays() {
                 if matches!(command.as_ref(), perro_render_bridge::Command3D::RemoveNode { .. })
         )
     }));
+}
+
+#[test]
+fn non_looped_sound_with_unknown_length_retires_on_fallback_ttl() {
+    let mut runtime = Runtime::new();
+    // No audio device in tests, so the length probe never resolves. Such a
+    // sound used to sit in the active list for the rest of the session.
+    assert!(runtime.play_runtime_audio_2d(
+        one_shot_audio(),
+        Vector2::new(5.0, 0.0),
+        spatial_options(10.0),
+    ));
+    runtime.update_audio_propagation(1.0);
+    assert_eq!(runtime.audio.sounds.len(), 1);
+    assert!(runtime.audio.sounds[0].remaining.is_none());
+
+    // Grace window elapses: a conservative TTL takes over.
+    runtime.update_audio_propagation(1.0);
+    assert_eq!(
+        runtime.audio.sounds[0].remaining,
+        Some(UNKNOWN_LENGTH_FALLBACK_SECONDS)
+    );
+
+    runtime.update_audio_propagation(UNKNOWN_LENGTH_FALLBACK_SECONDS + 1.0);
+    assert!(runtime.audio.sounds.is_empty());
+}
+
+#[test]
+fn non_looped_spatial_midi_file_retires_on_fallback_ttl() {
+    let mut runtime = Runtime::new();
+    assert!(runtime.start_spatial_midi_file(
+        1,
+        perro_pawdio::MidiSong::new("res://song.mid"),
+        SpatialSoundPos::TwoD(Vector2::new(5.0, 0.0)),
+        spatial_options(10.0),
+        Some(Vector2::new(5.0, 0.0)),
+        None,
+    ));
+    runtime.update_audio_propagation(1.0);
+    runtime.update_audio_propagation(1.0);
+    assert_eq!(
+        runtime.audio.sounds[0].remaining,
+        Some(UNKNOWN_MIDI_LENGTH_FALLBACK_SECONDS)
+    );
+    runtime.update_audio_propagation(UNKNOWN_MIDI_LENGTH_FALLBACK_SECONDS + 1.0);
+    assert!(runtime.audio.sounds.is_empty());
+}
+
+#[test]
+fn looped_sound_with_unknown_length_stays_active() {
+    let mut runtime = Runtime::new();
+    assert!(runtime.play_runtime_audio_2d(
+        looped_audio(),
+        Vector2::new(5.0, 0.0),
+        spatial_options(10.0),
+    ));
+    for _ in 0..4 {
+        runtime.update_audio_propagation(1.0);
+    }
+    assert_eq!(runtime.audio.sounds.len(), 1);
+    assert!(runtime.audio.sounds[0].remaining.is_none());
 }
 
 #[test]

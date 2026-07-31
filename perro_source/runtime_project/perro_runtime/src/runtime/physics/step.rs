@@ -141,6 +141,7 @@ impl Runtime {
         // -- no unconditional reset needed; empty-arena scenes now cache too.
         self.queue_physics_force_emitters_2d();
         self.queue_physics_force_emitters_3d();
+        self.prune_dead_water_samples();
         self.queue_water_forces_2d();
         self.queue_water_forces_3d();
         self.apply_pending_forces_and_impulses_parallel();

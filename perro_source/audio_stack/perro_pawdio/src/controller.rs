@@ -256,6 +256,9 @@ fn process_audio_command(
 
 impl AudioController {
     const COMMAND_QUEUE_CAPACITY: usize = 4096;
+    // Interned-source ceiling. A game's active source set is far below this;
+    // the cap only guards against unbounded growth from generated names.
+    const SOURCE_POOL_CAPACITY: usize = 1024;
 
     pub fn new(static_audio_lookup: Option<fn(u64) -> &'static [u8]>) -> Result<Self, String> {
         if audio_disabled_by_env() {
@@ -330,8 +333,22 @@ impl AudioController {
             return existing.clone();
         }
         let interned: Arc<str> = Arc::from(source);
+        // The pool is a pure cache: entries the game no longer plays would
+        // otherwise pin their strings for the process lifetime. Past the cap it
+        // resets and refills with whatever is currently hot.
+        if pool.len() >= Self::SOURCE_POOL_CAPACITY {
+            pool.clear();
+        }
         pool.insert(hash, interned.clone());
         interned
+    }
+
+    // Forget an interned source: dropped assets do not come back under the
+    // same handle, so keeping the string only grows the pool.
+    fn forget_interned_source(&self, source: &str) {
+        if let Ok(mut pool) = self.source_pool.lock() {
+            pool.remove(&perro_ids::string_to_u64(source));
+        }
     }
 
     pub fn source_handle(&self, source: &str) -> AudioSourceHandle {
@@ -583,8 +600,11 @@ impl AudioController {
     /// Enqueue a source drop; success does not mean the asset has been dropped.
     pub fn enqueue_drop_source(&self, source: &str) -> AudioEnqueueResult {
         self.invalidate_duration(source);
-        let source = self.intern_source(source);
-        self.enqueue(AudioCommand::DropAsset { source })
+        let interned = self.intern_source(source);
+        let result = self.enqueue(AudioCommand::DropAsset { source: interned });
+        // Evict after the command is built so the enqueue still shares the Arc.
+        self.forget_interned_source(source);
+        result
     }
 
     // Byte reloads and drops can change a source's decoded length; forget the
@@ -952,6 +972,31 @@ mod tests {
             Err(AudioEnqueueError::Disconnected)
         );
         assert!(!controller.stop_all());
+    }
+
+    #[test]
+    fn dropping_a_source_evicts_its_interned_string() {
+        let (tx, _rx) = crossbeam_channel::bounded(4);
+        let controller = AudioController::from_test_sender(tx);
+
+        assert_eq!(controller.enqueue_load_source("res://drop.wav"), Ok(()));
+        assert_eq!(controller.source_pool.lock().expect("pool").len(), 1);
+        assert_eq!(controller.enqueue_drop_source("res://drop.wav"), Ok(()));
+        assert!(controller.source_pool.lock().expect("pool").is_empty());
+    }
+
+    #[test]
+    fn source_pool_stays_capped() {
+        let (tx, _rx) = crossbeam_channel::bounded(1);
+        let controller = AudioController::from_test_sender(tx);
+
+        for index in 0..=AudioController::SOURCE_POOL_CAPACITY {
+            let _ = controller.source_handle(&format!("res://generated_{index}.wav"));
+        }
+        assert!(
+            controller.source_pool.lock().expect("pool").len()
+                <= AudioController::SOURCE_POOL_CAPACITY
+        );
     }
 
     #[test]

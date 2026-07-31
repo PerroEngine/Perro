@@ -12,8 +12,9 @@ use crate::dsp::{DspControl, DspParams, DspSource};
 use crate::internal::SourceLoadKind;
 use crate::internal::{
     AudioState, BuiltInMidiMixerPlayback, BusState, CachedAudioAsset, CachedMidiFile, CachedPcm,
-    CachedSoundFont, MidiMixerKey, MidiPlayback, Playback, SoundFontMidiMixerKey,
-    SoundFontMidiMixerPlayback, SourceLoadStats,
+    CachedSoundFont, MidiMixerKey, MidiNoteReleaseTarget, MidiPlayback, Playback,
+    SoundFontMidiMixerKey, SoundFontMidiMixerPlayback, SourceLoadStats, midi_mixer_is_idle,
+    take_midi_note_target, track_held_midi_note,
 };
 use crate::mic::MicClip;
 use crate::midi::{

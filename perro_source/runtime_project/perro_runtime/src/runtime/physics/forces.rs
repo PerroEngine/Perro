@@ -361,6 +361,32 @@ impl Runtime {
         self.water_ids_3d_cache = ids;
     }
 
+    /// Drop readback-sample cache entries whose water (or sampled body) node
+    /// is gone. Nothing else removes from these maps -- they are fed straight
+    /// from `RenderEvent::WaterSamples` / `WaterBodySamples` -- so freeing a
+    /// water node leaks its entries and, worse, keeps
+    /// `can_skip_physics_fixed_step_pre_sync` permanently false. Same
+    /// clear-in-place / drop-dead split as the pending-query prune below.
+    pub(super) fn prune_dead_water_samples(&mut self) {
+        if !self.water_samples.is_empty() {
+            let mut samples = std::mem::take(&mut self.water_samples);
+            samples.retain(|id, _| self.nodes.get(*id).is_some());
+            self.water_samples = samples;
+        }
+        if !self.water_sample_times.is_empty() {
+            let mut times = std::mem::take(&mut self.water_sample_times);
+            times.retain(|id, _| self.nodes.get(*id).is_some());
+            self.water_sample_times = times;
+        }
+        if !self.water_body_samples.is_empty() {
+            let mut body_samples = std::mem::take(&mut self.water_body_samples);
+            body_samples.retain(|key, _| {
+                self.nodes.get(key.water).is_some() && self.nodes.get(key.body).is_some()
+            });
+            self.water_body_samples = body_samples;
+        }
+    }
+
     pub(super) fn queue_water_forces_2d(&mut self) {
         let active_world = self.active_physics_world();
         // active-world entries: clear Vec in place (kp alloc, refill this tick);
@@ -852,7 +878,7 @@ impl Runtime {
             return;
         };
         let current = rb.angvel();
-        let target = na3::Vector3::new(
+        let target = r3::Vector::new(
             (current.x + delta.x).clamp(-1.4, 1.4),
             (current.y + delta.y).clamp(-1.4, 1.4),
             (current.z + delta.z).clamp(-1.4, 1.4),

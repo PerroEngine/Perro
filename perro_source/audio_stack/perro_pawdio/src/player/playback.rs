@@ -594,25 +594,25 @@ impl BarkPlayer {
             }
             i += 1;
         }
-        if let Some(key) = state.built_in_midi_notes.remove(&id)
-            && let Some(mixer) = state
+        match take_midi_note_target(&mut state, id) {
+            Some(MidiNoteReleaseTarget::BuiltIn(key)) => state
                 .built_in_midi_mixers
                 .iter()
                 .find(|mixer| mixer.key == key)
-        {
-            let _ = mixer.control.send(MidiMixerControl::Release { id });
-            return true;
-        }
-        if let Some(key) = state.soundfont_midi_notes.remove(&id)
-            && let Some(mixer) = state
+                .is_some_and(|mixer| {
+                    let _ = mixer.control.send(MidiMixerControl::Release { id });
+                    true
+                }),
+            Some(MidiNoteReleaseTarget::SoundFont(key)) => state
                 .soundfont_midi_mixers
                 .iter()
                 .find(|mixer| mixer.key == key)
-        {
-            let _ = mixer.control.send(SoundFontMixerControl::Release { id });
-            return true;
+                .is_some_and(|mixer| {
+                    let _ = mixer.control.send(SoundFontMixerControl::Release { id });
+                    true
+                }),
+            None => false,
         }
-        false
     }
 
     pub fn update_spatial(&self, id: u64, params: SpatialAudioParams) -> bool {

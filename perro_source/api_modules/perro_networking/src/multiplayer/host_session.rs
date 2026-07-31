@@ -1,5 +1,5 @@
 use crate::multiplayer::heartbeat::HeartbeatConfig;
-use crate::multiplayer::state::NetEvent;
+use crate::multiplayer::state::{NetEvent, NetEventQueue};
 use crate::multiplayer::transport::{NetTransport, PeerId, TransportEvent};
 use crate::multiplayer::wire::{self, Frame};
 use std::time::Instant;
@@ -45,16 +45,16 @@ impl HostSession {
         transport: &mut impl NetTransport,
         events: Vec<TransportEvent>,
     ) -> Vec<NetEvent> {
-        let mut out = Vec::new();
+        let mut out = NetEventQueue::new();
         self.handle_transport_events_into(transport, events, &mut out);
-        out
+        out.drain()
     }
 
     pub fn handle_transport_events_into(
         &mut self,
         transport: &mut impl NetTransport,
         events: Vec<TransportEvent>,
-        out: &mut Vec<NetEvent>,
+        out: &mut NetEventQueue,
     ) {
         for event in events {
             match event {
@@ -164,7 +164,7 @@ impl HostSession {
         transport: &mut impl NetTransport,
         config: &HeartbeatConfig,
         now: Instant,
-        out: &mut Vec<NetEvent>,
+        out: &mut NetEventQueue,
     ) {
         if !config.enabled {
             return;
@@ -423,7 +423,7 @@ mod tests {
         );
 
         // Far enough in the future that the peer's last_seen is stale.
-        let mut out = Vec::new();
+        let mut out = NetEventQueue::new();
         session.tick(
             &mut transport,
             &config,
@@ -431,7 +431,7 @@ mod tests {
             &mut out,
         );
 
-        assert!(matches!(out[0], NetEvent::PeerLeft { slot: 2 }));
+        assert!(matches!(out.drain()[0], NetEvent::PeerLeft { slot: 2 }));
         // Slot 2 is freed, so the next joiner reuses it rather than getting 3.
         let events = session.handle_transport_events(
             &mut transport,
@@ -456,7 +456,7 @@ mod tests {
         transport.broadcasts.clear();
 
         // Within the interval: no heartbeat.
-        let mut out = Vec::new();
+        let mut out = NetEventQueue::new();
         session.tick(&mut transport, &config, base, &mut out);
         assert!(transport.broadcasts.is_empty());
 
@@ -486,7 +486,7 @@ mod tests {
             vec![TransportEvent::PeerConnected(PeerId::Steam(99))],
         );
 
-        let mut out = Vec::new();
+        let mut out = NetEventQueue::new();
         session.tick(
             &mut transport,
             &HeartbeatConfig::disabled(),

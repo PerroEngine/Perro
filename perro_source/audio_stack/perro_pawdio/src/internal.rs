@@ -40,12 +40,47 @@ pub(crate) struct MidiPlayback {
     pub(crate) sink: SpatialSink,
 }
 
+// Mixer-key pan components snap to this grid. Raw float pans made every
+// position of a moving spatial emitter mint its own mixer (sink + control
+// channel + mixer source) that nothing ever freed; 0.25 is far finer than the
+// audible pan step, and the sink still gets the exact pan on reuse.
+pub(crate) const MIXER_PAN_QUANT_STEP: f32 = 0.25;
+
+// Idle mixers are pruned this long after their last note is expected to have
+// finished, so a pan sweep leaves at most a few short-lived mixers behind.
+pub(crate) const MIXER_IDLE_TTL: Duration = Duration::from_secs(5);
+
+#[inline]
+pub(crate) fn quantize_mixer_pan(value: f32) -> i16 {
+    // Callers clamp to -1..1 first, so the quantized value always fits i16.
+    (value / MIXER_PAN_QUANT_STEP).round() as i16
+}
+
+#[inline]
+pub(crate) fn dequantize_mixer_pan(value: i16) -> f32 {
+    value as f32 * MIXER_PAN_QUANT_STEP
+}
+
+// A mixer may be dropped once every note it was handed is past its sustain
+// window plus the idle grace, and no tracked (held) note still names it.
+pub(crate) fn midi_mixer_is_idle(busy_until: Instant, now: Instant, tracked_notes: bool) -> bool {
+    !tracked_notes && now.saturating_duration_since(busy_until) >= MIXER_IDLE_TTL
+}
+
+// Only held notes are tracked for later release/stop. One-shots retire on
+// their own, so recording them just grows the map for the process lifetime.
+pub(crate) fn track_held_midi_note<K>(map: &mut HashMap<u64, K>, id: u64, key: K, held: bool) {
+    if held {
+        map.insert(id, key);
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct MidiMixerKey {
     pub(crate) bus_id: Option<AudioBusID>,
-    pub(crate) pan_x: u32,
-    pub(crate) pan_y: u32,
-    pub(crate) pan_z: u32,
+    pub(crate) pan_x: i16,
+    pub(crate) pan_y: i16,
+    pub(crate) pan_z: i16,
 }
 
 impl MidiMixerKey {
@@ -53,17 +88,17 @@ impl MidiMixerKey {
         let pan = pan.clamped();
         Self {
             bus_id,
-            pan_x: pan.x.to_bits(),
-            pan_y: pan.y.to_bits(),
-            pan_z: pan.z.to_bits(),
+            pan_x: quantize_mixer_pan(pan.x),
+            pan_y: quantize_mixer_pan(pan.y),
+            pan_z: quantize_mixer_pan(pan.z),
         }
     }
 
     pub(crate) fn pan(self) -> AudioPan {
         AudioPan {
-            x: f32::from_bits(self.pan_x),
-            y: f32::from_bits(self.pan_y),
-            z: f32::from_bits(self.pan_z),
+            x: dequantize_mixer_pan(self.pan_x),
+            y: dequantize_mixer_pan(self.pan_y),
+            z: dequantize_mixer_pan(self.pan_z),
         }
     }
 }
@@ -75,15 +110,17 @@ pub(crate) struct BuiltInMidiMixerPlayback {
     pub(crate) dsp: std::sync::Arc<DspControl>,
     pub(crate) control: Sender<MidiMixerControl>,
     pub(crate) sink: SpatialSink,
+    // Latest instant any note handed to this mixer can still be sounding.
+    pub(crate) busy_until: Instant,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct SoundFontMidiMixerKey {
     pub(crate) id: perro_ids::SoundFontID,
     pub(crate) bus_id: Option<AudioBusID>,
-    pub(crate) pan_x: u32,
-    pub(crate) pan_y: u32,
-    pub(crate) pan_z: u32,
+    pub(crate) pan_x: i16,
+    pub(crate) pan_y: i16,
+    pub(crate) pan_z: i16,
 }
 
 impl SoundFontMidiMixerKey {
@@ -96,17 +133,17 @@ impl SoundFontMidiMixerKey {
         Self {
             id,
             bus_id,
-            pan_x: pan.x.to_bits(),
-            pan_y: pan.y.to_bits(),
-            pan_z: pan.z.to_bits(),
+            pan_x: quantize_mixer_pan(pan.x),
+            pan_y: quantize_mixer_pan(pan.y),
+            pan_z: quantize_mixer_pan(pan.z),
         }
     }
 
     pub(crate) fn pan(self) -> AudioPan {
         AudioPan {
-            x: f32::from_bits(self.pan_x),
-            y: f32::from_bits(self.pan_y),
-            z: f32::from_bits(self.pan_z),
+            x: dequantize_mixer_pan(self.pan_x),
+            y: dequantize_mixer_pan(self.pan_y),
+            z: dequantize_mixer_pan(self.pan_z),
         }
     }
 }
@@ -118,6 +155,31 @@ pub(crate) struct SoundFontMidiMixerPlayback {
     pub(crate) dsp: std::sync::Arc<DspControl>,
     pub(crate) control: Sender<SoundFontMixerControl>,
     pub(crate) sink: SpatialSink,
+    // See `BuiltInMidiMixerPlayback::busy_until`.
+    pub(crate) busy_until: Instant,
+}
+
+// Which mixer map a released/stopped note id came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum MidiNoteReleaseTarget {
+    BuiltIn(MidiMixerKey),
+    SoundFont(SoundFontMidiMixerKey),
+}
+
+// Forget a tracked note id and report which mixer owns it. Both maps are
+// consulted: a held soundfont note lives in `soundfont_midi_notes`, and
+// leaving it there both leaked the entry and dropped its release.
+pub(crate) fn take_midi_note_target(
+    state: &mut AudioState,
+    id: u64,
+) -> Option<MidiNoteReleaseTarget> {
+    if let Some(key) = state.built_in_midi_notes.remove(&id) {
+        return Some(MidiNoteReleaseTarget::BuiltIn(key));
+    }
+    state
+        .soundfont_midi_notes
+        .remove(&id)
+        .map(MidiNoteReleaseTarget::SoundFont)
 }
 
 #[derive(Clone, Copy)]
@@ -568,5 +630,124 @@ impl CachedAudioAsset {
     // Bytes this entry pins in the cache budget (compressed + decoded PCM).
     pub(crate) fn cache_len(&self) -> usize {
         self.bytes.len() + self.pcm.as_ref().map_or(0, |pcm| pcm.byte_len())
+    }
+}
+
+#[cfg(test)]
+impl AudioState {
+    // Sink-free state for map/bookkeeping tests: building a real `BarkPlayer`
+    // needs an output device, which test machines do not have.
+    pub(crate) fn empty_for_test() -> Self {
+        Self {
+            master_volume: 1.0,
+            buses: HashMap::new(),
+            playbacks: Vec::new(),
+            midi_playbacks: Vec::new(),
+            built_in_midi_mixers: Vec::new(),
+            built_in_midi_mixer_index: HashMap::new(),
+            built_in_midi_notes: HashMap::new(),
+            soundfont_midi_mixers: Vec::new(),
+            soundfont_midi_mixer_index: HashMap::new(),
+            soundfont_midi_notes: HashMap::new(),
+            cache: HashMap::new(),
+            soundfonts: HashMap::new(),
+            midi_files: HashMap::new(),
+            cache_bytes: 0,
+            soundfont_bytes: 0,
+            next_cache_epoch: 1,
+            last_evict_sweep: Instant::now(),
+            volumes_dirty: false,
+            speeds_dirty: false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pan(x: f32) -> AudioPan {
+        AudioPan::new(x, 0.0, 0.0)
+    }
+
+    fn soundfont_id() -> perro_ids::SoundFontID {
+        perro_ids::SoundFontID::from_string("res://piano.sf2")
+    }
+
+    #[test]
+    fn nearby_pans_share_one_mixer_key() {
+        // A drifting emitter used to mint a mixer per float pan.
+        let base = MidiMixerKey::new(None, pan(0.5));
+        assert_eq!(base, MidiMixerKey::new(None, pan(0.51)));
+        assert_eq!(base, MidiMixerKey::new(None, pan(0.44)));
+        assert_ne!(base, MidiMixerKey::new(None, pan(0.9)));
+        assert!((base.pan().x - 0.5).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn soundfont_mixer_key_quantizes_pan_too() {
+        let id = soundfont_id();
+        let base = SoundFontMidiMixerKey::new(id, None, pan(-0.5));
+        assert_eq!(base, SoundFontMidiMixerKey::new(id, None, pan(-0.49)));
+        assert_ne!(base, SoundFontMidiMixerKey::new(id, None, pan(0.0)));
+        assert!((base.pan().x + 0.5).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn full_pan_sweep_stays_bounded() {
+        let mut keys = std::collections::HashSet::new();
+        for step in 0..=2000 {
+            let x = -1.0 + step as f32 / 1000.0;
+            keys.insert(MidiMixerKey::new(None, pan(x)));
+        }
+        // -1..1 at a 0.25 grid: 9 buckets, not 2001 mixers.
+        assert_eq!(keys.len(), 9);
+    }
+
+    #[test]
+    fn idle_mixer_prunes_only_after_ttl_and_without_tracked_notes() {
+        let busy_until = Instant::now();
+        let now = busy_until + MIXER_IDLE_TTL + Duration::from_millis(1);
+        assert!(midi_mixer_is_idle(busy_until, now, false));
+        // A held note still names this mixer: keep it alive.
+        assert!(!midi_mixer_is_idle(busy_until, now, true));
+        // Still inside the sustain window plus grace.
+        assert!(!midi_mixer_is_idle(busy_until, busy_until, false));
+        assert!(!midi_mixer_is_idle(
+            now + Duration::from_secs(30),
+            now,
+            false
+        ));
+    }
+
+    #[test]
+    fn one_shot_notes_are_not_tracked() {
+        let mut map: HashMap<u64, MidiMixerKey> = HashMap::new();
+        let key = MidiMixerKey::new(None, pan(0.0));
+        track_held_midi_note(&mut map, 1, key, false);
+        assert!(map.is_empty());
+        track_held_midi_note(&mut map, 2, key, true);
+        assert_eq!(map.len(), 1);
+    }
+
+    #[test]
+    fn release_takes_soundfont_note_entry() {
+        let mut state = AudioState::empty_for_test();
+        let built_in = MidiMixerKey::new(None, pan(0.0));
+        let soundfont = SoundFontMidiMixerKey::new(soundfont_id(), None, pan(0.0));
+        state.built_in_midi_notes.insert(1, built_in);
+        state.soundfont_midi_notes.insert(2, soundfont);
+
+        assert_eq!(
+            take_midi_note_target(&mut state, 2),
+            Some(MidiNoteReleaseTarget::SoundFont(soundfont))
+        );
+        assert!(state.soundfont_midi_notes.is_empty());
+        assert_eq!(
+            take_midi_note_target(&mut state, 1),
+            Some(MidiNoteReleaseTarget::BuiltIn(built_in))
+        );
+        assert!(state.built_in_midi_notes.is_empty());
+        assert_eq!(take_midi_note_target(&mut state, 3), None);
     }
 }

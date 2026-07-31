@@ -1,5 +1,5 @@
 use crate::multiplayer::heartbeat::HeartbeatConfig;
-use crate::multiplayer::state::NetEvent;
+use crate::multiplayer::state::{NetEvent, NetEventQueue};
 use crate::multiplayer::transport::{NetTransport, PeerId, TransportEvent};
 use crate::multiplayer::wire::{self, Frame};
 use std::time::Instant;
@@ -28,16 +28,16 @@ impl ClientSession {
         transport: &mut impl NetTransport,
         events: Vec<TransportEvent>,
     ) -> Vec<NetEvent> {
-        let mut out = Vec::new();
+        let mut out = NetEventQueue::new();
         self.handle_transport_events_into(transport, events, &mut out);
-        out
+        out.drain()
     }
 
     pub fn handle_transport_events_into(
         &mut self,
         transport: &mut impl NetTransport,
         events: Vec<TransportEvent>,
-        out: &mut Vec<NetEvent>,
+        out: &mut NetEventQueue,
     ) {
         for event in events {
             match event {
@@ -137,7 +137,7 @@ impl ClientSession {
         transport: &mut impl NetTransport,
         config: &HeartbeatConfig,
         now: Instant,
-        out: &mut Vec<NetEvent>,
+        out: &mut NetEventQueue,
     ) {
         if !config.enabled {
             return;
@@ -321,7 +321,7 @@ mod tests {
             vec![TransportEvent::PeerConnected(steam_peer())],
         );
 
-        let mut out = Vec::new();
+        let mut out = NetEventQueue::new();
         session.tick(
             &mut transport,
             &config,
@@ -329,7 +329,7 @@ mod tests {
             &mut out,
         );
 
-        assert!(matches!(out[0], NetEvent::Disconnected));
+        assert!(matches!(out.drain()[0], NetEvent::Disconnected));
     }
 
     #[test]
@@ -348,7 +348,7 @@ mod tests {
         // Just under the timeout: no disconnect, but a heartbeat goes out since
         // we've been quiet past the interval.
         transport.sent.clear();
-        let mut out = Vec::new();
+        let mut out = NetEventQueue::new();
         session.tick(
             &mut transport,
             &config,

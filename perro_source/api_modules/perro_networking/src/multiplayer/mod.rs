@@ -353,7 +353,7 @@ pub fn send_ready() {
 
 /// Take all queued [`NetEvent`]s. Call after [`poll`] each frame.
 pub fn drain_events() -> Vec<NetEvent> {
-    std::mem::take(&mut lock_state().script_events)
+    lock_state().script_events.drain()
 }
 
 /// Current public lobby rows. `lobby_id` is a join token for [`join_steam`].

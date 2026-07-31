@@ -728,6 +728,13 @@ impl Runtime {
         #[cfg(any(test, feature = "bench"))]
         self.mesh_query_node_rebuilds
             .set(self.mesh_query_node_rebuilds.get() + 1);
+        // Entries stamped with an older revision can never hit again (the
+        // revision only moves forward), so drop them on the miss that already
+        // pays for a rebuild. Without this the map is insert-only and holds a
+        // snapshot per queried node forever -- freed nodes included, and a
+        // `MultiMeshInstance3D` snapshot is 64B per instance.
+        self.mesh_query_node_cache
+            .retain(|_, entry| entry.built_at_revision == current_revision);
         self.mesh_query_node_cache.insert(
             node_id,
             QueryNodeDataCacheEntry {

@@ -1,5 +1,9 @@
+use crate::retained::{
+    decode_3d_material_request_node, mesh_3d_request, sprite_2d_texture_request,
+    tilemap_2d_texture_request, ui_image_texture_request,
+};
 use ahash::{AHashMap, AHashSet};
-use perro_ids::{MaterialID, MeshID, TextureID};
+use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{RenderCommand, RenderEvent, RenderRequestID};
 
 #[derive(Debug, Clone)]
@@ -114,6 +118,42 @@ impl RenderState {
         out.clear();
         out.extend(self.inflight_requests.iter().copied());
     }
+
+    /// Drop every request id belonging to a freed node. Request ids embed the
+    /// full `NodeID` (generation included), so once the node is gone nothing
+    /// ever calls `take_result` for them again and both maps grow forever.
+    /// The four fixed-tag kinds are rebuilt directly; material ids also carry
+    /// a surface index, so they are decoded instead. Both maps only hold
+    /// unresolved / untaken requests, so the scan is short and skipped when
+    /// they are empty.
+    pub fn remove_node_requests(&mut self, node: NodeID) {
+        for request in [
+            sprite_2d_texture_request(node),
+            tilemap_2d_texture_request(node),
+            ui_image_texture_request(node),
+            mesh_3d_request(node),
+        ] {
+            self.inflight_requests.remove(&request);
+            self.resolved_requests.remove(&request);
+        }
+        if !self.inflight_requests.is_empty() {
+            self.inflight_requests
+                .retain(|request| decode_3d_material_request_node(*request) != Some(node));
+        }
+        if !self.resolved_requests.is_empty() {
+            self.resolved_requests
+                .retain(|request, _| decode_3d_material_request_node(*request) != Some(node));
+        }
+    }
+
+    /// Drop every pending request. Used on project reload, where
+    /// `nodes.clear()` bypasses per-node teardown and would otherwise strand
+    /// every id keyed by a now-dead node. Queued commands are left alone --
+    /// the renderer still needs the teardown commands already staged in them.
+    pub fn clear_requests(&mut self) {
+        self.inflight_requests.clear();
+        self.resolved_requests.clear();
+    }
 }
 
 impl Default for RenderState {
@@ -125,6 +165,7 @@ impl Default for RenderState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::retained::material_3d_request;
     use perro_render_bridge::VisualAccessibilityCommand;
 
     #[test]
@@ -198,6 +239,53 @@ mod tests {
             Some(RuntimeRenderResult::Failed(reason)) => assert_eq!(reason, "missing texture"),
             other => panic!("unexpected render result: {other:?}"),
         }
+    }
+
+    #[test]
+    fn removing_a_node_drops_every_request_variant() {
+        let freed = NodeID::from_u64(7);
+        let kept = NodeID::from_u64(8);
+        let mut state = RenderState::new();
+
+        for node in [freed, kept] {
+            state.mark_inflight(sprite_2d_texture_request(node));
+            state.mark_inflight(tilemap_2d_texture_request(node));
+            state.mark_inflight(ui_image_texture_request(node));
+            state.mark_inflight(mesh_3d_request(node));
+            state.mark_inflight(material_3d_request(node, 0));
+            state.mark_inflight(material_3d_request(node, 4));
+            state.apply_event(RenderEvent::TextureCreated {
+                request: sprite_2d_texture_request(node),
+                id: TextureID::new(1),
+            });
+            state.apply_event(RenderEvent::MaterialCreated {
+                request: material_3d_request(node, 4),
+                id: MaterialID::new(2),
+            });
+        }
+
+        state.remove_node_requests(freed);
+
+        for request in [
+            sprite_2d_texture_request(freed),
+            tilemap_2d_texture_request(freed),
+            ui_image_texture_request(freed),
+            mesh_3d_request(freed),
+            material_3d_request(freed, 0),
+            material_3d_request(freed, 4),
+        ] {
+            assert!(!state.is_inflight(request));
+            assert!(state.take_result(request).is_none());
+        }
+
+        assert!(state.is_inflight(mesh_3d_request(kept)));
+        assert!(state.is_inflight(material_3d_request(kept, 0)));
+        assert!(state.take_result(sprite_2d_texture_request(kept)).is_some());
+        assert!(state.take_result(material_3d_request(kept, 4)).is_some());
+
+        state.clear_requests();
+        assert!(!state.has_inflight_requests());
+        assert!(!state.has_resolved_requests());
     }
 
     #[test]

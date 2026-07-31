@@ -31,6 +31,15 @@ const LISTENER_FIELD_RAYS_3D: usize = 96;
 const AUDIO_BOUNCE_RAYS_2D: usize = 8;
 const AUDIO_BOUNCE_RAYS_3D: usize = 6;
 const MAX_AUDIO_PORTAL_HOPS: usize = 32;
+// A non-looped sound whose length is unknown must still retire. The start-time
+// probe can fail (controller queue full during an sfx burst) and spatial midi
+// files have no length at all, so retry the probe for a grace window and then
+// pin a conservative TTL instead of tracking the sound for the whole session.
+const UNKNOWN_LENGTH_PROBE_INTERVAL: f32 = 0.5;
+const UNKNOWN_LENGTH_GRACE_SECONDS: f32 = 2.0;
+const UNKNOWN_LENGTH_FALLBACK_SECONDS: f32 = 60.0;
+// Midi songs commonly run minutes; bound them well above a sampled one-shot.
+const UNKNOWN_MIDI_LENGTH_FALLBACK_SECONDS: f32 = 600.0;
 const AUDIO_PORTAL_EPSILON: f32 = 0.01;
 const AUDIO_PORTAL_MISS_TOLERANCE: f32 = 0.25;
 
@@ -113,6 +122,9 @@ struct ActiveSpatialSound {
     playback_id: Option<u64>,
     elapsed_since_prop: f32,
     remaining: Option<f32>,
+    // Seconds this sound has run with an unknown remaining time. Drives the
+    // length-probe retry and the fallback TTL; see `age_unknown_length_sound`.
+    unknown_length_elapsed: f32,
     last_result: Option<PropagationResult>,
     // Persistent reconciled-aperture cache (Phase 1). When the direct ray is
     // blocked, the reconciler finds a virtual source (aperture) where
@@ -472,13 +484,17 @@ impl Runtime {
             1.0 / self.audio.config.propagation_tick_hz
         };
         let mut sounds = std::mem::take(&mut self.audio.sounds);
+        let dt = dt.max(0.0);
         for sound in &mut sounds {
-            if let Some(remaining) = &mut sound.remaining {
-                *remaining -= dt.max(0.0);
+            match sound.remaining {
+                Some(remaining) => sound.remaining = Some(remaining - dt),
+                // Unknown length on a non-looped sound is not a licence to live
+                // forever: probe again, then fall back to a TTL.
+                None if !sound.looped => self.age_unknown_length_sound(sound, dt),
+                None => {}
             }
         }
         sounds.retain(|sound| sound.looped || sound.remaining.is_none_or(|v| v > 0.0));
-        let dt = dt.max(0.0);
         self.audio.scratch_ray_inputs.clear();
         self.audio.scratch_ray_indices.clear();
         self.audio.scratch_sound_ray_results.clear();
@@ -659,6 +675,32 @@ impl Runtime {
         self.audio.counters.propagation_time = start.elapsed();
         self.audio.sounds = sounds;
         self.clear_stale_audio_debug_rays();
+    }
+
+    // Age a non-looped sound whose play length never resolved. The probe is
+    // retried on a coarse interval (the first call per source blocks on the
+    // audio worker), and once the grace window passes the sound gets a
+    // conservative TTL so it always leaves the active list.
+    fn age_unknown_length_sound(&mut self, sound: &mut ActiveSpatialSound, dt: f32) {
+        let before = sound.unknown_length_elapsed;
+        sound.unknown_length_elapsed += dt;
+        let elapsed = sound.unknown_length_elapsed;
+        let probe_due = (before / UNKNOWN_LENGTH_PROBE_INTERVAL).floor()
+            < (elapsed / UNKNOWN_LENGTH_PROBE_INTERVAL).floor();
+        if probe_due
+            && matches!(sound.kind, ActiveSpatialSoundKind::Audio)
+            && let Some(length) = self.resource_api.audio_length_seconds(&sound.source)
+        {
+            sound.remaining = Some((length - elapsed).max(0.0));
+            return;
+        }
+        if elapsed >= UNKNOWN_LENGTH_GRACE_SECONDS {
+            sound.remaining = Some(match sound.kind {
+                // Midi files carry no queryable length; bound them generously.
+                ActiveSpatialSoundKind::MidiFile => UNKNOWN_MIDI_LENGTH_FALLBACK_SECONDS,
+                _ => UNKNOWN_LENGTH_FALLBACK_SECONDS,
+            });
+        }
     }
 }
 

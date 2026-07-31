@@ -112,14 +112,20 @@ impl BarkPlayer {
     pub(super) fn play_built_in_midi_note(&self, request: MidiNoteRequest) -> Result<(), String> {
         let pan = request.options.pan.clamped();
         let key = MidiMixerKey::new(request.options.bus_id, pan);
+        let now = Instant::now();
         let mut state = self
             .state
             .lock()
             .map_err(|_| "audio mutex poisoned".to_string())?;
-        Self::prune_finished_playbacks_locked(&mut state, Instant::now());
+        Self::prune_finished_playbacks_locked(&mut state, now);
         Self::prune_finished_midi_locked(&mut state);
 
         let mixer_index = if let Some(index) = state.built_in_midi_mixer_index.get(&key).copied() {
+            // Keys are pan-quantized, so a reused mixer still takes the exact
+            // requested pan on its sink.
+            state.built_in_midi_mixers[index]
+                .sink
+                .set_emitter_position(Self::pan_emitter_position(pan));
             index
         } else {
             let (control, rx) = crossbeam_channel::unbounded();
@@ -160,6 +166,7 @@ impl BarkPlayer {
                 dsp,
                 control,
                 sink,
+                busy_until: now,
             });
             let index = state.built_in_midi_mixers.len() - 1;
             state.built_in_midi_mixer_index.insert(key, index);
@@ -175,13 +182,20 @@ impl BarkPlayer {
             program: request.options.program,
             volume: request.options.volume,
         };
-        state.built_in_midi_mixers[mixer_index]
+        let mixer = &mut state.built_in_midi_mixers[mixer_index];
+        mixer
             .control
             .send(MidiMixerControl::Note(note))
             .map_err(|_| "failed to queue midi note".to_string())?;
-        if request.held {
-            state.built_in_midi_notes.insert(request.id, key);
-        }
+        mixer.busy_until = mixer
+            .busy_until
+            .max(now.checked_add(request.options.sustain).unwrap_or(now));
+        track_held_midi_note(
+            &mut state.built_in_midi_notes,
+            request.id,
+            key,
+            request.held,
+        );
         Ok(())
     }
 
@@ -191,15 +205,20 @@ impl BarkPlayer {
         };
         let pan = request.options.pan.clamped();
         let key = SoundFontMidiMixerKey::new(id, request.options.bus_id, pan);
+        let now = Instant::now();
         let mut state = self
             .state
             .lock()
             .map_err(|_| "audio mutex poisoned".to_string())?;
-        Self::prune_finished_playbacks_locked(&mut state, Instant::now());
+        Self::prune_finished_playbacks_locked(&mut state, now);
         Self::prune_finished_midi_locked(&mut state);
         let (_, font) = Self::get_soundfont_locked(&state, id)?;
 
         let mixer_index = if let Some(index) = state.soundfont_midi_mixer_index.get(&key).copied() {
+            // See `play_built_in_midi_note`: quantized key, exact sink pan.
+            state.soundfont_midi_mixers[index]
+                .sink
+                .set_emitter_position(Self::pan_emitter_position(pan));
             index
         } else {
             let (control, rx) = crossbeam_channel::unbounded();
@@ -242,6 +261,7 @@ impl BarkPlayer {
                     dsp,
                     control,
                     sink,
+                    busy_until: now,
                 });
             let index = state.soundfont_midi_mixers.len() - 1;
             state.soundfont_midi_mixer_index.insert(key, index);
@@ -257,11 +277,20 @@ impl BarkPlayer {
             channel: request.options.channel,
             program: request.options.program,
         };
-        state.soundfont_midi_mixers[mixer_index]
+        let mixer = &mut state.soundfont_midi_mixers[mixer_index];
+        mixer
             .control
             .send(SoundFontMixerControl::Note(note))
             .map_err(|_| "failed to queue soundfont midi note".to_string())?;
-        state.soundfont_midi_notes.insert(request.id, key);
+        mixer.busy_until = mixer
+            .busy_until
+            .max(now.checked_add(request.options.sustain).unwrap_or(now));
+        track_held_midi_note(
+            &mut state.soundfont_midi_notes,
+            request.id,
+            key,
+            request.held,
+        );
         Ok(())
     }
 
@@ -334,15 +363,24 @@ impl BarkPlayer {
         if let Some(playback) = state.midi_playbacks.iter().find(|p| p.id == id) {
             return playback.control.send(MidiControl::Release).is_ok();
         }
-        if let Some(key) = state.built_in_midi_notes.remove(&id)
-            && let Some(mixer) = state
+        match take_midi_note_target(&mut state, id) {
+            Some(MidiNoteReleaseTarget::BuiltIn(key)) => state
                 .built_in_midi_mixers
                 .iter()
                 .find(|mixer| mixer.key == key)
-        {
-            return mixer.control.send(MidiMixerControl::Release { id }).is_ok();
+                .is_some_and(|mixer| mixer.control.send(MidiMixerControl::Release { id }).is_ok()),
+            Some(MidiNoteReleaseTarget::SoundFont(key)) => state
+                .soundfont_midi_mixers
+                .iter()
+                .find(|mixer| mixer.key == key)
+                .is_some_and(|mixer| {
+                    mixer
+                        .control
+                        .send(SoundFontMixerControl::Release { id })
+                        .is_ok()
+                }),
+            None => false,
         }
-        false
     }
 
     pub(super) fn activate_midi_sink(&self, activation: MidiSinkActivation) -> Result<(), String> {

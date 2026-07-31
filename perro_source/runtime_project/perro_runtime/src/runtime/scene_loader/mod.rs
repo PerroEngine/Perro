@@ -509,6 +509,14 @@ impl Runtime {
         self.force_water_impacts_2d.clear();
         self.force_water_impacts_3d.clear();
         self.water_entry_states_3d.clear();
+        // Readback caches keyed by (dead) water / body node ids. Left behind
+        // they also pin `can_skip_physics_fixed_step_pre_sync` off forever.
+        self.water_samples.clear();
+        self.water_sample_times.clear();
+        self.water_body_samples.clear();
+        self.pending_skeleton_sources_2d.clear();
+        self.pending_skeleton_sources_3d.clear();
+        self.mesh_query_node_cache.clear();
         self.pending_force_emitters_2d.clear();
         self.pending_force_emitters_3d.clear();
         self.scripts = Default::default();
@@ -578,6 +586,11 @@ impl Runtime {
         self.render_ui.cursor_icon_ui = perro_ui::CursorIcon::Default;
         self.render_ui.cursor_icon_script = perro_ui::CursorIcon::Default;
         self.render_ui.removed_nodes.clear();
+        // Per-node stream texture info + render request ids: both are keyed by
+        // node id, and `nodes.clear()` above skips the per-node teardown that
+        // normally drops them.
+        self.ui_stream_render_info.clear();
+        self.render.clear_requests();
         self.locale_text.bindings.clear();
         self.locale_text.last_epoch = self.resource_api.localization_epoch();
         if self.provider_mode == ProviderMode::Dynamic {

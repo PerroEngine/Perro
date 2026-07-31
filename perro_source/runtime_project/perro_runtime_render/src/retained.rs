@@ -241,6 +241,9 @@ impl Render2DState {
 
     pub fn note_removed_node(&mut self, node: NodeID) {
         self.tilemap_render_cache.remove(&node);
+        // Node-keyed source map: nothing else drops it (the visible pass only
+        // prunes `retained_sprites`), so a freed node leaks its String here.
+        self.texture_sources.remove(&node);
         self.removed_nodes.push(node);
     }
 
@@ -1223,6 +1226,24 @@ mod tests {
         assert_eq!(state.prev_visible, node_set(&[node(1), node(3)]));
         assert!(state.visible_now.is_empty());
         assert!(state.traversal_ids.is_empty());
+    }
+
+    #[test]
+    fn render_2d_removed_node_drops_per_node_caches() {
+        let mut state = Render2DState::new();
+        let removed = node(11);
+        let kept = node(12);
+        state
+            .texture_sources
+            .insert(removed, "res://sprites/gone.png".to_owned());
+        state
+            .texture_sources
+            .insert(kept, "res://sprites/kept.png".to_owned());
+
+        state.note_removed_node(removed);
+
+        assert!(!state.texture_sources.contains_key(&removed));
+        assert!(state.texture_sources.contains_key(&kept));
     }
 
     #[test]
