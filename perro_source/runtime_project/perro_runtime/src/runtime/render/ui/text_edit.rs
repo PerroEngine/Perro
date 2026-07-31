@@ -18,7 +18,7 @@ pub(in crate::runtime::render_ui) fn text_edit_command(ctx: TextEditCommandCtx<'
     } = ctx;
     let focused_style = &edit.focused_style;
     let style = &edit.style;
-    let style_scale = ui_style_scale(scale);
+    let style_scale = ui_style_scale(scale) * virtual_font_scale;
     UiCommand::UpsertTextEdit {
         node,
         rect,
@@ -88,8 +88,8 @@ pub(in crate::runtime::render_ui) fn text_edit_command(ctx: TextEditCommandCtx<'
             },
             style_scale,
         ),
-        text: Cow::Owned(edit.text.to_string()),
-        placeholder: Cow::Owned(edit.placeholder.to_string()),
+        text: edit.text.clone(),
+        placeholder: edit.placeholder.clone(),
         color: Runtime::color_modulate(edit.color, modulate),
         placeholder_color: Runtime::color_modulate(edit.placeholder_color, modulate),
         selection_color: Runtime::color_modulate(edit.selection_color, modulate),
@@ -98,7 +98,7 @@ pub(in crate::runtime::render_ui) fn text_edit_command(ctx: TextEditCommandCtx<'
         font: edit.font.clone(),
         h_align: text_align_state(edit.h_align),
         v_align: text_align_state(edit.v_align),
-        padding: scaled_text_edit_padding(edit, scale),
+        padding: scaled_text_edit_padding(edit, scale, virtual_font_scale),
         scroll: [edit.h_scroll, edit.v_scroll],
         caret: edit.caret,
         anchor: edit.anchor,
@@ -115,16 +115,19 @@ pub(in crate::runtime::render_ui) fn text_edit_effective_font_size(
     node_scale: Vector2,
     virtual_font_scale: f32,
 ) -> f32 {
-    let (base, font_scale) =
+    // Rect-ratio text is already viewport-relative through its rect; only the
+    // fixed-px fallback takes the virtual scale.
+    let (base, font_scale, viewport_scale) =
         if let Some(px) = text_size_from_rect_ratio(rect_size, edit.text_size_ratio) {
-            (px, 1.0)
+            (px, 1.0, 1.0)
         } else {
             (
                 fallback_text_size(edit.font_size),
                 ui_font_scale(node_scale),
+                virtual_font_scale,
             )
         };
-    resolve_font_size(base, font_scale, virtual_font_scale, edit.font_sizing)
+    resolve_font_size(base, font_scale, viewport_scale, edit.font_sizing)
 }
 
 pub(in crate::runtime::render_ui) fn resolve_font_size(
@@ -164,10 +167,11 @@ pub(in crate::runtime::render_ui) fn panel_command(
     rect: UiRectState,
     clip_rect: [f32; 4],
     scale: Vector2,
+    virtual_font_scale: f32,
     style: &UiStyle,
     modulate: Color,
 ) -> UiCommand {
-    let style_scale = ui_style_scale(scale);
+    let style_scale = ui_style_scale(scale) * virtual_font_scale;
     UiCommand::UpsertPanel {
         node,
         rect,
@@ -410,7 +414,7 @@ pub(in crate::runtime::render_ui) fn replace_selection(edit: &mut UiTextEdit, re
     let (start, end) = selection_range(edit);
     text.replace_range(start..end, replacement);
     let caret = start + replacement.len();
-    edit.text = Cow::Owned(text);
+    edit.text = Arc::from(text);
     edit.caret = caret;
     edit.anchor = caret;
 }
@@ -433,7 +437,7 @@ pub(in crate::runtime::render_ui) fn backspace(edit: &mut UiTextEdit) -> bool {
     }
     let mut text = edit.text.to_string();
     text.replace_range(prev..edit.caret, "");
-    edit.text = Cow::Owned(text);
+    edit.text = Arc::from(text);
     edit.caret = prev;
     edit.anchor = prev;
     true
@@ -450,7 +454,7 @@ pub(in crate::runtime::render_ui) fn delete(edit: &mut UiTextEdit) -> bool {
     }
     let mut text = edit.text.to_string();
     text.replace_range(edit.caret..next, "");
-    edit.text = Cow::Owned(text);
+    edit.text = Arc::from(text);
     edit.anchor = edit.caret;
     true
 }
@@ -497,7 +501,7 @@ pub(in crate::runtime::render_ui) fn ensure_caret_visible(
         node_scale,
         virtual_font_scale,
     );
-    let pad = scaled_text_edit_padding(edit, node_scale);
+    let pad = scaled_text_edit_padding(edit, node_scale, virtual_font_scale);
     let content_w = (rect.size.x - pad[0] - pad[2]).max(1.0);
     let content_h = (rect.size.y - pad[1] - pad[3]).max(1.0);
     let caret_pos = caret_text_pos(edit, font_size);
@@ -554,13 +558,20 @@ pub(in crate::runtime::render_ui) fn caret_text_pos(edit: &UiTextEdit, font_size
     )
 }
 
-/// Padding in screen px, matching the renderer's per-axis node-scale factor.
+/// Padding in screen px, matching the renderer's per-axis node-scale factor
+/// and the uniform virtual-canvas content scale.
 pub(in crate::runtime::render_ui) fn scaled_text_edit_padding(
     edit: &UiTextEdit,
     node_scale: Vector2,
+    content_scale: f32,
 ) -> [f32; 4] {
-    let sx = node_scale.x.abs().max(0.0001);
-    let sy = node_scale.y.abs().max(0.0001);
+    let content_scale = if content_scale.is_finite() && content_scale > 0.0 {
+        content_scale
+    } else {
+        1.0
+    };
+    let sx = node_scale.x.abs().max(0.0001) * content_scale;
+    let sy = node_scale.y.abs().max(0.0001) * content_scale;
     [
         edit.padding.left * sx,
         edit.padding.top * sy,

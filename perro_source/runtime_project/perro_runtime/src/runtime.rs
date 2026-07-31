@@ -163,6 +163,10 @@ pub(crate) struct WorldMembershipCache {
     initialized: bool,
     owner_by_slot: Vec<NodeID>,
     members: AHashMap<NodeID, Vec<NodeID>>,
+    /// lazily built `Arc` views of `members`, valid for the same revision.
+    /// hands member lists to per-frame readers as a refcount clone instead of
+    /// a full `Vec` memcpy per caller (~8x/frame).
+    members_shared: AHashMap<NodeID, Arc<[NodeID]>>,
     /// every stream/sub-view node in the arena (all 6 types), refreshed with
     /// the membership walk. lets extraction passes visit stream candidates
     /// without a full arena type-scan per pass.
@@ -213,13 +217,24 @@ pub struct Runtime {
     /// materials loaded since last flush; batched retained-draw invalidation
     /// does 1 node pass 4 all of them instead of 1 pass per material.
     pending_material_invalidations: Vec<MaterialID>,
-    /// reusable node-id list 4 camera-stream collectors; refill once per drain.
-    camera_stream_node_scratch: Vec<NodeID>,
+    /// shared member list 4 camera-stream collectors; refcount view of the
+    /// world-membership cache, reassigned once per stream rebuild.
+    camera_stream_node_scratch: Arc<[NodeID]>,
     /// reusable set: worlds holding >=1 dirty node this pass (+ sub-view owner
     /// chain). gates stream/sub-view state rebuild to changed worlds only.
     dirty_world_scratch: AHashSet<NodeID>,
     /// reusable stream-node candidate list per extraction pass.
     stream_node_scratch: Vec<NodeID>,
+    /// per-camera flattened post-processing cache: (source set, effects Arc).
+    /// unchanged sets hand out refcount clones instead of re-flattening +
+    /// re-allocating the effects slice every extraction pass.
+    pub(crate) camera_postfx_cache: AHashMap<
+        NodeID,
+        (
+            perro_structs::PostProcessSet,
+            Arc<[perro_structs::PostProcessEffect]>,
+        ),
+    >,
     /// stream/sub-view nodes with a live gpu-side CameraStream upsert. gates
     /// redundant RemoveNode traffic (each command wakes a full gpu frame).
     pub(crate) camera_stream_active: AHashSet<NodeID>,
@@ -229,8 +244,11 @@ pub struct Runtime {
     /// resolution) forces rebuild.
     pub(crate) ui_stream_render_info: AHashMap<NodeID, (TextureID, [u32; 2], [f32; 2])>,
     pub(crate) pending_camera_capture_removals: Vec<(NodeID, u8)>,
-    world_member_scratch: Vec<NodeID>,
     pub(crate) world_membership: RefCell<WorldMembershipCache>,
+    /// per-epoch memo for effective-visibility + ancestor-modulate walks; any
+    /// arena mutation (mutation_revision) invalidates. RefCell so &self
+    /// per-frame query paths can stamp results.
+    pub(crate) vis_memo: RefCell<world_state::VisibilityModulateMemo>,
     pub(crate) dirty: DirtyState,
     pub(crate) transforms: TransformRuntimeState,
     internal_updates: InternalUpdateState,
@@ -240,6 +258,16 @@ pub struct Runtime {
     /// reusable buffer 4 modulated mesh-surface resolve; avoid per-frame Vec alloc
     /// per moving mesh (perro_nodes type; not storable in perro_runtime_render).
     mesh_surface_scratch: Vec<perro_nodes::MeshSurfaceBinding>,
+    /// reusable sets 4 batched retained-draw material invalidation; avoid 2
+    /// fresh AHashSets per resource-event batch.
+    material_invalidation_ids_scratch: AHashSet<MaterialID>,
+    material_invalidation_nodes_scratch: AHashSet<NodeID>,
+    /// reusable node list 4 MeshCreated same-source rerender marks.
+    mesh_source_dirty_scratch: Vec<NodeID>,
+    /// reusable wire-segment + batched-line buffers 4 collision debug draws;
+    /// one DrawDebugLines3D command per body instead of one box per edge.
+    collision_wire_scratch: Vec<(glam::Vec3, glam::Vec3)>,
+    collision_debug_lines_scratch: Vec<perro_render_bridge::DebugLine3D>,
     render_ui: RenderUiState,
     locale_text: state::LocaleTextState,
     pub(crate) signal_runtime: SignalRuntimeState,
@@ -313,11 +341,10 @@ pub struct Runtime {
     /// reusable staged-pose buf 4 sync_world_to_nodes_2d/3d writeback.
     physics_writeback_scratch_2d: Vec<physics::StagedBodyPose2D>,
     physics_writeback_scratch_3d: Vec<physics::StagedBodyPose3D>,
-    /// reusable force-emitter collect buf 4 queue_physics_force_emitters_2d/3d.
-    physics_force_emitters_scratch_2d:
-        Vec<(perro_structs::Vector2, perro_nodes::PhysicsForceEmitter2D)>,
-    physics_force_emitters_scratch_3d:
-        Vec<(perro_structs::Vector3, perro_nodes::PhysicsForceEmitter3D)>,
+    /// reusable force-emitter stage buf 4 queue_physics_force_emitters_2d/3d;
+    /// stage (pos, node id) only -- emitter data re-read in apply loop, no clone.
+    physics_force_emitters_scratch_2d: Vec<(perro_structs::Vector2, NodeID)>,
+    physics_force_emitters_scratch_3d: Vec<(perro_structs::Vector3, NodeID)>,
     /// reusable emitter-id scan buf 4 queue_physics_force_emitters_2d/3d;
     /// avoid per-step alloc on the type-lane scan result.
     physics_force_emitter_ids_scratch_2d: Vec<NodeID>,
@@ -328,6 +355,16 @@ pub struct Runtime {
     /// reusable rigid-body sample buf 4 queue_water_forces_2d/3d.
     physics_water_bodies_scratch_2d: Vec<physics::RuntimeWaterBody2D>,
     physics_water_bodies_scratch_3d: Vec<physics::RuntimeWaterBody3D>,
+    /// reusable water spatial-bin storage 4 queue_water_forces_2d/3d.
+    physics_water_bins_scratch_2d: Vec<Vec<usize>>,
+    physics_water_bins_scratch_3d: Vec<Vec<usize>>,
+    /// reusable per-tick water force collect buf 4 queue_water_forces_2d/3d.
+    physics_water_forces_scratch_2d: Vec<physics::WaterBodyForce2D>,
+    physics_water_forces_scratch_3d: Vec<physics::WaterBodyForce3D>,
+    /// memo 4 physics root inverse (world id, root mat, inv); kill per-body
+    /// matrix inversion in physics_transform_2d/3d.
+    physics_root_inv_2d: Option<(NodeID, glam::Mat3, glam::Mat3)>,
+    physics_root_inv_3d: Option<(NodeID, glam::Mat4, glam::Mat4)>,
     /// reusable sorted world list 4 fixed-step dispatch + stale-world prune.
     physics_world_ids_scratch: Vec<NodeID>,
     /// reusable subtree-walk stack 4 force_rerender; avoid per-node
@@ -571,20 +608,26 @@ impl Runtime {
             scene_resource_refs_scratch: SceneResourceRefsScratch::default(),
             resource_event_scan_pending: false,
             pending_material_invalidations: Vec::new(),
-            camera_stream_node_scratch: Vec::new(),
+            camera_stream_node_scratch: perro_render_bridge::empty_arc_slice(),
             dirty_world_scratch: AHashSet::new(),
             stream_node_scratch: Vec::new(),
+            camera_postfx_cache: AHashMap::new(),
             camera_stream_active: AHashSet::new(),
             ui_stream_render_info: AHashMap::new(),
             pending_camera_capture_removals: Vec::new(),
-            world_member_scratch: Vec::new(),
             world_membership: RefCell::new(WorldMembershipCache::default()),
+            vis_memo: RefCell::new(world_state::VisibilityModulateMemo::default()),
             dirty: DirtyState::new(),
             transforms: TransformRuntimeState::new(),
             internal_updates: InternalUpdateState::new(),
             render_2d: Render2DState::new(),
             render_3d: Render3DState::new(),
             mesh_surface_scratch: Vec::new(),
+            material_invalidation_ids_scratch: AHashSet::default(),
+            material_invalidation_nodes_scratch: AHashSet::default(),
+            mesh_source_dirty_scratch: Vec::new(),
+            collision_wire_scratch: Vec::new(),
+            collision_debug_lines_scratch: Vec::new(),
             render_ui: RenderUiState::new(),
             locale_text: state::LocaleTextState::new(),
             signal_runtime: SignalRuntimeState::new(),
@@ -648,6 +691,12 @@ impl Runtime {
             physics_waters_scratch_3d: Vec::new(),
             physics_water_bodies_scratch_2d: Vec::new(),
             physics_water_bodies_scratch_3d: Vec::new(),
+            physics_water_bins_scratch_2d: Vec::new(),
+            physics_water_bins_scratch_3d: Vec::new(),
+            physics_water_forces_scratch_2d: Vec::new(),
+            physics_water_forces_scratch_3d: Vec::new(),
+            physics_root_inv_2d: None,
+            physics_root_inv_3d: None,
             physics_world_ids_scratch: Vec::new(),
             force_rerender_stack_scratch: Vec::new(),
             ui_node_ids_scratch: Vec::new(),

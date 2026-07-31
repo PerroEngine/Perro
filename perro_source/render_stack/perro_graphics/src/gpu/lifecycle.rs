@@ -95,17 +95,20 @@ impl Gpu {
         self.present_scene_bind_group = self
             .present
             .create_bind_group(&self.device, self.post.scene_view());
-        self.present_intermediate_bind_group = self
-            .present
-            .create_bind_group(&self.device, self.accessibility.intermediate_view());
+        self.present_intermediate_bind_group = self.accessibility.as_ref().map(|accessibility| {
+            self.present
+                .create_bind_group(&self.device, accessibility.intermediate_view())
+        });
         self.ui = None;
         self.late_overlay_2d = None;
         self.hdr_status
     }
 
-    pub async fn new_async(window: Arc<Window>, cfg: GpuConfig) -> Option<Self> {
+    pub async fn new_async(window: Arc<Window>, cfg: GpuConfig) -> Result<Self, String> {
         let instance = wgpu::Instance::default();
-        let surface = instance.create_surface(window.clone()).ok()?;
+        let surface = instance
+            .create_surface(window.clone())
+            .map_err(|err| format!("surface create fail: {err}"))?;
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -115,7 +118,39 @@ impl Gpu {
                 force_fallback_adapter: false,
             })
             .await
-            .ok()?;
+            .map_err(|err| format!("GPU adapter request fail: {err}"))?;
+        let adapter_info = adapter.get_info();
+        let low_memory_adapter = matches!(
+            adapter_info.device_type,
+            wgpu::DeviceType::IntegratedGpu | wgpu::DeviceType::VirtualGpu | wgpu::DeviceType::Cpu
+        );
+        let constrained_adapter =
+            low_memory_adapter && std::env::var_os("PERRO_FULL_GPU_QUALITY").is_none();
+        let max_render_pixels = if constrained_adapter {
+            1920 * 1080
+        } else {
+            MAX_FRAME_RENDER_PIXELS
+        };
+        let effective_ssao = if constrained_adapter {
+            match cfg.ssao {
+                crate::SsaoQuality::Off => crate::SsaoQuality::Off,
+                _ => crate::SsaoQuality::Low,
+            }
+        } else {
+            cfg.ssao
+        };
+        eprintln!(
+            "[perro][gfx] adapter=({}) type=({:?}) backend=({:?})",
+            adapter_info.name, adapter_info.device_type, adapter_info.backend
+        );
+        if constrained_adapter {
+            // Halved shadow atlas resolutions; every Gpu3D built on this
+            // adapter (main view + camera streams) inherits them.
+            crate::three_d::gpu::set_default_shadow_map_sizes(1024, 1024, 512);
+            eprintln!(
+                "[perro][gfx] low-memory policy=on max_scene=1080p max_msaa=2 ssao=low shadow_atlas=1024/1024/512"
+            );
+        }
         let adapter_features = adapter.features();
         let mut required_features = wgpu::Features::empty();
         if adapter_features.contains(wgpu::Features::INDIRECT_FIRST_INSTANCE) {
@@ -137,11 +172,15 @@ impl Gpu {
                 required_features,
                 required_limits: wgpu::Limits::default(),
                 experimental_features: wgpu::ExperimentalFeatures::disabled(),
-                memory_hints: wgpu::MemoryHints::Performance,
+                memory_hints: if low_memory_adapter {
+                    wgpu::MemoryHints::MemoryUsage
+                } else {
+                    wgpu::MemoryHints::Performance
+                },
                 trace: wgpu::Trace::default(),
             })
             .await
-            .ok()?;
+            .map_err(|err| format!("GPU device request fail: {err}"))?;
         let indirect_first_instance_enabled =
             required_features.contains(wgpu::Features::INDIRECT_FIRST_INSTANCE);
         // multi_draw_indexed_indirect (non-count) needs only INDIRECT_EXECUTION,
@@ -171,8 +210,17 @@ impl Gpu {
         let size = window.inner_size();
         let width = size.width.max(1);
         let height = size.height.max(1);
-        let (render_width, render_height) =
-            capped_render_size(width, height, device.limits().max_texture_dimension_2d);
+        let (render_width, render_height) = capped_render_size_with_pixel_limit(
+            width,
+            height,
+            device.limits().max_texture_dimension_2d,
+            max_render_pixels,
+        );
+        if (render_width, render_height) != (width, height) {
+            eprintln!(
+                "[perro][gfx] scene size=({render_width}x{render_height}) surface=({width}x{height})"
+            );
+        }
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -194,45 +242,15 @@ impl Gpu {
         );
         surface.configure(&device, &config);
 
-        let max_supported_sample_count = max_supported_msaa_sample_count(&adapter, render_format);
+        let mut max_supported_sample_count =
+            max_supported_msaa_sample_count(&adapter, render_format);
+        if constrained_adapter {
+            max_supported_sample_count = max_supported_sample_count.min(2);
+        }
         let sample_count = clamp_supported_sample_count(
             normalize_sample_count(cfg.smoothing_samples),
             max_supported_sample_count,
         );
-        let two_d = Gpu2D::new(&device, render_format, sample_count, cfg.texture_filter);
-        let late_overlay_2d = Gpu2D::new(&device, surface_view_format, 1, cfg.texture_filter);
-        let ui = Some(GpuUi::new(&device, surface_view_format, cfg.texture_filter));
-        let three_d = Gpu3D::new(
-            &device,
-            &queue,
-            render_format,
-            Gpu3DConfig {
-                sample_count,
-                width: render_width,
-                height: render_height,
-                meshlets_enabled: cfg.meshlets_enabled,
-                dev_meshlets: cfg.dev_meshlets,
-                meshlet_debug_view: cfg.meshlet_debug_view,
-                occlusion_culling: cfg.occlusion_culling,
-                ssao: cfg.ssao,
-                indirect_first_instance_enabled,
-                multi_draw_indirect_enabled,
-                texture_filter: cfg.texture_filter,
-                shader_variant_mode: cfg.shader_variant_mode,
-                shadow_pcf_high: cfg.shadow_quality == crate::ShadowQuality::High,
-            },
-        );
-        let point_particles_3d = GpuPointParticles3D::new(&device, render_format, sample_count);
-        let water = Some(GpuWater::new(
-            &device,
-            render_format,
-            sample_count,
-            two_d.camera_bind_group_layout(),
-            three_d.water_camera_bind_group_layout(),
-            three_d.depth_prepass_view(),
-            render_width,
-            render_height,
-        ));
         let msaa_color = create_msaa_color_target(
             &device,
             render_format,
@@ -241,16 +259,12 @@ impl Gpu {
             sample_count,
         );
         let post = PostProcessor::new(&device, &queue, render_format, render_width, render_height);
-        let accessibility =
-            VisualAccessibilityProcessor::new(&device, render_format, render_width, render_height);
         let present = PresentProcessor::new(&device, surface_view_format);
         let camera_stream_tonemap = CameraStreamTonemap::new(&device, render_format);
         let present_scene_bind_group = present.create_bind_group(&device, post.scene_view());
-        let present_intermediate_bind_group =
-            present.create_bind_group(&device, accessibility.intermediate_view());
         let gpu_timer = timestamp_query_enabled.then(|| GpuTimestampTimer::new(&device, &queue));
 
-        Some(Self {
+        Ok(Self {
             window_handle: window,
             surface,
             adapter,
@@ -261,6 +275,7 @@ impl Gpu {
             hdr_status: selection.status,
             render_width,
             render_height,
+            max_render_pixels,
             render_format,
             sample_count,
             max_supported_sample_count,
@@ -270,16 +285,18 @@ impl Gpu {
             msaa_color,
             post,
             post_view_generation: 1,
-            accessibility,
+            accessibility: None,
             present,
             present_scene_bind_group,
-            present_intermediate_bind_group,
-            two_d: Some(two_d),
-            late_overlay_2d: Some(late_overlay_2d),
-            ui,
-            three_d: Some(three_d),
-            point_particles_3d: Some(point_particles_3d),
-            water,
+            present_intermediate_bind_group: None,
+            shared_textures: SharedTextureStore::default(),
+            shared_texture_frame_counter: 0,
+            two_d: None,
+            late_overlay_2d: None,
+            ui: None,
+            three_d: None,
+            point_particles_3d: None,
+            water: None,
             camera_stream_targets: AHashMap::new(),
             camera_stream_content_revisions: AHashMap::new(),
             next_camera_stream_content_revision: 0,
@@ -308,17 +325,26 @@ impl Gpu {
             dev_meshlets: cfg.dev_meshlets,
             meshlet_debug_view: cfg.meshlet_debug_view,
             occlusion_culling: cfg.occlusion_culling,
-            ssao: cfg.ssao,
+            ssao: effective_ssao,
             texture_filter: cfg.texture_filter,
             shader_variant_mode: cfg.shader_variant_mode,
             indirect_first_instance_enabled,
             multi_draw_indirect_enabled,
             gpu_timer,
+            virtual_size_2d: [1920.0, 1080.0],
         })
     }
 
+    /// Project virtual canvas used for the 2D aspect-fit world-to-pixel rule
+    /// in offscreen (camera stream / sub view) passes.
+    pub fn set_virtual_size_2d(&mut self, size: [f32; 2]) {
+        if size[0].is_finite() && size[1].is_finite() && size[0] > 0.0 && size[1] > 0.0 {
+            self.virtual_size_2d = size;
+        }
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn new(window: Arc<Window>, cfg: GpuConfig) -> Option<Self> {
+    pub fn new(window: Arc<Window>, cfg: GpuConfig) -> Result<Self, String> {
         pollster::block_on(Self::new_async(window, cfg))
     }
 
@@ -345,8 +371,12 @@ impl Gpu {
         self.config.width = width;
         self.config.height = height;
         self.surface.configure(&self.device, &self.config);
-        let (render_width, render_height) =
-            capped_render_size(width, height, self.device.limits().max_texture_dimension_2d);
+        let (render_width, render_height) = capped_render_size_with_pixel_limit(
+            width,
+            height,
+            self.device.limits().max_texture_dimension_2d,
+            self.max_render_pixels,
+        );
         let render_size_changed =
             self.render_width != render_width || self.render_height != render_height;
         self.render_width = render_width;
@@ -367,14 +397,16 @@ impl Gpu {
         }
         self.post.resize(&self.device, render_width, render_height);
         self.post_view_generation = next_nonzero_generation(self.post_view_generation);
-        self.accessibility
-            .resize(&self.device, render_width, render_height);
+        if let Some(accessibility) = self.accessibility.as_mut() {
+            accessibility.resize(&self.device, render_width, render_height);
+        }
         self.present_scene_bind_group = self
             .present
             .create_bind_group(&self.device, self.post.scene_view());
-        self.present_intermediate_bind_group = self
-            .present
-            .create_bind_group(&self.device, self.accessibility.intermediate_view());
+        self.present_intermediate_bind_group = self.accessibility.as_ref().map(|accessibility| {
+            self.present
+                .create_bind_group(&self.device, accessibility.intermediate_view())
+        });
         self.msaa_color = create_msaa_color_target(
             &self.device,
             self.render_format,

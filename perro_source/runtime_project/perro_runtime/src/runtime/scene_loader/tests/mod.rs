@@ -517,8 +517,8 @@ fn loaded_scene_root_removes_hidden_owner_and_sibling_roots() {
     assert!(NodeAPI::remove_node(&mut runtime, root));
     assert!(runtime.nodes.is_empty());
     assert!(runtime.scene_ownership_roots.is_empty());
-    assert!(runtime.nodes.named_ids("primary").is_empty());
-    assert!(runtime.nodes.named_ids("sibling").is_empty());
+    assert!(runtime.nodes.named_ids("primary").next().is_none());
+    assert!(runtime.nodes.named_ids("sibling").next().is_none());
 }
 
 #[test]
@@ -639,9 +639,7 @@ fn runtime_scene_load_marks_ui_dirty_for_same_frame_extract() {
         .expect("loaded panel exists");
     assert!(commands.iter().any(|cmd| matches!(
         cmd,
-        RenderCommand::Ui(UiCommand::UpsertPanel { node, rect, .. })
-            if *node == loaded_panel && rect.size == [400.0, 300.0]
-    )));
+        RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertPanel { node, rect, .. } if *node == loaded_panel && rect.size == [400.0, 300.0]))));
 }
 
 #[test]

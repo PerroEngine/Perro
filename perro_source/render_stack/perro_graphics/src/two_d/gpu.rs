@@ -3,11 +3,12 @@ use super::shaders::{
     create_point_light_2d_shader_module, create_rect_shader_module, create_sprite_shader_module,
 };
 use crate::backend::StaticTextureLookup;
+use crate::gpu_shrink::{ShrinkTracker, shrink_buffer_preserving};
 use crate::resources::ResourceStore;
-use crate::texture_mips::{
-    build_rgba_levels_for_filter, sampler_descriptor, write_rgba_mip_chain,
-    write_texture_base_level,
+use crate::shared_textures::{
+    SharedGpuTexture, SharedTextureColorSpace, SharedTextureKey, SharedTextureStore,
 };
+use crate::texture_mips::{sampler_descriptor, write_texture_base_level};
 use ahash::{AHashMap, AHashSet};
 use bytemuck::{Pod, Zeroable};
 use perro_ids::{NodeID, TextureID};
@@ -16,16 +17,13 @@ use perro_render_bridge::{
     Sprite2DCommand,
 };
 use perro_structs::TextureFilterMode;
+use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
 #[path = "gpu/helpers.rs"]
 mod helpers;
 
 use helpers::*;
-
-const VIRTUAL_WIDTH: f32 = 1920.0;
-const VIRTUAL_HEIGHT: f32 = 1080.0;
-const SPRITE_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -107,7 +105,9 @@ struct StagedSprite2D {
 }
 
 struct CachedSpriteTexture {
-    _texture: Option<wgpu::Texture>,
+    // shared upload handle (None for external render-target views); the
+    // texture itself lives in the Gpu-level SharedTextureStore.
+    shared: Option<Arc<SharedGpuTexture>>,
     _view: wgpu::TextureView,
     _sampler: wgpu::Sampler,
     bind_group: wgpu::BindGroup,
@@ -172,10 +172,16 @@ pub struct Gpu2D {
     last_sprite_prepare: Option<SpritePrepareKey>,
     last_point_light_stage: Option<PointLightStageKey>,
     sprite_perf: SpritePerfCounters,
+    // Usage trackers for the periodic buffer-shrink pass (crate::gpu_shrink).
+    shrink_rects: ShrinkTracker,
+    shrink_sprites: ShrinkTracker,
+    shrink_point_lights: ShrinkTracker,
+    shrink_shadow_casters: ShrinkTracker,
 }
 
 pub struct Prepare2D<'a> {
     pub resources: &'a ResourceStore,
+    pub(crate) shared_textures: &'a mut SharedTextureStore,
     pub camera: Camera2DUniform,
     pub rects: &'a [RectInstanceGpu],
     pub upload: &'a RectUploadPlan,
@@ -341,7 +347,9 @@ impl Gpu2D {
         let rect_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_rect_instances"),
             size: (rect_instance_capacity * std::mem::size_of::<RectInstanceGpu>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
 
@@ -349,7 +357,9 @@ impl Gpu2D {
         let sprite_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_sprite_instances"),
             size: (sprite_instance_capacity * std::mem::size_of::<SpriteInstanceGpu>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
 
@@ -357,14 +367,18 @@ impl Gpu2D {
         let point_light_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_point_light_2d_instances"),
             size: (point_light_instance_capacity * std::mem::size_of::<Light2DGpu>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let shadow_caster_capacity = 1usize;
         let shadow_caster_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_shadow_caster_2d_instances"),
             size: (shadow_caster_capacity * std::mem::size_of::<ShadowCaster2DGpu>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let shadow_caster_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -413,7 +427,85 @@ impl Gpu2D {
             last_sprite_prepare: None,
             last_point_light_stage: None,
             sprite_perf: SpritePerfCounters::default(),
+            shrink_rects: ShrinkTracker::default(),
+            shrink_sprites: ShrinkTracker::default(),
+            shrink_point_lights: ShrinkTracker::default(),
+            shrink_shadow_casters: ShrinkTracker::default(),
         }
+    }
+
+    /// Periodic GC tick: shrink the instance buffers once usage stays far
+    /// below capacity. Content is preserved with a prefix copy so retained
+    /// instances survive skip-prepare frames; the shadow-caster bind group is
+    /// rebuilt when its buffer is replaced.
+    pub fn shrink_tick(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        let vertex_usage = wgpu::BufferUsages::VERTEX
+            | wgpu::BufferUsages::COPY_DST
+            | wgpu::BufferUsages::COPY_SRC;
+        if let Some(new_cap) = self.shrink_rects.tick(self.rect_instance_capacity, 256) {
+            self.rect_instance_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.rect_instance_buffer,
+                "perro_rect_instances",
+                (new_cap * std::mem::size_of::<RectInstanceGpu>()) as u64,
+                vertex_usage,
+            );
+            self.rect_instance_capacity = new_cap;
+        }
+        if let Some(new_cap) = self.shrink_sprites.tick(self.sprite_instance_capacity, 256) {
+            self.sprite_instance_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.sprite_instance_buffer,
+                "perro_sprite_instances",
+                (new_cap * std::mem::size_of::<SpriteInstanceGpu>()) as u64,
+                vertex_usage,
+            );
+            self.sprite_instance_capacity = new_cap;
+        }
+        if let Some(new_cap) = self
+            .shrink_point_lights
+            .tick(self.point_light_instance_capacity, 64)
+        {
+            self.point_light_instance_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.point_light_instance_buffer,
+                "perro_point_light_2d_instances",
+                (new_cap * std::mem::size_of::<Light2DGpu>()) as u64,
+                vertex_usage,
+            );
+            self.point_light_instance_capacity = new_cap;
+        }
+        if let Some(new_cap) = self
+            .shrink_shadow_casters
+            .tick(self.shadow_caster_capacity, 16)
+        {
+            self.shadow_caster_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.shadow_caster_buffer,
+                "perro_shadow_caster_2d_instances",
+                (new_cap * std::mem::size_of::<ShadowCaster2DGpu>()) as u64,
+                wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+            );
+            self.shadow_caster_capacity = new_cap;
+            self.rebuild_shadow_caster_bind_group(device);
+        }
+    }
+
+    fn rebuild_shadow_caster_bind_group(&mut self, device: &wgpu::Device) {
+        self.shadow_caster_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_shadow_caster_2d_bg"),
+            layout: &self.shadow_caster_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.shadow_caster_buffer.as_entire_binding(),
+            }],
+        });
     }
 
     pub fn set_sample_count(
@@ -453,6 +545,7 @@ impl Gpu2D {
     pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, frame: Prepare2D<'_>) {
         let Prepare2D {
             resources,
+            shared_textures,
             camera,
             rects,
             upload,
@@ -517,6 +610,7 @@ impl Gpu2D {
                             && !self.ensure_sprite_texture(
                                 device,
                                 queue,
+                                shared_textures,
                                 resources,
                                 sprite.texture,
                                 static_texture_lookup,
@@ -723,7 +817,7 @@ impl Gpu2D {
         self.sprite_textures.insert(
             texture_key,
             CachedSpriteTexture {
-                _texture: None,
+                shared: None,
                 _view: view,
                 _sampler: sampler,
                 bind_group,
@@ -825,13 +919,13 @@ impl Gpu2D {
         let Some(cached) = self.sprite_textures.get(&texture) else {
             return false;
         };
-        let Some(gpu_texture) = cached._texture.as_ref() else {
+        let Some(shared) = cached.shared.as_ref() else {
             return false;
         };
         if cached.width != width || cached.height != height {
             return false;
         }
-        write_texture_base_level(queue, gpu_texture, width, height, rgba);
+        write_texture_base_level(queue, &shared.texture, width, height, rgba);
         true
     }
 
@@ -856,6 +950,7 @@ impl Gpu2D {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        shared_textures: &mut SharedTextureStore,
         resources: &ResourceStore,
         texture_key: TextureID,
         static_texture_lookup: Option<StaticTextureLookup>,
@@ -867,48 +962,45 @@ impl Gpu2D {
             return false;
         };
 
-        // resident CPU copy, or re-decode from source when the idle sweep
-        // already reclaimed the bytes (rare: first use of an old texture by a
-        // fresh Gpu2D instance).
-        let redecoded;
-        let decoded = match resources.decoded_texture_data(texture_key) {
-            Some(decoded) if decoded.has_pixels() => decoded,
-            _ => {
-                let Some(restored) =
-                    crate::backend::decode_texture_source_rgba(source, static_texture_lookup)
-                else {
-                    return false;
-                };
-                redecoded = restored;
-                &redecoded
-            }
-        };
-        let width = decoded.width;
-        let height = decoded.height;
         // stream textures skip mip chains: base level updates in place each frame.
         let filter = if self.stream_texture_ids.contains(&texture_key) {
             TextureFilterMode::Linear
         } else {
             self.texture_filter
         };
-        let mips = build_rgba_levels_for_filter(&decoded.rgba, width, height, filter);
-
-        let gpu_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("perro_sprite_texture"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: mips.len() as u32,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: SPRITE_TEXTURE_FORMAT,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        write_rgba_mip_chain(queue, &gpu_texture, &mips);
-        let view = gpu_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let key = SharedTextureKey::from_source(source, SharedTextureColorSpace::Srgb, filter);
+        let shared = match shared_textures.get(&key) {
+            // another consumer already uploaded this source: reuse, no decode.
+            Some(shared) => shared,
+            None => {
+                // resident CPU copy, or re-decode from source when the idle
+                // sweep already reclaimed the bytes (rare: first use of an old
+                // texture by a fresh Gpu2D instance).
+                let redecoded;
+                let decoded = match resources.decoded_texture_data(texture_key) {
+                    Some(decoded) if decoded.has_pixels() => decoded,
+                    _ => {
+                        let Some(restored) = crate::backend::decode_texture_source_rgba(
+                            source,
+                            static_texture_lookup,
+                        ) else {
+                            return false;
+                        };
+                        redecoded = restored;
+                        &redecoded
+                    }
+                };
+                shared_textures.ensure_rgba(
+                    device,
+                    queue,
+                    key,
+                    &decoded.rgba,
+                    decoded.width,
+                    decoded.height,
+                )
+            }
+        };
+        let view = shared.view.clone();
         let sampler = device.create_sampler(&sampler_descriptor(
             "perro_sprite_sampler",
             filter,
@@ -928,10 +1020,11 @@ impl Gpu2D {
                 },
             ],
         });
+        let (width, height) = (shared.width, shared.height);
         self.sprite_textures.insert(
             texture_key,
             CachedSpriteTexture {
-                _texture: Some(gpu_texture),
+                shared: Some(shared),
                 _view: view,
                 _sampler: sampler,
                 bind_group,
@@ -942,15 +1035,23 @@ impl Gpu2D {
         true
     }
 
-    pub fn ensure_sampled_texture_view(
+    pub(crate) fn ensure_sampled_texture_view(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        shared_textures: &mut SharedTextureStore,
         resources: &ResourceStore,
         texture: TextureID,
         static_texture_lookup: Option<StaticTextureLookup>,
     ) -> Option<wgpu::TextureView> {
-        if !self.ensure_sprite_texture(device, queue, resources, texture, static_texture_lookup) {
+        if !self.ensure_sprite_texture(
+            device,
+            queue,
+            shared_textures,
+            resources,
+            texture,
+            static_texture_lookup,
+        ) {
             return None;
         }
         self.sprite_textures
@@ -959,6 +1060,7 @@ impl Gpu2D {
     }
 
     fn ensure_rect_instance_capacity(&mut self, device: &wgpu::Device, needed: usize) {
+        self.shrink_rects.note_used(needed);
         if needed <= self.rect_instance_capacity {
             return;
         }
@@ -969,13 +1071,16 @@ impl Gpu2D {
         self.rect_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_rect_instances"),
             size: (new_capacity * std::mem::size_of::<RectInstanceGpu>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         self.rect_instance_capacity = new_capacity;
     }
 
     fn ensure_sprite_instance_capacity(&mut self, device: &wgpu::Device, needed: usize) {
+        self.shrink_sprites.note_used(needed);
         if needed <= self.sprite_instance_capacity {
             return;
         }
@@ -986,13 +1091,16 @@ impl Gpu2D {
         self.sprite_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_sprite_instances"),
             size: (new_capacity * std::mem::size_of::<SpriteInstanceGpu>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         self.sprite_instance_capacity = new_capacity;
     }
 
     fn ensure_point_light_instance_capacity(&mut self, device: &wgpu::Device, needed: usize) {
+        self.shrink_point_lights.note_used(needed);
         if needed <= self.point_light_instance_capacity {
             return;
         }
@@ -1003,7 +1111,9 @@ impl Gpu2D {
         self.point_light_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_point_light_2d_instances"),
             size: (new_capacity * std::mem::size_of::<Light2DGpu>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         self.point_light_instance_capacity = new_capacity;
@@ -1011,6 +1121,7 @@ impl Gpu2D {
     }
 
     fn ensure_shadow_caster_capacity(&mut self, device: &wgpu::Device, needed: usize) {
+        self.shrink_shadow_casters.note_used(needed);
         if needed <= self.shadow_caster_capacity {
             return;
         }
@@ -1021,22 +1132,13 @@ impl Gpu2D {
         self.shadow_caster_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_shadow_caster_2d_instances"),
             size: (new_capacity * std::mem::size_of::<ShadowCaster2DGpu>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
-        self.shadow_caster_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("perro_shadow_caster_2d_bg"),
-            layout: &self.shadow_caster_bgl,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: self.shadow_caster_buffer.as_entire_binding(),
-            }],
-        });
         self.shadow_caster_capacity = new_capacity;
-    }
-
-    pub fn virtual_size() -> [f32; 2] {
-        [VIRTUAL_WIDTH, VIRTUAL_HEIGHT]
+        self.rebuild_shadow_caster_bind_group(device);
     }
 }
 

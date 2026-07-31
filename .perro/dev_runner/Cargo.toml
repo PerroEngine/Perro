@@ -1,0 +1,116 @@
+[dependencies.perro_app]
+optional = true
+path = "../../perro_source/render_stack/perro_app"
+
+[dependencies.perro_headless]
+optional = true
+path = "../../perro_source/runtime_project/perro_headless"
+
+[dependencies.perro_project]
+path = "../../perro_source/runtime_project/perro_project"
+
+[features]
+app = ["dep:perro_app"]
+default = ["app"]
+headless = ["dep:perro_headless"]
+headless_profile = ["perro_headless/profile"]
+headless_steamworks = ["perro_headless/steamworks"]
+mem_profile = ["perro_app/mem_profile"]
+profile = ["perro_app/profile"]
+steamworks = ["perro_app/steamworks"]
+timings = ["perro_app/fps"]
+ui_profile = ["perro_app/ui_profile"]
+
+[package]
+build = "build.rs"
+edition = "2024"
+name = "perro_dev_runner"
+version = "0.1.0"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package.parry2d]
+debug-assertions = false
+opt-level = 3
+overflow-checks = false
+
+[profile.dev.package.parry3d]
+debug-assertions = false
+opt-level = 3
+overflow-checks = false
+
+[profile.dev.package.perro_app]
+opt-level = 3
+
+[profile.dev.package.perro_graphics]
+opt-level = 3
+
+[profile.dev.package.perro_physics]
+debug-assertions = false
+opt-level = 3
+overflow-checks = false
+
+[profile.dev.package.perro_runtime]
+debug-assertions = false
+opt-level = 3
+overflow-checks = false
+
+[profile.dev.package.rapier2d]
+debug-assertions = false
+opt-level = 3
+overflow-checks = false
+
+[profile.dev.package.rapier3d]
+debug-assertions = false
+opt-level = 3
+overflow-checks = false
+
+[profile.release]
+debug = true
+
+[target.'cfg(target_os = "windows")'.build-dependencies]
+resvg = "0.47.0"
+toml = "0.8.23"
+winresource = "0.1.20"
+
+[target.'cfg(target_os = "windows")'.build-dependencies.image]
+default-features = false
+features = ["png", "jpeg", "gif", "bmp", "tga", "webp", "ico"]
+version = "0.25.9"
+
+[target.'cfg(target_os = "windows")'.build-dependencies.perro_api]
+path = "../../perro_source/api_modules/perro_api"
+
+[workspace]
+
+[patch.crates-io]
+perro_animation = { path = "../../perro_source/core/perro_animation" }
+perro_csv = { path = "../../perro_source/core/perro_csv" }
+perro_ids = { path = "../../perro_source/core/perro_ids" }
+perro_nodes = { path = "../../perro_source/core/perro_nodes" }
+perro_particle_math = { path = "../../perro_source/core/perro_particle_math" }
+perro_structs = { path = "../../perro_source/core/perro_structs" }
+perro_ui = { path = "../../perro_source/core/perro_ui" }
+perro_variant = { path = "../../perro_source/core/perro_variant" }
+perro_headless = { path = "../../perro_source/runtime_project/perro_headless" }
+perro_internal_updates = { path = "../../perro_source/runtime_project/perro_internal_updates" }
+perro_project = { path = "../../perro_source/runtime_project/perro_project" }
+perro_runtime = { path = "../../perro_source/runtime_project/perro_runtime" }
+perro_scene = { path = "../../perro_source/runtime_project/perro_scene" }
+perro_api = { path = "../../perro_source/api_modules/perro_api" }
+perro_input_api = { path = "../../perro_source/api_modules/perro_input_api" }
+perro_modules = { path = "../../perro_source/api_modules/perro_modules" }
+perro_networking = { path = "../../perro_source/api_modules/perro_networking" }
+perro_resource_api = { path = "../../perro_source/api_modules/perro_resource_api" }
+perro_runtime_api = { path = "../../perro_source/api_modules/perro_runtime_api" }
+perro_steamworks = { path = "../../perro_source/api_modules/perro_steamworks" }
+perro_web = { path = "../../perro_source/api_modules/perro_web" }
+perro_app = { path = "../../perro_source/render_stack/perro_app" }
+perro_graphics = { path = "../../perro_source/render_stack/perro_graphics" }
+perro_render_bridge = { path = "../../perro_source/render_stack/perro_render_bridge" }
+perro_scripting = { path = "../../perro_source/script_stack/perro_scripting" }
+perro_scripting_macros = { path = "../../perro_source/script_stack/perro_scripting_macros" }
+perro_assets = { path = "../../perro_source/io_stack/perro_assets" }
+perro_io = { path = "../../perro_source/io_stack/perro_io" }
+perro_pawdio = { path = "../../perro_source/audio_stack/perro_pawdio" }

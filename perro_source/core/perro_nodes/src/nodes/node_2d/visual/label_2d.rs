@@ -2,15 +2,15 @@ use crate::node_2d::Node2D;
 use perro_structs::{Color, Vector2};
 use perro_ui::{UiFont, UiTextAlign};
 use std::{
-    borrow::Cow,
     ops::{Deref, DerefMut},
+    sync::Arc,
 };
 
 #[derive(Clone, Debug)]
 pub struct Label2D {
     pub base: Node2D,
     pub size: Vector2,
-    pub text: Cow<'static, str>,
+    pub text: Arc<str>,
     pub color: Color,
     pub font_size: f32,
     pub font: UiFont,
@@ -19,11 +19,11 @@ pub struct Label2D {
 }
 
 impl Label2D {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             base: Node2D::new(),
             size: Vector2::new(128.0, 32.0),
-            text: Cow::Borrowed(""),
+            text: Arc::from(""),
             color: Color::WHITE,
             font_size: 20.0,
             font: UiFont::Default,

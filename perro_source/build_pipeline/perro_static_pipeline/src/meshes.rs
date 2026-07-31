@@ -25,6 +25,7 @@ use std::{
     fmt::Write as _,
     fs, io,
     path::{Path, PathBuf},
+    time::Instant,
 };
 
 const MESHLET_TRIANGLES: usize = 64;
@@ -147,10 +148,20 @@ pub fn generate_static_meshes(
         misses.push((rel, len, mtime));
     }
 
+    let miss_count = misses.len();
+    if miss_count > 0 {
+        eprintln!("  [assets] mesh encode: {miss_count} changed");
+    }
     let processed = misses
         .into_par_iter()
-        .map(|(rel, len, mtime)| -> io::Result<_> {
+        .enumerate()
+        .map(|(miss_index, (rel, len, mtime))| -> io::Result<_> {
             let res_path = asset_uri(&rel);
+            let started = Instant::now();
+            eprintln!(
+                "  [assets] mesh {}/{miss_count}: {res_path}",
+                miss_index + 1
+            );
             let full_path = res_dir.join(&rel);
             let ext = Path::new(&rel)
                 .extension()
@@ -177,6 +188,11 @@ pub fn generate_static_meshes(
                 }
                 _ => Vec::new(),
             };
+            eprintln!(
+                "  [assets] mesh {}/{miss_count}: done res://{rel} ({:.2?})",
+                miss_index + 1,
+                started.elapsed()
+            );
             Ok((rel, len, mtime, assets))
         })
         .collect::<io::Result<Vec<_>>>()?;

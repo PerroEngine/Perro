@@ -2,6 +2,7 @@ use super::core::RuntimeResourceApi;
 use perro_ids::MaterialID;
 use perro_render_bridge::{Material3D, RenderCommand, ResourceCommand};
 use perro_resource_api::sub_apis::MaterialAPI;
+use std::sync::Arc;
 
 impl MaterialAPI for RuntimeResourceApi {
     fn load_material_source(&self, source: &str) -> MaterialID {
@@ -21,7 +22,7 @@ impl MaterialAPI for RuntimeResourceApi {
     }
 
     fn load_material_source_hashed(&self, source_hash: u64, source: Option<&str>) -> MaterialID {
-        let material = self.static_material(source_hash).unwrap_or_default();
+        let material = Arc::new(self.static_material(source_hash).unwrap_or_default());
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         if let Some(id) = state.material_by_source.get(&source_hash).copied() {
             return id;
@@ -40,15 +41,15 @@ impl MaterialAPI for RuntimeResourceApi {
             .material_pending_source_by_request
             .insert(request, source.to_string());
         state.material_pending_id_by_request.insert(request, id);
-        state
-            .queued_commands
-            .push(RenderCommand::Resource(ResourceCommand::CreateMaterial {
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
+            ResourceCommand::CreateMaterial {
                 request,
                 id,
                 material,
                 source: Some(source.to_string()),
                 reserved: false,
-            }));
+            },
+        )));
         let source = source.to_string();
         drop(state);
         if self.static_material_lookup.is_none() {
@@ -61,20 +62,21 @@ impl MaterialAPI for RuntimeResourceApi {
     }
 
     fn create_material(&self, material: Material3D) -> MaterialID {
+        let material = Arc::new(material);
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         let request = state.allocate_request();
         let id = state.allocate_material_id();
         state.material_pending_id_by_request.insert(request, id);
         state.material_data_by_id.insert(id, material.clone());
-        state
-            .queued_commands
-            .push(RenderCommand::Resource(ResourceCommand::CreateMaterial {
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
+            ResourceCommand::CreateMaterial {
                 request,
                 id,
                 material,
                 source: None,
                 reserved: false,
-            }));
+            },
+        )));
         id
     }
 
@@ -87,19 +89,24 @@ impl MaterialAPI for RuntimeResourceApi {
 
     fn get_material_data(&self, id: MaterialID) -> Option<Material3D> {
         let state = self.state.lock().expect("resource api mutex poisoned");
-        state.material_data_by_id.get(&id).cloned()
+        state
+            .material_data_by_id
+            .get(&id)
+            .map(|material| (**material).clone())
     }
 
     fn write_material_data(&self, id: MaterialID, material: Material3D) -> bool {
         if id.is_nil() {
             return false;
         }
+        // Arc wrap moves the material once; cache + queued command share it.
+        let material = Arc::new(material);
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         state.material_data_by_id.insert(id, material.clone());
         state.material_write_pending_by_id.insert(id);
-        state.queued_commands.push(RenderCommand::Resource(
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
             ResourceCommand::WriteMaterialData { id, material },
-        ));
+        )));
         true
     }
 
@@ -119,16 +126,16 @@ impl MaterialAPI for RuntimeResourceApi {
     }
 
     fn reserve_material_source_hashed(&self, source_hash: u64, source: Option<&str>) -> MaterialID {
-        let material = self.static_material(source_hash).unwrap_or_default();
+        let material = Arc::new(self.static_material(source_hash).unwrap_or_default());
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         if let Some(id) = state.material_by_source.get(&source_hash).copied() {
             if state.material_pending_by_source.contains_key(&source_hash) {
                 state.material_reserve_pending.insert(source_hash);
                 return id;
             }
-            state.queued_commands.push(RenderCommand::Resource(
+            state.queued_commands.push(RenderCommand::Resource(Box::new(
                 ResourceCommand::SetMaterialReserved { id, reserved: true },
-            ));
+            )));
             return id;
         }
         let Some(source) = source else {
@@ -147,15 +154,15 @@ impl MaterialAPI for RuntimeResourceApi {
             .material_pending_source_by_request
             .insert(request, source.to_string());
         state.material_pending_id_by_request.insert(request, id);
-        state
-            .queued_commands
-            .push(RenderCommand::Resource(ResourceCommand::CreateMaterial {
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
+            ResourceCommand::CreateMaterial {
                 request,
                 id,
                 material,
                 source: Some(source.to_string()),
                 reserved: true,
-            }));
+            },
+        )));
         let source = source.to_string();
         drop(state);
         if self.static_material_lookup.is_none() {
@@ -204,9 +211,9 @@ impl MaterialAPI for RuntimeResourceApi {
             state.material_reserve_pending.insert(source_hash);
             state.material_drop_pending.remove(&source_hash);
         }
-        state.queued_commands.push(RenderCommand::Resource(
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
             ResourceCommand::SetMaterialReserved { id, reserved: true },
-        ));
+        )));
         true
     }
 
@@ -235,11 +242,9 @@ impl MaterialAPI for RuntimeResourceApi {
             state.material_by_source.remove(&source_hash);
         }
         let _ = state.free_material_id(id);
-        state
-            .queued_commands
-            .push(RenderCommand::Resource(ResourceCommand::DropMaterial {
-                id,
-            }));
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
+            ResourceCommand::DropMaterial { id },
+        )));
         true
     }
 }
@@ -260,7 +265,7 @@ impl RuntimeResourceApi {
         if let Some((_, id)) = state
             .shared_material_by_data
             .iter()
-            .find(|(existing, _)| existing == &material)
+            .find(|(existing, _)| **existing == material)
         {
             return *id;
         }
@@ -270,18 +275,21 @@ impl RuntimeResourceApi {
         if material == Material3D::default() {
             state.default_material_id = Some(id);
         }
+        // dedup list, id cache + queued command all share one Arc (was 2 deep
+        // clones per new inline material).
+        let material = Arc::new(material);
         state.shared_material_by_data.push((material.clone(), id));
         state.material_pending_id_by_request.insert(request, id);
         state.material_data_by_id.insert(id, material.clone());
-        state
-            .queued_commands
-            .push(RenderCommand::Resource(ResourceCommand::CreateMaterial {
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
+            ResourceCommand::CreateMaterial {
                 request,
                 id,
                 material,
                 source: None,
                 reserved: true,
-            }));
+            },
+        )));
         id
     }
 
@@ -328,10 +336,9 @@ impl super::state::RuntimeResourceState {
             let source_hash = perro_ids::string_to_u64(&source);
             self.material_pending_by_source.remove(&source_hash);
             if self.material_drop_pending.remove(&source_hash) {
-                self.queued_commands
-                    .push(RenderCommand::Resource(ResourceCommand::DropMaterial {
-                        id,
-                    }));
+                self.queued_commands.push(RenderCommand::Resource(Box::new(
+                    ResourceCommand::DropMaterial { id },
+                )));
                 self.material_by_source.remove(&source_hash);
                 if let Some(pending_id) = pending_id {
                     let _ = self.free_material_id(pending_id);
@@ -339,9 +346,9 @@ impl super::state::RuntimeResourceState {
             } else {
                 self.material_by_source.insert(source_hash, id);
                 if self.material_reserve_pending.remove(&source_hash) {
-                    self.queued_commands.push(RenderCommand::Resource(
+                    self.queued_commands.push(RenderCommand::Resource(Box::new(
                         ResourceCommand::SetMaterialReserved { id, reserved: true },
-                    ));
+                    )));
                 }
             }
         }

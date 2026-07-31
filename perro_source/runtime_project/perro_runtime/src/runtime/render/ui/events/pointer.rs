@@ -280,7 +280,7 @@ impl Runtime {
                 node_scale,
                 virtual_font_scale,
             );
-            let pad = scaled_text_edit_padding(edit, node_scale);
+            let pad = scaled_text_edit_padding(edit, node_scale, virtual_font_scale);
             let min = rect.min();
             let local = Vector2::new(
                 point.x - min.x - pad[0] + edit.h_scroll,

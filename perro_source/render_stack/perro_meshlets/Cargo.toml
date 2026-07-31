@@ -8,6 +8,7 @@ workspace = true
 
 [dependencies]
 glam = "0.31.0"
+meshopt = "0.6.2"
 rayon = "1.10"
 
 [dev-dependencies]

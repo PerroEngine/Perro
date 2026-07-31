@@ -465,6 +465,12 @@ fn poll_lobby_events() {
                 set_friend_rows(&mut state, friends);
                 state.script_events.push(NetEvent::LobbyRowsChanged);
             }
+            SteamLobbyEvent::Created(lobby_id) => {
+                // The host may leave while Steam's async create call is still
+                // pending. No transport remains to consume this callback, so
+                // close the late lobby here instead of leaking it.
+                SteamTransport::close_orphaned_host_lobby(lobby_id);
+            }
             SteamLobbyEvent::LobbyDataUpdated(_)
             | SteamLobbyEvent::LobbyMemberChanged(_)
             | SteamLobbyEvent::PersonaChanged(_) => {
@@ -477,7 +483,6 @@ fn poll_lobby_events() {
             | SteamLobbyEvent::LobbyChat(_)
             | SteamLobbyEvent::OverlayChanged(_)
             | SteamLobbyEvent::Callback(_)
-            | SteamLobbyEvent::Created(_)
             | SteamLobbyEvent::Joined(_) => {}
             SteamLobbyEvent::JoinRequested(lobby_id) => {
                 drop(state);

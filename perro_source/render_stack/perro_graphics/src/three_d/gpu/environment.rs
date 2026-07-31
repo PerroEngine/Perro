@@ -67,9 +67,10 @@ pub(super) fn load_environment_rgba(
     source: &str,
     resources: &ResourceStore,
     static_texture_lookup: Option<StaticTextureLookup>,
-) -> Option<(Vec<u8>, u32, u32)> {
+) -> Option<(std::sync::Arc<[u8]>, u32, u32)> {
     let registered = resources.decoded_texture_data_by_source(source);
     if let Some(decoded) = registered.filter(|decoded| decoded.has_pixels()) {
+        // refcount share of the resident buffer; the bake only borrows it.
         return Some((decoded.rgba.clone(), decoded.width, decoded.height));
     }
     // evicted resident copies (registered but reclaimed) fall through to the
@@ -83,10 +84,11 @@ pub(super) fn load_environment_rgba(
         let bytes = lookup(hash);
         if !bytes.is_empty() {
             return perro_graphics_assets::decode_ptex(bytes)
-                .or_else(|| perro_graphics_assets::decode_image_rgba(bytes));
+                .map(|(rgba, width, height)| (rgba.into(), width, height))
+                .or_else(|| perro_graphics_assets::decode_image_rgba_arc(bytes));
         }
     }
-    perro_graphics_assets::load_texture_rgba(source)
+    perro_graphics_assets::load_texture_rgba_arc(source)
 }
 
 pub(super) fn bake_environment(rgba: &[u8], width: u32, height: u32) -> Option<EnvironmentBake> {
@@ -673,7 +675,7 @@ mod tests {
         let id = resources.create_texture(source, false);
         assert!(load_environment_rgba(source, &resources, None).is_none());
 
-        let rgba = vec![16, 32, 64, 255, 128, 96, 48, 255];
+        let rgba: std::sync::Arc<[u8]> = vec![16, 32, 64, 255, 128, 96, 48, 255].into();
         assert!(resources.set_decoded_texture_data(
             id,
             crate::resources::DecodedTextureRgba {

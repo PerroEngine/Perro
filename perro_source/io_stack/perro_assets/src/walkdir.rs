@@ -8,16 +8,21 @@ use std::{
 #[cfg(windows)]
 use std::os::windows::fs::MetadataExt;
 
-static PATH_EXCLUSIONS: LazyLock<RwLock<Vec<String>>> = LazyLock::new(|| RwLock::new(Vec::new()));
+static PATH_EXCLUSIONS: LazyLock<RwLock<Vec<CompiledPathPattern>>> =
+    LazyLock::new(|| RwLock::new(Vec::new()));
 
 #[must_use = "dropping the guard restores prior path exclusions"]
 pub struct PathExclusionGuard {
-    previous: Vec<String>,
+    previous: Vec<CompiledPathPattern>,
 }
 
 pub fn push_path_exclusions(patterns: Vec<String>) -> PathExclusionGuard {
+    let compiled = patterns
+        .iter()
+        .map(|pattern| CompiledPathPattern::new(pattern))
+        .collect();
     let mut active = PATH_EXCLUSIONS.write().expect("path exclusion lock");
-    let previous = std::mem::replace(&mut *active, patterns);
+    let previous = std::mem::replace(&mut *active, compiled);
     PathExclusionGuard { previous }
 }
 
@@ -27,51 +32,79 @@ impl Drop for PathExclusionGuard {
     }
 }
 
-pub fn matches_path_pattern(pattern: &str, path: &str) -> bool {
-    fn segments(pattern: &[&str], path: &[&str]) -> bool {
-        match pattern.split_first() {
-            None => path.is_empty(),
-            Some((&"**", rest)) => {
-                segments(rest, path)
-                    || path
-                        .split_first()
-                        .is_some_and(|(_, path_rest)| segments(pattern, path_rest))
-            }
-            Some((pattern_part, rest)) => {
-                path.split_first().is_some_and(|(path_part, path_rest)| {
-                    segment_matches(pattern_part, path_part) && segments(rest, path_rest)
-                })
-            }
+/// Glob pattern with its `/`-segments split once at construction, so matching
+/// many paths (or one path against many patterns) skips the per-call split.
+#[derive(Clone, Debug)]
+pub struct CompiledPathPattern {
+    segments: Box<[Box<str>]>,
+}
+
+impl CompiledPathPattern {
+    pub fn new(pattern: &str) -> Self {
+        Self {
+            segments: pattern.split('/').map(Box::from).collect(),
         }
     }
 
-    fn segment_matches(pattern: &str, value: &str) -> bool {
-        let pattern = pattern.as_bytes();
-        let value = value.as_bytes();
-        let (mut pattern_pos, mut value_pos, mut star, mut retry) = (0, 0, None, 0);
-        while value_pos < value.len() {
-            if pattern_pos < pattern.len() && pattern[pattern_pos] == value[value_pos] {
-                pattern_pos += 1;
-                value_pos += 1;
-            } else if pattern_pos < pattern.len() && pattern[pattern_pos] == b'*' {
-                star = Some(pattern_pos);
-                pattern_pos += 1;
-                retry = value_pos;
-            } else if let Some(star_pos) = star {
-                retry += 1;
-                value_pos = retry;
-                pattern_pos = star_pos + 1;
-            } else {
-                return false;
-            }
+    /// Match against a path already split into `/` segments
+    /// (see [`split_path_segments`]).
+    pub fn matches_segments(&self, path: &[&str]) -> bool {
+        match_segments(&self.segments, path)
+    }
+
+    pub fn matches_path(&self, path: &str) -> bool {
+        self.matches_segments(&path.split('/').collect::<Vec<_>>())
+    }
+}
+
+/// Split a `/`-separated path once for reuse across several pattern matches.
+pub fn split_path_segments(path: &str) -> Vec<&str> {
+    path.split('/').collect()
+}
+
+fn match_segments<S: AsRef<str>>(pattern: &[S], path: &[&str]) -> bool {
+    match pattern.split_first() {
+        None => path.is_empty(),
+        Some((first, rest)) if first.as_ref() == "**" => {
+            match_segments(rest, path)
+                || path
+                    .split_first()
+                    .is_some_and(|(_, path_rest)| match_segments(pattern, path_rest))
         }
-        while pattern_pos < pattern.len() && pattern[pattern_pos] == b'*' {
+        Some((pattern_part, rest)) => path.split_first().is_some_and(|(path_part, path_rest)| {
+            segment_matches(pattern_part.as_ref(), path_part) && match_segments(rest, path_rest)
+        }),
+    }
+}
+
+fn segment_matches(pattern: &str, value: &str) -> bool {
+    let pattern = pattern.as_bytes();
+    let value = value.as_bytes();
+    let (mut pattern_pos, mut value_pos, mut star, mut retry) = (0, 0, None, 0);
+    while value_pos < value.len() {
+        if pattern_pos < pattern.len() && pattern[pattern_pos] == value[value_pos] {
             pattern_pos += 1;
+            value_pos += 1;
+        } else if pattern_pos < pattern.len() && pattern[pattern_pos] == b'*' {
+            star = Some(pattern_pos);
+            pattern_pos += 1;
+            retry = value_pos;
+        } else if let Some(star_pos) = star {
+            retry += 1;
+            value_pos = retry;
+            pattern_pos = star_pos + 1;
+        } else {
+            return false;
         }
-        pattern_pos == pattern.len()
     }
+    while pattern_pos < pattern.len() && pattern[pattern_pos] == b'*' {
+        pattern_pos += 1;
+    }
+    pattern_pos == pattern.len()
+}
 
-    segments(
+pub fn matches_path_pattern(pattern: &str, path: &str) -> bool {
+    match_segments(
         &pattern.split('/').collect::<Vec<_>>(),
         &path.split('/').collect::<Vec<_>>(),
     )
@@ -82,19 +115,22 @@ fn path_is_excluded(path: &Path, root: &Path) -> bool {
         return false;
     };
     let relative = relative.to_string_lossy().replace('\\', "/");
+    // Split the path once, outside the per-pattern loop.
+    let segments = split_path_segments(&relative);
     PATH_EXCLUSIONS
         .read()
         .expect("path exclusion lock")
         .iter()
-        .any(|pattern| matches_path_pattern(pattern, &relative))
+        .any(|pattern| pattern.matches_segments(&segments))
 }
 
 pub fn is_relative_path_excluded(path: &str) -> bool {
+    let segments = split_path_segments(path);
     PATH_EXCLUSIONS
         .read()
         .expect("path exclusion lock")
         .iter()
-        .any(|pattern| matches_path_pattern(pattern, path))
+        .any(|pattern| pattern.matches_segments(&segments))
 }
 
 fn is_link_or_reparse(metadata: &fs::Metadata) -> bool {

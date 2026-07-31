@@ -820,7 +820,10 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler<RunnerUserEvent>
             }
             // Show native win only aft first GPU present -> no blank white flash.
             #[cfg(not(target_arch = "wasm32"))]
-            window.set_visible(true);
+            {
+                window.set_visible(true);
+                window.focus_window();
+            }
             self.window = Some(window);
             self.set_mouse_mode(MouseMode::Visible);
             self.sync_refresh_rate();

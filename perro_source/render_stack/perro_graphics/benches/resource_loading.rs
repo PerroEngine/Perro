@@ -6,31 +6,31 @@ use perro_render_bridge::{
 };
 
 fn texture_create(source: &str, request: u64) -> RenderCommand {
-    RenderCommand::Resource(ResourceCommand::CreateTexture {
+    RenderCommand::Resource(Box::new(ResourceCommand::CreateTexture {
         request: RenderRequestID::new(request),
         id: TextureID::nil(),
         source: source.to_string(),
         reserved: false,
-    })
+    }))
 }
 
 fn mesh_create(source: &str, request: u64) -> RenderCommand {
-    RenderCommand::Resource(ResourceCommand::CreateMesh {
+    RenderCommand::Resource(Box::new(ResourceCommand::CreateMesh {
         request: RenderRequestID::new(request),
         id: MeshID::nil(),
         source: source.to_string(),
         reserved: false,
-    })
+    }))
 }
 
 fn material_create(source: &str, request: u64) -> RenderCommand {
-    RenderCommand::Resource(ResourceCommand::CreateMaterial {
+    RenderCommand::Resource(Box::new(ResourceCommand::CreateMaterial {
         request: RenderRequestID::new(request),
         id: MaterialID::nil(),
-        material: Material3D::default(),
+        material: Material3D::default().into(),
         source: Some(source.to_string()),
         reserved: false,
-    })
+    }))
 }
 
 fn duplicate_texture_commands(count: usize) -> Vec<RenderCommand> {

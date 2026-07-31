@@ -28,84 +28,96 @@ fn generate_project_static_modules(
     cfg: &perro_project::ProjectConfig,
 ) -> Result<(), CompilerError> {
     thread::scope(|scope| {
+        macro_rules! spawn_generation {
+            ($kind:literal, $call:expr) => {
+                (
+                    $kind,
+                    scope.spawn(|| {
+                        let started = Instant::now();
+                        eprintln!("  [assets] {}: start", $kind);
+                        let result = $call;
+                        let status = if result.is_ok() { "done" } else { "fail" };
+                        eprintln!(
+                            "  [assets] {}: {status} ({:.2?})",
+                            $kind,
+                            started.elapsed()
+                        );
+                        result
+                    }),
+                )
+            };
+        }
         let tasks = [
-            (
+            spawn_generation!(
                 "collision trimesh",
-                scope.spawn(|| {
-                    perro_static_pipeline::generate_static_collision_trimeshes(project_root)
-                }),
+                perro_static_pipeline::generate_static_collision_trimeshes(project_root)
             ),
-            (
+            spawn_generation!(
                 "scene",
-                scope.spawn(|| perro_static_pipeline::generate_static_scenes(project_root)),
+                perro_static_pipeline::generate_static_scenes(project_root)
             ),
-            (
+            spawn_generation!(
                 "material",
-                scope.spawn(|| perro_static_pipeline::generate_static_materials(project_root)),
+                perro_static_pipeline::generate_static_materials(project_root)
             ),
-            (
+            spawn_generation!(
                 "ui style",
-                scope.spawn(|| perro_static_pipeline::generate_static_ui_styles(project_root)),
+                perro_static_pipeline::generate_static_ui_styles(project_root)
             ),
-            (
+            spawn_generation!(
                 "tileset",
-                scope.spawn(|| perro_static_pipeline::generate_static_tilesets(project_root)),
+                perro_static_pipeline::generate_static_tilesets(project_root)
             ),
-            (
+            spawn_generation!(
                 "particle",
-                scope.spawn(|| perro_static_pipeline::generate_static_particles(project_root)),
+                perro_static_pipeline::generate_static_particles(project_root)
             ),
-            (
+            spawn_generation!(
                 "animation",
-                scope.spawn(|| perro_static_pipeline::generate_static_animations(project_root)),
+                perro_static_pipeline::generate_static_animations(project_root)
             ),
-            (
+            spawn_generation!(
                 "animation tree",
-                scope
-                    .spawn(|| perro_static_pipeline::generate_static_animation_trees(project_root)),
+                perro_static_pipeline::generate_static_animation_trees(project_root)
             ),
-            (
+            spawn_generation!(
                 "mesh",
-                scope.spawn(|| {
-                    perro_static_pipeline::generate_static_meshes(
-                        project_root,
-                        cfg.meshlets && cfg.release_meshlets,
-                    )
-                }),
+                perro_static_pipeline::generate_static_meshes(
+                    project_root,
+                    cfg.meshlets && cfg.release_meshlets,
+                )
             ),
-            (
+            spawn_generation!(
                 "navmesh",
-                scope.spawn(|| perro_static_pipeline::generate_static_navmeshes(project_root)),
+                perro_static_pipeline::generate_static_navmeshes(project_root)
             ),
-            (
+            spawn_generation!(
                 "skeleton",
-                scope.spawn(|| perro_static_pipeline::generate_static_skeletons(project_root)),
+                perro_static_pipeline::generate_static_skeletons(project_root)
             ),
-            (
+            spawn_generation!(
                 "texture",
-                scope.spawn(|| perro_static_pipeline::generate_static_textures(project_root)),
+                perro_static_pipeline::generate_static_textures(project_root)
             ),
-            (
+            spawn_generation!(
                 "font",
-                scope.spawn(|| perro_static_pipeline::generate_static_fonts(project_root)),
+                perro_static_pipeline::generate_static_fonts(project_root)
             ),
-            (
+            spawn_generation!(
                 "shader",
-                scope.spawn(|| perro_static_pipeline::generate_static_shaders(project_root)),
+                perro_static_pipeline::generate_static_shaders(project_root)
             ),
-            (
+            spawn_generation!(
                 "audio",
-                scope.spawn(|| perro_static_pipeline::generate_static_audios(project_root)),
+                perro_static_pipeline::generate_static_audios(project_root)
             ),
-            (
+            spawn_generation!(
                 "csv",
-                scope.spawn(|| perro_static_pipeline::generate_static_csvs(project_root)),
+                perro_static_pipeline::generate_static_csvs(project_root)
             ),
-            (
+            spawn_generation!(
                 "localization",
-                scope.spawn(|| {
-                    perro_static_pipeline::generate_static_localizations(project_root, cfg)
-                }),
+                perro_static_pipeline::generate_static_localizations(project_root, cfg)
             ),
         ];
         let mut first_error = None;

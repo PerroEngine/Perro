@@ -323,8 +323,8 @@ impl Runtime {
         let mut position = self.physics_transform_2d(body_id)?.position;
         let mut remaining = motion;
         // hits move into the returned (API-owned) result -> no scratch reuse;
-        // Vec::new stay alloc-free til a real hit, bounded by MAX_SLIDE_ITERATIONS.
-        let mut hits = Vec::new();
+        // SmallVec inline cap = MAX_SLIDE_ITERATIONS -> alloc-free always.
+        let mut hits = smallvec::SmallVec::new();
         for _ in 0..MAX_SLIDE_ITERATIONS {
             if remaining.length_squared() <= 1.0e-12 {
                 remaining = Vector2::ZERO;
@@ -360,8 +360,8 @@ impl Runtime {
         let mut position = self.physics_transform_3d(body_id)?.position;
         let mut remaining = motion;
         // hits move into the returned (API-owned) result -> no scratch reuse;
-        // Vec::new stay alloc-free til a real hit, bounded by MAX_SLIDE_ITERATIONS.
-        let mut hits = Vec::new();
+        // SmallVec inline cap = MAX_SLIDE_ITERATIONS -> alloc-free always.
+        let mut hits = smallvec::SmallVec::new();
         for _ in 0..MAX_SLIDE_ITERATIONS {
             if remaining.length_squared() <= 1.0e-12 {
                 remaining = Vector3::ZERO;

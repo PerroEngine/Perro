@@ -151,7 +151,11 @@ impl BarkPlayer {
         let cap = (sample_rate as usize)
             .saturating_mul(channels as usize)
             .saturating_mul(Self::PCM_CACHE_MAX_SECONDS);
-        let mut samples: Vec<f32> = Vec::new();
+        // Preallocate up to the cap (bounded by a sanity ceiling in case the
+        // header reports an absurd rate/channel count) so the decode loop does
+        // not realloc-grow through megabytes of PCM.
+        const PCM_PREALLOC_CEILING_SAMPLES: usize = 1 << 21;
+        let mut samples: Vec<f32> = Vec::with_capacity(cap.min(PCM_PREALLOC_CEILING_SAMPLES));
         let mut oversized = false;
         for sample in decoder.convert_samples::<f32>() {
             if samples.len() >= cap {
@@ -294,14 +298,17 @@ impl BarkPlayer {
             return Ok(existing.font.clone());
         }
         let bytes = perro_io::load_asset(source).map_err(|err| err.to_string())?;
+        let source_bytes = bytes.len();
         let mut cursor = Cursor::new(bytes);
         let font =
             Arc::new(rustysynth::SoundFont::new(&mut cursor).map_err(|err| err.to_string())?);
+        state.cache_bytes = state.cache_bytes.saturating_add(source_bytes);
         state.soundfonts.insert(
             id,
             CachedSoundFont {
                 source: Arc::from(source),
                 font: font.clone(),
+                source_bytes,
             },
         );
         Ok(font)
@@ -334,6 +341,9 @@ impl BarkPlayer {
         }
         let bytes: Arc<[u8]> =
             Arc::from(perro_io::load_asset(source).map_err(|err| err.to_string())?);
+        // Midi file bytes pin memory like audio assets do; count them against
+        // the shared budget so audio-cache eviction compensates.
+        state.cache_bytes = state.cache_bytes.saturating_add(bytes.len());
         state.midi_files.insert(
             source_hash,
             CachedMidiFile {
@@ -403,17 +413,23 @@ impl BarkPlayer {
         if state.cache_bytes <= Self::CACHE_SOFT_LIMIT_BYTES {
             return;
         }
+        // Evict least-recently-touched first. The old `retain` walked the map
+        // in hash order, which could drop a hot clip while stale ones survived.
+        let mut candidates: Vec<(u64, Instant, usize)> = state
+            .cache
+            .iter()
+            .filter(|(_, entry)| !entry.reserved && entry.active_uses == 0)
+            .map(|(key, entry)| (*key, entry.last_touched, entry.cache_len()))
+            .collect();
+        candidates.sort_by_key(|(_, last_touched, _)| *last_touched);
         let mut cache_bytes = state.cache_bytes;
-        state.cache.retain(|_, entry| {
-            if cache_bytes <= Self::CACHE_SOFT_LIMIT_BYTES
-                || entry.reserved
-                || entry.active_uses > 0
-            {
-                return true;
+        for (key, _, len) in candidates {
+            if cache_bytes <= Self::CACHE_SOFT_LIMIT_BYTES {
+                break;
             }
-            cache_bytes = cache_bytes.saturating_sub(entry.cache_len());
-            false
-        });
+            state.cache.remove(&key);
+            cache_bytes = cache_bytes.saturating_sub(len);
+        }
         state.cache_bytes = cache_bytes;
     }
 

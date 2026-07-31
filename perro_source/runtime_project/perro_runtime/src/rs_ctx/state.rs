@@ -192,10 +192,12 @@ pub(super) struct RuntimeResourceState {
     pub(super) material_write_pending_by_id: HashSet<MaterialID>,
     pub(super) material_reserve_pending: HashSet<u64>,
     pub(super) material_drop_pending: HashSet<u64>,
-    pub(super) material_data_by_id: HashMap<MaterialID, Material3D>,
+    // Arc: the same allocation backs this cache and every queued
+    // CreateMaterial/WriteMaterialData command (no deep clone per write).
+    pub(super) material_data_by_id: HashMap<MaterialID, Arc<Material3D>>,
     pub(super) material_loaded_by_id: HashSet<MaterialID>,
     pub(super) default_material_id: Option<MaterialID>,
-    pub(super) shared_material_by_data: Vec<(Material3D, MaterialID)>,
+    pub(super) shared_material_by_data: Vec<(Arc<Material3D>, MaterialID)>,
     pub(super) animation_by_source: HashMap<u64, AnimationID>,
     pub(super) animation_data_by_id: HashMap<AnimationID, Arc<AnimationClip>>,
     pub(super) animation_loaded_by_id: HashSet<AnimationID>,

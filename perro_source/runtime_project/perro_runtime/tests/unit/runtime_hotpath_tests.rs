@@ -327,23 +327,23 @@ fn node_arena_name_index_tracks_insert_rename_remove() {
     let a = arena.insert(named);
     let b = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
 
-    assert_eq!(arena.named_ids("alpha"), &[a]);
-    assert!(arena.named_ids("beta").is_empty());
+    assert_eq!(arena.named_ids("alpha").collect::<Vec<_>>(), &[a]);
+    assert!(arena.named_ids("beta").next().is_none());
 
     // Rename keeps the index in sync (old entry gone, new one present).
     assert!(arena.rename(a, "beta".into()));
-    assert!(arena.named_ids("alpha").is_empty());
-    assert_eq!(arena.named_ids("beta"), &[a]);
+    assert!(arena.named_ids("alpha").next().is_none());
+    assert_eq!(arena.named_ids("beta").collect::<Vec<_>>(), &[a]);
 
     // Naming a second node appends in insertion order.
     assert!(arena.rename(b, "beta".into()));
-    assert_eq!(arena.named_ids("beta"), &[a, b]);
+    assert_eq!(arena.named_ids("beta").collect::<Vec<_>>(), &[a, b]);
 
     // Removal drops only the removed id; empty names never indexed.
     let _ = arena.remove(a);
-    assert_eq!(arena.named_ids("beta"), &[b]);
+    assert_eq!(arena.named_ids("beta").collect::<Vec<_>>(), &[b]);
     assert!(arena.rename(b, "".into()));
-    assert!(arena.named_ids("beta").is_empty());
+    assert!(arena.named_ids("beta").next().is_none());
 
     // Dead ids fail.
     assert!(!arena.rename(a, "gamma".into()));
@@ -467,7 +467,14 @@ fn node_arena_packed_children_rebuild_and_stale_fallback() {
     assert!(!arena.packed_children_current());
     assert_eq!(arena.children(root), Some([a, b].as_slice()));
 
+    // Gated refresh: light churn below the rebuild threshold keeps serving
+    // reads from the authoritative fallback instead of paying a full rebuild.
     arena.refresh_packed_children();
+    assert!(!arena.packed_children_current());
+    assert_eq!(arena.children(root), Some([a, b].as_slice()));
+
+    // Forced rebuild still snaps the cache current.
+    arena.rebuild_packed_children();
     assert!(arena.packed_children_current());
     assert_eq!(arena.children(root), Some([a, b].as_slice()));
 }
@@ -546,8 +553,8 @@ fn node_arena_edit_tracks_name_tags_and_parent() {
     });
 
     assert_eq!(result, Some(42));
-    assert!(arena.named_ids("before").is_empty());
-    assert_eq!(arena.named_ids("after"), &[id]);
+    assert!(arena.named_ids("before").next().is_none());
+    assert_eq!(arena.named_ids("after").collect::<Vec<_>>(), &[id]);
     assert!(
         !arena
             .tag_index()
@@ -583,7 +590,7 @@ fn node_arena_edit_repairs_indices_during_unwind() {
     }));
 
     assert!(panic.is_err());
-    assert_eq!(arena.named_ids("unwound"), &[id]);
+    assert_eq!(arena.named_ids("unwound").collect::<Vec<_>>(), &[id]);
     assert!(
         arena
             .tag_index()
@@ -618,8 +625,8 @@ fn node_arena_get_mut_tracks_all_indexed_and_mirrored_fields() {
         node.data = SceneNodeData::Node2D(Node2D::default());
     }
 
-    assert!(arena.named_ids("guard-before").is_empty());
-    assert_eq!(arena.named_ids("guard-after"), &[id]);
+    assert!(arena.named_ids("guard-before").next().is_none());
+    assert_eq!(arena.named_ids("guard-after").collect::<Vec<_>>(), &[id]);
     assert!(arena.tag_index().get(&old_tag.id).is_none());
     assert!(
         arena
@@ -647,7 +654,7 @@ fn node_arena_get_mut_noop_and_stale_id_keep_indices_stable() {
 
     drop(arena.get_mut(id).expect("live node"));
 
-    assert_eq!(arena.named_ids("stable"), &[id]);
+    assert_eq!(arena.named_ids("stable").collect::<Vec<_>>(), &[id]);
     assert_eq!(arena.structural_revision(), structural_before);
     assert!(arena.mutation_revision() > mutation_before);
     let stale = id;
@@ -673,7 +680,7 @@ fn node_arena_get_mut_repairs_during_unwind() {
     }));
 
     assert!(panic.is_err());
-    assert_eq!(arena.named_ids("guard-panicked"), &[id]);
+    assert_eq!(arena.named_ids("guard-panicked").collect::<Vec<_>>(), &[id]);
     assert!(
         arena
             .tag_index()

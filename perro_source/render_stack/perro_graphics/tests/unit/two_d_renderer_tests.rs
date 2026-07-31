@@ -334,3 +334,40 @@ fn retained_sprite_order_stays_stable_across_equal_upserts() {
     assert_eq!(first, second);
     assert_eq!(second, vec![3, 7, 11]);
 }
+
+#[test]
+fn ndc_scale_aspect_fits_virtual_canvas() {
+    // 3440x1440 window on a 1920x1080 virtual canvas: min-axis scale = 1440/1080.
+    let scale = super::ndc_scale((3440, 1440), [1920.0, 1080.0], 1.0);
+    let s = 1440.0_f32 / 1080.0;
+    assert!((scale[0] - 2.0 * s / 3440.0).abs() < 1e-6);
+    assert!((scale[1] - 2.0 * s / 1440.0).abs() < 1e-6);
+    // Design resolution stays 1:1.
+    let identity = super::ndc_scale((1920, 1080), [1920.0, 1080.0], 1.0);
+    assert!((identity[0] - 2.0 / 1920.0).abs() < 1e-9);
+    assert!((identity[1] - 2.0 / 1080.0).abs() < 1e-9);
+    // Non-positive / non-finite zoom coerces to 1.0.
+    assert_eq!(
+        super::ndc_scale((1920, 1080), [1920.0, 1080.0], 0.0),
+        super::ndc_scale((1920, 1080), [1920.0, 1080.0], 1.0)
+    );
+}
+
+#[test]
+fn stream_camera_uniform_matches_main_view_rule() {
+    use perro_render_bridge::Camera2DState;
+    let camera = Camera2DState {
+        position: [10.0, -4.0],
+        rotation_radians: 0.3,
+        zoom: 2.0,
+        ..Camera2DState::default()
+    };
+    let mut renderer = Renderer2D::new();
+    renderer.set_viewport(1280, 720);
+    renderer.set_virtual_viewport(1920.0, 1080.0);
+    renderer.set_camera(camera.clone());
+    let main = renderer.camera_uniform();
+    let stream = super::camera_2d_uniform_from_state(&camera, 1280, 720, [1920.0, 1080.0]);
+    assert_eq!(main.ndc_scale, stream.ndc_scale);
+    assert_eq!(main.view, stream.view);
+}

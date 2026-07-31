@@ -173,7 +173,15 @@ impl Runtime {
         computed: &AHashMap<NodeID, ComputedUiRect>,
         point: Vector2,
     ) -> bool {
-        for (node, scene_node) in self.nodes.iter() {
+        // node_types lane pre-filter (1B/slot): skip non-UI slots without
+        // deref'ing their SceneNode; the UI-base check below still decides.
+        for index in 1..self.nodes.slot_count() {
+            if !self.nodes.node_type_slots()[index].is_a(perro_nodes::NodeType::UiNode) {
+                continue;
+            }
+            let Some((node, scene_node)) = self.nodes.slot_get(index) else {
+                continue;
+            };
             if node == target || self.ui_nodes_related(node, target) {
                 continue;
             }

@@ -42,7 +42,7 @@ impl TextureAPI for RuntimeResourceApi {
             .texture_pending_source_by_request
             .insert(request, source.clone());
         state.texture_pending_id_by_request.insert(request, id);
-        state.queued_commands.push(RenderCommand::Resource(
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
             ResourceCommand::CreateRuntimeTexture {
                 request,
                 id,
@@ -52,7 +52,7 @@ impl TextureAPI for RuntimeResourceApi {
                 height,
                 rgba: Arc::from(rgba),
             },
-        ));
+        )));
         id
     }
 
@@ -71,7 +71,7 @@ impl TextureAPI for RuntimeResourceApi {
             .texture_pending_source_by_request
             .insert(request, source.clone());
         state.texture_pending_id_by_request.insert(request, id);
-        state.queued_commands.push(RenderCommand::Resource(
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
             ResourceCommand::CreateRuntimeTextureBytes {
                 request,
                 id,
@@ -79,7 +79,7 @@ impl TextureAPI for RuntimeResourceApi {
                 reserved: false,
                 bytes: Arc::from(bytes),
             },
-        ));
+        )));
         id
     }
 
@@ -95,16 +95,16 @@ impl TextureAPI for RuntimeResourceApi {
         if !texture_id_known(&state, id) {
             return false;
         }
-        state
-            .queued_commands
-            .push(RenderCommand::Resource(ResourceCommand::WriteTextureRgba {
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
+            ResourceCommand::WriteTextureRgba {
                 id,
                 width,
                 height,
                 // owned copy of caller slice; backend moves it into the resident
                 // buffer path (StreamRgba::Owned, no Arc round trip).
                 rgba: rgba.to_vec().into(),
-            }));
+            },
+        )));
         true
     }
 
@@ -130,7 +130,7 @@ impl TextureAPI for RuntimeResourceApi {
         if !texture_id_known(&state, id) {
             return false;
         }
-        state.queued_commands.push(RenderCommand::Resource(
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
             ResourceCommand::WriteTextureRgbaRegion {
                 id,
                 x,
@@ -139,7 +139,7 @@ impl TextureAPI for RuntimeResourceApi {
                 height,
                 rgba: Arc::from(rgba),
             },
-        ));
+        )));
         true
     }
 
@@ -151,10 +151,12 @@ impl TextureAPI for RuntimeResourceApi {
             .lock()
             .expect("resource api mutex poisoned")
             .queued_commands
-            .push(RenderCommand::Resource(ResourceCommand::SaveTextureImage {
-                id,
-                path: path.to_string(),
-            }));
+            .push(RenderCommand::Resource(Box::new(
+                ResourceCommand::SaveTextureImage {
+                    id,
+                    path: path.to_string(),
+                },
+            )));
         true
     }
 
@@ -174,14 +176,14 @@ impl TextureAPI for RuntimeResourceApi {
             .texture_pending_source_by_request
             .insert(request, source.to_string());
         state.texture_pending_id_by_request.insert(request, id);
-        state
-            .queued_commands
-            .push(RenderCommand::Resource(ResourceCommand::CreateTexture {
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
+            ResourceCommand::CreateTexture {
                 request,
                 id,
                 source: source.to_string(),
                 reserved: false,
-            }));
+            },
+        )));
         id
     }
 
@@ -192,9 +194,9 @@ impl TextureAPI for RuntimeResourceApi {
                 state.texture_reserve_pending.insert(source_hash);
                 return id;
             }
-            state.queued_commands.push(RenderCommand::Resource(
+            state.queued_commands.push(RenderCommand::Resource(Box::new(
                 ResourceCommand::SetTextureReserved { id, reserved: true },
-            ));
+            )));
             return id;
         }
         let Some(source) = source else {
@@ -210,14 +212,14 @@ impl TextureAPI for RuntimeResourceApi {
             .texture_pending_source_by_request
             .insert(request, source.to_string());
         state.texture_pending_id_by_request.insert(request, id);
-        state
-            .queued_commands
-            .push(RenderCommand::Resource(ResourceCommand::CreateTexture {
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
+            ResourceCommand::CreateTexture {
                 request,
                 id,
                 source: source.to_string(),
                 reserved: true,
-            }));
+            },
+        )));
         id
     }
 
@@ -257,9 +259,9 @@ impl TextureAPI for RuntimeResourceApi {
             state.texture_reserve_pending.insert(source_hash);
             state.texture_drop_pending.remove(&source_hash);
         }
-        state.queued_commands.push(RenderCommand::Resource(
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
             ResourceCommand::SetTextureReserved { id, reserved: true },
-        ));
+        )));
         true
     }
 
@@ -279,9 +281,9 @@ impl TextureAPI for RuntimeResourceApi {
         }
         let _ = state.free_texture_id(id);
         state.texture_loaded_by_id.remove(&id);
-        state
-            .queued_commands
-            .push(RenderCommand::Resource(ResourceCommand::DropTexture { id }));
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
+            ResourceCommand::DropTexture { id },
+        )));
         true
     }
 
@@ -356,8 +358,9 @@ impl super::state::RuntimeResourceState {
             self.texture_pending_by_source.remove(&source_hash);
             let pending_id = self.texture_pending_id_by_request.remove(&request);
             if self.texture_drop_pending.remove(&source_hash) {
-                self.queued_commands
-                    .push(RenderCommand::Resource(ResourceCommand::DropTexture { id }));
+                self.queued_commands.push(RenderCommand::Resource(Box::new(
+                    ResourceCommand::DropTexture { id },
+                )));
                 self.texture_by_source.remove(&source_hash);
                 if let Some(pending_id) = pending_id {
                     let _ = self.free_texture_id(pending_id);
@@ -365,9 +368,9 @@ impl super::state::RuntimeResourceState {
             } else {
                 self.texture_by_source.insert(source_hash, id);
                 if self.texture_reserve_pending.remove(&source_hash) {
-                    self.queued_commands.push(RenderCommand::Resource(
+                    self.queued_commands.push(RenderCommand::Resource(Box::new(
                         ResourceCommand::SetTextureReserved { id, reserved: true },
-                    ));
+                    )));
                 }
             }
         }

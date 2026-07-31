@@ -12,6 +12,7 @@ pub(crate) fn rgba_mip_level_count(width: u32, height: u32) -> u32 {
     u32::BITS - max_dim.leading_zeros()
 }
 
+#[cfg(test)]
 pub(crate) fn build_rgba_levels_for_filter(
     rgba: &[u8],
     width: u32,
@@ -72,35 +73,9 @@ fn build_rgba_mip_chain_from_base(rgba: Vec<u8>, width: u32, height: u32) -> Vec
         .last()
         .filter(|level| level.width > 1 || level.height > 1)
     {
-        let next_width = (prev.width / 2).max(1);
-        let next_height = (prev.height / 2).max(1);
-        let mut next = vec![0u8; next_width as usize * next_height as usize * 4];
-
-        for y in 0..next_height {
-            for x in 0..next_width {
-                let sx = x * 2;
-                let sy = y * 2;
-                let x1 = (sx + 1).min(prev.width - 1);
-                let y1 = (sy + 1).min(prev.height - 1);
-                let samples = [(sx, sy), (x1, sy), (sx, y1), (x1, y1)];
-                let dst = ((y * next_width + x) * 4) as usize;
-
-                let alpha_sum = samples.iter().fold(0u32, |acc, &(px, py)| {
-                    let src = ((py * prev.width + px) * 4) as usize + 3;
-                    acc + prev.rgba[src] as u32
-                });
-                let alpha = ((alpha_sum + 2) / 4) as u8;
-                for c in 0..3 {
-                    let sum = samples.iter().fold(0.0f32, |acc, &(px, py)| {
-                        let src = ((py * prev.width + px) * 4) as usize + c;
-                        acc + srgb_u8_to_linear(prev.rgba[src])
-                    });
-                    next[dst + c] = linear_to_srgb_u8(sum * 0.25);
-                }
-                next[dst + 3] = alpha;
-            }
-        }
-
+        let mut next = Vec::new();
+        let (next_width, next_height) =
+            downsample_rgba_into(&prev.rgba, prev.width, prev.height, &mut next);
         levels.push(RgbaMipLevel {
             rgba: next,
             width: next_width,
@@ -109,6 +84,43 @@ fn build_rgba_mip_chain_from_base(rgba: Vec<u8>, width: u32, height: u32) -> Vec
     }
 
     levels
+}
+
+/// 2x2 box-downsample one RGBA level into `dst` (cleared + resized in place so
+/// scratch buffers reuse their allocation). Color averages in linear space,
+/// alpha averages directly. Returns the downsampled dimensions.
+fn downsample_rgba_into(src: &[u8], width: u32, height: u32, dst: &mut Vec<u8>) -> (u32, u32) {
+    let next_width = (width / 2).max(1);
+    let next_height = (height / 2).max(1);
+    dst.clear();
+    dst.resize(next_width as usize * next_height as usize * 4, 0);
+
+    for y in 0..next_height {
+        for x in 0..next_width {
+            let sx = x * 2;
+            let sy = y * 2;
+            let x1 = (sx + 1).min(width - 1);
+            let y1 = (sy + 1).min(height - 1);
+            let samples = [(sx, sy), (x1, sy), (sx, y1), (x1, y1)];
+            let dst_at = ((y * next_width + x) * 4) as usize;
+
+            let alpha_sum = samples.iter().fold(0u32, |acc, &(px, py)| {
+                let src_at = ((py * width + px) * 4) as usize + 3;
+                acc + src[src_at] as u32
+            });
+            let alpha = ((alpha_sum + 2) / 4) as u8;
+            for c in 0..3 {
+                let sum = samples.iter().fold(0.0f32, |acc, &(px, py)| {
+                    let src_at = ((py * width + px) * 4) as usize + c;
+                    acc + srgb_u8_to_linear(src[src_at])
+                });
+                dst[dst_at + c] = linear_to_srgb_u8(sum * 0.25);
+            }
+            dst[dst_at + 3] = alpha;
+        }
+    }
+
+    (next_width, next_height)
 }
 
 #[inline]
@@ -139,32 +151,82 @@ fn fallback_mip_chain() -> Vec<RgbaMipLevel> {
     }]
 }
 
-pub(crate) fn write_rgba_mip_chain(
+fn write_rgba_mip_level(
     queue: &wgpu::Queue,
     texture: &wgpu::Texture,
-    levels: &[RgbaMipLevel],
+    mip_level: u32,
+    rgba: &[u8],
+    width: u32,
+    height: u32,
 ) {
-    for (mip_level, level) in levels.iter().enumerate() {
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture,
-                mip_level: mip_level as u32,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &level.rgba,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * level.width),
-                rows_per_image: Some(level.height),
-            },
-            wgpu::Extent3d {
-                width: level.width,
-                height: level.height,
-                depth_or_array_layers: 1,
-            },
-        );
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture,
+            mip_level,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        rgba,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(4 * width),
+            rows_per_image: Some(height),
+        },
+        wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+    );
+}
+
+std::thread_local! {
+    // Ping-pong downsample scratch for the streaming mip upload below; reused
+    // across uploads so mip generation allocates nothing after warmup. Peak
+    // retained size is 1/4 + 1/16 of the largest base level seen.
+    static MIP_STREAM_SCRATCH: std::cell::RefCell<(Vec<u8>, Vec<u8>)> =
+        const { std::cell::RefCell::new((Vec::new(), Vec::new())) };
+}
+
+/// Streaming texture upload: writes the base level straight from the caller's
+/// borrowed slice, then generates each mip level into a ping-pong scratch pair
+/// and uploads it before the next level overwrites it. The full mip chain
+/// (~1.33x the base) is never materialized: peak extra CPU memory is the two
+/// scratch levels (base/4 + base/16). Mip count comes from the texture itself.
+pub(crate) fn write_rgba_texture_streaming(
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+) {
+    write_texture_base_level(queue, texture, width, height, rgba);
+    let mip_count = texture.mip_level_count();
+    if mip_count <= 1 {
+        return;
     }
+    MIP_STREAM_SCRATCH.with(|scratch| {
+        let mut scratch = scratch.borrow_mut();
+        let (ping, pong) = &mut *scratch;
+        let (mut src_width, mut src_height) = (width, height);
+        for level in 1..mip_count {
+            let (next_width, next_height) = if level == 1 {
+                let dims = downsample_rgba_into(rgba, src_width, src_height, ping);
+                write_rgba_mip_level(queue, texture, level, ping, dims.0, dims.1);
+                dims
+            } else if level % 2 == 0 {
+                let dims = downsample_rgba_into(ping, src_width, src_height, pong);
+                write_rgba_mip_level(queue, texture, level, pong, dims.0, dims.1);
+                dims
+            } else {
+                let dims = downsample_rgba_into(pong, src_width, src_height, ping);
+                write_rgba_mip_level(queue, texture, level, ping, dims.0, dims.1);
+                dims
+            };
+            src_width = next_width;
+            src_height = next_height;
+        }
+    });
 }
 
 /// Upload rgba into mip level 0 of an existing texture (no mip regen). Used by

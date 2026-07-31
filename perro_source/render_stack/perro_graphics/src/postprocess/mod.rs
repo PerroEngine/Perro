@@ -39,6 +39,43 @@ const EFFECT_MERGED: u32 = 15;
 const EFFECT_CHROMA_KEY: u32 = 16;
 const EFFECT_PIXEL_ART: u32 = 17;
 
+// Frames without any effect chain before promoted ping targets and lazily
+// allocated scratch targets (blur/bloom) release back to 1x1/None.
+const POST_IDLE_RELEASE_FRAMES: u32 = 120;
+
+// LDR intermediate target format. sRGB-encoded so 8-bit storage keeps
+// perceptual precision for the linear-light values the passes exchange
+// (plain Rgba8Unorm would band in the darks); half the VRAM of Rgba16Float.
+const LDR_INTERMEDIATE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+// Consecutive all-LDR apply_chain calls before float ping targets demote to
+// 8-bit. Promotion back to float is immediate when an HDR effect enters;
+// the hysteresis only guards the (re)allocation churn on mixed workloads.
+const LDR_DEMOTE_CHAIN_RUNS: u32 = 120;
+
+/// True when an effect needs float (HDR) intermediate targets: bloom
+/// thresholds HDR values, blur redistributes >1.0 energy, and custom shaders
+/// are unknown, so anything not explicitly classified defaults to HDR
+/// (correctness first). Pure color/display ops tolerate LDR intermediates.
+fn effect_needs_hdr_intermediates(effect: &PostProcessEffect) -> bool {
+    !matches!(
+        effect,
+        PostProcessEffect::Pixelate { .. }
+            | PostProcessEffect::PixelArt { .. }
+            | PostProcessEffect::Warp { .. }
+            | PostProcessEffect::Vignette { .. }
+            | PostProcessEffect::Crt { .. }
+            | PostProcessEffect::ColorFilter { .. }
+            | PostProcessEffect::ReverseFilter { .. }
+            | PostProcessEffect::ChromaKey { .. }
+            | PostProcessEffect::Saturate { .. }
+            | PostProcessEffect::BlackWhite { .. }
+            | PostProcessEffect::ColorGrade { .. }
+            | PostProcessEffect::Lut2D { .. }
+            | PostProcessEffect::Lut3D { .. }
+            | PostProcessEffect::Exposure { .. }
+    )
+}
+
 /// Per-frame uniform fields shared across an effect's sub-passes.
 struct PostUniformFrameCtx {
     projection_mode: u32,
@@ -201,6 +238,10 @@ pub struct PostProcessContext<'a> {
     pub(crate) depth_view_key: u64,
     pub(crate) static_shader_lookup: Option<StaticShaderLookup>,
     pub(crate) static_texture_lookup: Option<StaticTextureLookup>,
+    /// True while an HDR display output is active: intermediates must then
+    /// stay float regardless of the effect chain, or headroom above 1.0 would
+    /// clamp mid-chain.
+    pub(crate) hdr_output: bool,
 }
 
 pub struct PostProcessChainData<'a> {
@@ -211,6 +252,11 @@ pub struct PostProcessChainData<'a> {
 
 pub struct PostProcessor {
     format: wgpu::TextureFormat,
+    // Format of ping/scratch targets: `format` while any HDR-requiring effect
+    // runs (or HDR output is active), demoted to LDR_INTERMEDIATE_FORMAT (half
+    // the VRAM) once the chain stays all-LDR for LDR_DEMOTE_CHAIN_RUNS calls.
+    intermediate_format: wgpu::TextureFormat,
+    ldr_chain_streak: u32,
     width: u32,
     height: u32,
     scene_texture: wgpu::Texture,
@@ -219,6 +265,7 @@ pub struct PostProcessor {
     ping_a_view: wgpu::TextureView,
     ping_b: wgpu::Texture,
     ping_b_view: wgpu::TextureView,
+    ping_targets_full_size: bool,
     // Lazily-allocated scratch targets for multi-pass effects. Sized from the
     // main targets and dropped on resize. blur_scratch is full-res (separable
     // blur intermediate); bloom half targets are half-res (downsampled bloom).
@@ -234,7 +281,11 @@ pub struct PostProcessor {
     lut_3d_textures: HashMap<u64, CachedPostTexture>,
     bgl: wgpu::BindGroupLayout,
     pipeline_layout: wgpu::PipelineLayout,
+    builtin_shader: wgpu::ShaderModule,
     builtin_pipeline: wgpu::RenderPipeline,
+    // Lazily built variant of builtin_pipeline baked for
+    // LDR_INTERMEDIATE_FORMAT targets (pipelines are format-baked).
+    builtin_pipeline_ldr: Option<wgpu::RenderPipeline>,
     custom_pipelines: HashMap<u64, wgpu::RenderPipeline>,
     post_bind_groups: HashMap<PostBindGroupKey, wgpu::BindGroup>,
     uniform_buffer: wgpu::Buffer,
@@ -246,6 +297,9 @@ pub struct PostProcessor {
     params_buffer_generation: u32,
     lut_generation: u32,
     frame_counter: u64,
+    idle_frames: u32,
+    // Bloom downsample divisor: 2 normally, 4 on memory-constrained adapters.
+    bloom_divisor: u32,
     perf_counters: PostPerfCounters,
     chain_steps_scratch: Vec<ChainStep>,
     merged_descriptors_scratch: Vec<[f32; 4]>,
@@ -323,10 +377,8 @@ impl PostProcessor {
     ) -> Self {
         let (scene_texture, scene_view) =
             create_color_target(device, format, width, height, "perro_post_scene");
-        let (ping_a, ping_a_view) =
-            create_color_target(device, format, width, height, "perro_post_ping_a");
-        let (ping_b, ping_b_view) =
-            create_color_target(device, format, width, height, "perro_post_ping_b");
+        let (ping_a, ping_a_view) = create_color_target(device, format, 1, 1, "perro_post_ping_a");
+        let (ping_b, ping_b_view) = create_color_target(device, format, 1, 1, "perro_post_ping_b");
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("perro_post_sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -442,6 +494,8 @@ impl PostProcessor {
 
         Self {
             format,
+            intermediate_format: format,
+            ldr_chain_streak: 0,
             width,
             height,
             scene_texture,
@@ -450,6 +504,7 @@ impl PostProcessor {
             ping_a_view,
             ping_b,
             ping_b_view,
+            ping_targets_full_size: false,
             blur_scratch: None,
             bloom_half_a: None,
             bloom_half_b: None,
@@ -462,7 +517,9 @@ impl PostProcessor {
             lut_3d_textures: HashMap::new(),
             bgl,
             pipeline_layout,
+            builtin_shader: shader,
             builtin_pipeline,
+            builtin_pipeline_ldr: None,
             custom_pipelines: HashMap::new(),
             post_bind_groups: HashMap::new(),
             uniform_buffer,
@@ -474,10 +531,54 @@ impl PostProcessor {
             params_buffer_generation: 1,
             lut_generation: 1,
             frame_counter: 0,
+            idle_frames: 0,
+            bloom_divisor: 2,
             perf_counters: PostPerfCounters::default(),
             chain_steps_scratch: Vec::new(),
             merged_descriptors_scratch: Vec::new(),
         }
+    }
+
+    pub fn set_constrained(&mut self, constrained: bool) {
+        let divisor = if constrained { 4 } else { 2 };
+        if self.bloom_divisor == divisor {
+            return;
+        }
+        self.bloom_divisor = divisor;
+        self.bloom_half_a = None;
+        self.bloom_half_b = None;
+    }
+
+    /// Per-frame tick while no effect chain runs. Promoted ping targets and the
+    /// blur/bloom scratch targets otherwise latch full/half-res forever after
+    /// the last effect is removed.
+    pub fn note_idle_frame(&mut self, device: &wgpu::Device) {
+        let holds_scratch = self.ping_targets_full_size
+            || self.blur_scratch.is_some()
+            || self.bloom_half_a.is_some()
+            || self.bloom_half_b.is_some();
+        if !holds_scratch {
+            self.idle_frames = 0;
+            return;
+        }
+        self.idle_frames = self.idle_frames.saturating_add(1);
+        if self.idle_frames < POST_IDLE_RELEASE_FRAMES {
+            return;
+        }
+        self.idle_frames = 0;
+        let (ping_a, ping_a_view) =
+            create_color_target(device, self.intermediate_format, 1, 1, "perro_post_ping_a");
+        let (ping_b, ping_b_view) =
+            create_color_target(device, self.intermediate_format, 1, 1, "perro_post_ping_b");
+        self.ping_a = ping_a;
+        self.ping_a_view = ping_a_view;
+        self.ping_b = ping_b;
+        self.ping_b_view = ping_b_view;
+        self.ping_targets_full_size = false;
+        self.blur_scratch = None;
+        self.bloom_half_a = None;
+        self.bloom_half_b = None;
+        self.post_bind_groups.clear();
     }
 
     pub fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
@@ -489,19 +590,112 @@ impl PostProcessor {
         let (scene_texture, scene_view) =
             create_color_target(device, self.format, width, height, "perro_post_scene");
         let (ping_a, ping_a_view) =
-            create_color_target(device, self.format, width, height, "perro_post_ping_a");
+            create_color_target(device, self.intermediate_format, 1, 1, "perro_post_ping_a");
         let (ping_b, ping_b_view) =
-            create_color_target(device, self.format, width, height, "perro_post_ping_b");
+            create_color_target(device, self.intermediate_format, 1, 1, "perro_post_ping_b");
         self.scene_texture = scene_texture;
         self.scene_view = scene_view;
         self.ping_a = ping_a;
         self.ping_a_view = ping_a_view;
         self.ping_b = ping_b;
         self.ping_b_view = ping_b_view;
+        self.ping_targets_full_size = false;
         // Drop scratch targets; they reallocate lazily at the new size.
         self.blur_scratch = None;
         self.bloom_half_a = None;
         self.bloom_half_b = None;
+        self.post_bind_groups.clear();
+    }
+
+    /// Track whether the current chain tolerates LDR intermediates and switch
+    /// `intermediate_format` accordingly. Promotion to float is immediate;
+    /// demotion waits out LDR_DEMOTE_CHAIN_RUNS all-LDR chain runs. A scene
+    /// format that is not Rgba16Float gains nothing from demotion and keeps
+    /// one format throughout.
+    fn update_intermediate_format(&mut self, device: &wgpu::Device, chain_needs_hdr: bool) {
+        if self.format != wgpu::TextureFormat::Rgba16Float {
+            return;
+        }
+        if chain_needs_hdr {
+            self.ldr_chain_streak = 0;
+            if self.intermediate_format != self.format {
+                self.set_intermediate_format(device, self.format);
+            }
+            return;
+        }
+        if self.intermediate_format != self.format {
+            return;
+        }
+        self.ldr_chain_streak = self.ldr_chain_streak.saturating_add(1);
+        if self.ldr_chain_streak >= LDR_DEMOTE_CHAIN_RUNS {
+            self.set_intermediate_format(device, LDR_INTERMEDIATE_FORMAT);
+        }
+    }
+
+    fn set_intermediate_format(&mut self, device: &wgpu::Device, format: wgpu::TextureFormat) {
+        self.intermediate_format = format;
+        let (ping_a, ping_a_view) = create_color_target(device, format, 1, 1, "perro_post_ping_a");
+        let (ping_b, ping_b_view) = create_color_target(device, format, 1, 1, "perro_post_ping_b");
+        self.ping_a = ping_a;
+        self.ping_a_view = ping_a_view;
+        self.ping_b = ping_b;
+        self.ping_b_view = ping_b_view;
+        self.ping_targets_full_size = false;
+        self.blur_scratch = None;
+        self.bloom_half_a = None;
+        self.bloom_half_b = None;
+        self.post_bind_groups.clear();
+    }
+
+    /// Builtin pipeline for a pass by target: intermediate (ping) targets use
+    /// the variant baked for `intermediate_format`; final-output passes keep
+    /// the scene-format pipeline. Call `ensure_ldr_pipeline` first when the
+    /// intermediate format is demoted.
+    fn builtin_pipeline_for_target(&self, intermediate_target: bool) -> &wgpu::RenderPipeline {
+        if intermediate_target && self.intermediate_format != self.format {
+            self.builtin_pipeline_ldr
+                .as_ref()
+                .unwrap_or(&self.builtin_pipeline)
+        } else {
+            &self.builtin_pipeline
+        }
+    }
+
+    fn ensure_ldr_pipeline(&mut self, device: &wgpu::Device) {
+        if self.intermediate_format == self.format || self.builtin_pipeline_ldr.is_some() {
+            return;
+        }
+        self.builtin_pipeline_ldr = Some(create_pipeline(
+            device,
+            &self.pipeline_layout,
+            &self.builtin_shader,
+            self.intermediate_format,
+        ));
+    }
+
+    fn ensure_ping_targets(&mut self, device: &wgpu::Device) {
+        if self.ping_targets_full_size {
+            return;
+        }
+        let (ping_a, ping_a_view) = create_color_target(
+            device,
+            self.intermediate_format,
+            self.width,
+            self.height,
+            "perro_post_ping_a",
+        );
+        let (ping_b, ping_b_view) = create_color_target(
+            device,
+            self.intermediate_format,
+            self.width,
+            self.height,
+            "perro_post_ping_b",
+        );
+        self.ping_a = ping_a;
+        self.ping_a_view = ping_a_view;
+        self.ping_b = ping_b;
+        self.ping_b_view = ping_b_view;
+        self.ping_targets_full_size = true;
         self.post_bind_groups.clear();
     }
 
@@ -542,6 +736,7 @@ impl PostProcessor {
             depth_view_key,
             static_shader_lookup,
             static_texture_lookup,
+            hdr_output,
         } = ctx;
 
         let PostProcessChainData {
@@ -557,6 +752,10 @@ impl PostProcessor {
         if effects.is_empty() {
             return;
         }
+        self.idle_frames = 0;
+        let chain_needs_hdr = *hdr_output || effects.iter().any(effect_needs_hdr_intermediates);
+        self.update_intermediate_format(device, chain_needs_hdr);
+        self.ensure_ldr_pipeline(device);
 
         let (projection_mode, near, far) = projection_uniform_params(camera);
         let width = self.width.max(1) as f32;
@@ -572,6 +771,9 @@ impl PostProcessor {
         let mut steps = std::mem::take(&mut self.chain_steps_scratch);
         let mut merged_descriptors = std::mem::take(&mut self.merged_descriptors_scratch);
         build_chain_steps_into(effects, &mut steps, &mut merged_descriptors);
+        if steps.len() > 1 {
+            self.ensure_ping_targets(device);
+        }
 
         let mut max_params = 0usize;
         for effect in *effects {
@@ -693,7 +895,7 @@ impl PostProcessor {
                         occlusion_query_set: None,
                         multiview_mask: None,
                     });
-                    pass.set_pipeline(&self.builtin_pipeline);
+                    pass.set_pipeline(self.builtin_pipeline_for_target(!last));
                     pass.set_bind_group(0, &bind_group, &[dynamic_offset]);
                     pass.draw(0..3, 0..1);
                 }
@@ -818,11 +1020,13 @@ impl PostProcessor {
                 view_keys,
             );
             let pipeline = match effect {
+                // Custom is classified HDR, so its targets always carry the
+                // scene format the custom pipelines were baked for.
                 PostProcessEffect::Custom { shader_path, .. } => self
                     .custom_pipelines
                     .get(&post_shader_key(shader_path.as_ref()))
                     .unwrap_or(&self.builtin_pipeline),
-                _ => &self.builtin_pipeline,
+                _ => self.builtin_pipeline_for_target(!last),
             };
 
             {
@@ -865,7 +1069,7 @@ impl PostProcessor {
         if self.blur_scratch.is_none() {
             let (texture, view) = create_color_target(
                 device,
-                self.format,
+                self.intermediate_format,
                 self.width,
                 self.height,
                 "perro_post_blur_scratch",
@@ -877,21 +1081,32 @@ impl PostProcessor {
             .map(|scratch| scratch.view.clone())
     }
 
-    /// Ensure the two half-res bloom targets exist.
+    /// Ensure the two downsampled bloom targets exist (half res, quarter res
+    /// on constrained adapters).
     fn ensure_bloom_targets(
         &mut self,
         device: &wgpu::Device,
     ) -> Option<(wgpu::TextureView, wgpu::TextureView)> {
-        let hw = (self.width / 2).max(1);
-        let hh = (self.height / 2).max(1);
+        let hw = (self.width / self.bloom_divisor.max(1)).max(1);
+        let hh = (self.height / self.bloom_divisor.max(1)).max(1);
         if self.bloom_half_a.is_none() {
-            let (texture, view) =
-                create_color_target(device, self.format, hw, hh, "perro_post_bloom_a");
+            let (texture, view) = create_color_target(
+                device,
+                self.intermediate_format,
+                hw,
+                hh,
+                "perro_post_bloom_a",
+            );
             self.bloom_half_a = Some(CachedPostTexture { texture, view });
         }
         if self.bloom_half_b.is_none() {
-            let (texture, view) =
-                create_color_target(device, self.format, hw, hh, "perro_post_bloom_b");
+            let (texture, view) = create_color_target(
+                device,
+                self.intermediate_format,
+                hw,
+                hh,
+                "perro_post_bloom_b",
+            );
             self.bloom_half_b = Some(CachedPostTexture { texture, view });
         }
         let view_a = self.bloom_half_a.as_ref()?.view.clone();
@@ -1055,7 +1270,11 @@ impl PostProcessor {
             return;
         };
         let full = [self.width, self.height];
-        let half = [(self.width / 2).max(1), (self.height / 2).max(1)];
+        let divisor = self.bloom_divisor.max(1);
+        let half = [
+            (self.width / divisor).max(1),
+            (self.height / divisor).max(1),
+        ];
         let default_lut = self.default_lut_2d_view.clone();
         // Bright-pass + downsample: full-res input -> half-res A.
         self.record_sub_pass(

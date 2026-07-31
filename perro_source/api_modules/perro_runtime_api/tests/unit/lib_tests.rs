@@ -552,7 +552,7 @@ impl PhysicsAPI for DummyRuntime {
         _origin: Vector2,
         _direction: Vector2,
         _max_distance: f32,
-        _filter: crate::sub_apis::PhysicsQueryFilter,
+        _filter: &crate::sub_apis::PhysicsQueryFilter,
     ) -> Option<crate::sub_apis::PhysicsRayHit2D> {
         None
     }
@@ -563,7 +563,7 @@ impl PhysicsAPI for DummyRuntime {
         _origin: Vector2,
         _direction: Vector2,
         _max_distance: f32,
-        _filter: crate::sub_apis::PhysicsQueryFilter,
+        _filter: &crate::sub_apis::PhysicsQueryFilter,
     ) -> Option<crate::sub_apis::PhysicsShapeHit2D> {
         None
     }
@@ -574,7 +574,7 @@ impl PhysicsAPI for DummyRuntime {
         _origin: Vector3,
         _direction: Vector3,
         _max_distance: f32,
-        _filter: crate::sub_apis::PhysicsQueryFilter,
+        _filter: &crate::sub_apis::PhysicsQueryFilter,
     ) -> Option<crate::sub_apis::PhysicsShapeHit3D> {
         None
     }

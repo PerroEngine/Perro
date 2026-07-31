@@ -19,13 +19,17 @@ fn scene_node_data_stride_stays_small() {
     // Heavy variants are boxed via the `Boxed` marker in define_scene_nodes!.
     // If this fails, a new/grown inline variant widened every arena slot —
     // box it (or shrink it) instead of raising the cap.
+    // Current inline floor: 120 B payloads (Area2D, CameraStream3D,
+    // HingeJoint3D, PhysicsForceEmitter3D). Boxing PhysicsForceEmitter3D
+    // unlocks 112/192 but needs a one-line fix in runtime/physics/forces.rs
+    // ((*emitter).clone()).
     assert!(
-        size_of::<SceneNodeData>() <= 176,
+        size_of::<SceneNodeData>() <= 128,
         "SceneNodeData stride grew to {} B",
         size_of::<SceneNodeData>()
     );
     assert!(
-        size_of::<SceneNode>() <= 256,
+        size_of::<SceneNode>() <= 208,
         "SceneNode stride grew to {} B",
         size_of::<SceneNode>()
     );
@@ -40,11 +44,14 @@ fn print_scene_node_sizes() {
         // 2d
         Node2D,
         Camera2D,
+        SubView2D,
         CameraStream2D,
         Button2D,
         ImageButton2D,
         NineSliceButton2D,
         Sprite2D,
+        VideoPlayer2D,
+        Label2D,
         NineSlice2D,
         AnimatedSprite2D,
         TileMap2D,
@@ -74,9 +81,13 @@ fn print_scene_node_sizes() {
         // 3d
         Node3D,
         Camera3D,
+        SubView3D,
         CameraStream3D,
         MeshInstance3D,
         MultiMeshInstance3D,
+        Sprite3D,
+        VideoPlayer3D,
+        Label3D,
         ParticleEmitter3D,
         WaterBody3D,
         Decal3D,
@@ -107,12 +118,14 @@ fn print_scene_node_sizes() {
         UiCameraStream,
         UiSubView,
         UiPanel,
+        UiProgressBar,
         UiButton,
         UiDropdown,
         UiColorPicker,
         UiShape,
         UiCheckbox,
         UiImage,
+        UiVideoPlayer,
         UiImageButton,
         UiNineSliceButton,
         UiNineSlice,
@@ -127,6 +140,7 @@ fn print_scene_node_sizes() {
         UiGrid,
         UiTreeList,
         // resources
+        Webcam,
         AnimationPlayer,
         AnimationTree,
     ];

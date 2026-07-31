@@ -7,7 +7,7 @@ impl Runtime {
         water_global: Option<perro_structs::Transform2D>,
     ) -> Arc<[WaterCoastlineShape2D]> {
         let Some(water_global) = water_global else {
-            return Arc::from([]);
+            return empty_arc_slice();
         };
         let water_half = water.shape.surface_size() * 0.5;
         let mut shapes = Vec::new();
@@ -112,7 +112,11 @@ impl Runtime {
             }
         }
         self.water_collision_body_ids_2d_cache = body_ids;
-        Arc::from(shapes)
+        if shapes.is_empty() {
+            empty_arc_slice()
+        } else {
+            Arc::from(shapes)
+        }
     }
 
     pub(crate) fn collect_water_queries_2d(
@@ -120,20 +124,18 @@ impl Runtime {
         water_id: NodeID,
     ) -> Arc<[WaterBodyQueryState]> {
         let Some(queries) = self.pending_water_queries_2d.get(&water_id) else {
-            return Arc::from([]);
+            return empty_arc_slice();
         };
-        Arc::from(
-            queries
-                .iter()
-                .map(|query| WaterBodyQueryState {
-                    water: water_id,
-                    body: query.body,
-                    point: query.point,
-                    local: [query.local.x, query.local.y],
-                })
-                .collect::<Vec<_>>()
-                .into_boxed_slice(),
-        )
+        // slice iter is TrustedLen: collects into the Arc directly.
+        queries
+            .iter()
+            .map(|query| WaterBodyQueryState {
+                water: water_id,
+                body: query.body,
+                point: query.point,
+                local: [query.local.x, query.local.y],
+            })
+            .collect()
     }
 
     pub(crate) fn collect_water_impacts_2d(
@@ -143,7 +145,7 @@ impl Runtime {
         water_global: Option<perro_structs::Transform2D>,
     ) -> Arc<[WaterImpact2D]> {
         let Some(water_global) = water_global else {
-            return Arc::from([]);
+            return empty_arc_slice();
         };
         let water_inv = water_global.to_mat3().inverse();
         let half = water.shape.surface_size() * 0.5;
@@ -277,7 +279,11 @@ impl Runtime {
                 });
             }
         }
-        Arc::from(impacts)
+        if impacts.is_empty() {
+            empty_arc_slice()
+        } else {
+            Arc::from(impacts)
+        }
     }
 
     pub(crate) fn collect_water_links_2d(
@@ -286,7 +292,7 @@ impl Runtime {
         water: &perro_nodes::WaterSurfaceParams,
     ) -> Arc<[WaterLinkState]> {
         let Some(water_global) = self.get_render_global_transform_2d(water_id) else {
-            return Arc::from([]);
+            return empty_arc_slice();
         };
         self.cached_water_ids_2d();
         let other_ids = std::mem::take(&mut self.water_ids_2d_cache);
@@ -338,6 +344,10 @@ impl Runtime {
             });
         }
         self.water_ids_2d_cache = other_ids;
-        Arc::from(links)
+        if links.is_empty() {
+            empty_arc_slice()
+        } else {
+            Arc::from(links)
+        }
     }
 }

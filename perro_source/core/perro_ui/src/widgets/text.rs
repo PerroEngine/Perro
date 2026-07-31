@@ -3,7 +3,8 @@ use super::*;
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiLabel {
     pub base: UiNode,
-    pub text: Cow<'static, str>,
+    // Arc<str> so retained-command extraction clones by refcount, not heap copy.
+    pub text: Arc<str>,
     pub color: Color,
     pub font_size: f32,
     pub font: UiFont,
@@ -14,10 +15,10 @@ pub struct UiLabel {
 }
 
 impl UiLabel {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             base: UiNode::new(),
-            text: Cow::Borrowed(""),
+            text: empty_arc_str(),
             color: Color::WHITE,
             font_size: 20.0,
             font: UiFont::Default,
@@ -30,7 +31,7 @@ impl UiLabel {
 
     pub fn with_text<T>(mut self, text: T) -> Self
     where
-        T: Into<Cow<'static, str>>,
+        T: Into<Arc<str>>,
     {
         self.text = text.into();
         self
@@ -38,10 +39,16 @@ impl UiLabel {
 
     pub fn set_text<T>(&mut self, text: T)
     where
-        T: Into<Cow<'static, str>>,
+        T: Into<Arc<str>>,
     {
         self.text = text.into();
     }
+}
+
+/// Shared empty string so widget construction stays allocation-free.
+pub(crate) fn empty_arc_str() -> Arc<str> {
+    static EMPTY: std::sync::OnceLock<Arc<str>> = std::sync::OnceLock::new();
+    EMPTY.get_or_init(|| Arc::from("")).clone()
 }
 
 impl Default for UiLabel {
@@ -125,8 +132,9 @@ pub struct UiTextEdit {
     pub focused_signals: Vec<SignalID>,
     pub unfocused_signals: Vec<SignalID>,
     pub text_changed_signals: Vec<SignalID>,
-    pub text: Cow<'static, str>,
-    pub placeholder: Cow<'static, str>,
+    // Arc<str> so retained-command extraction clones by refcount, not heap copy.
+    pub text: Arc<str>,
+    pub placeholder: Arc<str>,
     pub color: Color,
     pub placeholder_color: Color,
     pub selection_color: Color,
@@ -159,7 +167,7 @@ pub enum UiTextInputType {
 }
 
 impl UiTextEdit {
-    pub const fn new(multiline: bool) -> Self {
+    pub fn new(multiline: bool) -> Self {
         Self {
             base: UiNode::new(),
             style: UiStyle::panel(),
@@ -174,8 +182,8 @@ impl UiTextEdit {
             focused_signals: Vec::new(),
             unfocused_signals: Vec::new(),
             text_changed_signals: Vec::new(),
-            text: Cow::Borrowed(""),
-            placeholder: Cow::Borrowed(""),
+            text: empty_arc_str(),
+            placeholder: empty_arc_str(),
             color: Color::WHITE,
             placeholder_color: Color::new(0.58, 0.62, 0.70, 1.0),
             selection_color: Color::new(0.25, 0.42, 0.85, 0.55),
@@ -199,7 +207,7 @@ impl UiTextEdit {
 
     pub fn set_text<T>(&mut self, text: T)
     where
-        T: Into<Cow<'static, str>>,
+        T: Into<Arc<str>>,
     {
         self.text = text.into();
         self.caret = clamp_to_char_boundary(self.text.as_ref(), self.caret.min(self.text.len()));
@@ -217,7 +225,9 @@ pub struct UiFontSizing {
 impl UiFontSizing {
     pub const fn new() -> Self {
         Self {
-            relative_to_virtual: false,
+            // Fixed-px text scales with the virtual canvas by default so a
+            // label authored at 1920x1080 keeps its proportion on any window.
+            relative_to_virtual: true,
             min_scale: 0.0,
             max_scale: f32::INFINITY,
         }
@@ -264,7 +274,7 @@ pub struct UiTextBox {
 }
 
 impl UiTextBox {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             inner: UiTextEdit::new(false),
         }
@@ -307,7 +317,7 @@ pub struct UiTextBlock {
 }
 
 impl UiTextBlock {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             inner: UiTextEdit::new(true),
         }

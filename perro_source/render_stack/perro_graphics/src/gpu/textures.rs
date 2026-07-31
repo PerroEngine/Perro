@@ -18,7 +18,7 @@ impl Gpu {
     // first 3D frame); camera-stream worlds stay lazy on purpose.
     pub fn warm_material_pipelines(
         &mut self,
-        materials: &mut Vec<perro_render_bridge::Material3D>,
+        materials: &mut Vec<std::sync::Arc<perro_render_bridge::Material3D>>,
         static_shader_lookup: Option<crate::StaticShaderLookup>,
     ) {
         if materials.is_empty() {
@@ -42,6 +42,11 @@ impl Gpu {
     }
 
     pub fn invalidate_texture(&mut self, texture: perro_ids::TextureID, source: Option<&str>) {
+        // Drop the shared upload first; the per-consumer fan-out below drops
+        // the handles + bind groups, so the next demand re-uploads once.
+        if let Some(source) = source {
+            self.shared_textures.invalidate_source(source);
+        }
         if let Some(two_d) = self.two_d.as_mut() {
             two_d.invalidate_texture(texture);
         }
@@ -101,6 +106,17 @@ impl Gpu {
         rgba: &[u8],
     ) {
         let queue = &self.queue;
+        // Shared fast path: resident stream uploads are single shared textures,
+        // so one base-level write refreshes every consumer's bind group at
+        // once. The per-consumer fan-out below only remains for the miss case
+        // (nothing resident yet, or stale mismatched entries to invalidate).
+        if let Some(source) = source
+            && self
+                .shared_textures
+                .write_stream_base_level(queue, source, width, height, rgba)
+        {
+            return;
+        }
         if let Some(two_d) = self.two_d.as_mut() {
             two_d.write_stream_texture(queue, texture, width, height, rgba);
         }

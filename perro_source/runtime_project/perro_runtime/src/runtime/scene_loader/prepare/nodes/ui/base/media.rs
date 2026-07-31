@@ -4,7 +4,7 @@ pub(super) fn apply_ui_label_fields(node: &mut UiLabel, fields: &[SceneObjectFie
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
         "text" => {
             if let Some(v) = as_str(value) {
-                node.text = Cow::Owned(decode_scene_text_literal(v));
+                node.text = std::sync::Arc::from(decode_scene_text_literal(v));
             }
         }
         "color" | "text_color" => {
@@ -98,7 +98,10 @@ pub(super) fn apply_ui_nine_slice_fields(node: &mut UiNineSlice, fields: &[Scene
             }
         }
         name if scene_key_in(name, TEXTURE_REGION_KEYS) => {
-            if let Some((x, y, w, h)) = value.as_vec4() && w > 0.0 && h > 0.0 {
+            if let Some((x, y, w, h)) = value.as_vec4()
+                && w > 0.0
+                && h > 0.0
+            {
                 node.texture_region = Some([x, y, w, h]);
             }
         }
@@ -111,7 +114,10 @@ pub(super) fn apply_ui_nine_slice_fields(node: &mut UiNineSlice, fields: &[Scene
     });
 }
 
-pub(super) fn apply_ui_nine_slice_button_fields(node: &mut UiNineSliceButton, fields: &[SceneObjectField]) {
+pub(super) fn apply_ui_nine_slice_button_fields(
+    node: &mut UiNineSliceButton,
+    fields: &[SceneObjectField],
+) {
     apply_ui_input_mask_fields(&mut node.input_mask, fields);
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
         "disabled" => {
@@ -119,8 +125,12 @@ pub(super) fn apply_ui_nine_slice_button_fields(node: &mut UiNineSliceButton, fi
                 node.disabled = v;
             }
         }
-        name if scene_key_in(name, HOVER_ENTER_SIGNAL_KEYS) => node.hover_signals = as_signal_ids(value),
-        name if scene_key_in(name, HOVER_EXIT_SIGNAL_KEYS) => node.hover_exit_signals = as_signal_ids(value),
+        name if scene_key_in(name, HOVER_ENTER_SIGNAL_KEYS) => {
+            node.hover_signals = as_signal_ids(value)
+        }
+        name if scene_key_in(name, HOVER_EXIT_SIGNAL_KEYS) => {
+            node.hover_exit_signals = as_signal_ids(value)
+        }
         "pressed_signals" | "press_signals" => node.pressed_signals = as_signal_ids(value),
         "released_signals" | "release_signals" => node.released_signals = as_signal_ids(value),
         "clicked_signals" | "click_signals" => node.clicked_signals = as_signal_ids(value),
@@ -136,7 +146,10 @@ pub(super) fn apply_ui_nine_slice_button_fields(node: &mut UiNineSliceButton, fi
             }
         }
         name if scene_key_in(name, TEXTURE_REGION_KEYS) => {
-            if let Some((x, y, w, h)) = value.as_vec4() && w > 0.0 && h > 0.0 {
+            if let Some((x, y, w, h)) = value.as_vec4()
+                && w > 0.0
+                && h > 0.0
+            {
                 node.texture_region = Some([x, y, w, h]);
             }
         }
@@ -251,7 +264,10 @@ pub(super) fn apply_ui_image_button_image_fields(
     });
 }
 
-pub(super) fn apply_ui_animated_image_fields(node: &mut UiAnimatedImage, fields: &[SceneObjectField]) {
+pub(super) fn apply_ui_animated_image_fields(
+    node: &mut UiAnimatedImage,
+    fields: &[SceneObjectField],
+) {
     SceneFieldIterRef::new(fields).for_each(|name, value| {
         match resolve_node_field("UiAnimatedImage", name) {
             Some(NodeField::UiAnimatedImage(UiAnimatedImageField::Animations)) => {
@@ -336,7 +352,9 @@ pub(super) fn apply_ui_animated_image_fields(node: &mut UiAnimatedImage, fields:
     node.current_frame = node.current_frame.min(max_frame);
 }
 
-pub(super) fn parse_ui_animated_image_list(value: &SceneValue) -> Option<Vec<UiAnimatedImageFrameSet>> {
+pub(super) fn parse_ui_animated_image_list(
+    value: &SceneValue,
+) -> Option<Vec<UiAnimatedImageFrameSet>> {
     let SceneValue::Array(items) = value else {
         return None;
     };

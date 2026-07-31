@@ -1,6 +1,5 @@
 use super::Runtime;
 use crate::runtime::state::DirtyState;
-use glam::{Mat3, Mat4};
 use perro_ids::NodeID;
 use perro_nodes::{Node2D, Node3D, SceneNodeData, Spatial};
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
@@ -228,7 +227,7 @@ impl Runtime {
         chain.clear();
 
         let mut cursor = id;
-        let mut parent_world = Mat3::IDENTITY;
+        let mut parent_world = Transform2D::IDENTITY;
         let max_hops = self.nodes.len().saturating_add(1);
         let mut hops = 0usize;
 
@@ -243,7 +242,7 @@ impl Runtime {
             let dirty = self.dirty.has_transform_dirty(cursor, Spatial::TwoD);
             let cached_valid = self.is_global_2d_cache_valid_for_id(cursor);
             if cached_valid && !dirty {
-                parent_world = self.transforms.global_transform_2d[index].to_mat3();
+                parent_world = self.transforms.global_transform_2d[index];
                 break;
             }
             chain.push(cursor);
@@ -276,18 +275,20 @@ impl Runtime {
                     .get(parent)
                     .and_then(|node| node.with_base_ref::<Node2D, _>(|_| ()))
                     .is_some();
-            let (global, world) = if parent_is_2d {
-                let world = parent_world * local.to_mat3();
-                (Transform2D::from_mat3(world), world)
+            // TRS compose replaces the mat3 roundtrip (sin/cos + matmul +
+            // atan2/sqrt decompose) per chain node; shear cases fall back to
+            // the legacy matrix path inside `compose`.
+            let global = if parent_is_2d {
+                Transform2D::compose(parent_world, local)
             } else {
-                (local, local.to_mat3())
+                local
             };
             let index = chain_id.index() as usize;
             self.transforms.global_transform_2d[index] = global;
             self.transforms.global_transform_2d_valid[index] = 1;
             self.transforms.global_transform_2d_generation[index] = chain_id.generation();
             self.dirty.clear_transform_dirty(chain_id, Spatial::TwoD);
-            parent_world = world;
+            parent_world = global;
         }
 
         let result = self
@@ -325,7 +326,7 @@ impl Runtime {
         chain.clear();
 
         let mut cursor = id;
-        let mut parent_world = Mat4::IDENTITY;
+        let mut parent_world = Transform3D::IDENTITY;
         let max_hops = self.nodes.len().saturating_add(1);
         let mut hops = 0usize;
 
@@ -340,7 +341,7 @@ impl Runtime {
             let dirty = self.dirty.has_transform_dirty(cursor, Spatial::ThreeD);
             let cached_valid = self.is_global_3d_cache_valid_for_id(cursor);
             if cached_valid && !dirty {
-                parent_world = self.transforms.global_transform_3d[index].to_mat4();
+                parent_world = self.transforms.global_transform_3d[index];
                 break;
             }
             chain.push(cursor);
@@ -373,18 +374,20 @@ impl Runtime {
                     .get(parent)
                     .and_then(|node| node.with_base_ref::<Node3D, _>(|_| ()))
                     .is_some();
-            let (global, world) = if parent_is_3d {
-                let world = parent_world * local.to_mat4();
-                (Transform3D::from_mat4(world), world)
+            // TRS compose replaces the mat4 roundtrip (matmul + sqrt-heavy
+            // decompose) per chain node; shear cases fall back to the legacy
+            // matrix path inside `compose`.
+            let global = if parent_is_3d {
+                Transform3D::compose(parent_world, local)
             } else {
-                (local, local.to_mat4())
+                local
             };
             let index = chain_id.index() as usize;
             self.transforms.global_transform_3d[index] = global;
             self.transforms.global_transform_3d_valid[index] = 1;
             self.transforms.global_transform_3d_generation[index] = chain_id.generation();
             self.dirty.clear_transform_dirty(chain_id, Spatial::ThreeD);
-            parent_world = world;
+            parent_world = global;
         }
 
         let result = self
@@ -601,9 +604,7 @@ impl Runtime {
             .and_then(|node| node.with_base_ref::<Node2D, _>(|base| (base.transform, node.parent)))
             && let Some(parent_pose) = self.interpolated_physics_pose_2d(parent)
         {
-            return Some(Transform2D::from_mat3(
-                parent_pose.to_mat3() * local.to_mat3(),
-            ));
+            return Some(Transform2D::compose(parent_pose, local));
         }
         let mut chain = std::mem::take(&mut self.transforms.global_chain_scratch);
         chain.clear();
@@ -646,7 +647,7 @@ impl Runtime {
             return self.get_global_transform_2d(id);
         }
 
-        let mut parent_world = Mat3::IDENTITY;
+        let mut parent_world = Transform2D::IDENTITY;
         let mut result = None;
         for chain_id in chain.iter().rev().copied() {
             let Some((local, parent, is_rigid)) = self.nodes.get(chain_id).and_then(|node| {
@@ -670,12 +671,12 @@ impl Runtime {
                         .and_then(|node| node.with_base_ref::<Node2D, _>(|_| ()))
                         .is_some();
                 if parent_is_2d {
-                    Transform2D::from_mat3(parent_world * local.to_mat3())
+                    Transform2D::compose(parent_world, local)
                 } else {
                     local
                 }
             };
-            parent_world = global.to_mat3();
+            parent_world = global;
             result = Some(global);
         }
         chain.clear();
@@ -706,9 +707,7 @@ impl Runtime {
             .and_then(|node| node.with_base_ref::<Node3D, _>(|base| (base.transform, node.parent)))
             && let Some(parent_pose) = self.interpolated_physics_pose_3d(parent)
         {
-            return Some(Transform3D::from_mat4(
-                parent_pose.to_mat4() * local.to_mat4(),
-            ));
+            return Some(Transform3D::compose(parent_pose, local));
         }
         let mut chain = std::mem::take(&mut self.transforms.global_chain_scratch);
         chain.clear();
@@ -751,7 +750,7 @@ impl Runtime {
             return self.get_global_transform_3d(id);
         }
 
-        let mut parent_world = Mat4::IDENTITY;
+        let mut parent_world = Transform3D::IDENTITY;
         let mut result = None;
         for chain_id in chain.iter().rev().copied() {
             let Some((local, parent, is_rigid)) = self.nodes.get(chain_id).and_then(|node| {
@@ -775,12 +774,12 @@ impl Runtime {
                         .and_then(|node| node.with_base_ref::<Node3D, _>(|_| ()))
                         .is_some();
                 if parent_is_3d {
-                    Transform3D::from_mat4(parent_world * local.to_mat4())
+                    Transform3D::compose(parent_world, local)
                 } else {
                     local
                 }
             };
-            parent_world = global.to_mat4();
+            parent_world = global;
             result = Some(global);
         }
         chain.clear();

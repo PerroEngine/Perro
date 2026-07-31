@@ -415,6 +415,10 @@ impl PerroGraphics {
         }
         self.frame_index = self.frame_index.wrapping_add(1);
         if self.frame_index.is_multiple_of(GC_INTERVAL_FRAMES) {
+            // shrink grow-only GPU buffers back toward current usage.
+            if let Some(gpu) = self.gpu.as_mut() {
+                gpu.shrink_gpu_buffers_tick();
+            }
             // reclaim idle CPU pixel copies (GPU copies stay); consumers
             // re-decode from source on the rare later re-upload.
             let _ = self

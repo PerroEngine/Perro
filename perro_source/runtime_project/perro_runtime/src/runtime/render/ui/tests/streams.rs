@@ -83,17 +83,30 @@ mod streams {
         runtime.extract_render_2d_commands();
         let mut commands = Vec::new();
         runtime.drain_render_commands(&mut commands);
-        let state = commands.iter().find_map(|command| match command {
-            RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
-                if *node == view => Some(state.as_ref()),
-            _ => None,
-        }).expect("SubView2D stream state");
+        let state = commands
+            .iter()
+            .find_map(|command| match command {
+                RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+                    if *node == view =>
+                {
+                    Some(state.as_ref())
+                }
+                _ => None,
+            })
+            .expect("SubView2D stream state");
         assert!(!state.tone_map_output);
-        let model = state.draws_3d.iter().find_map(|draw| match draw {
-            perro_render_bridge::CameraStreamDraw3DState::Draw { node, model, .. }
-                if *node == mesh => Some(model),
-            _ => None,
-        }).expect("local 3D mesh draw");
+        let model = state
+            .draws_3d
+            .iter()
+            .find_map(|draw| match draw {
+                perro_render_bridge::CameraStreamDraw3DState::Draw { node, model, .. }
+                    if *node == mesh =>
+                {
+                    Some(model)
+                }
+                _ => None,
+            })
+            .expect("local 3D mesh draw");
         assert_eq!(model[3][0..3], [2.0, 3.0, 4.0]);
         assert!(commands.iter().any(|command| matches!(
             command,
@@ -117,11 +130,17 @@ mod streams {
         runtime.extract_render_3d_commands();
         let mut commands = Vec::new();
         runtime.drain_render_commands(&mut commands);
-        let state = commands.iter().find_map(|command| match command {
-            RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
-                if *node == view => Some(state.as_ref()),
-            _ => None,
-        }).expect("SubView3D stream state");
+        let state = commands
+            .iter()
+            .find_map(|command| match command {
+                RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+                    if *node == view =>
+                {
+                    Some(state.as_ref())
+                }
+                _ => None,
+            })
+            .expect("SubView3D stream state");
         assert!(!state.tone_map_output);
         let (_, particles_state) = state
             .point_particles_2d
@@ -155,26 +174,33 @@ mod streams {
         runtime.drain_render_commands(&mut commands);
         let inner_pos = commands
             .iter()
-            .position(|command| matches!(
-                command,
-                RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, .. })
-                    if *node == inner
-            ))
+            .position(|command| {
+                matches!(
+                    command,
+                    RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, .. })
+                        if *node == inner
+                )
+            })
             .expect("inner stream");
         let outer_pos = commands
             .iter()
-            .position(|command| matches!(
-                command,
-                RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, .. })
-                    if *node == outer
-            ))
+            .position(|command| {
+                matches!(
+                    command,
+                    RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, .. })
+                        if *node == outer
+                )
+            })
             .expect("outer stream");
         assert!(inner_pos < outer_pos);
         let outer_state = commands
             .iter()
             .find_map(|command| match command {
                 RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
-                    if *node == outer => Some(state.as_ref()),
+                    if *node == outer =>
+                {
+                    Some(state.as_ref())
+                }
                 _ => None,
             })
             .expect("outer state");
@@ -208,7 +234,10 @@ mod streams {
             .iter()
             .find_map(|command| match command {
                 RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
-                    if *node == outer => Some(state.as_ref()),
+                    if *node == outer =>
+                {
+                    Some(state.as_ref())
+                }
                 _ => None,
             })
             .expect("outer ui stream");
@@ -240,8 +269,7 @@ mod streams {
             && let SceneNodeData::Camera2D(camera) = &mut node.data
         {
             camera.active = true;
-            camera.transform =
-                Transform2D::new(Vector2::new(12.0, 13.0), 0.25, Vector2::ONE);
+            camera.transform = Transform2D::new(Vector2::new(12.0, 13.0), 0.25, Vector2::ONE);
             camera.zoom = 2.0;
             camera.render_mask = BitMask::with([2]);
             camera.audio_options.audio_mask = BitMask::with([3]);
@@ -286,10 +314,7 @@ mod streams {
         };
         assert_eq!(camera_3d_state.position, [1.0, 2.0, 3.0]);
         assert_eq!(camera_3d_state.render_mask, BitMask::with([4]));
-        assert_eq!(
-            camera_3d_state.audio_options.audio_mask,
-            BitMask::with([5])
-        );
+        assert_eq!(camera_3d_state.audio_options.audio_mask, BitMask::with([5]));
         assert!(matches!(
             camera_3d_state.projection,
             perro_render_bridge::CameraProjectionState::Orthographic { size: 7.0, .. }
@@ -303,10 +328,7 @@ mod streams {
         assert_eq!(camera_2d_state.rotation_radians, 0.25);
         assert_eq!(camera_2d_state.zoom, 2.0);
         assert_eq!(camera_2d_state.render_mask, BitMask::with([2]));
-        assert_eq!(
-            camera_2d_state.audio_options.audio_mask,
-            BitMask::with([3])
-        );
+        assert_eq!(camera_2d_state.audio_options.audio_mask, BitMask::with([3]));
         assert!(matches!(
             state.post_processing.as_ref(),
             [
@@ -428,9 +450,7 @@ mod streams {
         assert!(commands.iter().any(|command| {
             matches!(
                 command,
-                RenderCommand::Ui(UiCommand::UpsertImage { texture, .. })
-                    if !texture.is_nil() && *texture != stream_texture
-            )
+                RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertImage { texture, .. } if !texture.is_nil() && *texture != stream_texture))
         }));
     }
 
@@ -466,9 +486,7 @@ mod streams {
         )));
         assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Ui(UiCommand::UpsertImage { node, texture, .. })
-                if *node == stream && *texture == output_texture
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertImage { node, texture, .. } if *node == stream && *texture == output_texture))));
     }
 
     #[test]
@@ -505,9 +523,7 @@ mod streams {
 
         assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Ui(UiCommand::UpsertImage { node, aspect_ratio, .. })
-                if *node == stream && *aspect_ratio == 2.0
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertImage { node, aspect_ratio, .. } if *node == stream && *aspect_ratio == 2.0))));
     }
 
     #[test]
@@ -631,9 +647,7 @@ mod streams {
 
         assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Ui(UiCommand::UpsertImage { node, corner_radii, .. })
-                if *node == stream && corner_radii.tl == 0.25 && corner_radii.tr == 0.25
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertImage { node, corner_radii, .. } if *node == stream && corner_radii.tl == 0.25 && corner_radii.tr == 0.25))));
     }
 
     #[test]
@@ -719,8 +733,7 @@ mod streams {
         )));
         assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Ui(UiCommand::UpsertImage { node, .. }) if *node == viewport
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertImage { node, .. } if *node == viewport))));
 
         runtime.extract_render_3d_commands();
         commands.clear();
@@ -830,9 +843,7 @@ mod streams {
         )));
         assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Ui(UiCommand::UpsertImage { node, rect, aspect_ratio, .. })
-                if *node == viewport && rect.size == [200.0, 100.0] && *aspect_ratio == 2.0
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertImage { node, rect, aspect_ratio, .. } if *node == viewport && rect.size == [200.0, 100.0] && *aspect_ratio == 2.0))));
     }
 
     #[test]
@@ -869,7 +880,7 @@ mod streams {
         runtime.extract_render_ui_commands();
         let mut commands = Vec::new();
         runtime.drain_render_commands(&mut commands);
-        assert_eq!(commands.iter().filter(|cmd| matches!(cmd, RenderCommand::Ui(UiCommand::UpsertPanel { node: n, .. }) if *n == node)).count(), 1);
+        assert_eq!(commands.iter().filter(|cmd| matches!(cmd, RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertPanel { node: n, .. } if *n == node))).count(), 1);
 
         runtime.clear_dirty_flags();
         runtime.extract_render_ui_commands();
@@ -906,9 +917,7 @@ mod streams {
 
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertImage { node: n, uv_min, uv_max, .. })
-                if *n == node && *uv_min == [16.0, 0.0] && *uv_max == [32.0, 16.0]
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertImage { node: n, uv_min, uv_max, .. } if *n == node && *uv_min == [16.0, 0.0] && *uv_max == [32.0, 16.0]))));
     }
 
     #[test]
@@ -937,11 +946,9 @@ mod streams {
 
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertImage { node: n, tint, scale_mode, .. })
-                if *n == node
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertImage { node: n, tint, scale_mode, .. } if *n == node
                     && *tint == Color::new(0.4, 0.5, 0.6, 1.0)
-                    && *scale_mode == UiImageScaleState::Fit
-        )));
+                    && *scale_mode == UiImageScaleState::Fit))));
     }
 
     #[test]
@@ -972,9 +979,7 @@ mod streams {
         );
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertImage { node: n, tint, .. })
-                if *n == child && *tint == expected
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertImage { node: n, tint, .. } if *n == child && *tint == expected))));
     }
 
     #[test]
@@ -998,7 +1003,7 @@ mod streams {
 
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertNineSlice {
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertNineSlice {
                 node: n,
                 texture,
                 rect,
@@ -1006,13 +1011,12 @@ mod streams {
                 uv_max,
                 margins,
                 ..
-            }) if *n == node
+            } if *n == node
                 && *texture == TextureID::from_parts(64, 0)
                 && rect.size == [120.0, 40.0]
                 && *uv_min == [1.0, 2.0]
                 && *uv_max == [31.0, 22.0]
-                && *margins == [5.0, 6.0, 7.0, 8.0]
-        )));
+                && *margins == [5.0, 6.0, 7.0, 8.0]))));
     }
 
     #[test]
@@ -1031,9 +1035,7 @@ mod streams {
         runtime.drain_render_commands(&mut commands);
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertImage { node: n, texture, .. })
-                if *n == node && *texture == old_texture
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertImage { node: n, texture, .. } if *n == node && *texture == old_texture))));
 
         let pending_texture = runtime
             .resource_api
@@ -1051,12 +1053,10 @@ mod streams {
         runtime.drain_render_commands(&mut commands);
         assert!(!commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::RemoveNode { node: n }) if *n == node
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::RemoveNode { node: n } if *n == node))));
         assert!(!commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertImage { node: n, .. }) if *n == node
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertImage { node: n, .. } if *n == node))));
         assert!(
             runtime
                 .render_ui
@@ -1077,9 +1077,7 @@ mod streams {
         runtime.drain_render_commands(&mut commands);
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertImage { node: n, texture, .. })
-                if *n == node && *texture == pending_texture
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertImage { node: n, texture, .. } if *n == node && *texture == pending_texture))));
     }
 
     #[test]
@@ -1104,11 +1102,9 @@ mod streams {
 
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertPanel { node: n, rect, .. })
-                if *n == node
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertPanel { node: n, rect, .. } if *n == node
                     && rect.size == [600.0, 225.0]
-                    && rect.center == [300.0, 337.5]
-        )));
+                    && rect.center == [300.0, 337.5]))));
     }
 
     #[test]
@@ -1178,11 +1174,9 @@ mod streams {
         );
         assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Ui(UiCommand::UpsertImage { node, rect, aspect_ratio, .. })
-                if *node == viewport
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertImage { node, rect, aspect_ratio, .. } if *node == viewport
                     && rect.size == [1280.0, 720.0]
-                    && *aspect_ratio == 16.0 / 9.0
-        )));
+                    && *aspect_ratio == 16.0 / 9.0))));
 
         // A normal command refresh, with no pointer/nav input, keeps framing.
         runtime.clear_dirty_flags();
@@ -1322,9 +1316,7 @@ mod streams {
         runtime.drain_render_commands(&mut commands);
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertPanel { node: n, rect, .. })
-                if *n == node && rect.pivot == [0.5, 1.0]
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertPanel { node: n, rect, .. } if *n == node && rect.pivot == [0.5, 1.0]))));
     }
 
     #[test]
@@ -1368,9 +1360,7 @@ mod streams {
         runtime.drain_render_commands(&mut commands);
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertPanel { node, rect, .. })
-                if *node == top_pivot && rect.pivot == [0.5, 1.0]
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertPanel { node, rect, .. } if *node == top_pivot && rect.pivot == [0.5, 1.0]))));
     }
 
     #[test]
@@ -1507,7 +1497,7 @@ mod streams {
 
         assert_eq!(commands.len(), 1);
         assert!(
-            matches!(&commands[0], RenderCommand::Ui(UiCommand::UpsertPanel { node: n, fill, .. }) if *n == node && *fill == rgba(0.8, 0.1, 0.1, 1.0))
+            matches!(&commands[0], RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertPanel { node: n, fill, .. } if *n == node && *fill == rgba(0.8, 0.1, 0.1, 1.0)))
         );
     }
 
@@ -1540,9 +1530,7 @@ mod streams {
 
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertPanel { node, rect, .. })
-                if *node == child && rect.center == [100.0, 0.0]
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertPanel { node, rect, .. } if *node == child && rect.center == [100.0, 0.0]))));
     }
 
     #[test]
@@ -1572,9 +1560,7 @@ mod streams {
 
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertPanel { node, rect, .. })
-                if *node == ui_root && rect.size == [400.0, 300.0]
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertPanel { node, rect, .. } if *node == ui_root && rect.size == [400.0, 300.0]))));
     }
 
     #[test]
@@ -1644,5 +1630,4 @@ mod streams {
         assert_eq!(child_rect.size, root_rect.size);
         assert_eq!(child_rect.center, root_rect.center);
     }
-
 }

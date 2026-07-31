@@ -41,14 +41,14 @@ impl Runtime {
                     .cloned()
                     .unwrap_or_else(|| "__default__".to_string());
                 self.render.mark_inflight(request);
-                self.queue_render_command(RenderCommand::Resource(
+                self.queue_render_command(RenderCommand::Resource(Box::new(
                     ResourceCommand::CreateTexture {
                         request,
                         id: TextureID::nil(),
                         source,
                         reserved: false,
                     },
-                ));
+                )));
             }
             return None;
         }
@@ -110,12 +110,14 @@ impl Runtime {
         }
         if !self.render.is_inflight(request) {
             self.render.mark_inflight(request);
-            self.queue_render_command(RenderCommand::Resource(ResourceCommand::CreateTexture {
-                request,
-                id: TextureID::nil(),
-                source: source.to_string(),
-                reserved: false,
-            }));
+            self.queue_render_command(RenderCommand::Resource(Box::new(
+                ResourceCommand::CreateTexture {
+                    request,
+                    id: TextureID::nil(),
+                    source: source.to_string(),
+                    reserved: false,
+                },
+            )));
         }
         None
     }

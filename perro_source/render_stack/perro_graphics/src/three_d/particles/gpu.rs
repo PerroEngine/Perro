@@ -3,6 +3,7 @@ use super::shaders::{
     create_point_particles_compute_shader_module, create_point_particles_gpu_shader_module,
     create_point_particles_shader_module,
 };
+use crate::gpu_shrink::{ShrinkTracker, shrink_buffer_preserving};
 use ahash::AHashMap;
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Quat, Vec3};
@@ -259,4 +260,14 @@ pub struct GpuPointParticles3D {
     compute_map_fingerprint: u64,
     compute_map_uploaded_fingerprint: u64,
     compute_map_uploaded_count: usize,
+    // Usage trackers for the periodic buffer-shrink pass (crate::gpu_shrink).
+    shrink_points: ShrinkTracker,
+    shrink_billboards: ShrinkTracker,
+    shrink_compute_particles: ShrinkTracker,
+    shrink_compute_map: ShrinkTracker,
+    shrink_compute_spawn_origins: ShrinkTracker,
+    shrink_compute_spawn_rotations: ShrinkTracker,
+    shrink_hybrid_map: ShrinkTracker,
+    shrink_hybrid_spawn_origins: ShrinkTracker,
+    shrink_hybrid_spawn_rotations: ShrinkTracker,
 }

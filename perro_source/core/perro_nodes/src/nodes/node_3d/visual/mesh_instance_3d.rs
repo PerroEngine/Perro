@@ -64,6 +64,15 @@ pub struct MeshBlendOptions {
     pub min_distance: f32,
     pub noise_factor: f32,
     pub noise_scale: f32,
+    // Slope falloff exponent for the screen seam pass, 0.0..=8.0; 0 disables
+    // the falloff so perpendicular contacts blend as strongly as parallel ones.
+    pub slope_factor: f32,
+    // Overall seam blend scale, 0.0..=1.0.
+    pub strength: f32,
+    // Salt multimesh instance ids so same-type instances seam against each
+    // other; off shares one id per batch (no instance-vs-instance seams, but
+    // many multimesh sources stop exhausting the id range).
+    pub salt_instances: bool,
 }
 
 impl MeshBlendOptions {
@@ -78,6 +87,9 @@ impl MeshBlendOptions {
             min_distance: 0.03,
             noise_factor: 0.35,
             noise_scale: 14.0,
+            slope_factor: 2.0,
+            strength: 1.0,
+            salt_instances: true,
         }
     }
 }

@@ -125,6 +125,15 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         self.rt.get_node_children_ids(node_id)
     }
 
+    /// Runs `f` over the node's direct children without cloning the child
+    /// list. `None` if the node does not exist.
+    pub fn with_children<V, F>(&mut self, node_id: NodeID, f: F) -> Option<V>
+    where
+        F: FnOnce(&[NodeID]) -> V,
+    {
+        self.rt.with_children(node_id, f)
+    }
+
     pub fn children_ids(&mut self, node_id: NodeID) -> Option<Vec<NodeID>> {
         self.get_node_children_ids(node_id)
     }

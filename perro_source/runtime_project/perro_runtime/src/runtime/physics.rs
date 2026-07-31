@@ -28,8 +28,9 @@ mod water;
 
 use water::*;
 pub(crate) use water::{
-    RuntimeWater2D, RuntimeWater3D, RuntimeWaterBody2D, RuntimeWaterBody3D,
-    lookup_water_body_sample, water_physics_sample_for_body_cached, water_target_submerged,
+    RuntimeWater2D, RuntimeWater3D, RuntimeWaterBody2D, RuntimeWaterBody3D, WaterBodyForce2D,
+    WaterBodyForce3D, lookup_water_body_sample, water_physics_sample_for_body_cached,
+    water_target_submerged,
 };
 
 pub(crate) struct PhysicsState {

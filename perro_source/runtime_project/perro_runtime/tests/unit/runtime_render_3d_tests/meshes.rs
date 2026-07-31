@@ -16,9 +16,12 @@ mod meshes {
         mesh.blend.min_distance = 0.125;
         mesh.blend.noise_factor = 0.5;
         mesh.blend.noise_scale = 12.0;
+        mesh.blend.slope_factor = 4.0;
+        mesh.blend.strength = 0.25;
+        mesh.blend.salt_instances = false;
         let node = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+            .insert(SceneNode::new(SceneNodeData::from(mesh)));
 
         runtime.extract_render_3d_commands();
         let commands = collect_commands(&mut runtime);
@@ -44,6 +47,9 @@ mod meshes {
         assert_eq!(blend.min_distance, 0.125);
         assert_eq!(blend.noise_factor, 0.5);
         assert_eq!(blend.noise_scale, 12.0);
+        assert_eq!(blend.slope_factor, 4.0);
+        assert_eq!(blend.strength, 0.25);
+        assert!(!blend.salt_instances);
     }
 
     #[test]
@@ -64,6 +70,9 @@ mod meshes {
         multi.blend.blend_layers = BitMask::with([5]);
         multi.blend.blend_mask = BitMask::with([1, 5]);
         multi.blend.distance = 0.25;
+        multi.blend.slope_factor = 0.0;
+        multi.blend.strength = 0.5;
+        multi.blend.salt_instances = false;
         let node = runtime.nodes.insert(SceneNode::new(multi.into()));
 
         runtime.extract_render_3d_commands();
@@ -87,6 +96,9 @@ mod meshes {
         assert_eq!(blend.blend_layers, BitMask::with([5]));
         assert_eq!(blend.blend_mask, BitMask::with([1, 5]));
         assert_eq!(blend.distance, 0.25);
+        assert_eq!(blend.slope_factor, 0.0);
+        assert_eq!(blend.strength, 0.5);
+        assert!(!blend.salt_instances);
     }
 
     #[test]
@@ -99,7 +111,7 @@ mod meshes {
         mesh.transform.position = Vector3::new(3.0, 4.0, 5.0);
         let node = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+            .insert(SceneNode::new(SceneNodeData::from(mesh)));
 
         runtime.extract_render_3d_commands();
         let commands = collect_commands(&mut runtime);
@@ -170,7 +182,7 @@ mod meshes {
         set_primary_material(&mut mesh, MaterialID::nil());
         runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+            .insert(SceneNode::new(SceneNodeData::from(mesh)));
 
         runtime.extract_render_3d_commands();
         let first = collect_commands(&mut runtime);
@@ -185,7 +197,7 @@ mod meshes {
         set_primary_material(&mut mesh, MaterialID::nil());
         let expected_node = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+            .insert(SceneNode::new(SceneNodeData::from(mesh)));
         runtime
             .render_3d
             .mesh_sources
@@ -196,9 +208,7 @@ mod meshes {
         assert_eq!(first.len(), 1);
         assert!(matches!(
             &first[0],
-            RenderCommand::Resource(ResourceCommand::CreateMesh { source, .. })
-                if source == "__cube__"
-        ));
+            RenderCommand::Resource(r0) if matches!(&**r0, ResourceCommand::CreateMesh { source, .. } if source == "__cube__")));
 
         runtime.extract_render_3d_commands();
         let second = collect_commands(&mut runtime);
@@ -210,9 +220,7 @@ mod meshes {
         let mut runtime = Runtime::new();
         let expected_node = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
-                MeshInstance3D::new(),
-            )));
+            .insert(SceneNode::new(SceneNodeData::from(MeshInstance3D::new())));
         runtime
             .render_3d
             .mesh_sources
@@ -221,7 +229,10 @@ mod meshes {
         runtime.extract_render_3d_commands();
         let first = collect_commands(&mut runtime);
         let mesh_request = match &first[0] {
-            RenderCommand::Resource(ResourceCommand::CreateMesh { request, .. }) => *request,
+            RenderCommand::Resource(r0) => match &**r0 {
+                ResourceCommand::CreateMesh { request, .. } => *request,
+                _ => panic!("expected mesh create request"),
+            },
             _ => panic!("expected mesh create request"),
         };
 
@@ -236,7 +247,10 @@ mod meshes {
         let expected_material = second
             .iter()
             .find_map(|command| match command {
-                RenderCommand::Resource(ResourceCommand::CreateMaterial { id, .. }) => Some(*id),
+                RenderCommand::Resource(r0) => match &**r0 {
+                    ResourceCommand::CreateMaterial { id, .. } => Some(*id),
+                    _ => None,
+                },
                 _ => None,
             })
             .expect("expected material create command");
@@ -370,22 +384,22 @@ mod meshes {
             runtime.resource_api.as_ref(),
             "res://avatars/face/noses.glb:mesh[3]",
         );
-        let mesh_request =
-            collect_commands(&mut runtime)
-                .into_iter()
-                .find_map(|command| match command {
-                    RenderCommand::Resource(ResourceCommand::CreateMesh {
-                        request, id, ..
-                    }) if id == pending_mesh => Some(request),
+        let mesh_request = collect_commands(&mut runtime)
+            .into_iter()
+            .find_map(|command| match command {
+                RenderCommand::Resource(r0) => match *r0 {
+                    ResourceCommand::CreateMesh { request, id, .. } if id == pending_mesh => {
+                        Some(request)
+                    }
                     _ => None,
-                })
-                .expect("expected mesh create command");
+                },
+                _ => None,
+            })
+            .expect("expected mesh create command");
 
         let node = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
-                MeshInstance3D::new(),
-            )));
+            .insert(SceneNode::new(SceneNodeData::from(MeshInstance3D::new())));
         NodeAPI::with_node_mut::<MeshInstance3D, _, _>(&mut runtime, node, |mesh| {
             mesh.mesh = pending_mesh;
         });
@@ -422,9 +436,7 @@ mod meshes {
         let mut runtime = Runtime::new();
         let node = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
-                MeshInstance3D::new(),
-            )));
+            .insert(SceneNode::new(SceneNodeData::from(MeshInstance3D::new())));
         runtime
             .render_3d
             .mesh_sources
@@ -433,7 +445,10 @@ mod meshes {
         runtime.extract_render_3d_commands();
         let first = collect_commands(&mut runtime);
         let mesh_request = match first.first() {
-            Some(RenderCommand::Resource(ResourceCommand::CreateMesh { request, .. })) => *request,
+            Some(RenderCommand::Resource(r0)) => match &**r0 {
+                ResourceCommand::CreateMesh { request, .. } => *request,
+                _ => panic!("expected mesh create request"),
+            },
             _ => panic!("expected mesh create request"),
         };
         assert!(!NodeAPI::is_mesh_instance_ready(&mut runtime, node));
@@ -454,9 +469,10 @@ mod meshes {
         let (material_request, material) = second
             .iter()
             .find_map(|command| match command {
-                RenderCommand::Resource(ResourceCommand::CreateMaterial {
-                    request, id, ..
-                }) => Some((*request, *id)),
+                RenderCommand::Resource(r0) => match &**r0 {
+                    ResourceCommand::CreateMaterial { request, id, .. } => Some((*request, *id)),
+                    _ => None,
+                },
                 _ => None,
             })
             .expect("expected material create command");
@@ -474,9 +490,7 @@ mod meshes {
         let mut runtime = Runtime::new();
         let node = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
-                MeshInstance3D::new(),
-            )));
+            .insert(SceneNode::new(SceneNodeData::from(MeshInstance3D::new())));
 
         assert!(NodeAPI::is_mesh_instance_ready(&mut runtime, node));
     }
@@ -496,9 +510,10 @@ mod meshes {
         let request = collect_commands(&mut runtime)
             .into_iter()
             .find_map(|command| match command {
-                RenderCommand::Resource(ResourceCommand::CreateRuntimeMesh { request, .. }) => {
-                    Some(request)
-                }
+                RenderCommand::Resource(r0) => match *r0 {
+                    ResourceCommand::CreateRuntimeMesh { request, .. } => Some(request),
+                    _ => None,
+                },
                 _ => None,
             })
             .expect("expected runtime mesh create command");
@@ -512,7 +527,7 @@ mod meshes {
         set_primary_material(&mut mesh, MaterialID::nil());
         let node = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+            .insert(SceneNode::new(SceneNodeData::from(mesh)));
 
         assert!(NodeAPI::is_mesh_instance_ready(&mut runtime, node));
     }
@@ -522,9 +537,7 @@ mod meshes {
         let mut runtime = Runtime::new();
         let inserted = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
-                MeshInstance3D::new(),
-            )));
+            .insert(SceneNode::new(SceneNodeData::from(MeshInstance3D::new())));
         runtime
             .render_3d
             .mesh_sources
@@ -533,7 +546,10 @@ mod meshes {
         runtime.extract_render_3d_commands();
         let first = collect_commands(&mut runtime);
         let mesh_request = match first.first() {
-            Some(RenderCommand::Resource(ResourceCommand::CreateMesh { request, .. })) => *request,
+            Some(RenderCommand::Resource(r0)) => match &**r0 {
+                ResourceCommand::CreateMesh { request, .. } => *request,
+                _ => panic!("expected mesh create request"),
+            },
             _ => panic!("expected mesh create request"),
         };
 
@@ -546,8 +562,7 @@ mod meshes {
         let second = collect_commands(&mut runtime);
         assert!(second.iter().any(|command| matches!(
             command,
-            RenderCommand::Resource(ResourceCommand::CreateMaterial { .. })
-        )));
+            RenderCommand::Resource(r0) if matches!(&**r0, ResourceCommand::CreateMaterial { .. }))));
         assert!(second.iter().any(|command| matches!(
             command,
             RenderCommand::ThreeD(command)
@@ -560,14 +575,10 @@ mod meshes {
         let mut runtime = Runtime::new();
         let first_node = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
-                MeshInstance3D::new(),
-            )));
+            .insert(SceneNode::new(SceneNodeData::from(MeshInstance3D::new())));
         let second_node = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
-                MeshInstance3D::new(),
-            )));
+            .insert(SceneNode::new(SceneNodeData::from(MeshInstance3D::new())));
         runtime
             .render_3d
             .mesh_sources
@@ -582,9 +593,10 @@ mod meshes {
         for (request, mesh) in first
             .iter()
             .filter_map(|command| match command {
-                RenderCommand::Resource(ResourceCommand::CreateMesh { request, .. }) => {
-                    Some(*request)
-                }
+                RenderCommand::Resource(r0) => match &**r0 {
+                    ResourceCommand::CreateMesh { request, .. } => Some(*request),
+                    _ => None,
+                },
                 _ => None,
             })
             .zip([MeshID::from_parts(20, 0), MeshID::from_parts(21, 0)])
@@ -598,16 +610,18 @@ mod meshes {
 
         runtime.extract_render_3d_commands();
         let second = collect_commands(&mut runtime);
-        let default_materials: Vec<MaterialID> =
-            second
-                .iter()
-                .filter_map(|command| match command {
-                    RenderCommand::Resource(ResourceCommand::CreateMaterial {
-                        id, source, ..
-                    }) if source.is_none() => Some(*id),
+        let default_materials: Vec<MaterialID> = second
+            .iter()
+            .filter_map(|command| match command {
+                RenderCommand::Resource(r0) => match &**r0 {
+                    ResourceCommand::CreateMaterial { id, source, .. } if source.is_none() => {
+                        Some(*id)
+                    }
                     _ => None,
-                })
-                .collect();
+                },
+                _ => None,
+            })
+            .collect();
         assert_eq!(default_materials.len(), 1);
         let default_material = default_materials[0];
         let draws_using_default = second

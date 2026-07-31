@@ -470,7 +470,10 @@ fn read_index(raw: &[u8], index_start: usize, index: usize, index_u16: bool) -> 
 }
 
 fn load_trimesh_from_gltf_bytes(bytes: &[u8], mesh_index: usize) -> Option<TriMeshData> {
-    let (doc, buffers, _images) = gltf::import_slice(bytes).ok()?;
+    // buffers only: import_slice decodes every embedded image to RGBA, which
+    // this collision path never uses.
+    let gltf::Gltf { document: doc, blob } = gltf::Gltf::from_slice(bytes).ok()?;
+    let buffers = gltf::import_buffers(&doc, None, blob).ok()?;
     let mesh = doc.meshes().nth(mesh_index)?;
     let mut vertices = Vec::<[f32; 3]>::new();
     let mut triangles = Vec::<[u32; 3]>::new();

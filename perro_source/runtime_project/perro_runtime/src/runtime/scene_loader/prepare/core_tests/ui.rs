@@ -548,7 +548,7 @@ mod ui {
             [MeshInstance3D]
                 cast_shadows = false
                 receive_shadows = false
-                blend = { enabled=true screen_blending=false normal_blending=true blend_layers=[2, 4] blend_mask=[1, 3] distance=0.5 min_distance=0.05 noise=0.25 noise_scale=6.0 }
+                blend = { enabled=true screen_blending=false normal_blending=true blend_layers=[2, 4] blend_mask=[1, 3] distance=0.5 min_distance=0.05 noise=0.25 noise_scale=6.0 slope_factor=3.5 strength=0.5 salt_instances=false }
             [/MeshInstance3D]
             [/Mesh]
 
@@ -562,6 +562,9 @@ mod ui {
                 blend_layers = [5]
                 blend_mask = none
                 blend_distance = 0.25
+                blend_slope_factor = 9.5
+                blend_strength = 0.75
+                blend_salt_instances = false
             [/MultiMeshInstance3D]
             [/Batch]
             "#,
@@ -590,6 +593,9 @@ mod ui {
                 assert_eq!(mesh.blend.min_distance, 0.05);
                 assert_eq!(mesh.blend.noise_factor, 0.25);
                 assert_eq!(mesh.blend.noise_scale, 6.0);
+                assert_eq!(mesh.blend.slope_factor, 3.5);
+                assert_eq!(mesh.blend.strength, 0.5);
+                assert!(!mesh.blend.salt_instances);
             }
             other => panic!("expected MeshInstance3D node, got {other:?}"),
         }
@@ -609,6 +615,10 @@ mod ui {
                 assert_eq!(mesh.blend.blend_layers, BitMask::with([5]));
                 assert_eq!(mesh.blend.blend_mask, BitMask::NONE);
                 assert_eq!(mesh.blend.distance, 0.25);
+                // Flat alias path; slope factor clamps to the 0..=8 range.
+                assert_eq!(mesh.blend.slope_factor, 8.0);
+                assert_eq!(mesh.blend.strength, 0.75);
+                assert!(!mesh.blend.salt_instances);
             }
             other => panic!("expected MultiMeshInstance3D node, got {other:?}"),
         }
@@ -640,6 +650,9 @@ mod ui {
             SceneNodeData::MeshInstance3D(mesh) => {
                 assert!(!mesh.blend.normal_blending);
                 assert!(mesh.blend.screen_blending);
+                assert_eq!(mesh.blend.slope_factor, 2.0);
+                assert_eq!(mesh.blend.strength, 1.0);
+                assert!(mesh.blend.salt_instances);
             }
             other => panic!("expected MeshInstance3D node, got {other:?}"),
         }
@@ -708,5 +721,4 @@ mod ui {
                         == crate::runtime::state::LocaleTextField::TextEditPlaceholder)
         );
     }
-
 }

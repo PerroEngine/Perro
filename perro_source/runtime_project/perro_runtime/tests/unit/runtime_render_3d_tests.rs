@@ -46,11 +46,12 @@ fn collect_resource_texture_request(
     commands
         .into_iter()
         .find_map(|command| match command {
-            RenderCommand::Resource(ResourceCommand::CreateTexture { request, id, .. })
-                if id == texture =>
-            {
-                Some(request)
-            }
+            RenderCommand::Resource(r0) => match *r0 {
+                ResourceCommand::CreateTexture { request, id, .. } if id == texture => {
+                    Some(request)
+                }
+                _ => None,
+            },
             _ => None,
         })
         .expect("expected texture create command")

@@ -448,9 +448,7 @@ fn bench_animated_sprite_2d_hotpaths(c: &mut Criterion) {
                     .map(|_| {
                         runtime
                             .nodes
-                            .insert(SceneNode::new(SceneNodeData::AnimatedSprite2D(
-                                AnimatedSprite2D::new(),
-                            )))
+                            .insert(SceneNode::new(SceneNodeData::from(AnimatedSprite2D::new())))
                     })
                     .collect::<Vec<_>>();
                 (runtime, ids)

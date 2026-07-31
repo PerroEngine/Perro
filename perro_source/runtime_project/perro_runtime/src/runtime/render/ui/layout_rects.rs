@@ -29,6 +29,11 @@ impl Runtime {
         (z_sum.clamp(min_z, max_z) * DEPTH_STRIDE + depth) as i32
     }
 
+    /// `size_basis`: Some only when `parent` is a sub-view world owner whose
+    /// rect was seeded from the sub-view target resolution -- the child is a
+    /// layout root there and its percent size aspect-fits the target (see
+    /// `resolve_ui_size_with_basis`). Auto-layout branches ignore it: only
+    /// `UiLayout` carries auto layout and a `UiLayout` never owns a world.
     pub(super) fn compute_ui_child_rect(
         &self,
         parent: NodeID,
@@ -36,13 +41,17 @@ impl Runtime {
         parent_rect: ComputedUiRect,
         child_layout: &UiLayoutData,
         child_transform: &UiTransform,
+        size_basis: Option<Vector2>,
     ) -> Option<ComputedUiRect> {
         let parent_node = self.nodes.get(parent)?;
         let parent_ui = ui_root_from_data(&parent_node.data)?;
-        let layout_children = self.ui_layout_children(parent);
+        let mut layout_children = self.render_ui.acquire_node_vec();
+        self.ui_layout_children_into(parent, &mut layout_children);
+        let content_scale = self.ui_content_scale();
         let content_rect = ui_scroll_content_rect(
             &parent_node.data,
             parent_rect.inset(ui_padding_inset(parent_rect, parent_ui.layout.padding)),
+            content_scale,
         );
         let auto_rect = ui_auto_layout_from_data(&parent_node.data).and_then(|auto_layout| {
             match auto_layout.mode {
@@ -71,8 +80,10 @@ impl Runtime {
                 ),
             }
         });
+        self.render_ui.release_node_vec(layout_children);
         auto_rect.or_else(|| {
-            let child_content = content_rect.inset(child_layout.margin);
+            let child_content =
+                content_rect.inset(ui_margin_scaled(child_layout.margin, content_scale));
             let fill_size = Vector2::new(
                 if child_layout.h_size == UiSizeMode::Fill {
                     child_content.size.x
@@ -85,7 +96,12 @@ impl Runtime {
                     0.0
                 },
             );
-            let size = self.resolve_ui_size(child, child_content.size, Some(fill_size));
+            let size = self.resolve_ui_size_with_basis(
+                child,
+                child_content.size,
+                Some(fill_size),
+                size_basis,
+            );
             if let SceneNodeData::UiScrollContainer(scroller) = &parent_node.data {
                 return Some(ui_scroll_child_rect(
                     scroller.scroll_dir,
@@ -93,6 +109,7 @@ impl Runtime {
                     child_transform,
                     content_rect,
                     size,
+                    content_scale,
                 ));
             }
             Some(child_layout.compute_rect_with_size(child_transform, child_content, size))
@@ -108,6 +125,7 @@ impl Runtime {
         spacing: f32,
         spacing_mode: UiLayoutSpacingMode,
     ) -> Option<ComputedUiRect> {
+        let content_scale = self.ui_content_scale();
         let spacing = self.h_layout_spacing(children, content.size, spacing, spacing_mode);
         let fill_width = self.h_fill_width(children, content.size.x, spacing);
         let used_width = self.h_used_width(children, content.size, spacing, fill_width);
@@ -123,28 +141,24 @@ impl Runtime {
             else {
                 continue;
             };
+            let margin = ui_margin_scaled(layout.margin, content_scale);
             let fill_size = Vector2::new(
                 if layout.h_size == UiSizeMode::Fill {
                     fill_width
                 } else {
                     0.0
                 },
-                ui_fill_height(layout, parent_layout, content.size.y),
+                ui_fill_height(layout, parent_layout, content.size.y, content_scale),
             );
             let size = self.resolve_ui_size(sibling, content.size, Some(fill_size));
             if sibling == child {
-                let y = align_v_center(
-                    max.y,
-                    content.size.y,
-                    size.y,
-                    layout.margin,
-                    parent_layout.v_align,
-                );
-                let center = Vector2::new(x + layout.margin.left + size.x * 0.5, y)
+                let y =
+                    align_v_center(max.y, content.size.y, size.y, margin, parent_layout.v_align);
+                let center = Vector2::new(x + margin.left + size.x * 0.5, y)
                     + ui_translation_offset(transform, content.size, size);
                 return Some(ComputedUiRect::new(center, size));
             }
-            x += size.x + layout.margin.horizontal() + spacing;
+            x += size.x + margin.horizontal() + spacing;
         }
         None
     }
@@ -159,6 +173,7 @@ impl Runtime {
         computed_scales: &mut AHashMap<NodeID, Vector2>,
     ) {
         let UiChildrenLayoutCtx { content, .. } = layout_ctx;
+        let content_scale = self.ui_content_scale();
         let spacing = self.h_layout_spacing(children, content.size, spacing.amount, spacing.mode);
         let fill_width = self.h_fill_width(children, content.size.x, spacing);
         let used_width = self.h_used_width(children, content.size, spacing, fill_width);
@@ -174,23 +189,18 @@ impl Runtime {
             else {
                 continue;
             };
+            let margin = ui_margin_scaled(layout.margin, content_scale);
             let fill_size = Vector2::new(
                 if layout.h_size == UiSizeMode::Fill {
                     fill_width
                 } else {
                     0.0
                 },
-                ui_fill_height(layout, parent_layout, content.size.y),
+                ui_fill_height(layout, parent_layout, content.size.y, content_scale),
             );
             let size = self.resolve_ui_size(sibling, content.size, Some(fill_size));
-            let y = align_v_center(
-                max.y,
-                content.size.y,
-                size.y,
-                layout.margin,
-                parent_layout.v_align,
-            );
-            let center = Vector2::new(x + layout.margin.left + size.x * 0.5, y)
+            let y = align_v_center(max.y, content.size.y, size.y, margin, parent_layout.v_align);
+            let center = Vector2::new(x + margin.left + size.x * 0.5, y)
                 + ui_translation_offset(transform, content.size, size);
             insert_scaled_ui_child_rect(
                 computed,
@@ -200,7 +210,7 @@ impl Runtime {
                 ComputedUiRect::new(center, size),
                 transform.scale,
             );
-            x += size.x + layout.margin.horizontal() + spacing;
+            x += size.x + margin.horizontal() + spacing;
         }
     }
 
@@ -213,6 +223,7 @@ impl Runtime {
         spacing: f32,
         spacing_mode: UiLayoutSpacingMode,
     ) -> Option<ComputedUiRect> {
+        let content_scale = self.ui_content_scale();
         let spacing = self.v_layout_spacing(children, content.size, spacing, spacing_mode);
         let fill_height = self.v_fill_height(children, content.size.y, spacing);
         let used_height = self.v_used_height(children, content.size, spacing, fill_height);
@@ -228,8 +239,9 @@ impl Runtime {
             else {
                 continue;
             };
+            let margin = ui_margin_scaled(layout.margin, content_scale);
             let fill_size = Vector2::new(
-                ui_fill_width(layout, parent_layout, content.size.x),
+                ui_fill_width(layout, parent_layout, content.size.x, content_scale),
                 if layout.v_size == UiSizeMode::Fill {
                     fill_height
                 } else {
@@ -238,18 +250,13 @@ impl Runtime {
             );
             let size = self.resolve_ui_size(sibling, content.size, Some(fill_size));
             if sibling == child {
-                let x = align_h_center(
-                    min.x,
-                    content.size.x,
-                    size.x,
-                    layout.margin,
-                    parent_layout.h_align,
-                );
-                let center = Vector2::new(x, y - layout.margin.top - size.y * 0.5)
+                let x =
+                    align_h_center(min.x, content.size.x, size.x, margin, parent_layout.h_align);
+                let center = Vector2::new(x, y - margin.top - size.y * 0.5)
                     + ui_translation_offset(transform, content.size, size);
                 return Some(ComputedUiRect::new(center, size));
             }
-            y -= size.y + layout.margin.vertical() + spacing;
+            y -= size.y + margin.vertical() + spacing;
         }
         None
     }
@@ -264,6 +271,7 @@ impl Runtime {
         computed_scales: &mut AHashMap<NodeID, Vector2>,
     ) {
         let UiChildrenLayoutCtx { content, .. } = layout_ctx;
+        let content_scale = self.ui_content_scale();
         let spacing = self.v_layout_spacing(children, content.size, spacing.amount, spacing.mode);
         let fill_height = self.v_fill_height(children, content.size.y, spacing);
         let used_height = self.v_used_height(children, content.size, spacing, fill_height);
@@ -279,8 +287,9 @@ impl Runtime {
             else {
                 continue;
             };
+            let margin = ui_margin_scaled(layout.margin, content_scale);
             let fill_size = Vector2::new(
-                ui_fill_width(layout, parent_layout, content.size.x),
+                ui_fill_width(layout, parent_layout, content.size.x, content_scale),
                 if layout.v_size == UiSizeMode::Fill {
                     fill_height
                 } else {
@@ -288,14 +297,8 @@ impl Runtime {
                 },
             );
             let size = self.resolve_ui_size(sibling, content.size, Some(fill_size));
-            let x = align_h_center(
-                min.x,
-                content.size.x,
-                size.x,
-                layout.margin,
-                parent_layout.h_align,
-            );
-            let center = Vector2::new(x, y - layout.margin.top - size.y * 0.5)
+            let x = align_h_center(min.x, content.size.x, size.x, margin, parent_layout.h_align);
+            let center = Vector2::new(x, y - margin.top - size.y * 0.5)
                 + ui_translation_offset(transform, content.size, size);
             insert_scaled_ui_child_rect(
                 computed,
@@ -305,7 +308,7 @@ impl Runtime {
                 ComputedUiRect::new(center, size),
                 transform.scale,
             );
-            y -= size.y + layout.margin.vertical() + spacing;
+            y -= size.y + margin.vertical() + spacing;
         }
     }
 
@@ -317,6 +320,7 @@ impl Runtime {
         content: ComputedUiRect,
         auto: UiAutoLayout,
     ) -> Option<ComputedUiRect> {
+        let content_scale = self.ui_content_scale();
         let columns = auto.columns.max(1) as usize;
         let mut child_index = None;
         let mut ui_index = 0_usize;
@@ -349,8 +353,8 @@ impl Runtime {
                 child_index = Some(ui_index);
             }
             let size = self.resolve_ui_size(sibling, content.size, None);
-            cell_width = cell_width.max(size.x + layout.margin.horizontal());
-            cell_height = cell_height.max(size.y + layout.margin.vertical());
+            cell_width = cell_width.max(size.x + layout.margin.horizontal() * content_scale);
+            cell_height = cell_height.max(size.y + layout.margin.vertical() * content_scale);
             ui_index += 1;
         }
         let index = child_index?;
@@ -377,9 +381,10 @@ impl Runtime {
             .and_then(|ui| ui.visible.then_some((&ui.layout, &ui.transform)))?;
         let col = index % columns;
         let row = index / columns;
+        let margin = ui_margin_scaled(layout.margin, content_scale);
         let fill_size = Vector2::new(
-            ui_fill_width(layout, parent_layout, cell_width),
-            ui_fill_height(layout, parent_layout, cell_height),
+            ui_fill_width(layout, parent_layout, cell_width, content_scale),
+            ui_fill_height(layout, parent_layout, cell_height, content_scale),
         );
         let size = self.resolve_ui_size(
             child,
@@ -398,14 +403,14 @@ impl Runtime {
                     cell_min_x,
                     cell_width,
                     size.x,
-                    layout.margin,
+                    margin,
                     parent_layout.h_align,
                 ),
                 align_v_center(
                     cell_top_y,
                     cell_height,
                     size.y,
-                    layout.margin,
+                    margin,
                     parent_layout.v_align,
                 ),
             ) + ui_translation_offset(transform, Vector2::new(cell_width, cell_height), size);
@@ -422,6 +427,7 @@ impl Runtime {
         computed_scales: &mut AHashMap<NodeID, Vector2>,
     ) {
         let UiChildrenLayoutCtx { content, .. } = layout_ctx;
+        let content_scale = self.ui_content_scale();
         let columns = auto.columns.max(1) as usize;
         let mut ui_count = 0_usize;
         let mut cell_width = 0.0_f32;
@@ -436,8 +442,8 @@ impl Runtime {
                 continue;
             };
             let size = self.resolve_ui_size(sibling, content.size, None);
-            cell_width = cell_width.max(size.x + layout.margin.horizontal());
-            cell_height = cell_height.max(size.y + layout.margin.vertical());
+            cell_width = cell_width.max(size.x + layout.margin.horizontal() * content_scale);
+            cell_height = cell_height.max(size.y + layout.margin.vertical() * content_scale);
             ui_count += 1;
         }
         if ui_count == 0 {
@@ -479,9 +485,10 @@ impl Runtime {
             };
             let col = index % columns;
             let row = index / columns;
+            let margin = ui_margin_scaled(layout.margin, content_scale);
             let fill_size = Vector2::new(
-                ui_fill_width(layout, parent_layout, cell_width),
-                ui_fill_height(layout, parent_layout, cell_height),
+                ui_fill_width(layout, parent_layout, cell_width, content_scale),
+                ui_fill_height(layout, parent_layout, cell_height, content_scale),
             );
             let size = self.resolve_ui_size(
                 child,
@@ -496,14 +503,14 @@ impl Runtime {
                         cell_min_x,
                         cell_width,
                         size.x,
-                        layout.margin,
+                        margin,
                         parent_layout.h_align,
                     ),
                     align_v_center(
                         cell_top_y,
                         cell_height,
                         size.y,
-                        layout.margin,
+                        margin,
                         parent_layout.v_align,
                     ),
                 ) + ui_translation_offset(transform, Vector2::new(cell_width, cell_height), size);

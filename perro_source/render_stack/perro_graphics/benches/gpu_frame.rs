@@ -877,6 +877,9 @@ fn setup_blend_stack_scene(
         min_distance: 0.02,
         noise_factor,
         noise_scale: 8.0,
+        slope_factor: 2.0,
+        strength: 1.0,
+        salt_instances: true,
     };
     graphics.submit_many((0..count).map(|i| draw_overdraw_blend_command(i, mesh, material, blend)));
     let _ = graphics.draw_frame_timed();
@@ -1212,7 +1215,7 @@ fn spot_light_3d_command(i: u32) -> RenderCommand {
 fn sky_command(_sky_variant: f32) -> RenderCommand {
     RenderCommand::ThreeD(Box::new(Command3D::SetSky {
         node: NodeID::from_parts(90_000, 0),
-        sky: Box::new(Sky3DState {
+        sky: Arc::new(Sky3DState {
             day_colors: Arc::from([[0.42, 0.7, 1.0], [0.1, 0.35, 0.8]]),
             evening_colors: Arc::from([[1.0, 0.45, 0.2], [0.25, 0.08, 0.3]]),
             night_colors: Arc::from([[0.02, 0.03, 0.08], [0.0, 0.0, 0.02]]),
@@ -1390,7 +1393,7 @@ fn uv_sphere_mesh(slices: u32, stacks: u32) -> Mesh3D {
 }
 
 fn create_texture(graphics: &mut PerroGraphics) -> TextureID {
-    graphics.submit(RenderCommand::Resource(
+    graphics.submit(RenderCommand::Resource(Box::new(
         ResourceCommand::CreateRuntimeTexture {
             request: RenderRequestID::new(1),
             id: TextureID::nil(),
@@ -1400,7 +1403,7 @@ fn create_texture(graphics: &mut PerroGraphics) -> TextureID {
             height: 1,
             rgba: Arc::from([255, 255, 255, 255]),
         },
-    ));
+    )));
     let _ = graphics.draw_frame_timed();
     let mut events = Vec::new();
     graphics.drain_events(&mut events);
@@ -1430,20 +1433,20 @@ fn create_mesh_material_with_material(
     material_data: Material3D,
 ) -> (MeshID, MaterialID) {
     graphics.submit_many([
-        RenderCommand::Resource(ResourceCommand::CreateRuntimeMesh {
+        RenderCommand::Resource(Box::new(ResourceCommand::CreateRuntimeMesh {
             request: RenderRequestID::new(2),
             id: MeshID::nil(),
             source: "__bench_mesh__".to_string(),
             reserved: true,
             mesh: mesh_data,
-        }),
-        RenderCommand::Resource(ResourceCommand::CreateMaterial {
+        })),
+        RenderCommand::Resource(Box::new(ResourceCommand::CreateMaterial {
             request: RenderRequestID::new(3),
             id: MaterialID::nil(),
-            material: material_data,
+            material: material_data.into(),
             source: Some("__bench_material__".to_string()),
             reserved: true,
-        }),
+        })),
     ]);
     let _ = graphics.draw_frame_timed();
     let mut events = Vec::new();

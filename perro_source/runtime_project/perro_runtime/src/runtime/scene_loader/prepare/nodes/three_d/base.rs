@@ -490,6 +490,31 @@ fn apply_mesh_instance_3d_fields(node: &mut MeshInstance3D, fields: &[SceneObjec
                 node.blend.min_distance = v.max(0.0);
             }
         }
+        "blend_noise_factor" | "blend_noise" => {
+            if let Some(v) = as_f32(value) {
+                node.blend.noise_factor = v.clamp(0.0, 1.0);
+            }
+        }
+        "blend_noise_scale" => {
+            if let Some(v) = as_f32(value) {
+                node.blend.noise_scale = v.max(0.0001);
+            }
+        }
+        "blend_slope_factor" => {
+            if let Some(v) = as_f32(value) {
+                node.blend.slope_factor = v.clamp(0.0, 8.0);
+            }
+        }
+        "blend_strength" => {
+            if let Some(v) = as_f32(value) {
+                node.blend.strength = v.clamp(0.0, 1.0);
+            }
+        }
+        "blend_salt_instances" => {
+            if let Some(v) = as_bool(value) {
+                node.blend.salt_instances = v;
+            }
+        }
         _ => {}
     });
 }
@@ -600,6 +625,31 @@ fn apply_multi_mesh_instance_3d_fields(
                 node.blend.min_distance = v.max(0.0);
             }
         }
+        "blend_noise_factor" | "blend_noise" => {
+            if let Some(v) = as_f32(value) {
+                node.blend.noise_factor = v.clamp(0.0, 1.0);
+            }
+        }
+        "blend_noise_scale" => {
+            if let Some(v) = as_f32(value) {
+                node.blend.noise_scale = v.max(0.0001);
+            }
+        }
+        "blend_slope_factor" => {
+            if let Some(v) = as_f32(value) {
+                node.blend.slope_factor = v.clamp(0.0, 8.0);
+            }
+        }
+        "blend_strength" => {
+            if let Some(v) = as_f32(value) {
+                node.blend.strength = v.clamp(0.0, 1.0);
+            }
+        }
+        "blend_salt_instances" => {
+            if let Some(v) = as_bool(value) {
+                node.blend.salt_instances = v;
+            }
+        }
         _ => {}
     });
 }
@@ -647,14 +697,29 @@ fn apply_mesh_blend_fields(blend: &mut perro_nodes::MeshBlendOptions, value: &Sc
                             blend.min_distance = v.max(0.0);
                         }
                     }
-                    "noise_factor" | "noise" => {
+                    "noise_factor" | "noise" | "blend_noise_factor" => {
                         if let Some(v) = as_f32(value) {
                             blend.noise_factor = v.clamp(0.0, 1.0);
                         }
                     }
-                    "noise_scale" | "noise_tile_size" => {
+                    "noise_scale" | "noise_tile_size" | "blend_noise_scale" => {
                         if let Some(v) = as_f32(value) {
                             blend.noise_scale = v.max(0.0001);
+                        }
+                    }
+                    "slope_factor" | "blend_slope_factor" => {
+                        if let Some(v) = as_f32(value) {
+                            blend.slope_factor = v.clamp(0.0, 8.0);
+                        }
+                    }
+                    "strength" | "blend_strength" => {
+                        if let Some(v) = as_f32(value) {
+                            blend.strength = v.clamp(0.0, 1.0);
+                        }
+                    }
+                    "salt_instances" | "blend_salt_instances" => {
+                        if let Some(v) = as_bool(value) {
+                            blend.salt_instances = v;
                         }
                     }
                     _ => {}

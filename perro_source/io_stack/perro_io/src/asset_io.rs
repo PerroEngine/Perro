@@ -10,6 +10,7 @@ use std::{
 #[cfg(not(target_arch = "wasm32"))]
 use crate::data_local_dir;
 use perro_assets::archive::{PerroAssetsArchive, PerroAssetsFile};
+use perro_assets::walkdir::{CompiledPathPattern, split_path_segments};
 
 pub type StaticBytesLookup = fn(u64) -> &'static [u8];
 pub type StaticShaderLookup = fn(u64) -> &'static str;
@@ -45,17 +46,21 @@ pub enum ProjectRoot {
 }
 
 struct ProjectAssetState {
-    root: Option<ProjectRoot>,
+    // Arc so `resolve_path` detaches the root with a refcount bump instead of
+    // deep-cloning name + path buffers on every asset resolve.
+    root: Option<Arc<ProjectRoot>>,
     archive: Option<Arc<PerroAssetsArchive>>,
     demo: bool,
-    demo_excludes: Vec<String>,
+    // Precompiled at `set_demo_asset_filter`; matched against the split path
+    // under the read lock, so the non-demo fast path never clones anything.
+    demo_excludes: Option<Arc<[CompiledPathPattern]>>,
 }
 
 static PROJECT_ASSET_STATE: RwLock<ProjectAssetState> = RwLock::new(ProjectAssetState {
     root: None,
     archive: None,
     demo: false,
-    demo_excludes: Vec::new(),
+    demo_excludes: None,
 });
 static DLC_MOUNTS: LazyLock<RwLock<HashMap<String, DlcMount>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
@@ -113,7 +118,8 @@ pub fn get_project_root() -> ProjectRoot {
         .read()
         .expect("required value must be present")
         .root
-        .clone()
+        .as_deref()
+        .cloned()
         .expect("Project root not set")
 }
 
@@ -129,7 +135,7 @@ pub fn try_set_project_root(root: ProjectRoot) -> io::Result<()> {
     let mut state = PROJECT_ASSET_STATE
         .write()
         .expect("required value must be present");
-    state.root = Some(root);
+    state.root = Some(Arc::new(root));
     state.archive = archive;
     Ok(())
 }
@@ -142,11 +148,17 @@ pub fn set_project_root(root: ProjectRoot) {
 }
 
 pub fn set_demo_asset_filter(active: bool, excludes: Vec<String>) {
+    let compiled: Option<Arc<[CompiledPathPattern]>> = (!excludes.is_empty()).then(|| {
+        excludes
+            .iter()
+            .map(|pattern| CompiledPathPattern::new(pattern))
+            .collect()
+    });
     let mut state = PROJECT_ASSET_STATE
         .write()
         .expect("required value must be present");
     state.demo = active;
-    state.demo_excludes = excludes;
+    state.demo_excludes = compiled;
 }
 
 pub fn demo_mode_active() -> bool {
@@ -303,9 +315,9 @@ fn normalize_user_app_name(name: &str) -> String {
     name.replace(' ', "_")
 }
 
-fn user_app_name(project_root_opt: &Option<ProjectRoot>) -> String {
+fn user_app_name(project_root_opt: &Option<Arc<ProjectRoot>>) -> String {
     let app_name = project_root_opt
-        .as_ref()
+        .as_deref()
         .map(|root| match root {
             ProjectRoot::Disk { name, .. } => name.as_str(),
             ProjectRoot::PerroAssets { name, .. } => name.as_str(),
@@ -387,18 +399,24 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
         return ResolvedPath::Disk(PathBuf::from(path));
     }
 
-    let (project_root_opt, demo, demo_excludes) = {
+    let (project_root_opt, demo_excluded) = {
         let state = PROJECT_ASSET_STATE
             .read()
             .expect("required value must be present");
-        (state.root.clone(), state.demo, state.demo_excludes.clone())
+        // Demo off (the common case) short-circuits before any pattern work,
+        // and the root detaches with an Arc bump instead of a deep clone.
+        let demo_excluded = state.demo
+            && path.strip_prefix("res://").is_some_and(|relative| {
+                state.demo_excludes.as_deref().is_some_and(|patterns| {
+                    let segments = split_path_segments(relative);
+                    patterns
+                        .iter()
+                        .any(|pattern| pattern.matches_segments(&segments))
+                })
+            });
+        (state.root.clone(), demo_excluded)
     };
-    if demo
-        && let Some(relative) = path.strip_prefix("res://")
-        && demo_excludes
-            .iter()
-            .any(|pattern| perro_assets::walkdir::matches_path_pattern(pattern, relative))
-    {
+    if demo_excluded {
         return ResolvedPath::Excluded(path.to_string());
     }
 
@@ -461,7 +479,7 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
         return ResolvedPath::Disk(path_buf);
     }
 
-    match project_root_opt {
+    match project_root_opt.as_deref() {
         Some(ProjectRoot::Disk { root, .. }) => {
             if let Some(stripped) = path.strip_prefix("res://") {
                 let primary = root.join("res").join(stripped);
@@ -667,11 +685,7 @@ fn load_dlc_static_binary(dlc: &str, path: &str) -> io::Result<Vec<u8>> {
     // SAFETY: Successful lookup guarantees ptr is non-null and len bytes remain valid
     // for the duration of this call; copy immediately into an owned Vec.
     let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
-    if Path::new(path)
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| matches!(ext.to_ascii_lowercase().as_str(), "ttf" | "otf" | "ttc"))
-    {
+    if ext_in(path_extension(path), &FONT_EXTS) {
         return decode_static_font(bytes);
     }
     Ok(bytes.to_vec())
@@ -696,7 +710,7 @@ fn load_static_binary(path: &str) -> io::Result<Vec<u8>> {
         .read()
         .expect("required value must be present")
         .root
-        .as_ref()
+        .as_deref()
     {
         Some(ProjectRoot::PerroAssets {
             static_resource_lookups,
@@ -706,38 +720,63 @@ fn load_static_binary(path: &str) -> io::Result<Vec<u8>> {
     }
 }
 
+// Extension groups matched case-insensitively without allocating a lowercase
+// copy per lookup (these run on every asset resolve).
+const FONT_EXTS: [&str; 3] = ["ttf", "otf", "ttc"];
+const TEXTURE_EXTS: [&str; 9] = [
+    "png", "jpg", "jpeg", "bmp", "gif", "ico", "tga", "webp", "rgba",
+];
+const GLTF_EXTS: [&str; 2] = ["glb", "gltf"];
+const AUDIO_EXTS: [&str; 7] = ["mp3", "wav", "ogg", "flac", "mid", "midi", "sf2"];
+const STATIC_BINARY_EXTS: [&str; 27] = [
+    "png", "jpg", "jpeg", "bmp", "gif", "ico", "tga", "webp", "rgba", "glb", "gltf", "pmesh",
+    "pnav", "pskel", "wgsl", "mp3", "wav", "ogg", "flac", "aac", "m4a", "mid", "midi", "sf2",
+    "ttf", "otf", "ttc",
+];
+
+fn ext_in(ext: &str, candidates: &[&str]) -> bool {
+    candidates
+        .iter()
+        .any(|candidate| ext.eq_ignore_ascii_case(candidate))
+}
+
+fn path_extension(path: &str) -> &str {
+    Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("")
+}
+
 fn load_static_resource_binary(lookups: StaticResourceLookups, path: &str) -> io::Result<Vec<u8>> {
     let hash = perro_ids::string_to_u64(path);
-    let ext = Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_ascii_lowercase())
-        .unwrap_or_default();
+    let ext = path_extension(path);
 
-    let bytes = match ext.as_str() {
-        "ttf" | "otf" | "ttc" => lookups.font_lookup.map(|lookup| lookup(hash)),
-        "png" | "jpg" | "jpeg" | "bmp" | "gif" | "ico" | "tga" | "webp" | "rgba" => {
-            lookups.texture_lookup.map(|lookup| lookup(hash))
+    let bytes = if ext_in(ext, &FONT_EXTS) {
+        lookups.font_lookup.map(|lookup| lookup(hash))
+    } else if ext_in(ext, &TEXTURE_EXTS) {
+        lookups.texture_lookup.map(|lookup| lookup(hash))
+    } else if ext_in(ext, &GLTF_EXTS) {
+        lookups.mesh_lookup.map(|lookup| lookup(hash))
+    } else if ext.eq_ignore_ascii_case("pmesh") {
+        let mesh = lookups
+            .mesh_lookup
+            .map(|lookup| lookup(hash))
+            .unwrap_or(b"");
+        if mesh.is_empty() {
+            lookups.collision_trimesh_lookup.map(|lookup| lookup(hash))
+        } else {
+            Some(mesh)
         }
-        "glb" | "gltf" => lookups.mesh_lookup.map(|lookup| lookup(hash)),
-        "pmesh" => {
-            let mesh = lookups
-                .mesh_lookup
-                .map(|lookup| lookup(hash))
-                .unwrap_or(b"");
-            if mesh.is_empty() {
-                lookups.collision_trimesh_lookup.map(|lookup| lookup(hash))
-            } else {
-                Some(mesh)
-            }
-        }
-        "pskel" => lookups.skeleton_lookup.map(|lookup| lookup(hash)),
-        "pnav" => lookups.navmesh_lookup.map(|lookup| lookup(hash)),
-        "wgsl" => lookups.shader_lookup.map(|lookup| lookup(hash).as_bytes()),
-        "mp3" | "wav" | "ogg" | "flac" | "mid" | "midi" | "sf2" => {
-            lookups.audio_lookup.map(|lookup| lookup(hash))
-        }
-        _ => None,
+    } else if ext.eq_ignore_ascii_case("pskel") {
+        lookups.skeleton_lookup.map(|lookup| lookup(hash))
+    } else if ext.eq_ignore_ascii_case("pnav") {
+        lookups.navmesh_lookup.map(|lookup| lookup(hash))
+    } else if ext.eq_ignore_ascii_case("wgsl") {
+        lookups.shader_lookup.map(|lookup| lookup(hash).as_bytes())
+    } else if ext_in(ext, &AUDIO_EXTS) {
+        lookups.audio_lookup.map(|lookup| lookup(hash))
+    } else {
+        None
     }
     .unwrap_or(b"");
 
@@ -747,46 +786,15 @@ fn load_static_resource_binary(lookups: StaticResourceLookups, path: &str) -> io
             format!("static resource not found: {path}"),
         ));
     }
-    if matches!(ext.as_str(), "ttf" | "otf" | "ttc") {
+    if ext_in(ext, &FONT_EXTS) {
         return decode_static_font(bytes);
     }
     Ok(bytes.to_vec())
 }
 
 fn is_static_binary_path(path: &str) -> bool {
-    let Some(ext) = Path::new(path).extension().and_then(|e| e.to_str()) else {
-        return false;
-    };
-    matches!(
-        ext.to_ascii_lowercase().as_str(),
-        "png"
-            | "jpg"
-            | "jpeg"
-            | "bmp"
-            | "gif"
-            | "ico"
-            | "tga"
-            | "webp"
-            | "rgba"
-            | "glb"
-            | "gltf"
-            | "pmesh"
-            | "pnav"
-            | "pskel"
-            | "wgsl"
-            | "mp3"
-            | "wav"
-            | "ogg"
-            | "flac"
-            | "aac"
-            | "m4a"
-            | "mid"
-            | "midi"
-            | "sf2"
-            | "ttf"
-            | "otf"
-            | "ttc"
-    )
+    let ext = path_extension(path);
+    !ext.is_empty() && ext_in(ext, &STATIC_BINARY_EXTS)
 }
 
 #[cfg(test)]

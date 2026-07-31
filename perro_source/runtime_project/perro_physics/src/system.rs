@@ -58,6 +58,9 @@ pub struct PhysicsSystem {
     pub entered_pairs_scratch: Vec<BodyPair>,
     pub area_overlap_scratch_2d: AHashSet<AreaOverlap>,
     pub area_overlap_scratch_3d: AHashSet<AreaOverlap>,
+    /// scratch 4 move_body_* depenetration overlap hits; kp alloc across calls.
+    pub(crate) recovery_hits_2d: Vec<r2::ColliderHandle>,
+    pub(crate) recovery_hits_3d: Vec<r3::ColliderHandle>,
 }
 
 impl PhysicsSystem {
@@ -94,6 +97,8 @@ impl PhysicsSystem {
             entered_pairs_scratch: Vec::new(),
             area_overlap_scratch_2d: AHashSet::default(),
             area_overlap_scratch_3d: AHashSet::default(),
+            recovery_hits_2d: Vec::new(),
+            recovery_hits_3d: Vec::new(),
         }
     }
 
@@ -186,32 +191,30 @@ impl PhysicsSystem {
             && self.world_3d_idle_cached
     }
 
+    /// O(1) post-step idle chk via rapier island manager. ONLY valid right
+    /// aft `pipeline.step` run: fresh-insert / user-woken dynamic bodies enter
+    /// `active_dynamic_bodies` during step (`handle_user_changes`), so btw
+    /// syncs the set can lag. Sync paths must NOT cal this; they mark
+    /// `world_*_idle_cached = false` on any dynamic-body mutation instead.
     pub(crate) fn refresh_world_2d_idle_cache(&mut self) {
-        self.world_2d_idle_cached = self.world_2d.as_ref().is_none_or(world_2d_idle);
+        self.world_2d_idle_cached = self
+            .world_2d
+            .as_ref()
+            .is_none_or(|world| world.islands.active_dynamic_bodies().is_empty());
     }
 
+    /// 3d twin of [`Self::refresh_world_2d_idle_cache`]; same post-step-only rule.
     pub(crate) fn refresh_world_3d_idle_cache(&mut self) {
-        self.world_3d_idle_cached = self.world_3d.as_ref().is_none_or(world_3d_idle);
+        self.world_3d_idle_cached = self
+            .world_3d
+            .as_ref()
+            .is_none_or(|world| world.islands.active_dynamic_bodies().is_empty());
     }
 
     pub(crate) fn refresh_world_idle_cache(&mut self) {
         self.refresh_world_2d_idle_cache();
         self.refresh_world_3d_idle_cache();
     }
-}
-
-fn world_2d_idle(world: &PhysicsWorld2D) -> bool {
-    world
-        .bodies
-        .iter()
-        .all(|(_, body)| !body.is_dynamic() || body.is_sleeping())
-}
-
-fn world_3d_idle(world: &PhysicsWorld3D) -> bool {
-    world
-        .bodies
-        .iter()
-        .all(|(_, body)| !body.is_dynamic() || body.is_sleeping())
 }
 
 mod audio;

@@ -264,6 +264,14 @@ impl Runtime {
             internal_labels,
             internal_lines,
         ) = snapshot;
+        // Tree metrics are authored in virtual-canvas px; scale them with the
+        // uniform content scale (1.0 at design resolution).
+        let content_scale = self.ui_content_scale();
+        let indent = indent * content_scale;
+        let row_height = row_height * content_scale;
+        let icon_size = icon_size * content_scale;
+        let toggle_size = toggle_size * content_scale;
+        let line_width = line_width * content_scale;
         let spacing = ui_v_spacing_amount(v_spacing, row_height);
         for (visible_idx, row) in rows.iter().enumerate() {
             let Some(item) = items.get(row.index) else {
@@ -329,8 +337,8 @@ impl Runtime {
                 label.base.transform.position =
                     UiVector2::pixels(x + toggle_size + icon_width + 8.0, 0.0);
                 label.color = text_color;
-                if label.text != item.label {
-                    label.set_text(item.label.to_string());
+                if label.text.as_ref() != item.label.as_ref() {
+                    label.set_text(item.label.as_ref());
                 }
             }
             if let Some(pair) = internal_lines.get(visible_idx).copied() {
@@ -1193,9 +1201,9 @@ impl Runtime {
             };
             let wheel_node = color_picker_wheel_render_node(picker_id);
             if !popup_open || !show_selector {
-                self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode {
+                self.queue_render_command(RenderCommand::Ui(Box::new(UiCommand::RemoveNode {
                     node: wheel_node,
-                }));
+                })));
                 continue;
             }
             let Some(popup_rect) = computed.get(&popup_id).copied().or_else(|| {
@@ -1223,13 +1231,13 @@ impl Runtime {
                 rotation_radians: 0.0,
                 z_index: self.ui_effective_z(popup_id).saturating_add(1),
             };
-            self.queue_render_command(RenderCommand::Ui(UiCommand::UpsertColorWheel {
+            self.queue_render_command(RenderCommand::Ui(Box::new(UiCommand::UpsertColorWheel {
                 node: wheel_node,
                 rect: rect_state,
                 clip_rect: self.ui_effective_clip_rect_screen(popup_id, computed, viewport),
                 mode: picker_mode,
                 selected: color.to_rgba(),
-            }));
+            })));
         }
         self.ui_node_ids_scratch = picker_ids;
     }

@@ -34,25 +34,38 @@ impl Runtime {
                 emitter.duration,
                 emitter.age,
             ) {
-                emitters.push((global.position, emitter.clone()));
+                // stage (pos, id) only; emitter data re-read @ apply -> no clone
+                emitters.push((global.position, id));
             }
             emitter.age += self.time.fixed_delta.max(0.0);
         }
         self.physics_force_emitter_ids_scratch_2d = ids;
-        let mut pending = std::mem::take(&mut self.pending_force_emitters_2d);
-        let mut keep = Vec::with_capacity(pending.len());
-        for (world, emitter) in pending.drain(..) {
-            if world == self.active_physics_world() {
-                emitters.push((emitter.transform.position, emitter));
-            } else {
-                keep.push((world, emitter));
+        for (position, id) in emitters.drain(..) {
+            // borrow-safe zero-alloc apply: swap emitter out of node slot
+            // (Default vectors = no alloc), apply, swap back untouched.
+            let Some(staged) = self.nodes.get_mut_untracked(id).and_then(|node| {
+                let SceneNodeData::PhysicsForceEmitter2D(emitter) = &mut node.data else {
+                    return None;
+                };
+                Some(std::mem::take(emitter))
+            }) else {
+                continue;
+            };
+            self.apply_force_emitter_2d(position, &staged);
+            if let Some(node) = self.nodes.get_mut_untracked(id)
+                && let SceneNodeData::PhysicsForceEmitter2D(emitter) = &mut node.data
+            {
+                *emitter = staged;
             }
         }
-        self.pending_force_emitters_2d = keep;
-        for (position, emitter) in emitters.drain(..) {
-            self.apply_force_emitter_2d(position, &emitter);
-        }
         self.physics_force_emitters_scratch_2d = emitters;
+        // one-shot script emitters: consume active-world entries in place
+        // (order kp, no keep-buf alloc).
+        let mut pending = std::mem::take(&mut self.pending_force_emitters_2d);
+        for (_, emitter) in pending.extract_if(.., |(world, _)| *world == active_world) {
+            self.apply_force_emitter_2d(emitter.transform.position, &emitter);
+        }
+        self.pending_force_emitters_2d = pending;
     }
 
     pub(super) fn queue_physics_force_emitters_3d(&mut self) {
@@ -88,25 +101,38 @@ impl Runtime {
                 emitter.duration,
                 emitter.age,
             ) {
-                emitters.push((global.position, emitter.clone()));
+                // stage (pos, id) only; emitter data re-read @ apply -> no clone
+                emitters.push((global.position, id));
             }
             emitter.age += self.time.fixed_delta.max(0.0);
         }
         self.physics_force_emitter_ids_scratch_3d = ids;
-        let mut pending = std::mem::take(&mut self.pending_force_emitters_3d);
-        let mut keep = Vec::with_capacity(pending.len());
-        for (world, emitter) in pending.drain(..) {
-            if world == self.active_physics_world() {
-                emitters.push((emitter.transform.position, emitter));
-            } else {
-                keep.push((world, emitter));
+        for (position, id) in emitters.drain(..) {
+            // borrow-safe zero-alloc apply: swap emitter out of node slot
+            // (Default vectors = no alloc), apply, swap back untouched.
+            let Some(staged) = self.nodes.get_mut_untracked(id).and_then(|node| {
+                let SceneNodeData::PhysicsForceEmitter3D(emitter) = &mut node.data else {
+                    return None;
+                };
+                Some(std::mem::take(emitter))
+            }) else {
+                continue;
+            };
+            self.apply_force_emitter_3d(position, &staged);
+            if let Some(node) = self.nodes.get_mut_untracked(id)
+                && let SceneNodeData::PhysicsForceEmitter3D(emitter) = &mut node.data
+            {
+                *emitter = staged;
             }
         }
-        self.pending_force_emitters_3d = keep;
-        for (position, emitter) in emitters.drain(..) {
-            self.apply_force_emitter_3d(position, &emitter);
-        }
         self.physics_force_emitters_scratch_3d = emitters;
+        // one-shot script emitters: consume active-world entries in place
+        // (order kp, no keep-buf alloc).
+        let mut pending = std::mem::take(&mut self.pending_force_emitters_3d);
+        for (_, emitter) in pending.extract_if(.., |(world, _)| *world == active_world) {
+            self.apply_force_emitter_3d(emitter.transform.position, &emitter);
+        }
+        self.pending_force_emitters_3d = pending;
     }
 
     pub(super) fn apply_force_emitter_2d(
@@ -337,11 +363,27 @@ impl Runtime {
 
     pub(super) fn queue_water_forces_2d(&mut self) {
         let active_world = self.active_physics_world();
+        // active-world entries: clear Vec in place (kp alloc, refill this tick);
+        // other worlds: kp data; dead nodes: drop entry.
         let mut pending_queries = std::mem::take(&mut self.pending_water_queries_2d);
-        pending_queries.retain(|id, _| self.node_world(*id) != Some(active_world));
+        pending_queries.retain(|id, list| match self.node_world(*id) {
+            Some(world) if world == active_world => {
+                list.clear();
+                true
+            }
+            Some(_) => true,
+            None => false,
+        });
         self.pending_water_queries_2d = pending_queries;
         let mut contacts = std::mem::take(&mut self.water_contacts_2d);
-        contacts.retain(|id, _| self.node_world(*id) != Some(active_world));
+        contacts.retain(|id, list| match self.node_world(*id) {
+            Some(world) if world == active_world => {
+                list.clear();
+                true
+            }
+            Some(_) => true,
+            None => false,
+        });
         self.water_contacts_2d = contacts;
         self.cached_water_ids_2d();
         let water_ids = std::mem::take(&mut self.water_ids_2d_cache);
@@ -380,7 +422,8 @@ impl Runtime {
             self.water_ids_2d_cache = water_ids;
             return;
         }
-        let water_index = RuntimeWaterIndex2D::new(waters);
+        let bins = std::mem::take(&mut self.physics_water_bins_scratch_2d);
+        let water_index = RuntimeWaterIndex2D::new_with_bins(waters, bins);
         let camera_pos = self
             .render_2d
             .last_camera
@@ -451,48 +494,46 @@ impl Runtime {
         self.register_water_queries_2d(&bodies, &water_index);
         self.record_water_contacts_2d(&bodies, &water_index, elapsed);
         let water_samples = &self.water_samples;
-        let forces: Vec<_> = if bodies.len() >= WATER_FORCE_PAR_BODY_THRESHOLD {
-            bodies
-                .par_iter()
-                .flat_map_iter(|body| {
-                    water_forces_for_body_2d(
-                        *body,
-                        &water_index,
-                        water_samples,
-                        &self.water_body_samples,
-                        elapsed,
-                        camera_pos,
-                    )
-                })
-                .collect()
+        let mut forces = std::mem::take(&mut self.physics_water_forces_scratch_2d);
+        forces.clear();
+        if bodies.len() >= WATER_FORCE_PAR_BODY_THRESHOLD {
+            forces.par_extend(bodies.par_iter().flat_map_iter(|body| {
+                water_forces_for_body_2d(
+                    *body,
+                    &water_index,
+                    water_samples,
+                    &self.water_body_samples,
+                    elapsed,
+                    camera_pos,
+                )
+            }));
         } else {
-            bodies
-                .iter()
-                .flat_map(|body| {
-                    water_forces_for_body_2d(
-                        *body,
-                        &water_index,
-                        water_samples,
-                        &self.water_body_samples,
-                        elapsed,
-                        camera_pos,
-                    )
-                })
-                .collect()
-        };
+            forces.extend(bodies.iter().flat_map(|body| {
+                water_forces_for_body_2d(
+                    *body,
+                    &water_index,
+                    water_samples,
+                    &self.water_body_samples,
+                    elapsed,
+                    camera_pos,
+                )
+            }));
+        }
         bodies.clear();
         self.physics_water_bodies_scratch_2d = bodies;
         let mut waters = water_index.waters;
         waters.clear();
         self.physics_waters_scratch_2d = waters;
+        self.physics_water_bins_scratch_2d = water_index.bins;
         self.water_rigid_body_ids_2d_cache = body_ids;
-        for effect in forces {
+        for effect in forces.drain(..) {
             self.physics.queue_force_2d(effect.id, effect.force);
             if effect.impulse.length_squared() > 0.000_001 {
                 self.physics.queue_impulse_2d(effect.id, effect.impulse);
             }
             self.apply_water_angular_nudge_2d(effect.id, effect.force.x * 0.04);
         }
+        self.physics_water_forces_scratch_2d = forces;
         if !splash_impacts.is_empty() {
             self.force_water_impacts_2d.extend(splash_impacts);
         }
@@ -506,11 +547,26 @@ impl Runtime {
 
     pub(super) fn queue_water_forces_3d(&mut self) {
         let active_world = self.active_physics_world();
+        // see queue_water_forces_2d: clear-in-place / kp / drop split.
         let mut pending_queries = std::mem::take(&mut self.pending_water_queries_3d);
-        pending_queries.retain(|id, _| self.node_world(*id) != Some(active_world));
+        pending_queries.retain(|id, list| match self.node_world(*id) {
+            Some(world) if world == active_world => {
+                list.clear();
+                true
+            }
+            Some(_) => true,
+            None => false,
+        });
         self.pending_water_queries_3d = pending_queries;
         let mut contacts = std::mem::take(&mut self.water_contacts_3d);
-        contacts.retain(|id, _| self.node_world(*id) != Some(active_world));
+        contacts.retain(|id, list| match self.node_world(*id) {
+            Some(world) if world == active_world => {
+                list.clear();
+                true
+            }
+            Some(_) => true,
+            None => false,
+        });
         self.water_contacts_3d = contacts;
         self.cached_water_ids_3d();
         let water_ids = std::mem::take(&mut self.water_ids_3d_cache);
@@ -553,7 +609,8 @@ impl Runtime {
             self.water_ids_3d_cache = water_ids;
             return;
         }
-        let water_index = RuntimeWaterIndex3D::new(waters);
+        let bins = std::mem::take(&mut self.physics_water_bins_scratch_3d);
+        let water_index = RuntimeWaterIndex3D::new_with_bins(waters, bins);
         let camera_pos = self
             .render_3d
             .last_camera
@@ -635,42 +692,39 @@ impl Runtime {
         self.register_water_queries_3d(&bodies, &water_index);
         self.record_water_contacts_3d(&bodies, &water_index, elapsed);
         let water_samples = &self.water_samples;
-        let forces: Vec<_> = if bodies.len() >= WATER_FORCE_PAR_BODY_THRESHOLD {
-            bodies
-                .par_iter()
-                .flat_map_iter(|body| {
-                    water_forces_for_body_3d(
-                        *body,
-                        &water_index,
-                        water_samples,
-                        &self.water_body_samples,
-                        elapsed,
-                        camera_pos,
-                    )
-                })
-                .collect()
+        let mut forces = std::mem::take(&mut self.physics_water_forces_scratch_3d);
+        forces.clear();
+        if bodies.len() >= WATER_FORCE_PAR_BODY_THRESHOLD {
+            forces.par_extend(bodies.par_iter().flat_map_iter(|body| {
+                water_forces_for_body_3d(
+                    *body,
+                    &water_index,
+                    water_samples,
+                    &self.water_body_samples,
+                    elapsed,
+                    camera_pos,
+                )
+            }));
         } else {
-            bodies
-                .iter()
-                .flat_map(|body| {
-                    water_forces_for_body_3d(
-                        *body,
-                        &water_index,
-                        water_samples,
-                        &self.water_body_samples,
-                        elapsed,
-                        camera_pos,
-                    )
-                })
-                .collect()
-        };
+            forces.extend(bodies.iter().flat_map(|body| {
+                water_forces_for_body_3d(
+                    *body,
+                    &water_index,
+                    water_samples,
+                    &self.water_body_samples,
+                    elapsed,
+                    camera_pos,
+                )
+            }));
+        }
         bodies.clear();
         self.physics_water_bodies_scratch_3d = bodies;
         let mut waters = water_index.waters;
         waters.clear();
         self.physics_waters_scratch_3d = waters;
+        self.physics_water_bins_scratch_3d = water_index.bins;
         self.water_rigid_body_ids_3d_cache = body_ids;
-        for effect in forces {
+        for effect in forces.drain(..) {
             self.physics.queue_force_3d(effect.id, effect.force);
             if effect.impulse.length_squared() > 0.000_001 {
                 self.physics.queue_impulse_3d(effect.id, effect.impulse);
@@ -680,6 +734,7 @@ impl Runtime {
                 Vector3::new(effect.force.z * 0.025, 0.0, -effect.force.x * 0.025),
             );
         }
+        self.physics_water_forces_scratch_3d = forces;
         if !splash_impacts.is_empty() {
             self.force_water_impacts_3d.extend(splash_impacts);
         }

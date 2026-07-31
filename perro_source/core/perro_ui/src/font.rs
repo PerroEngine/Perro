@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum UiSystemFont {
@@ -41,7 +41,8 @@ pub enum UiFont {
     #[default]
     Default,
     System(UiSystemFont),
-    Resource(Cow<'static, str>),
+    // Arc<str> so cloning a font into a retained command is a refcount bump.
+    Resource(Arc<str>),
 }
 
 impl UiFont {
@@ -49,8 +50,8 @@ impl UiFont {
         Self::System(font)
     }
 
-    pub const fn resource(path: &'static str) -> Self {
-        Self::Resource(Cow::Borrowed(path))
+    pub fn resource(path: &str) -> Self {
+        Self::Resource(Arc::from(path))
     }
 
     pub fn parse(value: &str) -> Option<Self> {
@@ -59,7 +60,7 @@ impl UiFont {
             return Some(Self::Default);
         }
         if value.starts_with("res://") || value.starts_with("dlc://") {
-            return Some(Self::Resource(Cow::Owned(value.to_string())));
+            return Some(Self::Resource(Arc::from(value)));
         }
         let name = value.strip_prefix("system://").unwrap_or(value);
         let key = name.to_ascii_lowercase().replace([' ', '-', '_'], "");
@@ -99,7 +100,7 @@ mod tests {
         );
         assert_eq!(
             UiFont::parse("res://fonts/game.ttf"),
-            Some(UiFont::Resource(Cow::Borrowed("res://fonts/game.ttf")))
+            Some(UiFont::Resource(Arc::from("res://fonts/game.ttf")))
         );
         assert_eq!(UiFont::parse("missing"), None);
     }

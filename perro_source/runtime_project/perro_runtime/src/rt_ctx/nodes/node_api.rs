@@ -57,13 +57,14 @@ impl NodeAPI for Runtime {
         self.render
             .queue_command(RenderCommand::CameraStream(CameraStreamCommand::Upsert {
                 node: camera_id,
-                state: Box::new(state),
+                state: std::sync::Arc::new(state),
             }));
-        self.render
-            .queue_command(RenderCommand::Resource(ResourceCommand::SaveTextureImage {
+        self.render.queue_command(RenderCommand::Resource(Box::new(
+            ResourceCommand::SaveTextureImage {
                 id: output_texture,
                 path: path.to_string(),
-            }));
+            },
+        )));
         if let Some((_, delay)) = self
             .pending_camera_capture_removals
             .iter_mut()
@@ -388,8 +389,8 @@ impl NodeAPI for Runtime {
     {
         let name = name.as_ref();
         for id in self.nodes.named_ids(name) {
-            if root.is_nil() || self.node_is_descendant_of(*id, root) {
-                return Some(*id);
+            if root.is_nil() || self.node_is_descendant_of(id, root) {
+                return Some(id);
             }
         }
         None
@@ -404,6 +405,14 @@ impl NodeAPI for Runtime {
         node_id: perro_ids::NodeID,
     ) -> Option<Vec<perro_ids::NodeID>> {
         self.nodes.children(node_id).map(<[NodeID]>::to_vec)
+    }
+
+    fn with_children<V, F>(&mut self, node_id: perro_ids::NodeID, f: F) -> Option<V>
+    where
+        F: FnOnce(&[NodeID]) -> V,
+    {
+        // borrow the arena child slice directly; no Vec clone per call.
+        self.nodes.children(node_id).map(f)
     }
 
     fn get_node_type(&mut self, node_id: perro_ids::NodeID) -> Option<NodeType> {
@@ -474,10 +483,10 @@ impl NodeAPI for Runtime {
             SpatialGlobal::None
         };
 
-        if !old_parent.is_nil()
-            && let Some(mut parent) = self.nodes.get_mut(old_parent)
-        {
-            parent.remove_child(child_id);
+        if !old_parent.is_nil() {
+            // Untracked fast path: only the child list changes, so skip the
+            // tracked guard's snapshot/repair cost.
+            let _ = self.nodes.remove_child(old_parent, child_id);
         }
 
         if !self.nodes.set_parent(child_id, parent_id) {
@@ -485,11 +494,11 @@ impl NodeAPI for Runtime {
         }
 
         if !parent_id.is_nil() {
-            if let Some(mut parent) = self.nodes.get_mut(parent_id) {
-                if !parent.get_children_ids().contains(&child_id) {
-                    parent.add_child(child_id);
-                }
-            } else {
+            let already_linked = self
+                .nodes
+                .children(parent_id)
+                .is_some_and(|children| children.contains(&child_id));
+            if !already_linked && !self.nodes.push_child(parent_id, child_id) {
                 return false;
             }
         }
@@ -505,10 +514,9 @@ impl NodeAPI for Runtime {
                         .and_then(|_| Runtime::get_global_transform_2d(self, parent_id))
                 };
                 let local = match parent_global {
-                    Some(parent_global) => {
-                        let local_mat = parent_global.to_mat3().inverse() * global.to_mat3();
-                        Transform2D::from_mat3(local_mat)
-                    }
+                    // TRS inverse-compose: drift-free for representable
+                    // parents, legacy matrix fallback inside for shear cases.
+                    Some(parent_global) => Transform2D::inverse_compose(parent_global, global),
                     None => global,
                 };
                 if let Some(mut child) = self.nodes.get_mut(child_id) {
@@ -528,8 +536,12 @@ impl NodeAPI for Runtime {
                 };
                 let local = match parent_global {
                     Some(parent_global) => {
+                        // TRS inverse-compose: drift-free for representable
+                        // parents, legacy matrix fallback inside for shear
+                        // cases. The exact affine local is still computed
+                        // below to keep the shear diagnostic intact.
+                        let local = Transform3D::inverse_compose(parent_global, global);
                         let local_mat = inverse_basis_mat4(parent_global) * global.to_mat4();
-                        let local = Transform3D::from_mat4(local_mat);
                         // Detect affine shear (or other non-TRS artifacts) that cannot be
                         // represented exactly by Transform3D's TRS fields.
                         let reconstructed = local.to_mat4();
@@ -685,7 +697,11 @@ impl NodeAPI for Runtime {
         self.nodes.get(node_id).map(|node| {
             node.tags_slice()
                 .iter()
-                .map(|tag| tag.name.clone())
+                .map(|tag| {
+                    perro_ids::tag_name(*tag)
+                        .map(|name| Cow::Owned(name.as_ref().to_string()))
+                        .unwrap_or(Cow::Borrowed(""))
+                })
                 .collect()
         })
     }
@@ -940,7 +956,15 @@ impl NodeAPI for Runtime {
             CameraProjection::Perspective {
                 fov_y_degrees, far, ..
             } => {
-                let half_y = (fov_y_degrees.to_radians() * 0.5).tan();
+                // mirror renderer fov clamp (perro_graphics perspective_fov_y_radians)
+                let fov_y = if fov_y_degrees.is_finite() {
+                    fov_y_degrees
+                        .to_radians()
+                        .clamp(10.0f32.to_radians(), 120.0f32.to_radians())
+                } else {
+                    60.0f32.to_radians()
+                };
+                let half_y = (fov_y * 0.5).tan();
                 (
                     glam::Vec3::ZERO,
                     glam::Vec3::new(x * half_y * aspect, y * half_y, -1.0).normalize_or_zero(),

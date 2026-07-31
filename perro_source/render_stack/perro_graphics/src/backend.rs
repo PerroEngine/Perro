@@ -17,8 +17,8 @@ use crate::{
 };
 use ahash::AHashMap;
 use perro_graphics_assets::{
-    SVG_RASTER_SCALE, decode_image_rgba, decode_ptex, load_mesh3d_from_bytes, load_texture_rgba,
-    save_rgba_image,
+    SVG_RASTER_SCALE, decode_image_rgba_arc, decode_ptex, load_mesh3d_from_bytes,
+    load_texture_rgba_arc, save_rgba_image,
 };
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
@@ -274,6 +274,7 @@ fn command_dirty_bits(command: &RenderCommand) -> u32 {
             | Command3D::DrawMultiDense { .. }
             | Command3D::DrawDebugPoint3D { .. }
             | Command3D::DrawDebugLine3D { .. }
+            | Command3D::DrawDebugLines3D { .. }
             | Command3D::RemoveNode { .. }
             | Command3D::UpsertWater { .. } => DIRTY_3D,
             Command3D::SetCamera { .. } => DIRTY_CAMERA_3D,
@@ -350,12 +351,12 @@ fn camera_stream_uses_render_target(stream: &CameraStreamState) -> bool {
 /// Returns whether the retained state actually changed. No-op upserts
 /// (identical rebuilt state) must not force the stream target to re-render.
 fn upsert_camera_stream_state(
-    streams: &mut Vec<(NodeID, CameraStreamState)>,
+    streams: &mut Vec<(NodeID, Arc<CameraStreamState>)>,
     node: NodeID,
-    state: CameraStreamState,
+    state: Arc<CameraStreamState>,
 ) -> bool {
     if let Some((_, existing)) = streams.iter_mut().find(|(id, _)| *id == node) {
-        if *existing == state {
+        if Arc::ptr_eq(existing, &state) || **existing == *state {
             return false;
         }
         *existing = state;
@@ -430,7 +431,7 @@ pub struct PerroGraphics {
     static_shader_lookup: Option<StaticShaderLookup>,
     // materials created/written since last frame; drained b4 gpu render 2
     // compile their pipelines at load time instead of first visible draw.
-    pending_pipeline_warms: Vec<Material3D>,
+    pending_pipeline_warms: Vec<Arc<Material3D>>,
     // shader_path_hash -> shader reads perro_time/delta/frame_index. gates
     // the continuous-redraw path: static custom shaders don't force it.
     custom_shader_animated_cache: AHashMap<u64, bool>,
@@ -467,7 +468,7 @@ pub struct PerroGraphics {
     // at the same resolution updates texels in place (no rescan, no GPU rebuild);
     // a first write or resolution change falls back to the full reload path.
     stream_texture_dims: AHashMap<TextureID, [u32; 2]>,
-    retained_camera_streams: Vec<(NodeID, CameraStreamState)>,
+    retained_camera_streams: Vec<(NodeID, Arc<CameraStreamState>)>,
     // streams whose retained state changed since the last presented frame;
     // feeds the gpu-side per-stream idle skip (no per-frame deep compare).
     camera_stream_states_changed: ahash::AHashSet<NodeID>,

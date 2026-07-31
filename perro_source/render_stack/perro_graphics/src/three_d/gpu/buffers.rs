@@ -128,13 +128,20 @@ mod mesh;
 #[path = "buffers/occlusion.rs"]
 mod occlusion;
 
+// 1.5x growth (rounded up): the mesh arenas are the largest allocations in the
+// renderer and growth briefly holds old + new buffers, so a smaller factor
+// caps the copy peak versus doubling.
 fn bounded_growth_capacity(current: usize, needed: usize, max: usize) -> Option<usize> {
     if needed > max {
         return None;
     }
     let mut capacity = current.max(1).min(max);
     while capacity < needed {
-        capacity = capacity.saturating_mul(2).min(max);
+        capacity = capacity
+            .saturating_mul(3)
+            .div_ceil(2)
+            .max(capacity + 1)
+            .min(max);
     }
     Some(capacity)
 }

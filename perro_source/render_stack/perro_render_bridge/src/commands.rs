@@ -118,7 +118,9 @@ pub enum ResourceCommand {
     CreateMaterial {
         request: RenderRequestID,
         id: MaterialID,
-        material: Material3D,
+        // Arc: producer keeps the same data in its material cache; sharing the
+        // refcount kills the deep clone per create (and per write below).
+        material: Arc<Material3D>,
         source: Option<String>,
         reserved: bool,
     },
@@ -129,7 +131,7 @@ pub enum ResourceCommand {
     },
     WriteMaterialData {
         id: MaterialID,
-        material: Material3D,
+        material: Arc<Material3D>,
     },
     SetMeshReserved {
         id: MeshID,
@@ -158,7 +160,10 @@ pub enum ResourceCommand {
 pub enum Command2D {
     UpsertCameraStream {
         node: NodeID,
-        stream: Box<CameraStreamState>,
+        // Arc: the same rebuilt state is queued for both the CameraStream
+        // upsert and the host sprite/quad; sharing the refcount kills the
+        // second full stream-state build per stream per frame.
+        stream: Arc<CameraStreamState>,
         sprite: Sprite2DCommand,
     },
     UpsertSprite {
@@ -216,7 +221,8 @@ pub enum Command2D {
 pub enum Command3D {
     UpsertCameraStream {
         node: NodeID,
-        stream: Box<CameraStreamState>,
+        // Arc: shared with the CameraStream upsert (see Command2D).
+        stream: Arc<CameraStreamState>,
         quad: CameraStream3DState,
     },
     Draw {
@@ -272,6 +278,11 @@ pub enum Command3D {
         thickness: f32,
         color: [f32; 4],
     },
+    // Batch form: one command per body instead of one boxed command per wire
+    // edge (collision debug emits 100s of edges per moving body per frame).
+    DrawDebugLines3D {
+        lines: Arc<[DebugLine3D]>,
+    },
     SetCamera {
         camera: Camera3DState,
     },
@@ -281,7 +292,8 @@ pub enum Command3D {
     },
     SetSky {
         node: NodeID,
-        sky: Box<Sky3DState>,
+        // Arc: shared with the producer's retained sky cache.
+        sky: Arc<Sky3DState>,
     },
     SetRayLight {
         node: NodeID,
@@ -324,15 +336,23 @@ pub struct DenseInstancePose3D {
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
 pub enum RenderCommand {
-    Resource(ResourceCommand),
+    // Boxed: CreateMaterial/WriteMaterialData carry an inline Material3D that
+    // would otherwise set the stride for every RenderCommand slot.
+    Resource(Box<ResourceCommand>),
     CameraStream(CameraStreamCommand),
     TwoD(Command2D),
     ThreeD(Box<Command3D>),
-    Ui(UiCommand),
+    // Boxed: UiCommand's largest variant (UpsertTextEdit) is ~450 bytes and
+    // would set the stride for every RenderCommand in every queue move.
+    Ui(Box<UiCommand>),
     PostProcessing(PostProcessingCommand),
     VisualAccessibility(VisualAccessibilityCommand),
     Display(DisplayCommand),
 }
+
+// Command buffers are moved several times per frame; keep the per-slot stride
+// small. Box any variant that would push this over the limit.
+const _: () = assert!(std::mem::size_of::<RenderCommand>() <= 128);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DisplayCommand {
@@ -416,7 +436,8 @@ pub enum RenderEvent {
 pub enum CameraStreamCommand {
     Upsert {
         node: NodeID,
-        state: Box<CameraStreamState>,
+        // Arc: shared with the host Command2D/Command3D upsert payload.
+        state: Arc<CameraStreamState>,
     },
     RemoveNode {
         node: NodeID,

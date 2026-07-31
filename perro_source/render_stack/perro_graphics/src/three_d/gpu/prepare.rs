@@ -79,6 +79,7 @@ impl Gpu3D {
 
         let Prepare3D {
             resources,
+            shared_textures,
             camera,
             lighting,
             draws,
@@ -97,7 +98,7 @@ impl Gpu3D {
         let compacted_mesh_storage = self.compact_custom_mesh_storage_if_needed(device);
         let force_full_rebuild = force_full_rebuild || compacted_mesh_storage;
         self.resize(device, width, height);
-        self.ensure_material_fallback_texture(device, queue);
+        self.ensure_material_fallback_texture(device, queue, shared_textures);
         self.ensure_environment_map(
             device,
             queue,
@@ -831,6 +832,7 @@ impl Gpu3D {
                     self.ensure_standard_material_texture_slots(
                         device,
                         queue,
+                        shared_textures,
                         resources,
                         &params,
                         mesh_source,
@@ -839,6 +841,7 @@ impl Gpu3D {
                     let material_texture_key = self.custom_material_image_key(
                         device,
                         queue,
+                        shared_textures,
                         resources,
                         material,
                         static_texture_lookup,
@@ -980,6 +983,7 @@ impl Gpu3D {
                                 && !resolved_mesh_blend_screen_pass(resolved_blend),
                             mesh_blend_screen: resolved_mesh_blend_screen_pass(resolved_blend),
                             mesh_blend_params: resolved_blend.packed_params,
+                            mesh_blend_params_ext: resolved_blend.packed_params_ext,
                             mesh_blend_depth: resolved_mesh_blend_depth_receiver(resolved_blend),
                             blend_layers: draw.blend.blend_layers.bits(),
                             blend_mask: draw.blend.blend_mask.bits(),
@@ -1075,6 +1079,7 @@ impl Gpu3D {
                     self.ensure_material_texture_slot(
                         device,
                         queue,
+                        shared_textures,
                         resources,
                         standard_params.base_color_texture,
                         mesh_source,
@@ -1112,6 +1117,7 @@ impl Gpu3D {
                     self.ensure_material_texture_slot(
                         device,
                         queue,
+                        shared_textures,
                         resources,
                         standard_params.base_color_texture,
                         mesh_source,
@@ -1148,6 +1154,7 @@ impl Gpu3D {
                         self.ensure_standard_material_texture_slots(
                             device,
                             queue,
+                            shared_textures,
                             resources,
                             &standard_params,
                             mesh_source,
@@ -1156,6 +1163,7 @@ impl Gpu3D {
                         let material_texture_key = self.custom_material_image_key(
                             device,
                             queue,
+                            shared_textures,
                             resources,
                             material,
                             static_texture_lookup,
@@ -1277,6 +1285,7 @@ impl Gpu3D {
                                         resolved_blend,
                                     ),
                                     mesh_blend_params: resolved_blend.packed_params,
+                                    mesh_blend_params_ext: resolved_blend.packed_params_ext,
                                     mesh_blend_depth: resolved_mesh_blend_depth_receiver(
                                         resolved_blend,
                                     ),
@@ -1293,6 +1302,7 @@ impl Gpu3D {
                 self.ensure_standard_material_texture_slots(
                     device,
                     queue,
+                    shared_textures,
                     resources,
                     &standard_params,
                     mesh_source,
@@ -1301,6 +1311,7 @@ impl Gpu3D {
                 let material_texture_key = self.custom_material_image_key(
                     device,
                     queue,
+                    shared_textures,
                     resources,
                     material,
                     static_texture_lookup,
@@ -1498,6 +1509,7 @@ impl Gpu3D {
                                 && !resolved_mesh_blend_screen_pass(resolved_blend),
                             mesh_blend_screen: resolved_mesh_blend_screen_pass(resolved_blend),
                             mesh_blend_params: resolved_blend.packed_params,
+                            mesh_blend_params_ext: resolved_blend.packed_params_ext,
                             mesh_blend_depth: resolved_mesh_blend_depth_receiver(resolved_blend),
                             blend_layers: draw.blend.blend_layers.bits(),
                             blend_mask: draw.blend.blend_mask.bits(),
@@ -1586,6 +1598,7 @@ impl Gpu3D {
                 mesh_blend: false,
                 mesh_blend_screen: false,
                 mesh_blend_params: 0,
+                mesh_blend_params_ext: 0,
                 mesh_blend_depth: false,
                 blend_layers: BitMask::ALL.bits(),
                 blend_mask: BitMask::NONE.bits(),
@@ -1639,6 +1652,7 @@ impl Gpu3D {
                 mesh_blend: false,
                 mesh_blend_screen: false,
                 mesh_blend_params: 0,
+                mesh_blend_params_ext: 0,
                 mesh_blend_depth: false,
                 blend_layers: BitMask::ALL.bits(),
                 blend_mask: BitMask::NONE.bits(),
@@ -1677,6 +1691,20 @@ impl Gpu3D {
         self.compact_sorted_draw_batches(draws.len());
         self.rebuild_batch_views();
         self.rebuild_mesh_blend_receivers();
+        // First frame with any staged mesh blend: swap the 1x1 placeholder
+        // blend depth/mask targets for full-resolution ones before encoding.
+        if self.mesh_blend_depth_active
+            || self
+                .draw_batches
+                .iter()
+                .any(|batch| batch.mesh_blend || batch.mesh_blend_screen || batch.mesh_blend_depth)
+            || self
+                .multimesh_batches
+                .iter()
+                .any(|batch| batch.mesh_blend || batch.mesh_blend_screen || batch.mesh_blend_depth)
+        {
+            self.ensure_mesh_blend_targets(device);
+        }
         self.apply_local_color_bleed();
         if !multimesh_batches_sorted(&self.multimesh_batches) {
             if self.multimesh_batches.len() >= PARALLEL_BATCH_SORT_MIN {

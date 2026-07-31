@@ -27,6 +27,7 @@ use super::{
 use crate::backend::{
     OcclusionCullingMode, StaticMeshLookup, StaticShaderLookup, StaticTextureLookup,
 };
+use crate::gpu_shrink::ShrinkTracker;
 use crate::resources::ResourceStore;
 use ahash::{AHashMap, AHashSet};
 use bytemuck::{Pod, Zeroable};
@@ -35,7 +36,7 @@ use mesh_presets::build_builtin_mesh_buffer;
 use perro_graphics_assets::{
     DecodedLod, DecodedMesh, DecodedMeshlet, MeshRange, MeshVertex as DecodedMeshVertex,
     gltf_texture_source_from_mesh_source, load_mesh_from_source,
-    load_mesh_from_source_no_dynamic_lods, load_texture_rgba,
+    load_mesh_from_source_no_dynamic_lods, load_texture_rgba_arc,
 };
 use perro_ids::MeshID;
 use perro_io::load_asset;
@@ -141,6 +142,7 @@ mod skinned_path;
 #[path = "gpu/texture_cache.rs"]
 mod texture_cache;
 
+use crate::shared_textures::SharedTextureStore;
 use multimesh_path::{
     create_multimesh_blend_pipeline, create_multimesh_covered_pipeline,
     create_multimesh_depth_prepass_pipeline, create_multimesh_mask_pipeline,
@@ -158,8 +160,9 @@ use skinned_path::{
 };
 use texture_cache::{
     CachedMaterialTexture, CachedMaterialTextureInput, MaterialTextureColorSpace,
-    create_cached_material_texture, create_external_material_texture,
-    create_material_texture_bind_group,
+    cached_material_texture_from_shared, create_cached_material_texture,
+    create_external_material_texture, create_material_texture_bind_group,
+    material_shared_texture_key,
 };
 
 #[path = "gpu/asset_bridge.rs"]
@@ -222,6 +225,33 @@ const PACKED_TOON_OUTLINE_WIDTH_MAX: f32 = 4.0;
 const SHADOW_MAP_SIZE: u32 = 2048;
 const SHADOW_SPOT_MAP_SIZE: u32 = 2048;
 const SHADOW_POINT_MAP_SIZE: u32 = 1024;
+
+// Process-wide shadow atlas resolution policy. The adapter probe (gpu
+// lifecycle) runs before any Gpu3D exists and cannot reach the per-instance
+// config literals, so constrained adapters lower these defaults up front;
+// every Gpu3D::new after that picks them up.
+static SHADOW_MAP_SIZE_DEFAULT: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(SHADOW_MAP_SIZE);
+static SHADOW_SPOT_MAP_SIZE_DEFAULT: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(SHADOW_SPOT_MAP_SIZE);
+static SHADOW_POINT_MAP_SIZE_DEFAULT: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(SHADOW_POINT_MAP_SIZE);
+
+pub(crate) fn set_default_shadow_map_sizes(ray: u32, spot: u32, point: u32) {
+    use std::sync::atomic::Ordering;
+    SHADOW_MAP_SIZE_DEFAULT.store(ray.max(1), Ordering::Relaxed);
+    SHADOW_SPOT_MAP_SIZE_DEFAULT.store(spot.max(1), Ordering::Relaxed);
+    SHADOW_POINT_MAP_SIZE_DEFAULT.store(point.max(1), Ordering::Relaxed);
+}
+
+pub(super) fn default_shadow_map_sizes() -> (u32, u32, u32) {
+    use std::sync::atomic::Ordering;
+    (
+        SHADOW_MAP_SIZE_DEFAULT.load(Ordering::Relaxed),
+        SHADOW_SPOT_MAP_SIZE_DEFAULT.load(Ordering::Relaxed),
+        SHADOW_POINT_MAP_SIZE_DEFAULT.load(Ordering::Relaxed),
+    )
+}
 const MAX_SHADOW_RAY_LIGHTS: usize = 1;
 const MAX_SHADOW_RAY_CASCADES: usize = 4;
 const MAX_SHADOW_SPOT_LIGHTS: usize = 4;
@@ -638,6 +668,24 @@ struct ShadowUniform {
     point_light_slots: [[f32; 4]; MAX_POINT_LIGHTS.div_ceil(4)],
 }
 
+/// Usage trackers for the periodic GC-tick buffer shrink (crate::gpu_shrink):
+/// one per grow-only buffer family that participates in shrinking.
+#[derive(Default)]
+struct Gpu3DShrink {
+    mesh_vertices: ShrinkTracker,
+    mesh_indices: ShrinkTracker,
+    packed_lod_vertices: ShrinkTracker,
+    packed_lod_indices: ShrinkTracker,
+    blend_shape_deltas: ShrinkTracker,
+    instance_transforms: ShrinkTracker,
+    rigid_instance_meta: ShrinkTracker,
+    skinned_instance_meta: ShrinkTracker,
+    skeletons: ShrinkTracker,
+    multimesh_instances: ShrinkTracker,
+    multimesh_draw_params: ShrinkTracker,
+    multimesh_cull_instances: ShrinkTracker,
+}
+
 pub struct Gpu3D {
     color_format: wgpu::TextureFormat,
     camera_bgl: wgpu::BindGroupLayout,
@@ -830,7 +878,9 @@ pub struct Gpu3D {
     staged_skinned_instance_meta: Vec<SkinnedInstanceMetaGpu>,
     blend_shape_delta_buffer: wgpu::Buffer,
     blend_shape_delta_capacity: usize,
-    blend_shape_deltas: Vec<BlendShapeDeltaGpu>,
+    blend_shape_delta_len: usize,
+    // Reused per-mesh upload staging; cleared after each upload.
+    blend_shape_delta_scratch: Vec<BlendShapeDeltaGpu>,
     blend_shape_weight_buffer: wgpu::Buffer,
     blend_shape_weight_capacity: usize,
     staged_blend_shape_weights: Vec<f32>,
@@ -890,6 +940,10 @@ pub struct Gpu3D {
     multimesh_cull_batch_capacity: usize,
     // 9-tap PCF kernel (ray_params.w); default 4-tap.
     shadow_pcf_high: bool,
+    // Per-instance shadow atlas resolutions (lowered on constrained adapters).
+    shadow_map_size: u32,
+    shadow_spot_map_size: u32,
+    shadow_point_map_size: u32,
     // True while the cull compute ran this frame (drives indirect draw path).
     multimesh_cull_active: bool,
     last_multimesh_cull_params: Option<MultiMeshCullParamsGpu>,
@@ -1020,11 +1074,17 @@ pub struct Gpu3D {
     last_sky: Option<SkyUniform>,
     last_sky_time_seconds: f32,
     sky_enabled: bool,
-    mesh_vertices: Vec<SkinnedMeshVertex>,
-    rigid_mesh_vertices: Vec<RigidMeshVertex>,
-    packed_lod_vertices: Vec<PackedRigidLodVertex>,
-    mesh_indices: Vec<u32>,
-    packed_lod_indices: Vec<u32>,
+    // Usage trackers for the periodic buffer-shrink pass (crate::gpu_shrink).
+    shrink: Gpu3DShrink,
+    // Element counts of the GPU mesh arenas (no CPU mirrors are retained; the
+    // buffers are append-only and grown via copy_buffer_to_buffer).
+    mesh_vertex_len: usize,
+    rigid_vertex_len: usize,
+    packed_lod_vertex_len: usize,
+    mesh_index_len: usize,
+    packed_lod_index_len: usize,
+    // Vertex count of the builtin-mesh prefix; compaction truncates back to it.
+    builtin_vertex_len: usize,
     vertex_buffer: wgpu::Buffer,
     rigid_vertex_buffer: wgpu::Buffer,
     packed_lod_vertex_buffer: wgpu::Buffer,
@@ -1039,10 +1099,16 @@ pub struct Gpu3D {
     builtin_mesh_bounds: AHashMap<&'static str, ([f32; 3], f32)>,
     builtin_meshlets: AHashMap<&'static str, Arc<[MeshletRange]>>,
     custom_mesh_ranges: AHashMap<MeshID, (u64, MeshAssetRange)>,
+    // At sample_count == 1 these alias depth_prepass_texture/_view (same
+    // Depth32Float data); MSAA keeps a separate multisampled target.
     depth_texture: wgpu::Texture,
     depth_view: wgpu::TextureView,
     depth_prepass_texture: wgpu::Texture,
     depth_prepass_view: wgpu::TextureView,
+    // Lazily allocated 1x-only scene-depth copy for the 3D water pass, which
+    // samples scene depth while depth-testing (illegal against the shared
+    // prepass texture in one pass). None while no 3D water renders.
+    water_scene_depth: Option<(wgpu::Texture, wgpu::TextureView)>,
     ssao_pass: Option<ssao::SsaoPass>,
     _ssao_fallback_texture: wgpu::Texture,
     ssao_fallback_view: wgpu::TextureView,
@@ -1080,7 +1146,9 @@ pub struct Gpu3D {
     hiz_spd_params_buffers: Vec<wgpu::Buffer>,
     hiz_cull_params: wgpu::Buffer,
     hiz_cull_bind_group: wgpu::BindGroup,
-    hiz_debug_readback_buffer: wgpu::Buffer,
+    // Only allocated while HIZ_DEBUG_READBACK_ENABLED (MAP_READ mirror of the
+    // indirect buffer).
+    hiz_debug_readback_buffer: Option<wgpu::Buffer>,
     pending_hiz_debug_count: u32,
     pending_hiz_debug_frustum_visible_est: u32,
     pending_hiz_debug_map_rx: Option<mpsc::Receiver<Result<(), wgpu::BufferAsyncError>>>,
@@ -1123,6 +1191,7 @@ pub struct Gpu3D {
 
 pub struct Prepare3D<'a> {
     pub resources: &'a ResourceStore,
+    pub(crate) shared_textures: &'a mut SharedTextureStore,
     pub camera: Camera3DState,
     pub lighting: &'a Lighting3DState,
     pub draws: &'a [Draw3DInstance],
@@ -1259,6 +1328,7 @@ struct DrawBatch {
     mesh_blend: bool,
     mesh_blend_screen: bool,
     mesh_blend_params: u32,
+    mesh_blend_params_ext: u32,
     mesh_blend_depth: bool,
     blend_layers: u32,
     blend_mask: u32,
@@ -1293,6 +1363,7 @@ struct MultiMeshBatch {
     mesh_blend: bool,
     mesh_blend_screen: bool,
     mesh_blend_params: u32,
+    mesh_blend_params_ext: u32,
     mesh_blend_depth: bool,
     blend_layers: u32,
     blend_mask: u32,
@@ -1746,6 +1817,7 @@ mod tests {
                 mesh_blend: false,
                 mesh_blend_screen: false,
                 mesh_blend_params: 0,
+                mesh_blend_params_ext: 0,
                 mesh_blend_depth: false,
                 blend_layers: BitMask::ALL.bits(),
                 blend_mask: BitMask::NONE.bits(),
@@ -1772,6 +1844,7 @@ mod tests {
                 mesh_blend: false,
                 mesh_blend_screen: false,
                 mesh_blend_params: 0,
+                mesh_blend_params_ext: 0,
                 mesh_blend_depth: false,
                 blend_layers: BitMask::ALL.bits(),
                 blend_mask: BitMask::NONE.bits(),
@@ -1834,6 +1907,7 @@ mod tests {
                 mesh_blend: false,
                 mesh_blend_screen: false,
                 mesh_blend_params: 0,
+                mesh_blend_params_ext: 0,
                 mesh_blend_depth: false,
                 blend_layers: BitMask::ALL.bits(),
                 blend_mask: BitMask::NONE.bits(),
@@ -1860,6 +1934,7 @@ mod tests {
                 mesh_blend: false,
                 mesh_blend_screen: false,
                 mesh_blend_params: 0,
+                mesh_blend_params_ext: 0,
                 mesh_blend_depth: false,
                 blend_layers: BitMask::ALL.bits(),
                 blend_mask: BitMask::NONE.bits(),
@@ -1886,6 +1961,7 @@ mod tests {
                 mesh_blend: false,
                 mesh_blend_screen: false,
                 mesh_blend_params: 0,
+                mesh_blend_params_ext: 0,
                 mesh_blend_depth: false,
                 blend_layers: BitMask::ALL.bits(),
                 blend_mask: BitMask::NONE.bits(),
@@ -1918,6 +1994,7 @@ mod tests {
             mesh_blend: false,
             mesh_blend_screen: false,
             mesh_blend_params: 0,
+            mesh_blend_params_ext: 0,
             mesh_blend_depth: false,
             blend_layers: BitMask::ALL.bits(),
             blend_mask: BitMask::NONE.bits(),
@@ -2038,6 +2115,7 @@ mod tests {
             mesh_blend,
             mesh_blend_screen: false,
             mesh_blend_params: 0,
+            mesh_blend_params_ext: 0,
             mesh_blend_depth: false,
             blend_layers: BitMask::ALL.bits(),
             blend_mask: BitMask::NONE.bits(),

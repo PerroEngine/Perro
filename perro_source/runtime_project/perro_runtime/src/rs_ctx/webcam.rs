@@ -227,16 +227,16 @@ impl RuntimeResourceApi {
         {
             state.webcam_frame_by_id.insert(id, frame.clone());
         }
-        state
-            .queued_commands
-            .push(RenderCommand::Resource(ResourceCommand::WriteTextureRgba {
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
+            ResourceCommand::WriteTextureRgba {
                 id: texture,
                 width: frame.width,
                 height: frame.height,
                 // move the decoded Vec straight into the command: no Vec->Arc->Vec
                 // round trip; the backend copies it once into the resident buffer.
                 rgba: frame.rgba.into(),
-            }));
+            },
+        )));
         true
     }
 
@@ -280,7 +280,7 @@ impl RuntimeResourceApi {
             .texture_pending_source_by_request
             .insert(request, source.clone());
         state.texture_pending_id_by_request.insert(request, texture);
-        state.queued_commands.push(RenderCommand::Resource(
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
             ResourceCommand::CreateExternalTexture {
                 request,
                 id: texture,
@@ -289,7 +289,7 @@ impl RuntimeResourceApi {
                 width,
                 height,
             },
-        ));
+        )));
         drop(state);
         self.start_webcam_capture(id, start_config);
         id
@@ -373,7 +373,7 @@ impl WebcamAPI for RuntimeResourceApi {
             .texture_pending_source_by_request
             .insert(request, source.clone());
         state.texture_pending_id_by_request.insert(request, texture);
-        state.queued_commands.push(RenderCommand::Resource(
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
             ResourceCommand::CreateExternalTexture {
                 request,
                 id: texture,
@@ -382,7 +382,7 @@ impl WebcamAPI for RuntimeResourceApi {
                 width,
                 height,
             },
-        ));
+        )));
         drop(state);
         self.start_webcam_capture(id, start_config);
         Ok(id)
@@ -486,11 +486,9 @@ impl WebcamAPI for RuntimeResourceApi {
                 state.texture_by_source.remove(&source_hash);
                 state.texture_pending_by_source.remove(&source_hash);
             }
-            state
-                .queued_commands
-                .push(RenderCommand::Resource(ResourceCommand::DropTexture {
-                    id: texture,
-                }));
+            state.queued_commands.push(RenderCommand::Resource(Box::new(
+                ResourceCommand::DropTexture { id: texture },
+            )));
             let _ = state.free_texture_id(texture);
         }
         let _ = state.free_webcam_id(id);
@@ -790,9 +788,7 @@ mod tests {
         assert!(api.webcam_last_error(id).is_some());
         assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Resource(ResourceCommand::CreateExternalTexture { id, .. })
-                if *id == texture
-        )));
+            RenderCommand::Resource(r0) if matches!(&**r0, ResourceCommand::CreateExternalTexture { id, .. } if *id == texture))));
     }
 
     #[test]
@@ -840,9 +836,7 @@ mod tests {
         api.drain_commands(&mut commands);
         assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Resource(ResourceCommand::WriteTextureRgba { id, rgba, .. })
-                if *id == no_cpu_texture && rgba.as_ref() == [1, 2, 3, 4]
-        )));
+            RenderCommand::Resource(r0) if matches!(&**r0, ResourceCommand::WriteTextureRgba { id, rgba, .. } if *id == no_cpu_texture && rgba.as_ref() == [1, 2, 3, 4]))));
     }
 
     #[test]

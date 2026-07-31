@@ -39,7 +39,34 @@ impl Runtime {
             }
         }
 
-        for (node_id, node) in self.nodes.iter() {
+        // node_types lane pre-filter (1B/slot): only the 16 resource-holding
+        // types below deref their SceneNode; every other slot is skipped on a
+        // 1-byte compare instead of a full arena node visit.
+        for index in 1..self.nodes.slot_count() {
+            if !matches!(
+                self.nodes.node_type_slots()[index],
+                perro_nodes::NodeType::Sprite2D
+                    | perro_nodes::NodeType::Sprite3D
+                    | perro_nodes::NodeType::AnimatedSprite2D
+                    | perro_nodes::NodeType::VideoPlayer2D
+                    | perro_nodes::NodeType::VideoPlayer3D
+                    | perro_nodes::NodeType::ImageButton2D
+                    | perro_nodes::NodeType::NineSliceButton2D
+                    | perro_nodes::NodeType::NineSlice2D
+                    | perro_nodes::NodeType::UiImage
+                    | perro_nodes::NodeType::UiAnimatedImage
+                    | perro_nodes::NodeType::UiVideoPlayer
+                    | perro_nodes::NodeType::UiImageButton
+                    | perro_nodes::NodeType::UiNineSliceButton
+                    | perro_nodes::NodeType::UiNineSlice
+                    | perro_nodes::NodeType::MeshInstance3D
+                    | perro_nodes::NodeType::MultiMeshInstance3D
+            ) {
+                continue;
+            }
+            let Some((node_id, node)) = self.nodes.slot_get(index) else {
+                continue;
+            };
             match &node.data {
                 SceneNodeData::Sprite2D(sprite)
                     if !self.render_2d.retained_sprites.contains_key(&node_id) =>
@@ -243,13 +270,20 @@ impl Runtime {
                 std::mem::swap(&mut scratch.textures, &mut self.scene_texture_refs_cache);
                 std::mem::swap(&mut scratch.meshes, &mut self.scene_mesh_refs_cache);
                 std::mem::swap(&mut scratch.materials, &mut self.scene_material_refs_cache);
-                queued_resource_commands.push(RenderCommand::Resource(
+                // single copy per ref list: clone each Vec straight into the
+                // payload (no intermediate AHashMap clone + re-collect).
+                fn refs_payload<T: Copy>(refs: &AHashMap<T, Vec<NodeID>>) -> Vec<(T, Vec<NodeID>)> {
+                    refs.iter()
+                        .map(|(id, nodes)| (*id, nodes.clone()))
+                        .collect()
+                }
+                queued_resource_commands.push(RenderCommand::Resource(Box::new(
                     ResourceCommand::SetSceneResourceRefs {
-                        textures: self.scene_texture_refs_cache.clone().into_iter().collect(),
-                        meshes: self.scene_mesh_refs_cache.clone().into_iter().collect(),
-                        materials: self.scene_material_refs_cache.clone().into_iter().collect(),
+                        textures: refs_payload(&self.scene_texture_refs_cache),
+                        meshes: refs_payload(&self.scene_mesh_refs_cache),
+                        materials: refs_payload(&self.scene_material_refs_cache),
                     },
-                ));
+                )));
             }
             self.scene_resource_refs_scratch = scratch;
         }
@@ -338,20 +372,27 @@ impl Runtime {
         }
         if let RenderEvent::MeshCreated { request, id, .. } = &event {
             if let Some(node) = decode_3d_mesh_request_node(*request)
-                && let Some(source) = self.render_3d.mesh_sources.get(&node).cloned()
+                && let Some(source) = self.render_3d.mesh_sources.get(&node)
             {
-                self.resource_api.register_loaded_mesh_source(&source, *id);
+                // pass the borrowed source: resource_api + render_3d are
+                // disjoint reads, no String clone per event.
+                self.resource_api.register_loaded_mesh_source(source, *id);
             }
             if let Some(source) = self.resource_api.mesh_source(*id) {
-                let dirty_nodes = self
-                    .render_3d
-                    .mesh_sources
-                    .iter()
-                    .filter_map(|(node, node_source)| (node_source == &source).then_some(*node))
-                    .collect::<Vec<_>>();
-                for node in dirty_nodes {
+                let mut dirty_nodes = std::mem::take(&mut self.mesh_source_dirty_scratch);
+                dirty_nodes.clear();
+                dirty_nodes.extend(
+                    self.render_3d
+                        .mesh_sources
+                        .iter()
+                        .filter_map(|(node, node_source)| {
+                            (node_source == &source).then_some(*node)
+                        }),
+                );
+                for node in dirty_nodes.drain(..) {
                     self.mark_needs_rerender(node);
                 }
+                self.mesh_source_dirty_scratch = dirty_nodes;
             }
         }
         if let Some(node) = decode_render_request_node_from_event(&event) {
@@ -610,23 +651,24 @@ impl Runtime {
             ty,
             NodeType::Camera2D | NodeType::Camera3D | NodeType::Webcam
         ) {
+            self.camera_postfx_cache.remove(&node);
             self.mark_camera_stream_users_dirty(node);
         }
         if matches!(ty.get_renderable(), Renderable::True) {
             match ty.get_spatial() {
                 Spatial::TwoD => {
                     self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
-                    self.queue_render_command(RenderCommand::Ui(
+                    self.queue_render_command(RenderCommand::Ui(Box::new(
                         perro_render_bridge::UiCommand::RemoveNode { node },
-                    ));
+                    )));
                 }
                 Spatial::ThreeD => {
                     self.queue_render_command(RenderCommand::ThreeD(Box::new(
                         Command3D::RemoveNode { node },
                     )));
-                    self.queue_render_command(RenderCommand::Ui(
+                    self.queue_render_command(RenderCommand::Ui(Box::new(
                         perro_render_bridge::UiCommand::RemoveNode { node },
-                    ));
+                    )));
                 }
                 Spatial::None => {
                     if matches!(
@@ -649,9 +691,9 @@ impl Runtime {
                             | NodeType::UiTextBox
                             | NodeType::UiTextBlock
                     ) {
-                        self.queue_render_command(RenderCommand::Ui(
+                        self.queue_render_command(RenderCommand::Ui(Box::new(
                             perro_render_bridge::UiCommand::RemoveNode { node },
-                        ));
+                        )));
                     }
                 }
             }

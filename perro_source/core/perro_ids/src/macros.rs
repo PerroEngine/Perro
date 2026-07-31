@@ -7,6 +7,9 @@ macro_rules! hash_str {
 
 #[macro_export]
 macro_rules! smid {
+    ($name:literal) => {
+        const { $crate::ScriptMemberID::from_string($name) }
+    };
     ($name:expr) => {
         $crate::ScriptMemberID::from_string($name)
     };
@@ -14,6 +17,9 @@ macro_rules! smid {
 
 #[macro_export]
 macro_rules! sid {
+    ($name:literal) => {
+        const { $crate::ScriptMemberID::from_string($name) }
+    };
     ($name:expr) => {
         $crate::ScriptMemberID::from_string($name)
     };
@@ -27,7 +33,13 @@ macro_rules! sid {
 ///
 /// Usage:
 /// - `var!("health") -> ScriptMemberID`
+///
+/// Literal names hash at compile time (`const` block); expression names hash
+/// at runtime.
 macro_rules! var {
+    ($name:literal) => {
+        const { $crate::ScriptMemberID::from_string($name) }
+    };
     ($name:expr) => {
         $crate::ScriptMemberID::from_string($name)
     };
@@ -41,7 +53,13 @@ macro_rules! var {
 ///
 /// Usage:
 /// - `func!("take_damage") -> ScriptMemberID`
+///
+/// Literal names hash at compile time (`const` block); expression names hash
+/// at runtime.
 macro_rules! func {
+    ($name:literal) => {
+        const { $crate::ScriptMemberID::from_string($name) }
+    };
     ($name:expr) => {
         $crate::ScriptMemberID::from_string($name)
     };
@@ -55,7 +73,13 @@ macro_rules! func {
 ///
 /// Usage:
 /// - `method!("take_damage") -> ScriptMemberID`
+///
+/// Literal names hash at compile time (`const` block); expression names hash
+/// at runtime.
 macro_rules! method {
+    ($name:literal) => {
+        const { $crate::ScriptMemberID::from_string($name) }
+    };
     ($name:expr) => {
         $crate::ScriptMemberID::from_string($name)
     };
@@ -63,6 +87,9 @@ macro_rules! method {
 
 #[macro_export]
 macro_rules! signal {
+    ($name:literal) => {
+        const { $crate::SignalID::from_string($name) }
+    };
     ($name:expr) => {
         $crate::SignalID::from_string($name)
     };
@@ -70,6 +97,9 @@ macro_rules! signal {
 
 #[macro_export]
 macro_rules! timer {
+    ($name:literal) => {
+        const { $crate::TimerID::from_string($name) }
+    };
     ($name:expr) => {
         $crate::TimerID::from_string($name)
     };
@@ -77,6 +107,9 @@ macro_rules! timer {
 
 #[macro_export]
 macro_rules! tag {
+    ($name:literal) => {
+        const { $crate::TagID::from_string($name) }
+    };
     ($name:expr) => {
         $crate::TagID::from_string($name)
     };

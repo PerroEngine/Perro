@@ -553,6 +553,36 @@ impl From<&String> for ParticleProfileRef {
     }
 }
 
+/// Global `TagID` -> display-name registry.
+///
+/// Node tag storage keeps bare `TagID`s; names are registered here whenever a
+/// named [`NodeTag`] collapses to its id (see [`NodeTag::intern`]). Lookups
+/// ([`tag_name`]) serve cold paths like script-facing tag-name queries.
+static TAG_NAMES: std::sync::OnceLock<
+    std::sync::RwLock<std::collections::HashMap<TagID, std::sync::Arc<str>>>,
+> = std::sync::OnceLock::new();
+
+/// Record `name` for `id`. First registration wins; empty names are ignored.
+pub fn register_tag_name(id: TagID, name: &str) {
+    if name.is_empty() {
+        return;
+    }
+    let map = TAG_NAMES.get_or_init(Default::default);
+    if map.read().is_ok_and(|names| names.contains_key(&id)) {
+        return;
+    }
+    if let Ok(mut names) = map.write() {
+        names
+            .entry(id)
+            .or_insert_with(|| std::sync::Arc::from(name));
+    }
+}
+
+/// Display name previously registered for `id`, if any.
+pub fn tag_name(id: TagID) -> Option<std::sync::Arc<str>> {
+    TAG_NAMES.get()?.read().ok()?.get(&id).cloned()
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct NodeTag {
     pub id: TagID,
@@ -584,6 +614,13 @@ impl NodeTag {
 
     pub fn name(&self) -> &str {
         self.name.as_ref()
+    }
+
+    /// Collapse to the bare id, registering the display name in the global
+    /// tag-name registry so id-only storage can still resolve it.
+    pub fn intern(self) -> TagID {
+        register_tag_name(self.id, self.name.as_ref());
+        self.id
     }
 }
 

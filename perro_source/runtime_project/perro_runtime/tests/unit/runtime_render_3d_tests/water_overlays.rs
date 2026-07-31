@@ -11,7 +11,8 @@ mod water_overlays {
                 && let SceneNodeData::WaterBody3D(water) = &mut node.data
             {
                 water.transform.position.x = x;
-                water.water.shape = perro_nodes::WaterShape::box_volume(Vector3::new(16.0, 4.0, 16.0));
+                water.water.shape =
+                    perro_nodes::WaterShape::box_volume(Vector3::new(16.0, 4.0, 16.0));
                 water.water.depth = 4.0;
             }
         }
@@ -69,12 +70,10 @@ mod water_overlays {
 
         assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Ui(UiCommand::UpsertImage { node, texture, .. })
-                if *node == sprite && *texture == TextureID::from_parts(12, 0)
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertImage { node, texture, .. } if *node == sprite && *texture == TextureID::from_parts(12, 0)))));
         assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Ui(UiCommand::UpsertLabel {
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertLabel {
                 node,
                 text,
                 wrap_width,
@@ -84,14 +83,13 @@ mod water_overlays {
                 corner_radii,
                 padding,
                 ..
-            }) if *node == label
+            } if *node == label
                 && text.as_ref() == "Name"
                 && wrap_width.is_some_and(|width| width > 0.0 && width < rect.size[0])
                 && *font_size <= rect.size[1]
                 && *backdrop_color == perro_structs::Color::new(0.1, 0.2, 0.3, 1.0)
                 && corner_radii.tl == 0.25
-                && *padding == [0.1, 0.2, 0.1, 0.2]
-        )));
+                && *padding == [0.1, 0.2, 0.1, 0.2]))));
     }
 
     #[test]
@@ -124,8 +122,7 @@ mod water_overlays {
 
         assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Ui(UiCommand::UpsertLabel { node, .. }) if *node == label
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertLabel { node, .. } if *node == label))));
     }
 
     #[test]
@@ -153,12 +150,10 @@ mod water_overlays {
 
         assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Ui(UiCommand::UpsertLabel { node, rect, projected_quad: Some(quad), .. })
-                if *node == label
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertLabel { node, rect, projected_quad: Some(quad), .. } if *node == label
                     && rect.rotation_radians == 0.0
                     && (quad[1][1] - quad[0][1]).abs() > 0.001
-                    && quad.iter().all(|corner| corner[3] > 0.0)
-        )));
+                    && quad.iter().all(|corner| corner[3] > 0.0)))));
     }
 
     #[test]
@@ -185,9 +180,7 @@ mod water_overlays {
 
         assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Ui(UiCommand::UpsertLabel { node, rect, .. })
-                if *node == label && rect.rotation_radians == 0.0 && rect.size[0] > rect.size[1]
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertLabel { node, rect, .. } if *node == label && rect.rotation_radians == 0.0 && rect.size[0] > rect.size[1]))));
     }
 
     #[test]
@@ -208,7 +201,8 @@ mod water_overlays {
             data.lock_orientation = true;
             data.backface_cull = false;
             data.transform.position = Vector3::new(0.0, 0.0, -5.0);
-            data.transform.rotation = Quaternion::from_euler_xyz(0.0, std::f32::consts::FRAC_PI_2, 0.0);
+            data.transform.rotation =
+                Quaternion::from_euler_xyz(0.0, std::f32::consts::FRAC_PI_2, 0.0);
         }
 
         runtime.extract_render_3d_commands();
@@ -216,10 +210,8 @@ mod water_overlays {
 
         assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Ui(UiCommand::UpsertLabel { node, projected_quad: Some(quad), .. })
-                if *node == label
-                    && ((quad[1][0] / quad[1][3]) - (quad[0][0] / quad[0][3])).abs() <= 0.0001
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertLabel { node, projected_quad: Some(quad), .. } if *node == label
+                    && ((quad[1][0] / quad[1][3]) - (quad[0][0] / quad[0][3])).abs() <= 0.0001))));
     }
 
     #[test]
@@ -258,16 +250,17 @@ mod water_overlays {
 
         let grab_label = |commands: &[RenderCommand]| {
             commands.iter().find_map(|command| match command {
-                RenderCommand::Ui(UiCommand::UpsertLabel {
-                    node,
-                    rect,
-                    font_size,
-                    wrap_width,
-                    projected_quad,
-                    ..
-                }) if *node == label => {
-                    Some((*rect, *font_size, *wrap_width, *projected_quad))
-                }
+                RenderCommand::Ui(b0) => match &**b0 {
+                    UiCommand::UpsertLabel {
+                        node,
+                        rect,
+                        font_size,
+                        wrap_width,
+                        projected_quad,
+                        ..
+                    } if *node == label => Some((*rect, *font_size, *wrap_width, *projected_quad)),
+                    _ => None,
+                },
                 _ => None,
             })
         };
@@ -318,8 +311,7 @@ mod water_overlays {
 
         assert!(!commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Ui(UiCommand::UpsertLabel { node, .. }) if *node == label
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertLabel { node, .. } if *node == label))));
     }
 
     #[test]
@@ -351,8 +343,7 @@ mod water_overlays {
                 .iter()
                 .any(|command| matches!(
                     command,
-                    RenderCommand::Ui(UiCommand::UpsertImage { node, .. }) if *node == sprite
-                ))
+                    RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertImage { node, .. } if *node == sprite)))
         );
 
         runtime.apply_render_event(RenderEvent::TextureCreated {
@@ -364,9 +355,7 @@ mod water_overlays {
 
         assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Ui(UiCommand::UpsertImage { node, texture: id, .. })
-                if *node == sprite && *id == texture
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertImage { node, texture: id, .. } if *node == sprite && *id == texture))));
     }
 
     #[test]
@@ -385,7 +374,7 @@ mod water_overlays {
         blocker.transform.position = Vector3::new(0.0, 0.0, -2.5);
         let blocker = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(blocker)));
+            .insert(SceneNode::new(SceneNodeData::from(blocker)));
         runtime
             .render_3d
             .mesh_sources
@@ -411,23 +400,22 @@ mod water_overlays {
 
         assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == sprite
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::RemoveNode { node } if *node == sprite))));
         assert!(!commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Ui(UiCommand::UpsertImage { node, .. }) if *node == sprite
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertImage { node, .. } if *node == sprite))));
         assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Ui(UiCommand::UpsertLabel { node, depth_test: true, .. })
-                if *node == label
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertLabel { node, depth_test: true, .. } if *node == label))));
         let first_text = commands
             .iter()
             .find_map(|command| match command {
-                RenderCommand::Ui(UiCommand::UpsertLabel { node, text, .. }) if *node == label => {
-                    Some(std::sync::Arc::clone(text))
-                }
+                RenderCommand::Ui(b0) => match &**b0 {
+                    UiCommand::UpsertLabel { node, text, .. } if *node == label => {
+                        Some(std::sync::Arc::clone(text))
+                    }
+                    _ => None,
+                },
                 _ => None,
             })
             .expect("label command text");
@@ -441,15 +429,16 @@ mod water_overlays {
         let commands = collect_commands(&mut runtime);
         assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Ui(UiCommand::UpsertLabel { node, depth_test: false, .. })
-                if *node == label
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertLabel { node, depth_test: false, .. } if *node == label))));
         let second_text = commands
             .iter()
             .find_map(|command| match command {
-                RenderCommand::Ui(UiCommand::UpsertLabel { node, text, .. }) if *node == label => {
-                    Some(std::sync::Arc::clone(text))
-                }
+                RenderCommand::Ui(b0) => match &**b0 {
+                    UiCommand::UpsertLabel { node, text, .. } if *node == label => {
+                        Some(std::sync::Arc::clone(text))
+                    }
+                    _ => None,
+                },
                 _ => None,
             })
             .expect("label command text");
@@ -464,9 +453,7 @@ mod water_overlays {
         let commands = collect_commands(&mut runtime);
         assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Ui(UiCommand::UpsertLabel { node, depth_test: true, .. })
-                if *node == label
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertLabel { node, depth_test: true, .. } if *node == label))));
     }
 
     #[test]
@@ -490,7 +477,7 @@ mod water_overlays {
         blocker.transform.position = Vector3::new(2.0, 0.0, -2.5);
         let blocker = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(blocker)));
+            .insert(SceneNode::new(SceneNodeData::from(blocker)));
         runtime
             .render_3d
             .mesh_sources
@@ -509,12 +496,10 @@ mod water_overlays {
 
         assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == sprite
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::RemoveNode { node } if *node == sprite))));
         assert!(!commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Ui(UiCommand::UpsertImage { node, .. }) if *node == sprite
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertImage { node, .. } if *node == sprite))));
     }
 
     #[test]
@@ -527,7 +512,8 @@ mod water_overlays {
                 && let SceneNodeData::WaterBody3D(water) = &mut node.data
             {
                 water.transform.position.x = x;
-                water.water.shape = perro_nodes::WaterShape::box_volume(Vector3::new(16.0, 4.0, 16.0));
+                water.water.shape =
+                    perro_nodes::WaterShape::box_volume(Vector3::new(16.0, 4.0, 16.0));
                 water.water.depth = 4.0;
             }
         }
@@ -591,5 +577,4 @@ mod water_overlays {
         assert!((water.impacts[0].position[1] + 0.4).abs() < 0.01);
         assert!((water.impacts[0].position[2] + 0.75).abs() < 0.01);
     }
-
 }

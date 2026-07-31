@@ -3,7 +3,7 @@ use perro_ids::AudioBusID;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use crate::internal::{AudioCommand, OwnedAudioPlaybackRequest};
 use crate::internal::{OwnedMidiFileRequest, OwnedMidiNoteRequest};
@@ -42,6 +42,10 @@ pub struct AudioController {
     next_playback_id: Arc<AtomicU64>,
     source_pool: Mutex<HashMap<u64, Arc<str>>>,
     loaded: Arc<Mutex<AudioLoadedState>>,
+    // Game-side duration cache keyed by source hash: repeated
+    // `source_length_seconds` calls answer without a blocking round-trip to
+    // the audio worker.
+    durations: Arc<RwLock<HashMap<u64, f32>>>,
 }
 
 #[derive(Default)]
@@ -59,6 +63,44 @@ impl AudioSourceHandle {
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.source
+    }
+
+    /// Shared interned source string; clone is a refcount bump.
+    #[must_use]
+    pub fn shared_str(&self) -> Arc<str> {
+        Arc::clone(&self.source)
+    }
+}
+
+/// Cheap detached handle for duration queries: lets callers drop any lock
+/// guarding the [`AudioController`] before blocking on the worker's reply.
+#[derive(Clone)]
+pub struct AudioLengthProber {
+    tx: Sender<AudioCommand>,
+    durations: Arc<RwLock<HashMap<u64, f32>>>,
+}
+
+impl AudioLengthProber {
+    /// Cached duration when known, else a blocking round-trip to the worker.
+    pub fn source_length_seconds(&self, source: &str) -> Option<f32> {
+        let hash = perro_ids::string_to_u64(source);
+        if let Ok(cache) = self.durations.read()
+            && let Some(seconds) = cache.get(&hash)
+        {
+            return Some(*seconds);
+        }
+        let (reply_tx, reply_rx) = crossbeam_channel::bounded::<Option<f32>>(1);
+        self.tx
+            .try_send(AudioCommand::SourceLength {
+                source: Arc::from(source),
+                reply: reply_tx,
+            })
+            .ok()?;
+        let seconds = reply_rx.recv().ok().flatten()?;
+        if let Ok(mut cache) = self.durations.write() {
+            cache.insert(hash, seconds);
+        }
+        Some(seconds)
     }
 }
 
@@ -84,6 +126,11 @@ fn run_audio_worker<F>(
 
     while let Ok(command) = commands.recv() {
         process_audio_command(&player, command, loaded);
+        // Deferred volume/speed refreshes flush once the queue drains, so a
+        // burst of volume commands walks the playback lists only once.
+        if commands.is_empty() {
+            player.flush_pending_refreshes();
+        }
     }
 }
 
@@ -250,6 +297,7 @@ impl AudioController {
             next_playback_id,
             source_pool: Mutex::new(HashMap::new()),
             loaded,
+            durations: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
@@ -260,6 +308,7 @@ impl AudioController {
             next_playback_id: Arc::new(AtomicU64::new(1)),
             source_pool: Mutex::new(HashMap::new()),
             loaded: Arc::new(Mutex::new(AudioLoadedState::default())),
+            durations: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -479,6 +528,7 @@ impl AudioController {
 
     /// Enqueue a byte source load; success does not mean decoding or loading has completed.
     pub fn enqueue_load_source_bytes(&self, source: &str, bytes: Arc<[u8]>) -> AudioEnqueueResult {
+        self.invalidate_duration(source);
         let source = self.intern_source(source);
         self.enqueue(AudioCommand::LoadBytes {
             source,
@@ -517,6 +567,7 @@ impl AudioController {
         source: &str,
         bytes: Arc<[u8]>,
     ) -> AudioEnqueueResult {
+        self.invalidate_duration(source);
         let source = self.intern_source(source);
         self.enqueue(AudioCommand::LoadBytes {
             source,
@@ -531,11 +582,35 @@ impl AudioController {
 
     /// Enqueue a source drop; success does not mean the asset has been dropped.
     pub fn enqueue_drop_source(&self, source: &str) -> AudioEnqueueResult {
+        self.invalidate_duration(source);
         let source = self.intern_source(source);
         self.enqueue(AudioCommand::DropAsset { source })
     }
 
+    // Byte reloads and drops can change a source's decoded length; forget the
+    // cached duration so the next query re-asks the worker.
+    fn invalidate_duration(&self, source: &str) {
+        if let Ok(mut cache) = self.durations.write() {
+            cache.remove(&perro_ids::string_to_u64(source));
+        }
+    }
+
+    /// Detached handle for duration queries; safe to use after dropping any
+    /// lock that guards this controller (the query blocks on the worker).
+    pub fn length_prober(&self) -> AudioLengthProber {
+        AudioLengthProber {
+            tx: self.tx.clone(),
+            durations: Arc::clone(&self.durations),
+        }
+    }
+
     pub fn source_length_seconds(&self, source: &str) -> Option<f32> {
+        let hash = perro_ids::string_to_u64(source);
+        if let Ok(cache) = self.durations.read()
+            && let Some(seconds) = cache.get(&hash)
+        {
+            return Some(*seconds);
+        }
         let source = self.intern_source(source);
         let (reply_tx, reply_rx) = crossbeam_channel::bounded::<Option<f32>>(1);
         if self
@@ -547,7 +622,11 @@ impl AudioController {
         {
             return None;
         }
-        reply_rx.recv().ok().flatten()
+        let seconds = reply_rx.recv().ok().flatten()?;
+        if let Ok(mut cache) = self.durations.write() {
+            cache.insert(hash, seconds);
+        }
+        Some(seconds)
     }
 
     pub fn stop_source(&self, source: &str) -> bool {

@@ -328,7 +328,10 @@ pub fn load_trimesh_from_gltf_bytes(
     sy: f32,
     sz: f32,
 ) -> Option<TriMeshData> {
-    let (doc, buffers, _images) = gltf::import_slice(bytes).ok()?;
+    // buffers only: import_slice decodes every embedded image to RGBA, which
+    // this collision path never uses.
+    let gltf::Gltf { document: doc, blob } = gltf::Gltf::from_slice(bytes).ok()?;
+    let buffers = gltf::import_buffers(&doc, None, blob).ok()?;
     let mesh = doc.meshes().nth(mesh_index)?;
 
     let mut vertices = Vec::<na3::Point3<f32>>::new();

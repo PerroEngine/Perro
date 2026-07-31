@@ -76,7 +76,7 @@ impl PhysicsAPI for BenchPhysics {
         _origin: Vector2,
         _direction: Vector2,
         _max_distance: f32,
-        _filter: PhysicsQueryFilter,
+        _filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsRayHit2D> {
         None
     }
@@ -87,7 +87,7 @@ impl PhysicsAPI for BenchPhysics {
         _origin: Vector2,
         _direction: Vector2,
         _max_distance: f32,
-        _filter: PhysicsQueryFilter,
+        _filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsShapeHit2D> {
         None
     }
@@ -98,7 +98,7 @@ impl PhysicsAPI for BenchPhysics {
         _origin: Vector3,
         _direction: Vector3,
         _max_distance: f32,
-        _filter: PhysicsQueryFilter,
+        _filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsShapeHit3D> {
         None
     }

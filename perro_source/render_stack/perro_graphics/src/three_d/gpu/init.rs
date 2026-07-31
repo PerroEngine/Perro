@@ -181,6 +181,8 @@ impl Gpu3D {
             shadow_pcf_high,
         } = config;
         let (gpu_occlusion_enabled, cpu_occlusion_enabled) = occlusion_flags(occlusion_culling);
+        let (shadow_map_size, shadow_spot_map_size, shadow_point_map_size) =
+            default_shadow_map_sizes();
         let shadow_caster_debug_view = std::env::var_os("PERRO_DEBUG_SHADOW_CASTERS").is_some()
             || std::env::var_os("PERRO_SHADOW_DEBUG_CASTERS").is_some()
             || std::env::var_os("PERRO_SHADOW_DEBUG_CASCADES").is_some();
@@ -668,7 +670,9 @@ impl Gpu3D {
         let skeleton_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_skeleton_palette_buffer"),
             size: (skeleton_capacity * std::mem::size_of::<[[f32; 4]; 3]>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let custom_params_meta_capacity = 1usize;
@@ -733,7 +737,9 @@ impl Gpu3D {
             label: Some("perro_multimesh_draw_params"),
             size: (multimesh_draw_params_capacity * std::mem::size_of::<MultiMeshDrawParamGpu>())
                 as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1467,8 +1473,10 @@ impl Gpu3D {
             &mesh_blend_mask_id_bgl,
             &mesh_blend_mask_id_buffer,
         );
+        // 1x1 placeholder; ensure_mesh_blend_targets upgrades it to full
+        // resolution the first prepare that actually stages a mesh blend.
         let (mesh_blend_mask_texture, mesh_blend_mask_view) =
-            mesh_blend_screen::create_mesh_blend_mask_texture(device, width, height);
+            mesh_blend_screen::create_mesh_blend_mask_texture(device, 1, 1);
         let depth_prepass_shader_rigid = create_depth_prepass_shader_module_rigid(device);
         let depth_prepass_shader_rigid_packed_lod =
             create_depth_prepass_shader_module_rigid_packed_lod(device);
@@ -1558,6 +1566,8 @@ impl Gpu3D {
             vertices.iter().map(pack_skinned_mesh_vertex).collect();
         let rigid_vertices: Vec<RigidMeshVertex> =
             vertices.iter().map(pack_rigid_mesh_vertex).collect();
+        let builtin_vertex_len = vertices.len();
+        let builtin_index_len = indices.len();
         let vertex_capacity = vertices.len().max(1);
         let rigid_vertex_capacity = rigid_vertices.len().max(1);
         let index_capacity = indices.len().max(1);
@@ -1606,7 +1616,9 @@ impl Gpu3D {
             label: Some("perro_mesh_instance_transforms"),
             size: (instance_transform_capacity * std::mem::size_of::<TransformInstanceGpu>())
                 as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let rigid_instance_meta_capacity = 256usize;
@@ -1614,7 +1626,9 @@ impl Gpu3D {
             label: Some("perro_mesh_instance_rigid_meta"),
             size: (rigid_instance_meta_capacity * std::mem::size_of::<RigidInstanceMetaGpu>())
                 as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let skinned_instance_meta_capacity = 256usize;
@@ -1622,7 +1636,9 @@ impl Gpu3D {
             label: Some("perro_mesh_instance_skinned_meta"),
             size: (skinned_instance_meta_capacity * std::mem::size_of::<SkinnedInstanceMetaGpu>())
                 as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let multimesh_instance_capacity = 256usize;
@@ -1630,7 +1646,9 @@ impl Gpu3D {
             label: Some("perro_multimesh_instances"),
             size: (multimesh_instance_capacity * std::mem::size_of::<MultiMeshInstanceGpu>())
                 as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
 
@@ -1731,11 +1749,13 @@ impl Gpu3D {
                 | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
-        let hiz_debug_readback_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perro_hiz_indirect_readback"),
-            size: (indirect_capacity * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
+        let hiz_debug_readback_buffer = HIZ_DEBUG_READBACK_ENABLED.then(|| {
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("perro_hiz_indirect_readback"),
+                size: (indirect_capacity * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64,
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            })
         });
         let frustum_cull_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_frustum_cull_bg"),
@@ -1811,7 +1831,9 @@ impl Gpu3D {
         let multimesh_instance_batch_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_multimesh_instance_batch"),
             size: (multimesh_cull_instance_capacity * std::mem::size_of::<u32>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let multimesh_cull_batch_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -1824,7 +1846,9 @@ impl Gpu3D {
         let multimesh_visible_index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_multimesh_visible_indices"),
             size: (multimesh_cull_instance_capacity * std::mem::size_of::<u32>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let multimesh_shadow_identity_capacity = multimesh_cull_instance_capacity;
@@ -1849,9 +1873,16 @@ impl Gpu3D {
                 | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let (depth_texture, depth_view) = create_depth_texture(device, width, height, sample_count);
         let (depth_prepass_texture, depth_prepass_view) =
             create_depth_prepass_texture(device, width, height);
+        let (depth_texture, depth_view) = create_scene_depth_target(
+            device,
+            width,
+            height,
+            sample_count,
+            &depth_prepass_texture,
+            &depth_prepass_view,
+        );
         let ssao_fallback_texture = device.create_texture_with_data(
             queue,
             &wgpu::TextureDescriptor {
@@ -1875,8 +1906,10 @@ impl Gpu3D {
             ssao_fallback_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let ssao_pass = (ssao != crate::SsaoQuality::Off)
             .then(|| ssao::SsaoPass::new(device, width, height, &depth_prepass_view, ssao));
+        // 1x1 placeholder (see ensure_mesh_blend_targets); it stays bound as a
+        // dummy while no mesh blend is active.
         let (mesh_blend_depth_texture, mesh_blend_depth_view) =
-            create_depth_prepass_texture(device, width, height);
+            create_depth_prepass_texture(device, 1, 1);
         let multimesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_multimesh_bg"),
             layout: &multimesh_bgl,
@@ -1977,8 +2010,15 @@ impl Gpu3D {
             &mesh_blend_depth_view,
             ssao_view,
         );
+        // GPU occlusion off => the pyramid is never dispatched or sampled for
+        // culling; keep a 1x1 stand-in bound instead of a full mip chain.
+        let (hiz_width, hiz_height) = if gpu_occlusion_enabled {
+            (width, height)
+        } else {
+            (1, 1)
+        };
         let (hiz_texture, hiz_mip_views, hiz_sample_view, hiz_mip_count, hiz_size) =
-            create_hiz_texture(device, width, height);
+            create_hiz_texture(device, hiz_width, hiz_height);
 
         let hiz_copy_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_hiz_copy_bgl"),
@@ -2396,7 +2436,8 @@ impl Gpu3D {
             staged_skinned_instance_meta: Vec::new(),
             blend_shape_delta_buffer,
             blend_shape_delta_capacity,
-            blend_shape_deltas: Vec::new(),
+            blend_shape_delta_len: 0,
+            blend_shape_delta_scratch: Vec::new(),
             blend_shape_weight_buffer,
             blend_shape_weight_capacity,
             staged_blend_shape_weights: Vec::new(),
@@ -2444,6 +2485,9 @@ impl Gpu3D {
             multimesh_cull_active: false,
             last_multimesh_cull_params: None,
             shadow_pcf_high,
+            shadow_map_size,
+            shadow_spot_map_size,
+            shadow_point_map_size,
             last_uploaded_multimesh_instances: Vec::new(),
             last_uploaded_multimesh_draw_params: Vec::new(),
             last_uploaded_multimesh_cull_batches: Vec::new(),
@@ -2521,11 +2565,12 @@ impl Gpu3D {
             last_sky: None,
             last_sky_time_seconds: -1.0,
             sky_enabled: false,
-            mesh_vertices: skinned_vertices,
-            rigid_mesh_vertices: rigid_vertices,
-            packed_lod_vertices: Vec::new(),
-            mesh_indices: indices,
-            packed_lod_indices: Vec::new(),
+            mesh_vertex_len: builtin_vertex_len,
+            rigid_vertex_len: builtin_vertex_len,
+            packed_lod_vertex_len: 0,
+            mesh_index_len: builtin_index_len,
+            packed_lod_index_len: 0,
+            builtin_vertex_len,
             vertex_buffer,
             rigid_vertex_buffer,
             packed_lod_vertex_buffer,
@@ -2539,11 +2584,13 @@ impl Gpu3D {
             builtin_mesh_ranges,
             builtin_mesh_bounds,
             builtin_meshlets,
+            shrink: Gpu3DShrink::default(),
             custom_mesh_ranges: AHashMap::new(),
             depth_texture,
             depth_view,
             depth_prepass_texture,
             depth_prepass_view,
+            water_scene_depth: None,
             ssao_pass,
             _ssao_fallback_texture: ssao_fallback_texture,
             ssao_fallback_view,

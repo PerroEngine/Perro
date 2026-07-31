@@ -80,6 +80,8 @@ impl BarkPlayer {
                 cache_bytes: 0,
                 next_cache_epoch: 1,
                 last_evict_sweep: Instant::now(),
+                volumes_dirty: false,
+                speeds_dirty: false,
             }),
         })
     }

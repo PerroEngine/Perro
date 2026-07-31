@@ -271,6 +271,8 @@ pub(crate) struct NodeApiScratchState {
     pub(crate) remove_stack: Vec<NodeID>,
     pub(crate) remove_postorder: Vec<NodeID>,
     pub(crate) remove_visited: AHashSet<NodeID>,
+    /// Reused DFS stack for UI dirty-subtree walks (reparent / visibility).
+    pub(crate) ui_walk_stack: Vec<NodeID>,
 }
 
 impl NodeApiScratchState {
@@ -279,6 +281,7 @@ impl NodeApiScratchState {
             remove_stack: Vec::new(),
             remove_postorder: Vec::new(),
             remove_visited: AHashSet::default(),
+            ui_walk_stack: Vec::new(),
         }
     }
 }
@@ -363,8 +366,8 @@ pub(crate) struct DirtyState {
 pub(crate) use perro_runtime_render::{
     CollisionDebugState, DenseInstancePoseCache, LocaleTextBinding, LocaleTextField,
     LocaleTextState, Render2DState, Render3DState, RenderState, RenderUiState,
-    RetainedMeshDrawState, RetainedMeshInstanceState, UiButtonMotion, UiButtonVisualState,
-    UiSizeClampBaseline,
+    RetainedMeshDrawState, RetainedMeshInstanceState, TilemapRenderCache, UiButtonMotion,
+    UiButtonVisualState, UiSizeClampBaseline,
 };
 impl DirtyState {
     pub(crate) const FLAG_RERENDER: u16 = 1 << 0;

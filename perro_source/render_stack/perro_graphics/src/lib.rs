@@ -1,7 +1,9 @@
 mod backend;
 mod gpu;
+mod gpu_shrink;
 mod postprocess;
 mod resources;
+mod shared_textures;
 mod texture_mips;
 pub mod three_d;
 pub mod two_d;

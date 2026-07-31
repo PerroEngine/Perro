@@ -13,7 +13,9 @@ impl Runtime {
         let mut changed_seen = ahash::AHashSet::default();
         let wheel = self.input.mouse_wheel();
 
-        for scroller in self.visible_scroll_containers(computed) {
+        let mut scrollers = self.render_ui.acquire_node_vec();
+        self.visible_scroll_containers(computed, &mut scrollers);
+        for scroller in scrollers.iter().copied() {
             if self.advance_scroll_container_animation(scroller, computed)
                 && changed_seen.insert(scroller)
             {
@@ -58,11 +60,13 @@ impl Runtime {
             changed.push(scroller);
         }
 
-        for scroller in self.visible_scroll_containers(computed) {
+        self.visible_scroll_containers(computed, &mut scrollers);
+        for scroller in scrollers.iter().copied() {
             if self.clamp_scroll_container(scroller, computed) && changed_seen.insert(scroller) {
                 changed.push(scroller);
             }
         }
+        self.render_ui.release_node_vec(scrollers);
 
         if changed.is_empty() {
             return;
@@ -184,7 +188,9 @@ impl Runtime {
         computed: &AHashMap<NodeID, ComputedUiRect>,
     ) -> Option<(NodeID, f32)> {
         let mut best: Option<(NodeID, i32, f32)> = None;
-        for node in self.visible_scroll_containers(computed) {
+        let mut scrollers = self.render_ui.acquire_node_vec();
+        self.visible_scroll_containers(computed, &mut scrollers);
+        for node in scrollers.iter().copied() {
             let Some((track, thumb, scroller)) = self.scrollbar_hit_rects(node, computed) else {
                 continue;
             };
@@ -206,6 +212,7 @@ impl Runtime {
                 _ => best = Some((node, z, offset)),
             }
         }
+        self.render_ui.release_node_vec(scrollers);
         best.map(|(node, _, offset)| (node, offset))
     }
 
@@ -225,8 +232,9 @@ impl Runtime {
                 .map(computed_rect_from_state)
         })?;
         let max_scroll = self.scroll_container_max(node, computed);
-        let thumb = ui_scrollbar_rect(scroller, rect, max_scroll)?;
-        let track = ui_scrollbar_track_rect(scroller, rect, max_scroll)?;
+        let content_scale = self.ui_content_scale();
+        let thumb = ui_scrollbar_rect(scroller, rect, max_scroll, content_scale)?;
+        let track = ui_scrollbar_track_rect(scroller, rect, max_scroll, content_scale)?;
         Some((track, thumb, *scroller.clone()))
     }
 
@@ -323,7 +331,9 @@ impl Runtime {
         point: Vector2,
     ) -> Option<NodeID> {
         let mut best: Option<(NodeID, i32)> = None;
-        for node in self.visible_scroll_containers(computed) {
+        let mut scrollers = self.render_ui.acquire_node_vec();
+        self.visible_scroll_containers(computed, &mut scrollers);
+        for node in scrollers.iter().copied() {
             if !self.scroll_container_can_scroll(node, computed) {
                 continue;
             }
@@ -345,15 +355,27 @@ impl Runtime {
                 _ => best = Some((node, z)),
             }
         }
+        self.render_ui.release_node_vec(scrollers);
         best.map(|(node, _)| node)
     }
 
+    /// Fill `out` with visible, scrollable containers. Callers pass a pooled
+    /// vec (`render_ui.acquire_node_vec`) instead of allocating per query;
+    /// the node_types lane pre-filter (1B/slot) skips every non-scroller slot
+    /// without deref'ing its SceneNode.
     pub(super) fn visible_scroll_containers(
         &self,
         computed: &AHashMap<NodeID, ComputedUiRect>,
-    ) -> Vec<NodeID> {
-        let mut out = Vec::new();
-        for (node, scene_node) in self.nodes.iter() {
+        out: &mut Vec<NodeID>,
+    ) {
+        out.clear();
+        for index in 1..self.nodes.slot_count() {
+            if self.nodes.node_type_slots()[index] != perro_nodes::NodeType::UiScrollContainer {
+                continue;
+            }
+            let Some((node, scene_node)) = self.nodes.slot_get(index) else {
+                continue;
+            };
             let SceneNodeData::UiScrollContainer(scroller) = &scene_node.data else {
                 continue;
             };
@@ -371,7 +393,6 @@ impl Runtime {
             }
             out.push(node);
         }
-        out
     }
 
     pub(super) fn scroll_container_is_horizontal(&self, node: NodeID) -> bool {
@@ -426,7 +447,9 @@ impl Runtime {
         computed: &AHashMap<NodeID, ComputedUiRect>,
     ) -> Option<NodeID> {
         let mut found = None;
-        for node in self.visible_scroll_containers(computed) {
+        let mut scrollers = self.render_ui.acquire_node_vec();
+        self.visible_scroll_containers(computed, &mut scrollers);
+        for node in scrollers.iter().copied() {
             if !self.scroll_container_can_scroll(node, computed) {
                 continue;
             }
@@ -435,6 +458,7 @@ impl Runtime {
             };
             let Some(parent) = (!scene_node.parent.is_nil()).then_some(scene_node.parent) else {
                 if found.replace(node).is_some() {
+                    self.render_ui.release_node_vec(scrollers);
                     return None;
                 }
                 continue;
@@ -446,9 +470,11 @@ impl Runtime {
                 continue;
             }
             if found.replace(node).is_some() {
+                self.render_ui.release_node_vec(scrollers);
                 return None;
             }
         }
+        self.render_ui.release_node_vec(scrollers);
         found
     }
 
@@ -646,9 +672,12 @@ impl Runtime {
         let mut found = false;
         let mut nodes = Vec::new();
         let mut seen = ahash::AHashSet::default();
-        for child in self.ui_layout_children(node) {
+        let mut layout_children = self.render_ui.acquire_node_vec();
+        self.ui_layout_children_into(node, &mut layout_children);
+        for child in layout_children.iter().copied() {
             self.collect_ui_subtree_nodes(child, &mut nodes, &mut seen);
         }
+        self.render_ui.release_node_vec(layout_children);
         for child in nodes {
             let Some(rect) = computed.get(&child).copied().or_else(|| {
                 self.render_ui

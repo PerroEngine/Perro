@@ -1,10 +1,15 @@
-use super::core::{RuntimeResourceApi, RuntimeVideoClip, RuntimeVideoFrame, RuntimeVideoNode};
+use super::core::{
+    RuntimeResourceApi, RuntimeVideoClip, RuntimeVideoFrame, RuntimeVideoNode, VideoClipCacheEntry,
+};
 use perro_ids::{NodeID, TextureID, string_to_u64};
 use perro_render_bridge::{RenderCommand, ResourceCommand};
 use perro_resource_api::sub_apis::{VideoAPI, VideoUpdate};
 use std::sync::Arc;
 
 const FALLBACK_RGBA: [u8; 4] = [0, 0, 0, 255];
+
+// budget for decoded clips no live node references; referenced clips always stay.
+const VIDEO_CLIP_CACHE_MAX_BYTES: usize = 256 * 1024 * 1024;
 
 impl VideoAPI for RuntimeResourceApi {
     fn video_update_node(
@@ -32,6 +37,7 @@ impl VideoAPI for RuntimeResourceApi {
         }
 
         let mut frame_changed = false;
+        let mut released_hash = None;
         let mut nodes = self
             .video_node_state
             .lock()
@@ -49,6 +55,9 @@ impl VideoAPI for RuntimeResourceApi {
         if entry.source_hash != source_hash || entry.texture.is_nil() {
             if !entry.texture.is_nil() {
                 let _ = self.drop_video_texture(entry.texture);
+            }
+            if entry.source_hash != source_hash {
+                released_hash = Some(entry.source_hash);
             }
             entry.source_hash = source_hash;
             entry.frame_index = 0;
@@ -84,22 +93,29 @@ impl VideoAPI for RuntimeResourceApi {
             self.write_video_texture(entry.texture, clip.width, clip.height, frame.rgba.clone());
         }
 
-        VideoUpdate {
+        let update = VideoUpdate {
             texture: entry.texture,
             frame_changed,
+        };
+        drop(nodes);
+        if let Some(old_hash) = released_hash {
+            self.evict_video_clip_if_unreferenced(old_hash);
         }
+        update
     }
 
     fn video_release_node(&self, node: NodeID) -> bool {
-        let texture = self
+        let removed = self
             .video_node_state
             .lock()
             .ok()
-            .and_then(|mut nodes| nodes.remove(&node).map(|state| state.texture));
-        if let Some(texture) = texture
-            && !texture.is_nil()
-        {
-            return self.drop_video_texture(texture);
+            .and_then(|mut nodes| nodes.remove(&node));
+        let Some(state) = removed else {
+            return false;
+        };
+        self.evict_video_clip_if_unreferenced(state.source_hash);
+        if !state.texture.is_nil() {
+            return self.drop_video_texture(state.texture);
         }
         false
     }
@@ -107,20 +123,76 @@ impl VideoAPI for RuntimeResourceApi {
 
 impl RuntimeResourceApi {
     fn video_clip(&self, source_hash: u64, source: &str) -> Option<Arc<RuntimeVideoClip>> {
-        if let Some(clip) = self
-            .video_clip_cache
-            .lock()
-            .ok()
-            .and_then(|cache| cache.get(&source_hash).cloned())
-        {
-            return Some(clip);
+        if let Ok(mut cache) = self.video_clip_cache.lock() {
+            cache.tick += 1;
+            let tick = cache.tick;
+            if let Some(entry) = cache.entries.get_mut(&source_hash) {
+                entry.last_use = tick;
+                return Some(entry.clip.clone());
+            }
         }
 
         let clip = load_y4m_clip(source).ok().map(Arc::new)?;
+        let bytes = clip_bytes(&clip);
         if let Ok(mut cache) = self.video_clip_cache.lock() {
-            cache.insert(source_hash, clip.clone());
+            cache.tick += 1;
+            let tick = cache.tick;
+            let entry = VideoClipCacheEntry {
+                clip: clip.clone(),
+                bytes,
+                last_use: tick,
+            };
+            if let Some(old) = cache.entries.insert(source_hash, entry) {
+                cache.total_bytes = cache.total_bytes.saturating_sub(old.bytes);
+            }
+            cache.total_bytes += bytes;
         }
+        self.evict_video_clips_over_budget();
         Some(clip)
+    }
+
+    /// Drop the cached clip for `source_hash` when no live node still points
+    /// at it. Callers must NOT hold the video_node_state or clip cache locks.
+    fn evict_video_clip_if_unreferenced(&self, source_hash: u64) {
+        let referenced = self
+            .video_node_state
+            .lock()
+            .map(|nodes| nodes.values().any(|state| state.source_hash == source_hash))
+            .unwrap_or(true);
+        if referenced {
+            return;
+        }
+        if let Ok(mut cache) = self.video_clip_cache.lock()
+            && let Some(old) = cache.entries.remove(&source_hash)
+        {
+            cache.total_bytes = cache.total_bytes.saturating_sub(old.bytes);
+        }
+    }
+
+    /// LRU-evict unreferenced clips until under budget. Runs only on clip
+    /// load (not per frame). Lock order: node state before clip cache.
+    fn evict_video_clips_over_budget(&self) {
+        let live_hashes: Vec<u64> = match self.video_node_state.lock() {
+            Ok(nodes) => nodes.values().map(|state| state.source_hash).collect(),
+            Err(_) => return,
+        };
+        let Ok(mut cache) = self.video_clip_cache.lock() else {
+            return;
+        };
+        while cache.total_bytes > VIDEO_CLIP_CACHE_MAX_BYTES {
+            let victim = cache
+                .entries
+                .iter()
+                .filter(|(hash, _)| !live_hashes.contains(hash))
+                .min_by_key(|(_, entry)| entry.last_use)
+                .map(|(hash, _)| *hash);
+            let Some(hash) = victim else {
+                break;
+            };
+            if let Some(old) = cache.entries.remove(&hash) {
+                cache.total_bytes = cache.total_bytes.saturating_sub(old.bytes);
+            }
+        }
     }
 
     fn create_video_texture(&self, node: NodeID, clip: &RuntimeVideoClip) -> TextureID {
@@ -140,7 +212,7 @@ impl RuntimeResourceApi {
             .texture_pending_source_by_request
             .insert(request, source.clone());
         state.texture_pending_id_by_request.insert(request, id);
-        state.queued_commands.push(RenderCommand::Resource(
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
             ResourceCommand::CreateRuntimeTexture {
                 request,
                 id,
@@ -150,7 +222,7 @@ impl RuntimeResourceApi {
                 height: clip.height.max(1),
                 rgba: first,
             },
-        ));
+        )));
         id
     }
 
@@ -159,15 +231,15 @@ impl RuntimeResourceApi {
             return;
         }
         let mut state = self.state.lock().expect("resource api mutex poisoned");
-        state
-            .queued_commands
-            .push(RenderCommand::Resource(ResourceCommand::WriteTextureRgba {
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
+            ResourceCommand::WriteTextureRgba {
                 id: texture,
                 width: width.max(1),
                 height: height.max(1),
                 // cached clip frame stays shared (cheap refcount, no copy).
                 rgba: rgba.into(),
-            }));
+            },
+        )));
     }
 
     fn drop_video_texture(&self, texture: TextureID) -> bool {
@@ -180,11 +252,9 @@ impl RuntimeResourceApi {
         state
             .texture_by_source
             .retain(|_, existing| *existing != texture);
-        state
-            .queued_commands
-            .push(RenderCommand::Resource(ResourceCommand::DropTexture {
-                id: texture,
-            }));
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
+            ResourceCommand::DropTexture { id: texture },
+        )));
         true
     }
 
@@ -208,9 +278,13 @@ impl RuntimeResourceApi {
             accum: 0.0,
         });
         let mut frame_changed = false;
+        let mut released_hash = None;
         if entry.source_hash != source_hash || entry.texture.is_nil() {
             if !entry.texture.is_nil() {
                 let _ = self.drop_video_texture(entry.texture);
+            }
+            if entry.source_hash != source_hash {
+                released_hash = Some(entry.source_hash);
             }
             entry.source_hash = source_hash;
             entry.frame_index = 0;
@@ -218,11 +292,20 @@ impl RuntimeResourceApi {
             entry.texture = self.create_video_texture(node, &clip);
             frame_changed = true;
         }
-        VideoUpdate {
+        let update = VideoUpdate {
             texture: entry.texture,
             frame_changed,
+        };
+        drop(nodes);
+        if let Some(old_hash) = released_hash {
+            self.evict_video_clip_if_unreferenced(old_hash);
         }
+        update
     }
+}
+
+fn clip_bytes(clip: &RuntimeVideoClip) -> usize {
+    clip.frames.iter().map(|frame| frame.rgba.len()).sum()
 }
 
 fn load_y4m_clip(source: &str) -> Result<RuntimeVideoClip, String> {

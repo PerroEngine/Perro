@@ -15,7 +15,6 @@ impl PerroGraphics {
             match command {
                 RenderCommand::CameraStream(command) => match command {
                     CameraStreamCommand::Upsert { node, state } => {
-                        let state = *state;
                         let uses_render_target = camera_stream_uses_render_target(&state);
                         let output_texture = state.output_texture;
                         let resolution = state.resolution;
@@ -50,7 +49,7 @@ impl PerroGraphics {
                         }
                     }
                 },
-                RenderCommand::Resource(resource_cmd) => match resource_cmd {
+                RenderCommand::Resource(resource_cmd) => match *resource_cmd {
                     ResourceCommand::CreateMesh {
                         request,
                         id,
@@ -213,7 +212,8 @@ impl PerroGraphics {
                         let _ = self.resources.set_decoded_texture_data(
                             id,
                             DecodedTextureRgba {
-                                rgba: rgba.to_vec(),
+                                // adopt the caller's Arc: no full-buffer copy.
+                                rgba,
                                 width,
                                 height,
                             },
@@ -233,7 +233,8 @@ impl PerroGraphics {
                         bytes,
                     } => {
                         let decoded = decode_ptex(bytes.as_ref())
-                            .or_else(|| decode_image_rgba(bytes.as_ref()))
+                            .map(|(rgba, width, height)| (Arc::from(rgba), width, height))
+                            .or_else(|| decode_image_rgba_arc(bytes.as_ref()))
                             .map(|(rgba, width, height)| DecodedTextureRgba {
                                 rgba,
                                 width,
@@ -289,7 +290,7 @@ impl PerroGraphics {
                         let _ = self.resources.set_decoded_texture_data(
                             id,
                             DecodedTextureRgba {
-                                rgba,
+                                rgba: rgba.into(),
                                 width,
                                 height,
                             },
@@ -444,7 +445,7 @@ impl PerroGraphics {
                         let log_kind = if asset_ready_log_enabled() {
                             Some(match source.as_deref() {
                                 Some(path) => format!("kind=source path={path}"),
-                                None if material == Material3D::default() => {
+                                None if *material == Material3D::default() => {
                                     "kind=default".to_string()
                                 }
                                 None => "kind=inline".to_string(),
@@ -511,7 +512,7 @@ impl PerroGraphics {
                         // (shader path, images, lighting, surface, material
                         // kind) can alter the compiled pipeline.
                         let pipeline_shape_changed =
-                            match (self.resources.material_ref(id), &material) {
+                            match (self.resources.material_ref(id), material.as_ref()) {
                                 (Some(Material3D::Custom(old)), Material3D::Custom(new)) => {
                                     old.shader_path != new.shader_path
                                         || old.lighting != new.lighting
@@ -523,14 +524,15 @@ impl PerroGraphics {
                                 (Some(_), _) => false,
                                 (None, _) => true,
                             };
-                        let warm = material.clone();
-                        if self.resources.set_material_data(id, material) {
+                        if self.resources.set_material_data(id, material.clone()) {
                             if pipeline_shape_changed {
                                 // loaded .pmat data lands here; re-warm since
                                 // the write invalidates custom pipeline
-                                // caches below.
+                                // caches below. warm only on shape change:
+                                // per-frame param animation must stay
+                                // clone-free (Arc handoff above).
                                 if self.pending_pipeline_warms.len() < PIPELINE_WARM_QUEUE_CAP {
-                                    self.pending_pipeline_warms.push(warm);
+                                    self.pending_pipeline_warms.push(material);
                                 }
                                 if let Some(gpu) = self.gpu.as_mut() {
                                     gpu.invalidate_custom_material_pipelines();
@@ -583,7 +585,6 @@ impl PerroGraphics {
                         stream,
                         sprite,
                     } => {
-                        let stream = *stream;
                         if camera_stream_uses_render_target(&stream) {
                             self.upsert_camera_stream_texture(
                                 node,
@@ -635,7 +636,6 @@ impl PerroGraphics {
                 },
                 RenderCommand::ThreeD(cmd_3d) => match *cmd_3d {
                     Command3D::UpsertCameraStream { node, stream, quad } => {
-                        let stream = *stream;
                         if camera_stream_uses_render_target(&stream) {
                             self.upsert_camera_stream_texture(
                                 node,
@@ -758,6 +758,19 @@ impl PerroGraphics {
                         self.renderer_3d
                             .queue_debug_line(node, start, end, thickness, color);
                     }
+                    Command3D::DrawDebugLines3D { lines } => {
+                        // batch feeds the exact per-line path the single
+                        // variant uses; each line carries its retained node id.
+                        for line in lines.iter() {
+                            self.renderer_3d.queue_debug_line(
+                                line.node,
+                                line.start,
+                                line.end,
+                                line.thickness,
+                                line.color,
+                            );
+                        }
+                    }
                     Command3D::SetCamera { camera } => {
                         self.renderer_3d.set_camera(camera);
                     }
@@ -765,7 +778,8 @@ impl PerroGraphics {
                         self.renderer_3d.set_ambient_light(node, light);
                     }
                     Command3D::SetSky { node, sky } => {
-                        self.renderer_3d.set_sky(node, *sky);
+                        // shallow clone: palette/shader payloads stay shared.
+                        self.renderer_3d.set_sky(node, (*sky).clone());
                     }
                     Command3D::SetRayLight { node, light } => {
                         self.renderer_3d.set_ray_light(node, light);
@@ -791,7 +805,7 @@ impl PerroGraphics {
                     }
                 },
                 RenderCommand::Ui(cmd) => {
-                    self.renderer_ui.submit(cmd);
+                    self.renderer_ui.submit(*cmd);
                 }
                 RenderCommand::VisualAccessibility(command) => match command {
                     VisualAccessibilityCommand::EnableColorBlind { mode, strength } => {
@@ -874,7 +888,7 @@ impl PerroGraphics {
         let _ = self.resources.set_decoded_texture_data(
             id,
             DecodedTextureRgba {
-                rgba: vec![0; len],
+                rgba: vec![0; len].into(),
                 width,
                 height,
             },
@@ -896,7 +910,6 @@ impl PerroGraphics {
                         stream,
                         sprite,
                     } => {
-                        let stream = *stream;
                         if camera_stream_uses_render_target(&stream) {
                             self.upsert_camera_stream_texture(
                                 node,

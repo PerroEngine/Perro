@@ -278,10 +278,16 @@ impl Runtime {
             && self.water_samples.is_empty()
             && self.water_sample_times.is_empty()
             && self.water_body_samples.is_empty()
-            && self.pending_water_queries_2d.is_empty()
-            && self.pending_water_queries_3d.is_empty()
-            && self.water_contacts_2d.is_empty()
-            && self.water_contacts_3d.is_empty()
+            && self
+                .pending_water_queries_2d
+                .values()
+                .all(|list| list.is_empty())
+            && self
+                .pending_water_queries_3d
+                .values()
+                .all(|list| list.is_empty())
+            && self.water_contacts_2d.values().all(|list| list.is_empty())
+            && self.water_contacts_3d.values().all(|list| list.is_empty())
             && self.physics.active_area_overlaps_2d.is_empty()
             && self.physics.active_area_overlaps_3d.is_empty()
             && self.physics.can_skip_step()

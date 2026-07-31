@@ -106,7 +106,9 @@ pub struct PointParticles2DState {
     pub params: Vec<f32>,
     pub simulation_time: f32,
     pub simulation_delta: f32,
-    pub profile: ParticleProfile2D,
+    // Arc: shared with the runtime's profile cache; per-frame emitter
+    // upserts bump a refcount instead of deep-cloning expr bytecode.
+    pub profile: Arc<ParticleProfile2D>,
     pub sim_mode: ParticleSimulationMode2D,
 }
 
@@ -153,7 +155,7 @@ impl Default for Camera2DState {
             rotation_radians: 0.0,
             zoom: 1.0,
             render_mask: BitMask::NONE,
-            post_processing: Arc::from([]),
+            post_processing: crate::empty_arc_slice(),
             audio_options: AudioListenerOptions::new(),
         }
     }

@@ -874,7 +874,13 @@ pub fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
 }
 
 pub fn decode_gltf_mesh(bytes: &[u8], mesh_index: usize) -> Option<DecodedMesh> {
-    let (doc, buffers, _images) = gltf::import_slice(bytes).ok()?;
+    // buffers only: import_slice decodes every embedded image to RGBA, which
+    // this mesh path immediately discards.
+    let gltf::Gltf {
+        document: doc,
+        blob,
+    } = gltf::Gltf::from_slice(bytes).ok()?;
+    let buffers = gltf::import_buffers(&doc, None, blob).ok()?;
     let mesh = doc.meshes().nth(mesh_index)?;
     let mut vertices = Vec::new();
     let mut indices = Vec::new();

@@ -1,8 +1,32 @@
 use ahash::{AHashMap, AHashSet};
-use perro_ids::{NodeID, NodeTag, TagID};
+use perro_ids::{NodeID, NodeTag, TagID, mix64, string_to_u64};
 use perro_nodes::{NodeType, SceneNode};
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
+
+/// Order-sensitive sequence hash for id slices. Any content or length change
+/// moves the hash; used by [`NodeMut`] to detect tag/children edits without
+/// snapshotting the collections.
+#[inline]
+fn id_sequence_hash(ids: impl Iterator<Item = u64>) -> u64 {
+    let mut acc = 0xcbf2_9ce4_8422_2325_u64;
+    let mut len = 0_u64;
+    for id in ids {
+        acc = mix64(acc ^ id);
+        len += 1;
+    }
+    acc ^ len
+}
+
+#[inline]
+fn tags_hash(tags: &[TagID]) -> u64 {
+    id_sequence_hash(tags.iter().map(|tag| tag.as_u64()))
+}
+
+#[inline]
+fn children_hash(children: &[NodeID]) -> u64 {
+    id_sequence_hash(children.iter().map(|child| child.as_u64()))
+}
 
 /// Generational node store used by runtime hot paths.
 ///
@@ -40,7 +64,10 @@ pub struct NodeArena {
     packed_child_ids: Vec<NodeID>,
     packed_children_revision: u64,
     free_indices: Vec<usize>,
-    name_index: AHashMap<Cow<'static, str>, Vec<NodeID>>,
+    /// Name-hash -> live ids. Keyed by [`string_to_u64`] of the node name so
+    /// insert/rename never clone the name string; [`Self::named_ids`] filters
+    /// hash collisions against the authoritative node name.
+    name_index: AHashMap<u64, Vec<NodeID>>,
     tag_index: AHashMap<TagID, AHashSet<NodeID>>,
     active_len: usize,
     /// bump on any mut access / structural chg; cache invalidation key 4 systems
@@ -69,11 +96,12 @@ pub struct NodeMut<'a> {
     arena: &'a mut NodeArena,
     id: NodeID,
     index: usize,
-    old_name: Cow<'static, str>,
-    old_tags: Vec<TagID>,
+    old_name_hash: u64,
+    old_tags_hash: u64,
     old_parent: NodeID,
     old_node_type: NodeType,
-    old_children: Vec<NodeID>,
+    old_children_len: usize,
+    old_children_hash: u64,
 }
 
 impl Deref for NodeMut<'_> {
@@ -96,37 +124,50 @@ impl DerefMut for NodeMut<'_> {
 
 impl Drop for NodeMut<'_> {
     fn drop(&mut self) {
-        let (new_name, new_tags, new_parent, new_node_type, children_changed) = {
+        let (new_name_hash, name_empty, new_tags_hash, new_parent, new_node_type, children_changed) = {
             let node = self.arena.nodes[self.index]
                 .as_ref()
                 .expect("tracked node slot stays live while borrowed");
             (
-                node.name.clone(),
-                node.get_tag_ids(),
+                string_to_u64(node.get_name()),
+                node.get_name().is_empty(),
+                tags_hash(&node.tags),
                 node.parent,
                 node.node_type(),
-                self.old_children != node.children,
+                self.old_children_len != node.children.len()
+                    || self.old_children_hash != children_hash(&node.children),
             )
         };
 
-        if self.old_name != new_name {
-            self.arena.unindex_name(&self.old_name, self.id);
-            if !new_name.is_empty() {
+        if self.old_name_hash != new_name_hash {
+            self.arena.unindex_name_hash(self.old_name_hash, self.id);
+            if !name_empty {
                 self.arena
                     .name_index
-                    .entry(new_name)
+                    .entry(new_name_hash)
                     .or_default()
                     .push(self.id);
             }
         }
 
-        for tag in &self.old_tags {
-            if !new_tags.contains(tag) {
-                self.arena.unindex_tag(*tag, self.id);
+        if self.old_tags_hash != new_tags_hash {
+            // Rare path: tags were edited directly through the guard. Snapshot
+            // the new tag set and rebuild this id's tag-index membership.
+            let new_tags: Vec<TagID> = self.arena.nodes[self.index]
+                .as_ref()
+                .expect("tracked node slot stays live while borrowed")
+                .tags
+                .clone();
+            let id = self.id;
+            self.arena.tag_index.retain(|tag, ids| {
+                if !new_tags.contains(tag) {
+                    ids.remove(&id);
+                }
+                !ids.is_empty()
+            });
+            for tag in new_tags {
+                self.arena.tag_index.entry(tag).or_default().insert(id);
             }
-        }
-        for tag in new_tags {
-            self.arena.tag_index.entry(tag).or_default().insert(self.id);
         }
 
         self.arena.parents[self.index] = new_parent;
@@ -271,7 +312,8 @@ impl NodeArena {
     /// Reuses a free slot when available. Otherwise appends a new slot.
     pub fn insert(&mut self, node: SceneNode) -> NodeID {
         self.bump_structural_revision();
-        let name = node.name.clone();
+        let name_hash = string_to_u64(node.get_name());
+        let name_empty = node.get_name().is_empty();
         let node_type = node.node_type();
         let parent = node.parent;
         // Reuse a previously freed slot in O(1).
@@ -297,8 +339,8 @@ impl NodeArena {
             self.active_len = self.active_len.saturating_add(1);
             NodeID::from_parts(index as u32, generation)
         };
-        if !name.is_empty() {
-            self.name_index.entry(name).or_default().push(id);
+        if !name_empty {
+            self.name_index.entry(name_hash).or_default().push(id);
         }
         // Read tags from the stored node. Building a temporary Vec<TagID> here
         // made every tagged insert allocate once before the real index update.
@@ -307,8 +349,7 @@ impl NodeArena {
             let tag = self.nodes[index]
                 .as_ref()
                 .expect("inserted slot stays live")
-                .tags[tag_index]
-                .id;
+                .tags[tag_index];
             self.tag_index.entry(tag).or_default().insert(id);
         }
         id
@@ -338,11 +379,12 @@ impl NodeArena {
         Some(NodeMut {
             id,
             index,
-            old_name: node.name.clone(),
-            old_tags: node.get_tag_ids(),
+            old_name_hash: string_to_u64(node.get_name()),
+            old_tags_hash: tags_hash(&node.tags),
             old_parent: node.parent,
             old_node_type: node.node_type(),
-            old_children: node.children.clone(),
+            old_children_len: node.children.len(),
+            old_children_hash: children_hash(&node.children),
             arena: self,
         })
     }
@@ -407,9 +449,12 @@ impl NodeArena {
             self.active_len = self.active_len.saturating_sub(1);
             self.parents[index] = NodeID::nil();
             self.free_indices.push(index);
-            let name = node.name.clone();
-            self.unindex_name(&name, id);
-            for tag in node.get_tag_ids() {
+            if !node.get_name().is_empty() {
+                let name_hash = string_to_u64(node.get_name());
+                self.unindex_name_hash(name_hash, id);
+            }
+            for tag_index in 0..node.tags.len() {
+                let tag = node.tags[tag_index];
                 self.unindex_tag(tag, id);
             }
         }
@@ -418,9 +463,18 @@ impl NodeArena {
 
     // ---- Name index ----
 
-    /// All live nodes currently carrying `name`, in insertion order.
-    pub fn named_ids(&self, name: &str) -> &[NodeID] {
-        self.name_index.get(name).map(Vec::as_slice).unwrap_or(&[])
+    /// Live nodes currently carrying `name`, in insertion order.
+    ///
+    /// The index is keyed by name hash; candidates are re-checked against the
+    /// authoritative node name so hash collisions cannot leak wrong ids.
+    pub fn named_ids<'a>(&'a self, name: &'a str) -> impl Iterator<Item = NodeID> + 'a {
+        self.name_index
+            .get(&string_to_u64(name))
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+            .iter()
+            .copied()
+            .filter(move |id| self.get(*id).is_some_and(|node| node.get_name() == name))
     }
 
     /// Rename a node, keeping the name index in sync. Bumps the mutation
@@ -437,22 +491,23 @@ impl NodeArena {
         }
         self.bump_mutation_revision();
         let node = self.nodes[index].as_mut().expect("slot checked live above");
-        let old = std::mem::replace(&mut node.name, name.clone());
-        self.unindex_name(&old, id);
-        if !name.is_empty() {
-            self.name_index.entry(name).or_default().push(id);
+        let new_hash = string_to_u64(name.as_ref());
+        let new_empty = name.is_empty();
+        let old = std::mem::replace(&mut node.name, name);
+        if !old.is_empty() {
+            self.unindex_name_hash(string_to_u64(old.as_ref()), id);
+        }
+        if !new_empty {
+            self.name_index.entry(new_hash).or_default().push(id);
         }
         true
     }
 
-    fn unindex_name(&mut self, name: &str, id: NodeID) {
-        if name.is_empty() {
-            return;
-        }
-        if let Some(ids) = self.name_index.get_mut(name) {
+    fn unindex_name_hash(&mut self, name_hash: u64, id: NodeID) {
+        if let Some(ids) = self.name_index.get_mut(&name_hash) {
             ids.retain(|item| *item != id);
             if ids.is_empty() {
-                self.name_index.remove(name);
+                self.name_index.remove(&name_hash);
             }
         }
     }
@@ -473,21 +528,23 @@ impl NodeArena {
         let Some(node) = self.nodes[index].as_mut() else {
             return false;
         };
-        let old = node.get_tag_ids();
-        match tags {
-            Some(tags) => node.set_tags(Some(tags)),
-            None => node.clear_tags(),
-        }
-        let new = node.get_tag_ids();
+        let new: Vec<TagID> = tags
+            .map(|tags| tags.into_iter().map(NodeTag::intern).collect())
+            .unwrap_or_default();
+        let old = std::mem::take(&mut node.tags);
         self.bump_mutation_revision();
         for tag in old {
             if !new.contains(&tag) {
                 self.unindex_tag(tag, id);
             }
         }
-        for tag in new {
-            self.tag_index.entry(tag).or_default().insert(id);
+        for tag in &new {
+            self.tag_index.entry(*tag).or_default().insert(id);
         }
+        self.nodes[index]
+            .as_mut()
+            .expect("slot checked live above")
+            .tags = new;
         true
     }
 
@@ -565,6 +622,20 @@ impl NodeArena {
             return false;
         };
         node.children.push(child);
+        self.bump_structural_revision();
+        true
+    }
+
+    /// Remove one child link without paying the tracked-edit snapshot cost.
+    #[inline]
+    pub(crate) fn remove_child(&mut self, id: NodeID, child: NodeID) -> bool {
+        let Some(index) = self.valid_slot(id) else {
+            return false;
+        };
+        let Some(node) = self.nodes[index].as_mut() else {
+            return false;
+        };
+        node.children.retain(|&c| c != child);
         self.bump_structural_revision();
         true
     }
@@ -714,10 +785,20 @@ impl NodeArena {
         self.packed_children_revision = self.structural_revision;
     }
 
-    /// Rebuild only when structural edits or tracked mutable access stale the cache.
+    /// Rebuild only once enough structural churn accumulates to amortize the
+    /// full CSR rebuild. While the cache is stale, [`Self::children`] serves
+    /// reads from authoritative per-node storage (never stale data): the gate
+    /// leaves the cache marked "not current" instead of rebuilding eagerly.
     #[inline]
     pub fn refresh_packed_children(&mut self) {
-        if !self.packed_children_current() {
+        if self.packed_children_current() {
+            return;
+        }
+        let delta = self
+            .structural_revision
+            .wrapping_sub(self.packed_children_revision);
+        let threshold = (self.nodes.len() as u64 / 8).max(64);
+        if delta > threshold {
             self.rebuild_packed_children();
         }
     }

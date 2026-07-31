@@ -452,6 +452,7 @@ impl Gpu3D {
             && base.mesh_blend == next.mesh_blend
             && base.mesh_blend_screen == next.mesh_blend_screen
             && base.mesh_blend_params == next.mesh_blend_params
+            && base.mesh_blend_params_ext == next.mesh_blend_params_ext
             && base.mesh_blend_depth == next.mesh_blend_depth
             && base.blend_layers == next.blend_layers
             && base.blend_mask == next.blend_mask
@@ -710,6 +711,7 @@ mod tests {
             mesh_blend: false,
             mesh_blend_screen: false,
             mesh_blend_params: 0,
+            mesh_blend_params_ext: 0,
             mesh_blend_depth: false,
             blend_layers: BitMask::ALL.bits(),
             blend_mask: BitMask::NONE.bits(),
@@ -822,6 +824,7 @@ mod tests {
             mesh_blend: false,
             mesh_blend_screen: false,
             mesh_blend_params: 0,
+            mesh_blend_params_ext: 0,
             mesh_blend_depth: false,
             blend_layers: 0,
             blend_mask: 0,

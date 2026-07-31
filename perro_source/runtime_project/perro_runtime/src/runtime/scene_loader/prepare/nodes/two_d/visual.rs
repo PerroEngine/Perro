@@ -142,7 +142,7 @@ fn apply_label_2d_fields(node: &mut Label2D, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
         "text" => {
             if let Some(v) = as_str(value) {
-                node.text = Cow::Owned(decode_scene_text_literal(v));
+                node.text = std::sync::Arc::from(decode_scene_text_literal(v));
             }
         }
         "size" => {

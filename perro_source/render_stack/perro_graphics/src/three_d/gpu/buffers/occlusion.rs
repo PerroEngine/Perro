@@ -191,15 +191,17 @@ impl Gpu3D {
         if self.pending_hiz_debug_count == 0 || self.pending_hiz_debug_map_rx.is_some() {
             return;
         }
+        let Some(readback_buffer) = self.hiz_debug_readback_buffer.as_ref() else {
+            return;
+        };
         let byte_len = u64::from(self.pending_hiz_debug_count)
             * std::mem::size_of::<DrawIndexedIndirectGpu>() as u64;
         let (tx, rx) = mpsc::channel();
-        self.hiz_debug_readback_buffer.slice(0..byte_len).map_async(
-            wgpu::MapMode::Read,
-            move |result| {
+        readback_buffer
+            .slice(0..byte_len)
+            .map_async(wgpu::MapMode::Read, move |result| {
                 let _ = tx.send(result);
-            },
-        );
+            });
         self.pending_hiz_debug_map_rx = Some(rx);
     }
 
@@ -211,14 +213,16 @@ impl Gpu3D {
         let Some(rx) = self.pending_hiz_debug_map_rx.as_ref() else {
             return;
         };
+        let Some(readback_buffer) = self.hiz_debug_readback_buffer.as_ref() else {
+            self.pending_hiz_debug_count = 0;
+            self.pending_hiz_debug_frustum_visible_est = 0;
+            self.pending_hiz_debug_map_rx = None;
+            return;
+        };
         match rx.try_recv() {
             Ok(Ok(())) => {
                 let byte_len = (count * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
-                let Ok(data) = self
-                    .hiz_debug_readback_buffer
-                    .slice(0..byte_len)
-                    .get_mapped_range()
-                else {
+                let Ok(data) = readback_buffer.slice(0..byte_len).get_mapped_range() else {
                     // Buffer unmappable despite a successful map: destroyed
                     // (device loss) or replaced; unmap would panic.
                     self.pending_hiz_debug_count = 0;
@@ -234,7 +238,7 @@ impl Gpu3D {
                     }
                 }
                 drop(data);
-                self.hiz_debug_readback_buffer.unmap();
+                readback_buffer.unmap();
 
                 let _total_batches = self.pending_hiz_debug_count;
                 let _frustum_visible_est = self.pending_hiz_debug_frustum_visible_est;

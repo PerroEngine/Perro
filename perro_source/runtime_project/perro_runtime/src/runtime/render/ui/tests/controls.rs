@@ -63,9 +63,7 @@ mod controls {
 
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertPanel { node, rect, fill, .. })
-                if *node == child && rect.size == [80.0, 40.0] && *fill == rgba(0.7, 0.2, 0.1, 1.0)
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertPanel { node, rect, fill, .. } if *node == child && rect.size == [80.0, 40.0] && *fill == rgba(0.7, 0.2, 0.1, 1.0)))));
     }
 
     #[test]
@@ -91,8 +89,7 @@ mod controls {
         runtime.drain_render_commands(&mut commands);
         assert!(!commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertPanel { node, .. }) if *node == child
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertPanel { node, .. } if *node == child))));
         runtime.clear_dirty_flags();
 
         let _ = runtime.with_node_mut::<UiPanel, _, _>(parent, |panel| {
@@ -104,9 +101,7 @@ mod controls {
 
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertPanel { node, rect, fill, .. })
-                if *node == child && rect.size == [80.0, 40.0] && *fill == rgba(0.7, 0.2, 0.1, 1.0)
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertPanel { node, rect, fill, .. } if *node == child && rect.size == [80.0, 40.0] && *fill == rgba(0.7, 0.2, 0.1, 1.0)))));
     }
 
     #[test]
@@ -128,9 +123,7 @@ mod controls {
 
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertPanel { node: n, rect, fill, .. })
-                if *n == node && rect.size == [90.0, 45.0] && *fill == rgba(0.3, 0.6, 0.9, 1.0)
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertPanel { node: n, rect, fill, .. } if *n == node && rect.size == [90.0, 45.0] && *fill == rgba(0.3, 0.6, 0.9, 1.0)))));
     }
 
     #[test]
@@ -153,18 +146,24 @@ mod controls {
         let parent_z = commands
             .iter()
             .find_map(|cmd| match cmd {
-                RenderCommand::Ui(UiCommand::UpsertPanel { node, rect, .. }) if *node == panel => {
-                    Some(rect.z_index)
-                }
+                RenderCommand::Ui(b0) => match &**b0 {
+                    UiCommand::UpsertPanel { node, rect, .. } if *node == panel => {
+                        Some(rect.z_index)
+                    }
+                    _ => None,
+                },
                 _ => None,
             })
             .expect("parent panel command");
         let child_z = commands
             .iter()
             .find_map(|cmd| match cmd {
-                RenderCommand::Ui(UiCommand::UpsertLabel { node, rect, .. }) if *node == label => {
-                    Some(rect.z_index)
-                }
+                RenderCommand::Ui(b0) => match &**b0 {
+                    UiCommand::UpsertLabel { node, rect, .. } if *node == label => {
+                        Some(rect.z_index)
+                    }
+                    _ => None,
+                },
                 _ => None,
             })
             .expect("child label command");
@@ -192,15 +191,19 @@ mod controls {
         runtime.drain_render_commands(&mut commands);
 
         let parent_z = commands.iter().find_map(|cmd| match cmd {
-            RenderCommand::Ui(UiCommand::UpsertPanel { node, rect, .. }) if *node == panel => {
-                Some(rect.z_index)
-            }
+            RenderCommand::Ui(b0) => match &**b0 {
+                UiCommand::UpsertPanel { node, rect, .. } if *node == panel => Some(rect.z_index),
+                _ => None,
+            },
             _ => None,
         });
         let viewport_z = commands.iter().find_map(|cmd| match cmd {
-            RenderCommand::Ui(UiCommand::UpsertImage { node, rect, .. }) if *node == viewport => {
-                Some(rect.z_index)
-            }
+            RenderCommand::Ui(b0) => match &**b0 {
+                UiCommand::UpsertImage { node, rect, .. } if *node == viewport => {
+                    Some(rect.z_index)
+                }
+                _ => None,
+            },
             _ => None,
         });
 
@@ -218,9 +221,7 @@ mod controls {
         runtime.drain_render_commands(&mut commands);
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
-                if *n == node && *fill == rgba(0.1, 0.2, 0.3, 1.0)
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertButton { node: n, fill, .. } if *n == node && *fill == rgba(0.1, 0.2, 0.3, 1.0)))));
         runtime.clear_dirty_flags();
 
         runtime.set_mouse_position(400.0, 300.0);
@@ -229,9 +230,7 @@ mod controls {
         runtime.drain_render_commands(&mut commands);
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
-                if *n == node && *fill == rgba(0.2, 0.3, 0.4, 1.0)
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertButton { node: n, fill, .. } if *n == node && *fill == rgba(0.2, 0.3, 0.4, 1.0)))));
 
         runtime.clear_dirty_flags();
         runtime.set_mouse_button_state(MouseButton::Left, true);
@@ -240,9 +239,7 @@ mod controls {
         runtime.drain_render_commands(&mut commands);
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
-                if *n == node && *fill == rgba(0.3, 0.4, 0.5, 1.0)
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertButton { node: n, fill, .. } if *n == node && *fill == rgba(0.3, 0.4, 0.5, 1.0)))));
     }
 
     #[test]
@@ -311,9 +308,7 @@ mod controls {
         runtime.drain_render_commands(&mut commands);
         assert!(!commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
-                if *n == node && *fill == rgba(0.2, 0.3, 0.4, 1.0)
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertButton { node: n, fill, .. } if *n == node && *fill == rgba(0.2, 0.3, 0.4, 1.0)))));
         assert_eq!(runtime.take_cursor_icon_request(), None);
 
         runtime.clear_dirty_flags();
@@ -323,9 +318,7 @@ mod controls {
         runtime.drain_render_commands(&mut commands);
         assert!(!commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
-                if *n == node && *fill == rgba(0.3, 0.4, 0.5, 1.0)
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertButton { node: n, fill, .. } if *n == node && *fill == rgba(0.3, 0.4, 0.5, 1.0)))));
         assert_eq!(runtime.take_cursor_icon_request(), None);
     }
 
@@ -350,9 +343,7 @@ mod controls {
         runtime.drain_render_commands(&mut commands);
         assert!(!commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
-                if *n == node && *fill == rgba(0.2, 0.3, 0.4, 1.0)
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertButton { node: n, fill, .. } if *n == node && *fill == rgba(0.2, 0.3, 0.4, 1.0)))));
         assert_eq!(runtime.take_cursor_icon_request(), None);
 
         runtime.clear_dirty_flags();
@@ -362,9 +353,7 @@ mod controls {
         runtime.drain_render_commands(&mut commands);
         assert!(!commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
-                if *n == node && *fill == rgba(0.3, 0.4, 0.5, 1.0)
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertButton { node: n, fill, .. } if *n == node && *fill == rgba(0.3, 0.4, 0.5, 1.0)))));
         assert_eq!(runtime.take_cursor_icon_request(), None);
     }
 
@@ -396,13 +385,12 @@ mod controls {
         runtime.drain_render_commands(&mut commands);
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertButton {
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertButton {
                 node: n,
                 fill,
                 disabled,
                 ..
-            }) if *n == node && *fill == rgba(0.1, 0.2, 0.3, 1.0) && *disabled
-        )));
+            } if *n == node && *fill == rgba(0.1, 0.2, 0.3, 1.0) && *disabled))));
         assert_eq!(
             runtime.render_ui.button_states.get(&node).copied(),
             Some(UiButtonVisualState::Neutral)
@@ -437,13 +425,12 @@ mod controls {
         runtime.drain_render_commands(&mut commands);
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertButton {
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertButton {
                 node: n,
                 fill,
                 disabled,
                 ..
-            }) if *n == node && *fill == rgba(0.1, 0.2, 0.3, 1.0) && !*disabled
-        )));
+            } if *n == node && *fill == rgba(0.1, 0.2, 0.3, 1.0) && !*disabled))));
         assert_eq!(
             runtime.render_ui.button_states.get(&node).copied(),
             Some(UiButtonVisualState::Neutral)
@@ -499,19 +486,18 @@ mod controls {
 
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertShape {
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertShape {
                 node: n,
                 kind,
                 fill,
                 stroke,
                 stroke_width,
                 ..
-            }) if *n == node
+            } if *n == node
                 && *kind == UiShapeKind::Triangle
                 && *fill == rgba(0.2, 0.3, 0.4, 1.0)
                 && *stroke == rgba(0.9, 0.2, 0.1, 1.0)
-                && *stroke_width == 2.0
-        )));
+                && *stroke_width == 2.0))));
     }
 
     #[test]
@@ -536,9 +522,7 @@ mod controls {
         runtime.drain_render_commands(&mut commands);
         assert!(!commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
-                if *n == node && *fill == rgba(0.2, 0.3, 0.4, 1.0)
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertButton { node: n, fill, .. } if *n == node && *fill == rgba(0.2, 0.3, 0.4, 1.0)))));
         assert_eq!(runtime.take_cursor_icon_request(), None);
 
         runtime.clear_dirty_flags();
@@ -548,9 +532,7 @@ mod controls {
         runtime.drain_render_commands(&mut commands);
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
-                if *n == node && *fill == rgba(0.2, 0.3, 0.4, 1.0)
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertButton { node: n, fill, .. } if *n == node && *fill == rgba(0.2, 0.3, 0.4, 1.0)))));
     }
 
     #[test]
@@ -665,7 +647,7 @@ mod controls {
         runtime.set_viewport_size(800, 600);
         let mut text_box = perro_ui::UiTextBox::new();
         text_box.inner.base.layout.size = UiVector2::pixels(200.0, 40.0);
-        text_box.inner.text = Cow::Borrowed("abcd");
+        text_box.inner.text = "abcd".into();
         text_box.inner.caret = 4;
         text_box.inner.anchor = 4;
         let node = insert_ui_node(&mut runtime, SceneNodeData::UiTextBox(Box::new(text_box)));

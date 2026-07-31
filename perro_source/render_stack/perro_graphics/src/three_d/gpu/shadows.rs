@@ -33,7 +33,7 @@ impl Gpu3D {
             let (texture, view, layer_views) = create_shadow_map_array_texture(
                 device,
                 "perro_ray_shadow_map",
-                SHADOW_MAP_SIZE,
+                self.shadow_map_size,
                 ray_layers,
             );
             self._shadow_map_texture = texture;
@@ -46,7 +46,7 @@ impl Gpu3D {
             let (texture, view, layer_views) = create_shadow_map_array_texture(
                 device,
                 "perro_spot_shadow_map",
-                SHADOW_SPOT_MAP_SIZE,
+                self.shadow_spot_map_size,
                 spot_layers,
             );
             self._spot_shadow_map_texture = texture;
@@ -59,7 +59,7 @@ impl Gpu3D {
             let (texture, view, layer_views) = create_shadow_map_array_texture(
                 device,
                 "perro_point_shadow_map",
-                SHADOW_POINT_MAP_SIZE,
+                self.shadow_point_map_size,
                 point_layers,
             );
             self._point_shadow_map_texture = texture;
@@ -132,6 +132,7 @@ impl Gpu3D {
             fallback_focus_radius: self.shadow_focus_radius,
             viewport_width: self.depth_size.0,
             viewport_height: self.depth_size.1,
+            shadow_map_size: self.shadow_map_size,
             has_casters,
         });
         // ray_params.w = PCF kernel select (0 = 4-tap default, 1 = 9-tap via
@@ -219,6 +220,7 @@ pub(super) struct ShadowSetupArgs<'a> {
     fallback_focus_radius: f32,
     viewport_width: u32,
     viewport_height: u32,
+    shadow_map_size: u32,
     has_casters: bool,
 }
 
@@ -232,6 +234,7 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
         fallback_focus_radius,
         viewport_width,
         viewport_height,
+        shadow_map_size,
         has_casters,
     } = args;
     let mut scenes = vec![Scene3DUniform::zeroed(); SHADOW_CAMERA_COUNT];
@@ -266,6 +269,7 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
         fallback_focus_radius,
         viewport_width,
         viewport_height,
+        shadow_map_size,
     }) {
         for (index, scene) in ray_setup
             .scenes
@@ -439,6 +443,7 @@ struct RayShadowSceneArgs<'a> {
     fallback_focus_radius: f32,
     viewport_width: u32,
     viewport_height: u32,
+    shadow_map_size: u32,
 }
 
 struct RayShadowScenes {
@@ -460,6 +465,7 @@ fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScen
         fallback_focus_radius,
         viewport_width,
         viewport_height,
+        shadow_map_size,
     } = args;
     let explicit_shadow_ray = lighting
         .ray_lights
@@ -557,8 +563,8 @@ fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScen
             cascade_light_bounds(&corners, scene_corners.as_deref(), view)?;
         let span_x = (ls_max.x - ls_min.x).max(2.0);
         let span_y = (ls_max.y - ls_min.y).max(2.0);
-        let wupt_x = (span_x / SHADOW_MAP_SIZE as f32).max(1.0e-6);
-        let wupt_y = (span_y / SHADOW_MAP_SIZE as f32).max(1.0e-6);
+        let wupt_x = (span_x / shadow_map_size as f32).max(1.0e-6);
+        let wupt_y = (span_y / shadow_map_size as f32).max(1.0e-6);
         let center_ls_x = (ls_min.x + ls_max.x) * 0.5;
         let center_ls_y = (ls_min.y + ls_max.y) * 0.5;
         let center_delta = right_axis * ((center_ls_x / wupt_x).round() * wupt_x - center_ls_x)
@@ -573,7 +579,7 @@ fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScen
         ls_min.y -= xy_pad;
         ls_max.y += xy_pad;
         texels[cascade] =
-            ((ls_max.x - ls_min.x).max(ls_max.y - ls_min.y) / SHADOW_MAP_SIZE as f32).max(1.0e-4);
+            ((ls_max.x - ls_min.x).max(ls_max.y - ls_min.y) / shadow_map_size as f32).max(1.0e-4);
         let z_pad = (radius * 0.65).max(12.0);
         // With scene bounds, ls_max.z already reaches the caster closest to the
         // light; the near plane must follow it even past the eye (negative near
@@ -949,6 +955,7 @@ mod tests {
             mesh_blend: false,
             mesh_blend_screen: false,
             mesh_blend_params: 0,
+            mesh_blend_params_ext: 0,
             mesh_blend_depth: false,
             blend_layers: BitMask::ALL.bits(),
             blend_mask: BitMask::NONE.bits(),
@@ -1003,6 +1010,7 @@ mod tests {
             fallback_focus_radius: 64.0,
             viewport_width: 1280,
             viewport_height: 720,
+            shadow_map_size: SHADOW_MAP_SIZE,
             has_casters: true,
         });
         let setup_yaw = build_shadow_setup(ShadowSetupArgs {
@@ -1014,6 +1022,7 @@ mod tests {
             fallback_focus_radius: 64.0,
             viewport_width: 1280,
             viewport_height: 720,
+            shadow_map_size: SHADOW_MAP_SIZE,
             has_casters: true,
         });
         let setup_b = build_shadow_setup(ShadowSetupArgs {
@@ -1025,6 +1034,7 @@ mod tests {
             fallback_focus_radius: 64.0,
             viewport_width: 1280,
             viewport_height: 720,
+            shadow_map_size: SHADOW_MAP_SIZE,
             has_casters: true,
         });
         assert_eq!(setup_a.uniform.ray_splits, setup_yaw.uniform.ray_splits);
@@ -1047,6 +1057,7 @@ mod tests {
             fallback_focus_radius: 64.0,
             viewport_width: 1280,
             viewport_height: 720,
+            shadow_map_size: SHADOW_MAP_SIZE,
             has_casters: true,
         });
         assert!(setup.ray_enabled);
@@ -1078,6 +1089,7 @@ mod tests {
             fallback_focus_radius: 64.0,
             viewport_width: 1280,
             viewport_height: 720,
+            shadow_map_size: SHADOW_MAP_SIZE,
             has_casters: true,
         });
         assert!(setup.ray_enabled);
@@ -1114,6 +1126,7 @@ mod tests {
             fallback_focus_radius: 64.0,
             viewport_width: 1280,
             viewport_height: 720,
+            shadow_map_size: SHADOW_MAP_SIZE,
             has_casters: true,
         });
         assert_eq!(setup.uniform.params0, [1.0, 0.5, 0.001, 0.1]);
@@ -1160,6 +1173,7 @@ mod tests {
             fallback_focus_radius: 64.0,
             viewport_width: 1280,
             viewport_height: 720,
+            shadow_map_size: SHADOW_MAP_SIZE,
             has_casters: true,
         });
         assert_eq!(setup.spot_count, 1);

@@ -43,6 +43,9 @@ pub(in super::super) struct BuildInstanceArgs {
 #[derive(Clone, Copy, Default)]
 pub(in super::super) struct ResolvedMeshBlend {
     pub(in super::super) packed_params: u32,
+    // Second packed lane set for the screen seam pass: slope factor, strength
+    // and the salt-instances flag (see pack_mesh_blend_params_ext).
+    pub(in super::super) packed_params_ext: u32,
     pub(in super::super) packed_flags: u32,
     pub(in super::super) depth_receiver: bool,
 }
@@ -82,11 +85,6 @@ pub(super) fn resolved_mesh_blend_normal_blending(blend: ResolvedMeshBlend) -> b
 }
 
 #[inline]
-pub(super) fn resolved_mesh_blend_screen_blending(blend: ResolvedMeshBlend) -> bool {
-    (blend.packed_flags & RESOLVED_MESH_BLEND_SCREEN_BLEND) != 0
-}
-
-#[inline]
 pub(in super::super) fn resolved_mesh_blend_screen_pass(blend: ResolvedMeshBlend) -> bool {
     (blend.packed_flags & RESOLVED_MESH_BLEND_SCREEN_PASS) != 0
 }
@@ -108,6 +106,18 @@ pub(super) fn pack_mesh_blend_params(blend: MeshBlendOptions3D) -> u32 {
         quantize_unorm8(blend.noise_factor),
         quantize_unorm8_range(blend.noise_scale, 64.0),
     )
+}
+
+// Second packed lane set for the screen seam pass. Slope factor uses 1/16
+// fixed point (clamped 0..=8, so the authoring default 2.0 survives exactly),
+// strength is unorm8 (1.0 exact), and bit 16 carries the salt-instances flag.
+// Keep in sync with unpack_mesh_blend_params_ext / mesh_blend_salt_instances
+// in gpu/mesh_blend_screen.rs.
+#[inline]
+pub(in super::super) fn pack_mesh_blend_params_ext(blend: MeshBlendOptions3D) -> u32 {
+    let slope = ((blend.slope_factor.clamp(0.0, 8.0) * 16.0) + 0.5).floor() as u32;
+    let strength = quantize_unorm8(blend.strength);
+    (slope & 0xff) | ((strength & 0xff) << 8) | (u32::from(blend.salt_instances) << 16)
 }
 
 pub(in super::super) fn resolve_mesh_blends(
@@ -182,6 +192,7 @@ pub(in super::super) fn resolve_mesh_blends(
         ) {
             out[index] = ResolvedMeshBlend {
                 packed_params: pack_mesh_blend_params(draw.blend),
+                packed_params_ext: pack_mesh_blend_params_ext(draw.blend),
                 packed_flags: pack_resolved_mesh_blend_flags(draw.blend),
                 depth_receiver: out[index].depth_receiver,
             }
@@ -218,6 +229,7 @@ pub(super) fn resolve_mesh_blends_quadratic(
         if target_found {
             out[index] = ResolvedMeshBlend {
                 packed_params: pack_mesh_blend_params(draw.blend),
+                packed_params_ext: pack_mesh_blend_params_ext(draw.blend),
                 packed_flags: pack_resolved_mesh_blend_flags(draw.blend),
                 depth_receiver: out[index].depth_receiver,
             };
@@ -506,10 +518,13 @@ pub(in super::super) fn build_instance(
     let blend_active = resolved_mesh_blend_active(mesh_blend);
     let packed_blend_params = if blend_active && !debug_view {
         // Screen-pass sources render opaque; the seam pass softens the
-        // intersection instead of the in-material depth fade.
-        if resolved_mesh_blend_screen_blending(mesh_blend)
-            && !resolved_mesh_blend_screen_pass(mesh_blend)
-        {
+        // intersection instead of the in-material depth fade. Every other
+        // active blend engages the legacy in-material fade — both the
+        // fallback when the screen pass is unsupported and the explicit
+        // screen_blending=false opt-out (the batch already routes to the
+        // soft-depth pipeline in that case, so without the flag the fade
+        // silently never ran).
+        if !resolved_mesh_blend_screen_pass(mesh_blend) {
             material_flags |= MATERIAL_FLAG_MESH_BLEND;
         }
         if resolved_mesh_blend_normal_blending(mesh_blend) {

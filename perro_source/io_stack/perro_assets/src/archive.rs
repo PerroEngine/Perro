@@ -82,12 +82,13 @@ impl PerroAssetsArchive {
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "File not found"))?;
 
         let range = checked_entry_range(self.data.len(), entry)?;
-        let mut data_buf = self.data[range].to_vec();
+        let stored = &self.data[range];
 
-        // Decompress if needed
+        // Decompress straight from the archive slice; only the uncompressed
+        // branch needs an owning copy.
         if entry.flags & FLAG_COMPRESSED != 0 {
             let expected_size = checked_decompressed_size(entry.original_size)?;
-            let decompressed = decompress_zlib_limited(&data_buf, expected_size)?;
+            let decompressed = decompress_zlib_limited(stored, expected_size)?;
 
             if decompressed.len() as u64 != entry.original_size {
                 return Err(io::Error::new(
@@ -99,10 +100,10 @@ impl PerroAssetsArchive {
                     ),
                 ));
             }
-            data_buf = decompressed;
+            return Ok(decompressed);
         }
 
-        Ok(data_buf)
+        Ok(stored.to_vec())
     }
 
     /// Get a direct slice (only works for uncompressed files)
@@ -135,11 +136,12 @@ impl PerroAssetsArchive {
             ));
         }
 
-        checked_entry_range(self.data.len(), entry)?;
+        let range = checked_entry_range(self.data.len(), entry)?;
 
         Ok(PerroAssetsFile {
             data: self.data.clone(),
-            entry: entry.clone(),
+            size: entry.size,
+            range,
             pos: 0,
         })
     }
@@ -223,14 +225,16 @@ fn checked_entry_range(data_len: usize, entry: &PerroAssetsEntry) -> io::Result<
 /// Streaming file handle (for uncompressed files only)
 pub struct PerroAssetsFile {
     data: ArchiveBytes,
-    entry: PerroAssetsEntry,
+    size: u64,
+    // Validated once at `stream_file`; reads index the cached range instead of
+    // re-checking the entry bounds per call.
+    range: Range<usize>,
     pos: u64,
 }
 
 impl Read for PerroAssetsFile {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let range = checked_entry_range(self.data.len(), &self.entry)?;
-        let data = &self.data[range];
+        let data = &self.data[self.range.clone()];
         let pos = usize::try_from(self.pos)
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "read offset too large"))?;
         let remaining = data.get(pos..).ok_or_else(|| {
@@ -247,11 +251,11 @@ impl Seek for PerroAssetsFile {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let new_pos = match pos {
             SeekFrom::Start(n) => n,
-            SeekFrom::End(n) => checked_seek(self.entry.size, n)?,
+            SeekFrom::End(n) => checked_seek(self.size, n)?,
             SeekFrom::Current(n) => checked_seek(self.pos, n)?,
         };
 
-        if new_pos > self.entry.size {
+        if new_pos > self.size {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "Seek out of bounds",

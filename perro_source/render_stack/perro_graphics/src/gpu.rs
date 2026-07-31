@@ -2,6 +2,7 @@ use crate::{
     backend::{OcclusionCullingMode, StaticMeshLookup, StaticShaderLookup, StaticTextureLookup},
     postprocess::{PostProcessChainData, PostProcessContext, PostProcessor},
     resources::ResourceStore,
+    shared_textures::SharedTextureStore,
     three_d::{
         gpu::{Gpu3D, Gpu3DConfig, Prepare3D, Prepare3DStepTiming},
         particles::gpu::{GpuPointParticles3D, PreparePointParticles3D},
@@ -60,6 +61,9 @@ const CLEAR_R: f64 = 0.050876;
 const CLEAR_G: f64 = 0.063763;
 const CLEAR_B: f64 = 0.079339;
 const SMOOTH_SAMPLE_COUNT: u32 = 4;
+// Frames between shared-texture refcount sweeps (~5s at 60fps; an entry is
+// evicted after staying unreferenced for 2 consecutive sweeps).
+const SHARED_TEXTURE_SWEEP_INTERVAL_FRAMES: u32 = 300;
 
 fn premultiplied_clear_color(color: perro_structs::Color) -> wgpu::Color {
     let alpha = color.a().clamp(0.0, 1.0);
@@ -542,6 +546,7 @@ pub struct Gpu {
     hdr_status: HdrStatus,
     render_width: u32,
     render_height: u32,
+    max_render_pixels: u64,
     render_format: wgpu::TextureFormat,
     sample_count: u32,
     max_supported_sample_count: u32,
@@ -554,10 +559,14 @@ pub struct Gpu {
     msaa_color: Option<MsaaColorTarget>,
     post: PostProcessor,
     post_view_generation: u64,
-    accessibility: VisualAccessibilityProcessor,
+    accessibility: Option<VisualAccessibilityProcessor>,
     present: PresentProcessor,
     present_scene_bind_group: PresentBindGroups,
-    present_intermediate_bind_group: PresentBindGroups,
+    present_intermediate_bind_group: Option<PresentBindGroups>,
+    // One texel upload per (source, color space, mips) shared by every
+    // consumer cache below; consumers keep handles + their own bind groups.
+    shared_textures: SharedTextureStore,
+    shared_texture_frame_counter: u32,
     two_d: Option<Gpu2D>,
     late_overlay_2d: Option<Gpu2D>,
     ui: Option<GpuUi>,
@@ -605,6 +614,9 @@ pub struct Gpu {
     indirect_first_instance_enabled: bool,
     multi_draw_indirect_enabled: bool,
     gpu_timer: Option<GpuTimestampTimer>,
+    // Project virtual canvas for 2D aspect-fit scaling; camera-stream / sub
+    // view 2D passes use the same world-to-pixel rule as the main view.
+    virtual_size_2d: [f32; 2],
 }
 
 #[derive(Clone, Copy)]
@@ -721,7 +733,7 @@ pub struct RenderFrame<'a> {
     pub waters_3d_revision: u64,
     pub decals_3d: &'a [(NodeID, Decal3DState)],
     pub decals_3d_revision: u64,
-    pub camera_streams: &'a [(NodeID, CameraStreamState)],
+    pub camera_streams: &'a [(NodeID, Arc<CameraStreamState>)],
     pub camera_2d: Camera2DUniform,
     pub camera_2d_position: [f32; 2],
     pub post_processing_2d: Arc<[perro_structs::PostProcessEffect]>,

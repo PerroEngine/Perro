@@ -2,6 +2,7 @@ use perro_ids::{NodeID, SignalID, TextureID};
 use perro_structs::{Color, Vector2};
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 
 mod font;
 mod layout;

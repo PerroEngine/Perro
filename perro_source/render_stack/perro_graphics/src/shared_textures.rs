@@ -1,0 +1,378 @@
+//! Gpu-level shared texture uploads.
+//!
+//! One decoded image used by several consumer caches (main/late-overlay 2D,
+//! per-camera-stream 2D, UI images, main + per-stream 3D material slots) used
+//! to be uploaded once per consumer, multiplying VRAM by the consumer count.
+//! This store keys uploads by (source hash, color space, mip presence) and
+//! hands out `Arc<SharedGpuTexture>` handles; consumers keep only their own
+//! samplers + bind groups (bind group layouts are per-pipeline).
+
+use crate::texture_mips::{
+    rgba_mip_level_count, write_rgba_texture_streaming, write_texture_base_level,
+};
+use ahash::AHashMap;
+use perro_structs::TextureFilterMode;
+use std::sync::Arc;
+
+/// Sweeps an entry must stay unreferenced (strong_count == 1, store only)
+/// before the periodic sweep evicts it.
+const SHARED_TEXTURE_EVICT_SWEEPS: u32 = 2;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum SharedTextureColorSpace {
+    Srgb,
+    Linear,
+}
+
+impl SharedTextureColorSpace {
+    pub(crate) fn format(self) -> wgpu::TextureFormat {
+        match self {
+            Self::Srgb => wgpu::TextureFormat::Rgba8UnormSrgb,
+            Self::Linear => wgpu::TextureFormat::Rgba8Unorm,
+        }
+    }
+}
+
+/// Identity of one GPU upload. Two consumers requesting the same source with
+/// the same color space and the same mip decision share one `wgpu::Texture`.
+/// The exact filter mode is NOT part of the key: the baked texel contents only
+/// differ by whether a mip chain exists (`TextureFilterMode::uses_mipmaps`);
+/// mag/min/mip filtering lives in per-consumer samplers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct SharedTextureKey {
+    pub source_hash: u64,
+    pub color_space: SharedTextureColorSpace,
+    pub mips: bool,
+}
+
+impl SharedTextureKey {
+    pub(crate) fn from_source(
+        source: &str,
+        color_space: SharedTextureColorSpace,
+        filter: TextureFilterMode,
+    ) -> Self {
+        Self {
+            source_hash: shared_texture_source_hash(source),
+            color_space,
+            mips: filter.uses_mipmaps(),
+        }
+    }
+}
+
+/// Same normalization the 3D custom-material slot map uses, so `res://`-style
+/// hashed URIs and plain paths land on one identity.
+pub(crate) fn shared_texture_source_hash(source: &str) -> u64 {
+    perro_ids::parse_hashed_source_uri(source).unwrap_or_else(|| perro_ids::string_to_u64(source))
+}
+
+pub(crate) struct SharedGpuTexture {
+    pub texture: wgpu::Texture,
+    pub view: wgpu::TextureView,
+    pub width: u32,
+    pub height: u32,
+}
+
+struct SharedTextureSlot {
+    texture: Arc<SharedGpuTexture>,
+    idle_sweeps: u32,
+}
+
+#[derive(Default)]
+pub(crate) struct SharedTextureStore {
+    entries: AHashMap<SharedTextureKey, SharedTextureSlot>,
+}
+
+impl SharedTextureStore {
+    pub(crate) fn get(&self, key: &SharedTextureKey) -> Option<Arc<SharedGpuTexture>> {
+        self.entries.get(key).map(|slot| slot.texture.clone())
+    }
+
+    /// Upload-or-reuse. On a hit the decoded bytes are ignored (the resident
+    /// texture already holds them); on a miss the texture + mip chain (per
+    /// `key.mips`) is created and written once.
+    pub(crate) fn ensure_rgba(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        key: SharedTextureKey,
+        rgba: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Arc<SharedGpuTexture> {
+        if let Some(existing) = self.get(&key) {
+            return existing;
+        }
+        let width = width.max(1);
+        let height = height.max(1);
+        let base_len = width as usize * height as usize * 4;
+        let valid = rgba.len() >= base_len;
+        // Mip contents depend only on the mips bit (mag/min/mip filtering lives
+        // in per-consumer samplers). Undersized input keeps the old fallback:
+        // a single-level texture with 1x1 white written into level 0.
+        let mip_level_count = if key.mips && valid {
+            rgba_mip_level_count(width, height)
+        } else {
+            1
+        };
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("perro_shared_texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: key.color_space.format(),
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        if valid {
+            // Streaming upload: base level straight from the borrowed slice,
+            // mips generated level-by-level into reused scratch. The full mip
+            // chain is never materialized on the CPU.
+            write_rgba_texture_streaming(queue, &texture, &rgba[..base_len], width, height);
+        } else {
+            write_texture_base_level(queue, &texture, 1, 1, &[255, 255, 255, 255]);
+        }
+        let view = texture.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("perro_shared_texture_view"),
+            ..Default::default()
+        });
+        let shared = Arc::new(SharedGpuTexture {
+            texture,
+            view,
+            width,
+            height,
+        });
+        self.entries.insert(
+            key,
+            SharedTextureSlot {
+                texture: shared.clone(),
+                idle_sweeps: 0,
+            },
+        );
+        shared
+    }
+
+    /// Drop every color-space/mip variant uploaded for `source`. Consumers
+    /// must drop their handles + bind groups too (the existing per-consumer
+    /// invalidate fan-out does exactly that); the next demand re-uploads once.
+    pub(crate) fn invalidate_source(&mut self, source: &str) {
+        let hash = shared_texture_source_hash(source);
+        self.entries.retain(|key, _| key.source_hash != hash);
+    }
+
+    /// One in-place base-level write per resident single-level variant of
+    /// `source` (stream textures upload without mips, so a matching write
+    /// updates every consumer at once - that is the point of sharing).
+    /// Returns whether any variant accepted the write.
+    pub(crate) fn write_stream_base_level(
+        &mut self,
+        queue: &wgpu::Queue,
+        source: &str,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+    ) -> bool {
+        let hash = shared_texture_source_hash(source);
+        let mut wrote = false;
+        for (key, slot) in self.entries.iter() {
+            if key.source_hash != hash {
+                continue;
+            }
+            let shared = slot.texture.as_ref();
+            if shared.width != width
+                || shared.height != height
+                || shared.texture.mip_level_count() != 1
+            {
+                continue;
+            }
+            write_texture_base_level(queue, &shared.texture, width, height, rgba);
+            wrote = true;
+        }
+        wrote
+    }
+
+    /// Refcount eviction: entries whose only strong reference is the store
+    /// itself for `SHARED_TEXTURE_EVICT_SWEEPS` consecutive sweeps are freed.
+    /// A handle re-appearing between sweeps resets the counter.
+    pub(crate) fn sweep(&mut self) {
+        self.entries.retain(|_, slot| {
+            if Arc::strong_count(&slot.texture) > 1 {
+                slot.idle_sweeps = 0;
+                return true;
+            }
+            slot.idle_sweeps += 1;
+            slot.idle_sweeps < SHARED_TEXTURE_EVICT_SWEEPS
+        });
+    }
+
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.entries.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_device() -> Option<(wgpu::Device, wgpu::Queue)> {
+        pollster::block_on(async {
+            let instance = wgpu::Instance::default();
+            let adapter = instance
+                .request_adapter(&wgpu::RequestAdapterOptions {
+                    power_preference: wgpu::PowerPreference::LowPower,
+                    compatible_surface: None,
+                    force_fallback_adapter: false,
+                    apply_limit_buckets: false,
+                })
+                .await
+                .ok()?;
+            adapter
+                .request_device(&wgpu::DeviceDescriptor {
+                    label: Some("perro_shared_texture_test_device"),
+                    required_features: wgpu::Features::empty(),
+                    required_limits: wgpu::Limits::default(),
+                    experimental_features: wgpu::ExperimentalFeatures::disabled(),
+                    memory_hints: wgpu::MemoryHints::Performance,
+                    trace: wgpu::Trace::default(),
+                })
+                .await
+                .ok()
+        })
+    }
+
+    fn key(source: &str, filter: TextureFilterMode) -> SharedTextureKey {
+        SharedTextureKey::from_source(source, SharedTextureColorSpace::Srgb, filter)
+    }
+
+    #[test]
+    fn key_filter_only_distinguishes_mip_presence() {
+        let base = key("res://a.png", TextureFilterMode::Linear);
+        assert_eq!(base, key("res://a.png", TextureFilterMode::Nearest));
+        let mipped = key("res://a.png", TextureFilterMode::LinearMipmap);
+        assert_eq!(mipped, key("res://a.png", TextureFilterMode::Anisotropic));
+        assert_ne!(base, mipped);
+        assert_ne!(base, key("res://b.png", TextureFilterMode::Linear));
+        assert_ne!(
+            SharedTextureKey::from_source(
+                "res://a.png",
+                SharedTextureColorSpace::Linear,
+                TextureFilterMode::Linear,
+            ),
+            base
+        );
+    }
+
+    #[test]
+    fn two_consumers_share_one_upload() {
+        let Some((device, queue)) = test_device() else {
+            eprintln!("skip shared texture test: no wgpu adapter");
+            return;
+        };
+        let mut store = SharedTextureStore::default();
+        let rgba = vec![255u8; 2 * 2 * 4];
+        let k = key("res://shared.png", TextureFilterMode::LinearMipmap);
+        let first = store.ensure_rgba(&device, &queue, k, &rgba, 2, 2);
+        let second = store.ensure_rgba(&device, &queue, k, &rgba, 2, 2);
+        assert!(Arc::ptr_eq(&first, &second));
+        assert_eq!(store.len(), 1);
+        assert_eq!(first.texture.mip_level_count(), 2);
+    }
+
+    #[test]
+    fn different_mip_modes_get_distinct_entries() {
+        let Some((device, queue)) = test_device() else {
+            eprintln!("skip shared texture test: no wgpu adapter");
+            return;
+        };
+        let mut store = SharedTextureStore::default();
+        let rgba = vec![255u8; 2 * 2 * 4];
+        let mipped = store.ensure_rgba(
+            &device,
+            &queue,
+            key("res://x.png", TextureFilterMode::LinearMipmap),
+            &rgba,
+            2,
+            2,
+        );
+        let flat = store.ensure_rgba(
+            &device,
+            &queue,
+            key("res://x.png", TextureFilterMode::Linear),
+            &rgba,
+            2,
+            2,
+        );
+        assert!(!Arc::ptr_eq(&mipped, &flat));
+        assert_eq!(store.len(), 2);
+        assert_eq!(mipped.texture.mip_level_count(), 2);
+        assert_eq!(flat.texture.mip_level_count(), 1);
+    }
+
+    #[test]
+    fn invalidate_drops_all_variants_and_refetch_reuploads() {
+        let Some((device, queue)) = test_device() else {
+            eprintln!("skip shared texture test: no wgpu adapter");
+            return;
+        };
+        let mut store = SharedTextureStore::default();
+        let rgba = vec![128u8; 4];
+        let k_mip = key("res://inv.png", TextureFilterMode::LinearMipmap);
+        let k_flat = key("res://inv.png", TextureFilterMode::Linear);
+        let before_a = store.ensure_rgba(&device, &queue, k_mip, &rgba, 1, 1);
+        let before_b = store.ensure_rgba(&device, &queue, k_flat, &rgba, 1, 1);
+        store.invalidate_source("res://inv.png");
+        assert_eq!(store.len(), 0);
+        let after_a = store.ensure_rgba(&device, &queue, k_mip, &rgba, 1, 1);
+        let after_b = store.ensure_rgba(&device, &queue, k_flat, &rgba, 1, 1);
+        assert!(!Arc::ptr_eq(&before_a, &after_a));
+        assert!(!Arc::ptr_eq(&before_b, &after_b));
+    }
+
+    #[test]
+    fn sweep_evicts_only_unreferenced_entries_after_grace() {
+        let Some((device, queue)) = test_device() else {
+            eprintln!("skip shared texture test: no wgpu adapter");
+            return;
+        };
+        let mut store = SharedTextureStore::default();
+        let rgba = vec![0u8; 4];
+        let held_key = key("res://held.png", TextureFilterMode::Linear);
+        let dropped_key = key("res://dropped.png", TextureFilterMode::Linear);
+        let held = store.ensure_rgba(&device, &queue, held_key, &rgba, 1, 1);
+        drop(store.ensure_rgba(&device, &queue, dropped_key, &rgba, 1, 1));
+        store.sweep();
+        assert_eq!(store.len(), 2, "first idle sweep keeps the grace entry");
+        store.sweep();
+        assert_eq!(store.len(), 1);
+        assert!(store.get(&held_key).is_some());
+        assert!(store.get(&dropped_key).is_none());
+        drop(held);
+    }
+
+    #[test]
+    fn stream_write_targets_matching_single_level_entries() {
+        let Some((device, queue)) = test_device() else {
+            eprintln!("skip shared texture test: no wgpu adapter");
+            return;
+        };
+        let mut store = SharedTextureStore::default();
+        let rgba = vec![10u8; 2 * 2 * 4];
+        store.ensure_rgba(
+            &device,
+            &queue,
+            key("res://stream.png", TextureFilterMode::Linear),
+            &rgba,
+            2,
+            2,
+        );
+        assert!(store.write_stream_base_level(&queue, "res://stream.png", 2, 2, &rgba));
+        // dim mismatch and unknown sources refuse the in-place path.
+        assert!(!store.write_stream_base_level(&queue, "res://stream.png", 4, 4, &rgba));
+        assert!(!store.write_stream_base_level(&queue, "res://other.png", 2, 2, &rgba));
+    }
+}

@@ -9,14 +9,15 @@ pub(super) fn apply_ui_text_edit_fields(
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
         "text" => {
             if let Some(v) = as_str(value) {
-                node.text = Cow::Owned(decode_scene_text_edit_literal(v, node.multiline));
+                node.text = std::sync::Arc::from(decode_scene_text_edit_literal(v, node.multiline));
                 node.caret = node.text.len();
                 node.anchor = node.caret;
             }
         }
         "placeholder" | "hint" => {
             if let Some(v) = as_str(value) {
-                node.placeholder = Cow::Owned(decode_scene_text_edit_literal(v, node.multiline));
+                node.placeholder =
+                    std::sync::Arc::from(decode_scene_text_edit_literal(v, node.multiline));
             }
         }
         "color" | "text_color" => {
@@ -191,7 +192,10 @@ pub(super) fn decode_text_escapes(text: &str) -> String {
     out
 }
 
-pub(super) fn apply_ui_scroll_container_fields(node: &mut UiScrollContainer, fields: &[SceneObjectField]) {
+pub(super) fn apply_ui_scroll_container_fields(
+    node: &mut UiScrollContainer,
+    fields: &[SceneObjectField],
+) {
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
         "scroll" | "scroll_offset" => {
             if let Some(v) = as_vec2(value) {

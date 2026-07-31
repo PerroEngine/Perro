@@ -77,9 +77,12 @@ mod styling {
         let clip = commands
             .iter()
             .find_map(|cmd| match cmd {
-                RenderCommand::Ui(UiCommand::UpsertPanel {
-                    node, clip_rect, ..
-                }) if *node == child => Some(*clip_rect),
+                RenderCommand::Ui(b0) => match &**b0 {
+                    UiCommand::UpsertPanel {
+                        node, clip_rect, ..
+                    } if *node == child => Some(*clip_rect),
+                    _ => None,
+                },
                 _ => None,
             })
             .expect("child panel command");
@@ -249,11 +252,10 @@ mod styling {
         let rect = commands
             .iter()
             .find_map(|cmd| match cmd {
-                RenderCommand::Ui(UiCommand::UpsertShape { node, rect, .. })
-                    if *node == scroller_id =>
-                {
-                    Some(rect)
-                }
+                RenderCommand::Ui(b0) => match &**b0 {
+                    UiCommand::UpsertShape { node, rect, .. } if *node == scroller_id => Some(rect),
+                    _ => None,
+                },
                 _ => None,
             })
             .expect("scrollbar command");
@@ -306,8 +308,7 @@ mod styling {
         runtime.drain_render_commands(&mut commands);
         assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == scroller_id
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::RemoveNode { node } if *node == scroller_id))));
 
         runtime.clear_dirty_flags();
         runtime.begin_input_frame();
@@ -682,7 +683,7 @@ mod styling {
 
         let mut text_block = perro_ui::UiTextBlock::new();
         text_block.inner.base.layout.size = UiVector2::pixels(220.0, 100.0);
-        text_block.inner.text = Cow::Borrowed("line1\nline2\nline3\nline4\nline5\nline6");
+        text_block.inner.text = "line1\nline2\nline3\nline4\nline5\nline6".into();
         let text_id = insert_ui_node(
             &mut runtime,
             SceneNodeData::UiTextBlock(Box::new(text_block)),
@@ -754,9 +755,7 @@ mod styling {
         runtime.drain_render_commands(&mut commands);
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
-                if *n == button && *fill == rgba(0.2, 0.3, 0.4, 1.0)
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertButton { node: n, fill, .. } if *n == button && *fill == rgba(0.2, 0.3, 0.4, 1.0)))));
     }
 
     #[test]
@@ -819,12 +818,10 @@ mod styling {
         runtime.drain_render_commands(&mut commands);
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == label
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::RemoveNode { node } if *node == label))));
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == button
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::RemoveNode { node } if *node == button))));
     }
 
     #[test]
@@ -854,12 +851,10 @@ mod styling {
         runtime.drain_render_commands(&mut commands);
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == button
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::RemoveNode { node } if *node == button))));
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == label
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::RemoveNode { node } if *node == label))));
         assert!(!runtime.render_ui.prev_visible.contains(&button));
         assert!(!runtime.render_ui.prev_visible.contains(&label));
     }
@@ -898,12 +893,10 @@ mod styling {
         runtime.drain_render_commands(&mut commands);
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertButton { node: n, .. }) if *n == button
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertButton { node: n, .. } if *n == button))));
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertLabel { node: n, .. }) if *n == label
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertLabel { node: n, .. } if *n == label))));
     }
 
     #[test]
@@ -936,12 +929,10 @@ mod styling {
         runtime.drain_render_commands(&mut commands);
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertButton { node: n, .. }) if *n == button
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertButton { node: n, .. } if *n == button))));
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertLabel { node: n, .. }) if *n == label
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertLabel { node: n, .. } if *n == label))));
     }
 
     #[test]
@@ -976,12 +967,10 @@ mod styling {
         runtime.drain_render_commands(&mut commands);
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertButton { node: n, .. }) if *n == button
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertButton { node: n, .. } if *n == button))));
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertLabel { node: n, .. }) if *n == label
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertLabel { node: n, .. } if *n == label))));
     }
 
     #[test]
@@ -1007,12 +996,10 @@ mod styling {
         runtime.drain_render_commands(&mut commands);
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertPanel { node: n, .. }) if *n == parent
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertPanel { node: n, .. } if *n == parent))));
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertButton { node: n, .. }) if *n == button
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertButton { node: n, .. } if *n == button))));
     }
 
     #[test]
@@ -1038,9 +1025,7 @@ mod styling {
         runtime.drain_render_commands(&mut commands);
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertPanel { node: n, rect, fill, .. })
-                if *n == parent && rect.size[0] > 300.0 && rect.size[1] > 50.0 && *fill == rgba(0.341, 0.780, 0.851, 1.0)
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertPanel { node: n, rect, fill, .. } if *n == parent && rect.size[0] > 300.0 && rect.size[1] > 50.0 && *fill == rgba(0.341, 0.780, 0.851, 1.0)))));
     }
 
     #[test]
@@ -1050,7 +1035,7 @@ mod styling {
 
         let mut root = perro_ui::UiNode::new();
         root.layout.size = UiVector2::ratio(1.0, 1.0);
-        let root = insert_ui_node(&mut runtime, SceneNodeData::UiNode(root));
+        let root = insert_ui_node(&mut runtime, SceneNodeData::from(root));
 
         let mut content = UiVLayout::new();
         content.layout.size = UiVector2::ratio(0.92, 0.92);
@@ -1103,14 +1088,12 @@ mod styling {
         for button in buttons {
             assert!(commands.iter().any(|cmd| matches!(
                 cmd,
-                RenderCommand::Ui(UiCommand::UpsertButton { node: n, .. }) if *n == button
-            )));
+                RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertButton { node: n, .. } if *n == button))));
         }
         for label in labels {
             assert!(commands.iter().any(|cmd| matches!(
                 cmd,
-                RenderCommand::Ui(UiCommand::UpsertLabel { node: n, .. }) if *n == label
-            )));
+                RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertLabel { node: n, .. } if *n == label))));
         }
     }
 
@@ -1272,17 +1255,16 @@ mod styling {
 
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertNineSlice {
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertNineSlice {
                 node: n,
                 rect,
                 tint,
                 margins,
                 ..
-            }) if *n == node
+            } if *n == node
                 && rect.size == [140.0, 52.0]
                 && *tint == Color::new(0.3, 0.5, 0.7, 1.0)
-                && *margins == [6.0, 7.0, 8.0, 9.0]
-        )));
+                && *margins == [6.0, 7.0, 8.0, 9.0]))));
     }
 
     #[test]
@@ -1315,7 +1297,14 @@ mod styling {
         let popup = runtime.render_ui.computed_rects[&popup_id];
         let dropdown_rect = runtime.render_ui.computed_rects[&dropdown_id];
 
-        assert_eq!(runtime.nodes.get(popup_id).expect("test or bench setup must succeed").parent, dropdown_id);
+        assert_eq!(
+            runtime
+                .nodes
+                .get(popup_id)
+                .expect("test or bench setup must succeed")
+                .parent,
+            dropdown_id
+        );
         assert_eq!(popup.size, Vector2::new(240.0, 80.0));
         assert_eq!(popup.max().y, dropdown_rect.min().y);
         assert!(matches!(
@@ -1435,7 +1424,12 @@ mod styling {
         let slot_count = runtime.nodes.slot_count();
         let update_schedule_len = runtime.internal_updates.internal_update_nodes.len();
         let fixed_schedule_len = runtime.internal_updates.internal_fixed_update_nodes.len();
-        let dropdown_children = runtime.nodes.get(dropdown_id).expect("test or bench setup must succeed").children.len();
+        let dropdown_children = runtime
+            .nodes
+            .get(dropdown_id)
+            .expect("test or bench setup must succeed")
+            .children
+            .len();
 
         for cycle in 0..16 {
             if let Some(mut node) = runtime.nodes.get_mut(dropdown_id)
@@ -1461,7 +1455,7 @@ mod styling {
             }));
             assert!(matches!(
                 runtime.nodes.get(labels[0]).map(|node| &node.data),
-                Some(SceneNodeData::UiLabel(label)) if label.text == format!("Small {cycle}")
+                Some(SceneNodeData::UiLabel(label)) if label.text.as_ref() == format!("Small {cycle}")
             ));
 
             if let Some(mut node) = runtime.nodes.get_mut(dropdown_id)
@@ -1500,7 +1494,7 @@ mod styling {
                 assert!(matches!(
                     runtime.nodes.get(label_id).map(|node| &node.data),
                     Some(SceneNodeData::UiLabel(label))
-                        if label.base.visible && label.text == format!("Cycle {cycle} option {idx}")
+                        if label.base.visible && label.text.as_ref() == format!("Cycle {cycle} option {idx}")
                 ));
             }
 
@@ -1515,14 +1509,19 @@ mod styling {
                 fixed_schedule_len
             );
             assert_eq!(
-                runtime.nodes.get(dropdown_id).expect("test or bench setup must succeed").children.len(),
+                runtime
+                    .nodes
+                    .get(dropdown_id)
+                    .expect("test or bench setup must succeed")
+                    .children
+                    .len(),
                 dropdown_children
             );
             assert_eq!(
                 runtime
                     .nodes
                     .named_ids("__perro_dropdown_option_label")
-                    .len(),
+                    .count(),
                 4
             );
             for idx in 0..4 {
@@ -1530,11 +1529,15 @@ mod styling {
                     runtime
                         .nodes
                         .named_ids(&format!("__perro_dropdown_option_{idx}"))
-                        .len(),
+                        .count(),
                     1
                 );
                 assert_eq!(
-                    runtime.nodes.get(buttons[idx]).expect("test or bench setup must succeed").children,
+                    runtime
+                        .nodes
+                        .get(buttons[idx])
+                        .expect("test or bench setup must succeed")
+                        .children,
                     [labels[idx]]
                 );
             }
@@ -1596,8 +1599,7 @@ mod styling {
         assert!(
             commands.iter().any(|command| matches!(
                 command,
-                RenderCommand::Ui(UiCommand::UpsertButton { node, .. }) if *node == option_id
-            )),
+                RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertButton { node, .. } if *node == option_id))),
             "open dropdown option renders on the following frame"
         );
     }

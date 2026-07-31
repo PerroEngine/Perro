@@ -363,7 +363,9 @@ impl GpuWaterFlip {
             64,
             "perro_water_flip_particles",
         );
-        changed |= grow(
+        // grid_velocity is sized purely from grid_capacity: recreate it only
+        // when the grid actually grew, not when waters/particles alone grew.
+        let grid_grew = grow(
             device,
             &mut self.accum,
             &mut self.grid_capacity,
@@ -371,13 +373,14 @@ impl GpuWaterFlip {
             16,
             "perro_water_flip_accum",
         );
-        if changed {
+        if grid_grew {
             self.grid_velocity = storage_buffer(
                 device,
                 "perro_water_flip_grid_velocity",
                 self.grid_capacity.saturating_mul(32),
             );
         }
+        changed |= grid_grew;
         changed
     }
 }

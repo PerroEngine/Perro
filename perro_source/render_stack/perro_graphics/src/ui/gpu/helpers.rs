@@ -15,6 +15,23 @@ pub(super) fn font_delta_required_size(
     ]
 }
 
+pub(super) fn font_texture_copy_extent(
+    current_size: Option<[u32; 2]>,
+    required_size: [u32; 2],
+    partial_delta: bool,
+) -> Option<[u32; 2]> {
+    let current_size = current_size?;
+    if !partial_delta
+        || (current_size[0] >= required_size[0] && current_size[1] >= required_size[1])
+    {
+        return None;
+    }
+    Some([
+        current_size[0].min(required_size[0]).max(1),
+        current_size[1].min(required_size[1]).max(1),
+    ])
+}
+
 pub(super) fn clip_rect_scaled(
     primitive: &ClippedPrimitive,
     viewport: [u32; 2],
@@ -35,11 +52,25 @@ pub(super) fn clip_rect_scaled(
     [min_x, min_y, max_x - min_x, max_y - min_y]
 }
 
-pub(super) fn supersampled_size(viewport: [u32; 2], max_dimension: u32) -> [u32; 2] {
+pub(super) fn supersampled_size(
+    viewport: [u32; 2],
+    max_dimension: u32,
+    max_pixels: u64,
+) -> [u32; 2] {
     let width = viewport[0].max(1).saturating_mul(UI_SUPERSAMPLE_SCALE);
     let height = viewport[1].max(1).saturating_mul(UI_SUPERSAMPLE_SCALE);
     let (width, height) = crate::gpu::capped_render_size(width, height, max_dimension);
-    [width, height]
+    let pixels = width as u64 * height as u64;
+    if pixels <= max_pixels {
+        return [width, height];
+    }
+    // Aspect-preserving shrink onto the per-adapter pixel budget; mirrors the
+    // rounding of the global capped_render_size path.
+    let scale = (max_pixels.max(1) as f64 / pixels as f64).sqrt();
+    [
+        ((width as f64 * scale).round() as u32).max(1),
+        ((height as f64 * scale).round() as u32).max(1),
+    ]
 }
 
 pub(super) fn viewport_scale(viewport: [u32; 2], render_viewport: [u32; 2]) -> [f32; 2] {
@@ -97,6 +128,22 @@ mod tests {
         assert_eq!(
             font_delta_required_size([55, 12], [0, 0], [2048, 32]),
             [2048, 32]
+        );
+    }
+
+    #[test]
+    fn partial_font_delta_growth_preserves_old_atlas_extent() {
+        assert_eq!(
+            font_texture_copy_extent(Some([2048, 32]), [2048, 64], true),
+            Some([2048, 32])
+        );
+        assert_eq!(
+            font_texture_copy_extent(Some([2048, 32]), [2048, 32], true),
+            None
+        );
+        assert_eq!(
+            font_texture_copy_extent(Some([2048, 32]), [2048, 64], false),
+            None
         );
     }
 }

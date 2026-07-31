@@ -399,35 +399,44 @@ impl Runtime {
     ) -> bool {
         let options = normalize_spatial_options(options);
         let pan = perro_pawdio::AudioPan::CENTER;
+        // Intern via the controller pool: repeated plays of the same source
+        // share one Arc<str> instead of allocating a String per play.
+        let mut source_handle: Option<perro_pawdio::AudioSourceHandle> = None;
         let playback_id = self.resource_api.bark.lock().ok().and_then(|guard| {
             guard.as_ref().and_then(|player| {
-                player.play_spatial_source(perro_pawdio::AudioPlaybackRequest {
-                    id: 0,
-                    source: audio.source,
-                    bus_id,
-                    looped: audio.looped,
-                    volume: audio.volume,
-                    speed: audio.effects.speed,
-                    pan,
-                    low_pass: audio.effects.low_pass,
-                    reverb_send: audio.effects.reverb_send,
-                    echo: audio.effects.echo,
-                    reflection: audio.effects.reflection,
-                    occlusion: audio.effects.occlusion,
-                    eq: perro_pawdio::AudioEq {
-                        low_gain: audio.effects.eq.low_gain,
-                        mid_gain: audio.effects.eq.mid_gain,
-                        high_gain: audio.effects.eq.high_gain,
+                let handle = player.source_handle(audio.source);
+                let id = player.play_spatial_source_handle(
+                    &handle,
+                    perro_pawdio::AudioPlaybackRequest {
+                        id: 0,
+                        source: audio.source,
+                        bus_id,
+                        looped: audio.looped,
+                        volume: audio.volume,
+                        speed: audio.effects.speed,
+                        pan,
+                        low_pass: audio.effects.low_pass,
+                        reverb_send: audio.effects.reverb_send,
+                        echo: audio.effects.echo,
+                        reflection: audio.effects.reflection,
+                        occlusion: audio.effects.occlusion,
+                        eq: perro_pawdio::AudioEq {
+                            low_gain: audio.effects.eq.low_gain,
+                            mid_gain: audio.effects.eq.mid_gain,
+                            high_gain: audio.effects.eq.high_gain,
+                        },
+                        compression: perro_pawdio::AudioCompression {
+                            threshold: audio.effects.compression.threshold,
+                            ratio: audio.effects.compression.ratio,
+                            attack: audio.effects.compression.attack,
+                            release: audio.effects.compression.release,
+                        },
+                        from_start: audio.from_start,
+                        from_end: audio.from_end,
                     },
-                    compression: perro_pawdio::AudioCompression {
-                        threshold: audio.effects.compression.threshold,
-                        ratio: audio.effects.compression.ratio,
-                        attack: audio.effects.compression.attack,
-                        release: audio.effects.compression.release,
-                    },
-                    from_start: audio.from_start,
-                    from_end: audio.from_end,
-                })
+                );
+                source_handle = Some(handle);
+                id
             })
         });
         let remaining = if audio.looped {
@@ -436,7 +445,10 @@ impl Runtime {
             self.resource_api.audio_length_seconds(audio.source)
         };
         self.audio.sounds.push(ActiveSpatialSound {
-            source: audio.source.to_string(),
+            source: match source_handle {
+                Some(handle) => handle.shared_str(),
+                None => std::sync::Arc::from(audio.source),
+            },
             kind: ActiveSpatialSoundKind::Audio,
             looped: audio.looped,
             volume: audio.volume,
@@ -490,7 +502,7 @@ impl Runtime {
             Some(options.sustain.as_secs_f32().max(0.01))
         };
         self.audio.sounds.push(ActiveSpatialSound {
-            source: format!("midi:note:{id}"),
+            source: std::sync::Arc::from(format!("midi:note:{id}").as_str()),
             kind: ActiveSpatialSoundKind::MidiNote,
             looped: held,
             volume: options.volume,
@@ -533,7 +545,7 @@ impl Runtime {
             })
         });
         self.audio.sounds.push(ActiveSpatialSound {
-            source: song.source.to_string(),
+            source: std::sync::Arc::from(song.source),
             kind: ActiveSpatialSoundKind::MidiFile,
             looped: song.looped,
             volume: song.volume,

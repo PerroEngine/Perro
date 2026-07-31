@@ -172,6 +172,14 @@ impl SteamTransport {
         steam_friend_lobbies()
     }
 
+    pub(crate) fn close_orphaned_host_lobby(lobby_id: i64) {
+        if lobby_id <= 0 {
+            return;
+        }
+        let _ = steam_close_host_lobby(lobby_id);
+        let _ = steam_leave_lobby(lobby_id);
+    }
+
     /// Update the host lobby's started flag so browse rows stop accepting
     /// joins once a match begins.
     pub fn set_started(&self, started: bool) -> Result<(), String> {
@@ -543,8 +551,12 @@ fn steam_close_host_lobby(lobby_id: i64) -> Result<(), String> {
     use perro_steamworks as steam;
 
     let lobby = steam::LobbyID::from_id(lobby_id.max(0) as u64);
-    steam::lobbies::set_data(lobby, "started", "1").map_err(|err| format!("{err:?}"))?;
-    steam::lobbies::set_data(lobby, "privacy", "private").map_err(|err| format!("{err:?}"))
+    let joinable = steam::lobbies::set_joinable(lobby, false).map_err(|err| format!("{err:?}"));
+    let started =
+        steam::lobbies::set_data(lobby, "started", "1").map_err(|err| format!("{err:?}"));
+    let private =
+        steam::lobbies::set_data(lobby, "privacy", "private").map_err(|err| format!("{err:?}"));
+    joinable.and(started).and(private)
 }
 
 #[cfg(feature = "steamworks")]

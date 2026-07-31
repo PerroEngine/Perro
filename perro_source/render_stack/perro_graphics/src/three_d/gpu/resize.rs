@@ -1,20 +1,55 @@
 use super::*;
 
 impl Gpu3D {
+    /// Upgrade the mesh-blend depth/mask targets from their 1x1 placeholders
+    /// to the current scene resolution. Called from prepare the first frame a
+    /// mesh blend is actually staged; scenes without blends keep the
+    /// placeholders (~9MB per instance at 1080p).
+    pub(super) fn ensure_mesh_blend_targets(&mut self, device: &wgpu::Device) {
+        let (width, height) = self.depth_size;
+        if self.mesh_blend_depth_texture.width() == width
+            && self.mesh_blend_depth_texture.height() == height
+        {
+            return;
+        }
+        let (mesh_blend_depth_texture, mesh_blend_depth_view) =
+            create_depth_prepass_texture(device, width, height);
+        self.mesh_blend_depth_texture = mesh_blend_depth_texture;
+        self.mesh_blend_depth_view = mesh_blend_depth_view;
+        let (mesh_blend_mask_texture, mesh_blend_mask_view) =
+            mesh_blend_screen::create_mesh_blend_mask_texture(device, width, height);
+        self._mesh_blend_mask_texture = mesh_blend_mask_texture;
+        self.mesh_blend_mask_view = mesh_blend_mask_view;
+        self.mesh_blend_seam_bind_group = None;
+        self.mesh_blend_scene_copy = None;
+        // mesh_blend_depth_view is bound in the environment, multimesh and
+        // shadow-multimesh bind groups; rebuild them all.
+        self.rebuild_environment_bind_group(device);
+        self.rebuild_camera_bind_groups(device);
+        self.shadow_casters_dirty = true;
+    }
+
     pub fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
         let width = width.max(1);
         let height = height.max(1);
         if self.depth_size == (width, height) {
             return;
         }
-        let (depth_texture, depth_view) =
-            create_depth_texture(device, width, height, self.sample_count);
-        self.depth_texture = depth_texture;
-        self.depth_view = depth_view;
         let (depth_prepass_texture, depth_prepass_view) =
             create_depth_prepass_texture(device, width, height);
         self.depth_prepass_texture = depth_prepass_texture;
         self.depth_prepass_view = depth_prepass_view;
+        let (depth_texture, depth_view) = create_scene_depth_target(
+            device,
+            width,
+            height,
+            self.sample_count,
+            &self.depth_prepass_texture,
+            &self.depth_prepass_view,
+        );
+        self.depth_texture = depth_texture;
+        self.depth_view = depth_view;
+        self.water_scene_depth = None;
         if let Some(ssao_pass) = self.ssao_pass.as_mut() {
             ssao_pass.resize(
                 device,
@@ -24,13 +59,20 @@ impl Gpu3D {
                 self.ssao_quality,
             );
         }
+        // Lazy targets: still-placeholder (1x1) targets stay placeholders;
+        // already-upgraded ones follow the new resolution.
+        let (blend_width, blend_height) = if self.mesh_blend_depth_texture.width() > 1 {
+            (width, height)
+        } else {
+            (1, 1)
+        };
         let (mesh_blend_depth_texture, mesh_blend_depth_view) =
-            create_depth_prepass_texture(device, width, height);
+            create_depth_prepass_texture(device, blend_width, blend_height);
         self.mesh_blend_depth_texture = mesh_blend_depth_texture;
         self.mesh_blend_depth_view = mesh_blend_depth_view;
         self.rebuild_environment_bind_group(device);
         let (mesh_blend_mask_texture, mesh_blend_mask_view) =
-            mesh_blend_screen::create_mesh_blend_mask_texture(device, width, height);
+            mesh_blend_screen::create_mesh_blend_mask_texture(device, blend_width, blend_height);
         self._mesh_blend_mask_texture = mesh_blend_mask_texture;
         self.mesh_blend_mask_view = mesh_blend_mask_view;
         self.mesh_blend_seam_bind_group = None;
@@ -39,8 +81,13 @@ impl Gpu3D {
         // Bind group pointers (mesh_blend_depth_view) changed; force a shadow
         // re-render so the cache does not keep stale layers.
         self.shadow_casters_dirty = true;
+        let (hiz_width, hiz_height) = if occlusion_flags(self.occlusion_mode).0 {
+            (width, height)
+        } else {
+            (1, 1)
+        };
         let (hiz_texture, hiz_mip_views, hiz_sample_view, hiz_mip_count, hiz_size) =
-            create_hiz_texture(device, width, height);
+            create_hiz_texture(device, hiz_width, hiz_height);
         self.hiz_texture = hiz_texture;
         self.hiz_mip_views = hiz_mip_views;
         self.hiz_sample_view = hiz_sample_view;
@@ -489,13 +536,21 @@ impl Gpu3D {
         self.rigid_material_pipeline_layout = rigid_pipeline_layout;
         self.multimesh_pipeline_layout = multimesh_pipeline_layout;
         self.color_format = color_format;
-        let (depth_texture, depth_view) = create_depth_texture(device, width, height, sample_count);
-        self.depth_texture = depth_texture;
-        self.depth_view = depth_view;
         let (depth_prepass_texture, depth_prepass_view) =
             create_depth_prepass_texture(device, width, height);
         self.depth_prepass_texture = depth_prepass_texture;
         self.depth_prepass_view = depth_prepass_view;
+        let (depth_texture, depth_view) = create_scene_depth_target(
+            device,
+            width,
+            height,
+            sample_count,
+            &self.depth_prepass_texture,
+            &self.depth_prepass_view,
+        );
+        self.depth_texture = depth_texture;
+        self.depth_view = depth_view;
+        self.water_scene_depth = None;
         if let Some(ssao_pass) = self.ssao_pass.as_mut() {
             ssao_pass.resize(
                 device,
@@ -505,13 +560,20 @@ impl Gpu3D {
                 self.ssao_quality,
             );
         }
+        // Lazy targets: keep placeholders 1x1, track resolution otherwise
+        // (see resize above).
+        let (blend_width, blend_height) = if self.mesh_blend_depth_texture.width() > 1 {
+            (width, height)
+        } else {
+            (1, 1)
+        };
         let (mesh_blend_depth_texture, mesh_blend_depth_view) =
-            create_depth_prepass_texture(device, width, height);
+            create_depth_prepass_texture(device, blend_width, blend_height);
         self.mesh_blend_depth_texture = mesh_blend_depth_texture;
         self.mesh_blend_depth_view = mesh_blend_depth_view;
         self.rebuild_environment_bind_group(device);
         let (mesh_blend_mask_texture, mesh_blend_mask_view) =
-            mesh_blend_screen::create_mesh_blend_mask_texture(device, width, height);
+            mesh_blend_screen::create_mesh_blend_mask_texture(device, blend_width, blend_height);
         self._mesh_blend_mask_texture = mesh_blend_mask_texture;
         self.mesh_blend_mask_view = mesh_blend_mask_view;
         self.mesh_blend_seam_pipeline = mesh_blend_screen::create_mesh_blend_seam_pipeline(
@@ -526,8 +588,13 @@ impl Gpu3D {
         // full shadow re-render.
         self.shadow_casters_dirty = true;
         self.depth_size = (width.max(1), height.max(1));
+        let (hiz_width, hiz_height) = if occlusion_flags(self.occlusion_mode).0 {
+            (width, height)
+        } else {
+            (1, 1)
+        };
         let (hiz_texture, hiz_mip_views, hiz_sample_view, hiz_mip_count, hiz_size) =
-            create_hiz_texture(device, width, height);
+            create_hiz_texture(device, hiz_width, hiz_height);
         self.hiz_texture = hiz_texture;
         self.hiz_mip_views = hiz_mip_views;
         self.hiz_sample_view = hiz_sample_view;

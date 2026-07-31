@@ -19,6 +19,7 @@ pub(super) struct DrawBatchPush {
     pub(super) mesh_blend: bool,
     pub(super) mesh_blend_screen: bool,
     pub(super) mesh_blend_params: u32,
+    pub(super) mesh_blend_params_ext: u32,
     pub(super) mesh_blend_depth: bool,
     pub(super) blend_layers: u32,
     pub(super) blend_mask: u32,
@@ -44,6 +45,7 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
         mesh_blend,
         mesh_blend_screen,
         mesh_blend_params,
+        mesh_blend_params_ext,
         mesh_blend_depth,
         blend_layers,
         blend_mask,
@@ -92,6 +94,7 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
             && prev.mesh_blend == mesh_blend
             && prev.mesh_blend_screen == mesh_blend_screen
             && prev.mesh_blend_params == mesh_blend_params
+            && prev.mesh_blend_params_ext == mesh_blend_params_ext
             && prev.mesh_blend_depth == mesh_blend_depth
             && prev.blend_layers == blend_layers
             && prev.blend_mask == blend_mask;
@@ -133,6 +136,7 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
         mesh_blend,
         mesh_blend_screen,
         mesh_blend_params,
+        mesh_blend_params_ext,
         mesh_blend_depth,
         blend_layers,
         blend_mask,

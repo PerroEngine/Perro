@@ -28,9 +28,11 @@ impl GraphicsBackend for PerroGraphics {
                     shadow_quality: self.shadow_quality,
                 };
                 wasm_bindgen_futures::spawn_local(async move {
-                    let gpu = Gpu::new_async(window, cfg).await;
+                    let gpu = Gpu::new_async(window, cfg)
+                        .await
+                        .unwrap_or_else(|err| panic!("GPU init fail: {err}"));
                     if let Ok(mut pending) = slot_clone.lock() {
-                        *pending = gpu;
+                        *pending = Some(gpu);
                     }
                 });
                 self.pending_gpu = Some(slot);
@@ -52,16 +54,13 @@ impl GraphicsBackend for PerroGraphics {
                     shader_variant_mode: self.shader_variant_mode,
                     shadow_quality: self.shadow_quality,
                 };
-                let mut gpu = Gpu::new(window, cfg);
-                if let Some(gpu_ref) = gpu.as_mut() {
-                    let [vw, vh] = Gpu::virtual_size();
-                    self.renderer_2d.set_virtual_viewport(vw, vh);
-                    self.late_overlay_2d.set_virtual_viewport(vw, vh);
-                    gpu_ref.resize(self.viewport.0.max(1), self.viewport.1.max(1));
-                    self.events
-                        .push(RenderEvent::HdrStatusChanged(gpu_ref.hdr_status()));
-                }
-                self.gpu = gpu;
+                let mut gpu =
+                    Gpu::new(window, cfg).unwrap_or_else(|err| panic!("GPU init fail: {err}"));
+                gpu.set_virtual_size_2d(self.renderer_2d.virtual_viewport());
+                gpu.resize(self.viewport.0.max(1), self.viewport.1.max(1));
+                self.events
+                    .push(RenderEvent::HdrStatusChanged(gpu.hdr_status()));
+                self.gpu = Some(gpu);
                 self.redraw_requested = true;
             }
         }

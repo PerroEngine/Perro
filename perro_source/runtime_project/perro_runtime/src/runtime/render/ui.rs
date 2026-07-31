@@ -22,7 +22,7 @@ use perro_ui::{
     UiVerticalAlign,
 };
 use perro_variant::Variant;
-use std::borrow::Cow;
+use std::sync::Arc;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 #[cfg(target_arch = "wasm32")]

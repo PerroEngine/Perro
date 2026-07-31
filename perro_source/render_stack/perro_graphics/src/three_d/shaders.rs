@@ -565,13 +565,46 @@ pub fn create_depth_prepass_shader_module_skinned(device: &wgpu::Device) -> wgpu
     })
 }
 
+// Per-instance mesh-blend mask salt for the multimesh path: same-type
+// instances get distinct blend ids (base + source_instance % 7) so their
+// overlaps read as seams in the screen-space blend pass. Patched here on the
+// composed (whitespace-collapsed) source instead of in perro_wgsl so the
+// offline compose stays mask-agnostic. The salt rides an extra flat varying;
+// fs_main simply never reads it. The `% 7u` modulus and the gating on
+// `mesh_blend_mask_id.y` mirror MULTIMESH_SOURCE_ID_STRIDE and the staged
+// mask-id uniform in gpu/mesh_blend_screen.rs.
+fn build_multimesh_shader_wgsl() -> String {
+    let wgsl = sanitize_reserved_meta_identifier(regular::multimesh_wgsl())
+        .replace(
+            "@location(12) @interpolate(flat) packed_emissive: u32, }; struct FragmentInput {",
+            "@location(12) @interpolate(flat) packed_emissive: u32, \
+             @location(13) @interpolate(flat) mask_salt: u32, }; struct FragmentInput {",
+        )
+        .replace(
+            ") -> VertexOutput { let inst = perro_fetch_instance(instance_index); \
+             return perro_multimesh_vs_main_base(v, inst, vertex_index); }",
+            ") -> VertexOutput { let inst = perro_fetch_instance(instance_index); \
+             var out = perro_multimesh_vs_main_base(v, inst, vertex_index); \
+             out.mask_salt = visible_indices[instance_index] % 7u; return out; }",
+        )
+        .replace(
+            "fn fs_mask(in: VertexOutput) -> @location(0) u32 { return mesh_blend_mask_id.x; }",
+            "fn fs_mask(in: VertexOutput) -> @location(0) u32 { \
+             return mesh_blend_mask_id.x + select(0u, in.mask_salt, mesh_blend_mask_id.y != 0u); }",
+        );
+    debug_assert_eq!(
+        wgsl.matches("mask_salt").count(),
+        3,
+        "multimesh mask salt patch anchors drifted"
+    );
+    wgsl
+}
+
 #[inline]
 pub fn create_multimesh_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("perro_multimesh"),
-        source: wgpu::ShaderSource::Wgsl(
-            sanitize_reserved_meta_identifier(regular::multimesh_wgsl()).into(),
-        ),
+        source: wgpu::ShaderSource::Wgsl(build_multimesh_shader_wgsl().into()),
     })
 }
 
@@ -1374,6 +1407,17 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     fn multimesh_wgsl_parses() {
         let wgsl = sanitize_reserved_meta_identifier(regular::multimesh_wgsl());
         naga::front::wgsl::parse_str(&wgsl).expect("multimesh wgsl parses");
+    }
+
+    #[test]
+    fn multimesh_mask_salt_patch_applies_and_validates() {
+        let wgsl = build_multimesh_shader_wgsl();
+        // Struct field + vs_main write + fs_mask read; a drifted anchor would
+        // silently drop the per-instance seam salt.
+        assert_eq!(wgsl.matches("mask_salt").count(), 3);
+        assert!(wgsl.contains("out.mask_salt = visible_indices[instance_index] % 7u;"));
+        assert!(wgsl.contains("select(0u, in.mask_salt, mesh_blend_mask_id.y != 0u)"));
+        parse_and_validate(&wgsl, "multimesh mask salt");
     }
 
     #[test]

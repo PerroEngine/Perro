@@ -1,61 +1,84 @@
 use super::*;
 
 impl Runtime {
+    /// Scratch maps come from the caller (cleared here) so per-node calls in
+    /// hot rebuild loops reuse capacity instead of allocating fresh containers.
     pub(super) fn nested_ui_sub_view_rect(
         &self,
         owner: NodeID,
         node: NodeID,
         owner_resolution: [u32; 2],
+        computed: &mut AHashMap<NodeID, ComputedUiRect>,
+        scales: &mut AHashMap<NodeID, Vector2>,
+        auto: &mut AHashSet<NodeID>,
     ) -> Option<ComputedUiRect> {
+        computed.clear();
+        scales.clear();
+        auto.clear();
         let root = ComputedUiRect::new(
             Vector2::ZERO,
             Vector2::new(owner_resolution[0] as f32, owner_resolution[1] as f32),
         );
-        let mut computed = AHashMap::new();
-        let mut scales = AHashMap::new();
-        let mut auto = AHashSet::new();
         computed.insert(owner, root);
         scales.insert(owner, Vector2::ONE);
-        self.compute_ui_rect(node, root, &mut computed, &mut scales, &mut auto)
+        self.compute_ui_rect(node, root, computed, scales, auto)
     }
 
     fn prepare_nested_sub_views(&mut self, owner: NodeID, owner_resolution: [u32; 2]) {
-        let mut members = Vec::new();
+        let mut members = self.render_ui.acquire_node_vec();
         self.fill_world_members(owner, &mut members);
-        let nested = members
-            .into_iter()
-            .filter_map(|node| {
-                let scene_node = self.nodes.get(node)?;
-                match &scene_node.data {
-                    SceneNodeData::UiSubView(view) => Some((
-                        node,
-                        SubView::from(view.as_ref()),
-                        self.nested_ui_sub_view_rect(owner, node, owner_resolution)
-                            .map(|rect| [rect.size.x, rect.size.y])
-                            .or_else(|| {
-                                self.render_ui
-                                    .retained_rects
-                                    .get(&node)
-                                    .map(|rect| rect.size)
-                            }),
-                    )),
-                    SceneNodeData::SubView2D(view) => Some((node, view.sub_view.clone(), None)),
-                    SceneNodeData::SubView3D(view) => Some((node, view.sub_view.clone(), None)),
-                    _ => None,
+        // take-pattern scratch: recursion (views nested in views) takes empty
+        // maps, the common depth-1 case reuses persisted capacity.
+        let mut computed = std::mem::take(&mut self.render_ui.nested_rect_computed_scratch);
+        let mut scales = std::mem::take(&mut self.render_ui.nested_rect_scales_scratch);
+        let mut auto = std::mem::take(&mut self.render_ui.nested_rect_auto_scratch);
+        for idx in 0..members.len() {
+            let node = members[idx];
+            let Some(scene_node) = self.nodes.get(node) else {
+                continue;
+            };
+            let (view, auto_size) = match &scene_node.data {
+                SceneNodeData::UiSubView(view) => {
+                    let view = SubView::from(view.as_ref());
+                    let auto_size = self
+                        .nested_ui_sub_view_rect(
+                            owner,
+                            node,
+                            owner_resolution,
+                            &mut computed,
+                            &mut scales,
+                            &mut auto,
+                        )
+                        .map(|rect| [rect.size.x, rect.size.y])
+                        .or_else(|| {
+                            self.render_ui
+                                .retained_rects
+                                .get(&node)
+                                .map(|rect| rect.size)
+                        });
+                    (view, auto_size)
                 }
-            })
-            .collect::<Vec<_>>();
-        for (node, view, auto_size) in nested {
+                SceneNodeData::SubView2D(view) => (view.sub_view.clone(), None),
+                SceneNodeData::SubView3D(view) => (view.sub_view.clone(), None),
+                _ => continue,
+            };
             if !self.is_effectively_visible(node) {
                 self.queue_camera_stream_remove(node);
                 continue;
             }
             if let Some(state) = self.sub_view_state(node, &view, auto_size) {
-                self.queue_camera_stream_upsert(node, state);
+                self.queue_camera_stream_upsert(node, Arc::new(state));
             } else {
                 self.queue_camera_stream_remove(node);
             }
         }
+        computed.clear();
+        scales.clear();
+        auto.clear();
+        self.render_ui.nested_rect_computed_scratch = computed;
+        self.render_ui.nested_rect_scales_scratch = scales;
+        self.render_ui.nested_rect_auto_scratch = auto;
+        self.render_ui.release_node_vec(members);
     }
 
     fn sub_view_camera_2d(&mut self, view_node: NodeID) -> Option<Camera2DState> {
@@ -89,7 +112,7 @@ impl Runtime {
             rotation_radians: transform.rotation,
             zoom,
             render_mask,
-            post_processing: Arc::from(post_processing.to_effects_vec()),
+            post_processing: self.camera_postfx_arc(node, &post_processing),
             audio_options,
         })
     }
@@ -149,7 +172,7 @@ impl Runtime {
             ],
             projection: camera_stream_projection_state(&projection),
             render_mask,
-            post_processing: Arc::from(post_processing.to_effects_vec()),
+            post_processing: self.camera_postfx_arc(node, &post_processing),
             audio_options,
         })
     }
@@ -194,25 +217,23 @@ impl Runtime {
                     stream.resolution.y.clamp(1, 8192),
                 ],
                 aspect_ratio: stream.aspect_ratio.max(0.0),
-                post_processing: Arc::from(post_processing),
+                post_processing: arc_slice_from_vec(post_processing),
                 output_texture,
-                sprites_2d: Arc::from([]),
-                lights_2d: Arc::from([]),
-                point_particles_2d: Arc::from([]),
-                waters_2d: Arc::from([]),
-                draws_3d: Arc::from([]),
+                sprites_2d: empty_arc_slice(),
+                lights_2d: empty_arc_slice(),
+                point_particles_2d: empty_arc_slice(),
+                waters_2d: empty_arc_slice(),
+                draws_3d: empty_arc_slice(),
                 lighting_3d: CameraStreamLighting3DState::default(),
-                point_particles_3d: Arc::from([]),
-                waters_3d: Arc::from([]),
+                point_particles_3d: empty_arc_slice(),
+                waters_3d: empty_arc_slice(),
             });
         }
-        // Build the owning world's direct member list once. Nested sub-view
+        // Share the owning world's direct member list once (refcount clone of
+        // the membership cache; no per-stream copy). Nested sub-view
         // descendants never enter any collector for this stream.
-        self.camera_stream_node_scratch.clear();
         let owner = self.node_world(stream_node)?;
-        let mut members = std::mem::take(&mut self.camera_stream_node_scratch);
-        self.fill_world_members(owner, &mut members);
-        self.camera_stream_node_scratch = members;
+        self.camera_stream_node_scratch = self.world_members_arc(owner);
         let mut post_processing = match &source {
             CameraStreamSourceState::TwoD(camera) => camera.post_processing.to_vec(),
             CameraStreamSourceState::ThreeD(camera) => camera.post_processing.to_vec(),
@@ -234,30 +255,30 @@ impl Runtime {
                 self.collect_camera_stream_lights_2d(camera.render_mask, stream_node),
                 self.collect_camera_stream_point_particles_2d(camera.render_mask, stream_node),
                 self.collect_camera_stream_waters_2d(camera.render_mask, stream_node),
-                Arc::from([]),
+                empty_arc_slice(),
                 CameraStreamLighting3DState::default(),
-                Arc::from([]),
-                Arc::from([]),
+                empty_arc_slice(),
+                empty_arc_slice(),
             ),
             CameraStreamSourceState::ThreeD(camera) => (
-                Arc::from([]),
-                Arc::from([]),
-                Arc::from([]),
-                Arc::from([]),
+                empty_arc_slice(),
+                empty_arc_slice(),
+                empty_arc_slice(),
+                empty_arc_slice(),
                 self.collect_camera_stream_draws_3d(camera.render_mask, stream_node),
                 self.collect_camera_stream_lighting_3d(camera.render_mask, stream_node),
                 self.collect_camera_stream_point_particles_3d(camera.render_mask, stream_node),
                 self.collect_camera_stream_waters_3d(camera.render_mask, stream_node),
             ),
             CameraStreamSourceState::Webcam { .. } => (
-                Arc::from([]),
-                Arc::from([]),
-                Arc::from([]),
-                Arc::from([]),
-                Arc::from([]),
+                empty_arc_slice(),
+                empty_arc_slice(),
+                empty_arc_slice(),
+                empty_arc_slice(),
+                empty_arc_slice(),
                 CameraStreamLighting3DState::default(),
-                Arc::from([]),
-                Arc::from([]),
+                empty_arc_slice(),
+                empty_arc_slice(),
             ),
         };
         let output_texture = match &source {
@@ -278,7 +299,7 @@ impl Runtime {
                 stream.resolution.y.clamp(1, 8192),
             ],
             aspect_ratio: stream.aspect_ratio.max(0.0),
-            post_processing: Arc::from(post_processing),
+            post_processing: arc_slice_from_vec(post_processing),
             output_texture,
             sprites_2d,
             lights_2d,
@@ -301,15 +322,12 @@ impl Runtime {
         if matches!(source, CameraStreamSourceState::Webcam { .. }) {
             return None;
         }
-        self.camera_stream_node_scratch.clear();
         let owner = self.node_world(camera_node)?;
-        let mut members = std::mem::take(&mut self.camera_stream_node_scratch);
-        self.fill_world_members(owner, &mut members);
-        self.camera_stream_node_scratch = members;
+        self.camera_stream_node_scratch = self.world_members_arc(owner);
         let post_processing = match &source {
             CameraStreamSourceState::TwoD(camera) => camera.post_processing.clone(),
             CameraStreamSourceState::ThreeD(camera) => camera.post_processing.clone(),
-            CameraStreamSourceState::Webcam { .. } => Arc::from([]),
+            CameraStreamSourceState::Webcam { .. } => empty_arc_slice(),
         };
         let (
             sprites_2d,
@@ -330,16 +348,16 @@ impl Runtime {
                 self.collect_camera_stream_lights_2d(camera.render_mask, camera_node),
                 self.collect_camera_stream_point_particles_2d(camera.render_mask, camera_node),
                 self.collect_camera_stream_waters_2d(camera.render_mask, camera_node),
-                Arc::from([]),
+                empty_arc_slice(),
                 CameraStreamLighting3DState::default(),
-                Arc::from([]),
-                Arc::from([]),
+                empty_arc_slice(),
+                empty_arc_slice(),
             ),
             CameraStreamSourceState::ThreeD(camera) => (
-                Arc::from([]),
-                Arc::from([]),
-                Arc::from([]),
-                Arc::from([]),
+                empty_arc_slice(),
+                empty_arc_slice(),
+                empty_arc_slice(),
+                empty_arc_slice(),
                 self.collect_camera_stream_draws_3d(camera.render_mask, camera_node),
                 self.collect_camera_stream_lighting_3d(camera.render_mask, camera_node),
                 self.collect_camera_stream_point_particles_3d(camera.render_mask, camera_node),
@@ -397,10 +415,7 @@ impl Runtime {
         ];
 
         self.prepare_nested_sub_views(view_node, resolution);
-        self.camera_stream_node_scratch.clear();
-        let mut members = std::mem::take(&mut self.camera_stream_node_scratch);
-        self.fill_world_members(view_node, &mut members);
-        self.camera_stream_node_scratch = members;
+        self.camera_stream_node_scratch = self.world_members_arc(view_node);
 
         let implicit_camera_3d = Camera3DState {
             position: [
@@ -416,7 +431,7 @@ impl Runtime {
             ],
             projection: camera_stream_projection_state(&view.projection),
             render_mask: BitMask::NONE,
-            post_processing: Arc::from([]),
+            post_processing: empty_arc_slice(),
             audio_options: perro_structs::AudioListenerOptions::new(),
         };
         let implicit_camera_2d = Camera2DState {
@@ -424,7 +439,7 @@ impl Runtime {
             rotation_radians: view.view_2d_rotation,
             zoom: view.view_2d_zoom.max(0.001),
             render_mask: BitMask::NONE,
-            post_processing: Arc::from([]),
+            post_processing: empty_arc_slice(),
             audio_options: perro_structs::AudioListenerOptions::new(),
         };
         let camera_3d = self
@@ -452,7 +467,7 @@ impl Runtime {
             clear_color: Some(view.background),
             resolution,
             aspect_ratio: view.aspect_ratio.max(0.0),
-            post_processing: Arc::from(post_processing),
+            post_processing: arc_slice_from_vec(post_processing),
             output_texture: Self::camera_stream_texture_id(view_node),
             sprites_2d: self.collect_camera_stream_sprites_2d(
                 render_mask_2d,
@@ -544,7 +559,7 @@ impl Runtime {
                 rotation_radians: global.rotation,
                 zoom,
                 render_mask,
-                post_processing: Arc::from(post_processing.to_effects_vec()),
+                post_processing: self.camera_postfx_arc(camera_node, &post_processing),
                 audio_options,
             }));
         }
@@ -577,7 +592,7 @@ impl Runtime {
             ],
             projection: camera_stream_projection_state(&projection),
             render_mask,
-            post_processing: Arc::from(post_processing.to_effects_vec()),
+            post_processing: self.camera_postfx_arc(camera_node, &post_processing),
             audio_options,
         }))
     }

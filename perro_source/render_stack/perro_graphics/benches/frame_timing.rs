@@ -194,7 +194,7 @@ fn point_light_3d_command(i: u32) -> RenderCommand {
 fn sky_command(paused: bool) -> RenderCommand {
     RenderCommand::ThreeD(Box::new(Command3D::SetSky {
         node: NodeID::from_parts(1, 0),
-        sky: Box::new(Sky3DState {
+        sky: Arc::new(Sky3DState {
             day_colors: Arc::from([[0.42, 0.7, 1.0], [0.1, 0.35, 0.8]]),
             evening_colors: Arc::from([[1.0, 0.45, 0.2], [0.25, 0.08, 0.3]]),
             night_colors: Arc::from([[0.02, 0.03, 0.08], [0.0, 0.0, 0.02]]),
@@ -211,7 +211,7 @@ fn sky_command(paused: bool) -> RenderCommand {
 }
 
 fn create_texture(graphics: &mut PerroGraphics) -> TextureID {
-    graphics.submit(RenderCommand::Resource(
+    graphics.submit(RenderCommand::Resource(Box::new(
         ResourceCommand::CreateRuntimeTexture {
             request: RenderRequestID::new(1),
             id: TextureID::nil(),
@@ -221,7 +221,7 @@ fn create_texture(graphics: &mut PerroGraphics) -> TextureID {
             height: 1,
             rgba: Arc::from([255, 255, 255, 255]),
         },
-    ));
+    )));
     graphics.draw_frame();
     let mut events = Vec::new();
     graphics.drain_events(&mut events);
@@ -236,20 +236,20 @@ fn create_texture(graphics: &mut PerroGraphics) -> TextureID {
 
 fn create_mesh_material(graphics: &mut PerroGraphics) -> (MeshID, MaterialID) {
     graphics.submit_many([
-        RenderCommand::Resource(ResourceCommand::CreateRuntimeMesh {
+        RenderCommand::Resource(Box::new(ResourceCommand::CreateRuntimeMesh {
             request: RenderRequestID::new(2),
             id: MeshID::nil(),
             source: "__bench_mesh__".to_string(),
             reserved: true,
             mesh: tiny_mesh(),
-        }),
-        RenderCommand::Resource(ResourceCommand::CreateMaterial {
+        })),
+        RenderCommand::Resource(Box::new(ResourceCommand::CreateMaterial {
             request: RenderRequestID::new(3),
             id: MaterialID::nil(),
-            material: Material3D::default(),
+            material: Material3D::default().into(),
             source: Some("__bench_material__".to_string()),
             reserved: true,
-        }),
+        })),
     ]);
     graphics.draw_frame();
     let mut events = Vec::new();

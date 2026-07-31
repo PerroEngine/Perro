@@ -44,6 +44,7 @@ impl Gpu3D {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        shared_textures: &mut SharedTextureStore,
     ) {
         if self.material_fallback_bind_group.is_some() {
             return;
@@ -51,8 +52,9 @@ impl Gpu3D {
         let white = create_cached_material_texture(
             device,
             queue,
+            shared_textures,
             CachedMaterialTextureInput {
-                rgba: vec![255u8, 255, 255, 255],
+                rgba: vec![255u8, 255, 255, 255].into(),
                 width: 1,
                 height: 1,
                 source: "__fallback__".to_string(),
@@ -63,8 +65,9 @@ impl Gpu3D {
         let neutral_normal = create_cached_material_texture(
             device,
             queue,
+            shared_textures,
             CachedMaterialTextureInput {
-                rgba: vec![128u8, 128, 255, 255],
+                rgba: vec![128u8, 128, 255, 255].into(),
                 width: 1,
                 height: 1,
                 source: "__normal_fallback__".to_string(),
@@ -97,6 +100,7 @@ impl Gpu3D {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        shared_textures: &mut SharedTextureStore,
         resources: &ResourceStore,
         material: &Material3D,
         static_texture_lookup: Option<StaticTextureLookup>,
@@ -110,7 +114,7 @@ impl Gpu3D {
         let Material3D::Custom(custom) = material else {
             return key;
         };
-        self.ensure_material_fallback_texture(device, queue);
+        self.ensure_material_fallback_texture(device, queue, shared_textures);
         for (index, image) in custom
             .images
             .iter()
@@ -121,6 +125,7 @@ impl Gpu3D {
             self.ensure_material_texture_source(
                 device,
                 queue,
+                shared_textures,
                 resources,
                 slot,
                 image.source.as_ref(),
@@ -198,6 +203,7 @@ impl Gpu3D {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        shared_textures: &mut SharedTextureStore,
         resources: &ResourceStore,
         slot: u32,
         mesh_source: &str,
@@ -206,7 +212,7 @@ impl Gpu3D {
         if slot == MATERIAL_TEXTURE_NONE {
             return;
         }
-        self.ensure_material_fallback_texture(device, queue);
+        self.ensure_material_fallback_texture(device, queue, shared_textures);
         let source_slot = material_texture_source_slot(slot);
 
         // glTF material texture indices are model-local, not global texture IDs.
@@ -235,6 +241,22 @@ impl Gpu3D {
             return;
         }
 
+        let filter = self.material_texture_filter(source_slot);
+        let color_space = if material_texture_is_linear(slot) {
+            MaterialTextureColorSpace::Linear
+        } else {
+            MaterialTextureColorSpace::Srgb
+        };
+        // another consumer already uploaded this source: reuse, no decode.
+        if let Some(shared) =
+            shared_textures.get(&material_shared_texture_key(&source, color_space, filter))
+        {
+            let cached = cached_material_texture_from_shared(device, shared, source, filter);
+            self.material_textures.insert(slot, cached);
+            self.evict_material_texture_bind_groups_for_slot(slot);
+            return;
+        }
+
         let registered = resources.decoded_texture_data_by_source(source.as_str());
         let evicted = registered.is_some_and(|decoded| !decoded.has_pixels());
         let (rgba, width, height) = if let Some(decoded) =
@@ -256,8 +278,8 @@ impl Gpu3D {
             self.material_textures.remove(&slot);
             self.evict_material_texture_bind_groups_for_slot(slot);
             return;
-        } else if let Some(decoded) = load_texture_rgba(source.as_str()) {
-            decoded
+        } else if let Some((rgba, width, height)) = load_texture_rgba_arc(source.as_str()) {
+            (rgba, width, height)
         } else {
             self.material_textures.remove(&slot);
             self.evict_material_texture_bind_groups_for_slot(slot);
@@ -266,17 +288,14 @@ impl Gpu3D {
         let cached = create_cached_material_texture(
             device,
             queue,
+            shared_textures,
             CachedMaterialTextureInput {
                 rgba,
                 width,
                 height,
                 source,
-                filter: self.material_texture_filter(source_slot),
-                color_space: if material_texture_is_linear(slot) {
-                    MaterialTextureColorSpace::Linear
-                } else {
-                    MaterialTextureColorSpace::Srgb
-                },
+                filter,
+                color_space,
             },
         );
         self.material_textures.insert(slot, cached);
@@ -287,6 +306,7 @@ impl Gpu3D {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        shared_textures: &mut SharedTextureStore,
         resources: &ResourceStore,
         material: &StandardMaterial3D,
         mesh_source: &str,
@@ -297,6 +317,7 @@ impl Gpu3D {
             self.ensure_material_texture_slot(
                 device,
                 queue,
+                &mut *shared_textures,
                 resources,
                 slot,
                 mesh_source,
@@ -309,6 +330,7 @@ impl Gpu3D {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        shared_textures: &mut SharedTextureStore,
         resources: &ResourceStore,
         slot: u32,
         source: &str,
@@ -319,6 +341,19 @@ impl Gpu3D {
             .get(&slot)
             .is_some_and(|cached| cached.source == source)
         {
+            return;
+        }
+        let filter = self.material_texture_filter(slot);
+        // another consumer already uploaded this source: reuse, no decode.
+        if let Some(shared) = shared_textures.get(&material_shared_texture_key(
+            source,
+            MaterialTextureColorSpace::Srgb,
+            filter,
+        )) {
+            let cached =
+                cached_material_texture_from_shared(device, shared, source.to_string(), filter);
+            self.material_textures.insert(slot, cached);
+            self.evict_material_texture_bind_groups_for_slot(slot);
             return;
         }
         let registered = resources.decoded_texture_data_by_source(source);
@@ -340,8 +375,8 @@ impl Gpu3D {
                 self.material_textures.remove(&slot);
                 self.evict_material_texture_bind_groups_for_slot(slot);
                 return;
-            } else if let Some(decoded) = load_texture_rgba(source) {
-                decoded
+            } else if let Some((rgba, width, height)) = load_texture_rgba_arc(source) {
+                (rgba, width, height)
             } else {
                 self.material_textures.remove(&slot);
                 self.evict_material_texture_bind_groups_for_slot(slot);
@@ -350,12 +385,13 @@ impl Gpu3D {
         let cached = create_cached_material_texture(
             device,
             queue,
+            shared_textures,
             CachedMaterialTextureInput {
                 rgba,
                 width,
                 height,
                 source: source.to_string(),
-                filter: self.material_texture_filter(slot),
+                filter,
                 color_space: MaterialTextureColorSpace::Srgb,
             },
         );

@@ -25,6 +25,69 @@ pub use winit::platform::android::activity::AndroidApp;
 
 type StaticScriptRegistry = &'static [(u64, ScriptConstructor<perro_runtime::RuntimeScriptApi>)];
 
+#[cfg(not(target_arch = "wasm32"))]
+fn native_crash_log_path() -> std::path::PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf))
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("perro_crash.log")
+}
+
+#[cfg(target_os = "windows")]
+fn show_native_crash_message(project_name: &str, log_path: &Path) {
+    use std::os::windows::ffi::OsStrExt;
+
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn MessageBoxW(
+            window: *mut std::ffi::c_void,
+            text: *const u16,
+            caption: *const u16,
+            kind: u32,
+        ) -> i32;
+    }
+
+    let text = format!("{project_name} stop.\n\nCrash log:\n{}", log_path.display());
+    let text = std::ffi::OsStr::new(&text)
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    let caption = std::ffi::OsStr::new("Perro game error")
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    // SAFETY: pointers target live, NUL-terminated UTF-16 buffers for call span.
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            text.as_ptr(),
+            caption.as_ptr(),
+            0x0000_0010,
+        );
+    }
+}
+
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "windows")))]
+fn show_native_crash_message(_project_name: &str, _log_path: &Path) {}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn install_native_crash_reporter(project_name: &'static str) {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let log_path = native_crash_log_path();
+        let report = format!(
+            "project: {project_name}\nplatform: {}-{}\npanic: {info}\nbacktrace:\n{}\n",
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            std::backtrace::Backtrace::force_capture(),
+        );
+        let _ = std::fs::write(&log_path, report);
+        show_native_crash_message(project_name, &log_path);
+        default_hook(info);
+    }));
+}
+
 #[cfg(target_os = "windows")]
 fn clear_steam_fossilize_application_filter(steam_enabled: bool) {
     if steam_enabled && std::env::var_os("FOSSILIZE_APPLICATION_INFO_FILTER_PATH").is_some() {
@@ -176,6 +239,7 @@ fn graphics_from_project_config(
         .with_dev_meshlets(!release_mode && config.dev_meshlets)
         .with_meshlet_debug_view(config.meshlet_debug_view)
         .with_texture_filter(config.texture_filter)
+        .with_virtual_canvas(config.virtual_width, config.virtual_height)
         .with_ui_default_font(&config.rendering.default_font)
         .with_occlusion_culling(match occlusion_culling {
             OcclusionCulling::Cpu => OcclusionCullingMode::Cpu,

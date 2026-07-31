@@ -144,11 +144,20 @@ pub(crate) struct AudioState {
     pub(crate) cache_bytes: usize,
     pub(crate) next_cache_epoch: u64,
     pub(crate) last_evict_sweep: Instant,
+    // Volume/speed refresh walks are batched: setters mark dirty, the worker
+    // flushes once its command queue drains, so a burst of volume commands
+    // walks the playback lists once instead of per command.
+    pub(crate) volumes_dirty: bool,
+    pub(crate) speeds_dirty: bool,
 }
 
 pub(crate) struct CachedSoundFont {
     pub(crate) source: Arc<str>,
     pub(crate) font: std::sync::Arc<rustysynth::SoundFont>,
+    // Source-file byte length, counted against the cache budget as a proxy:
+    // the decoded sample tables live inside rustysynth and are not directly
+    // measurable, but the sf2 file size tracks them closely.
+    pub(crate) source_bytes: usize,
 }
 
 pub(crate) struct CachedMidiFile {

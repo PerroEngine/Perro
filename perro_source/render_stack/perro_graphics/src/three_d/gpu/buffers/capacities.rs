@@ -6,6 +6,7 @@ impl Gpu3D {
         device: &wgpu::Device,
         needed: usize,
     ) {
+        self.shrink.instance_transforms.note_used(needed);
         if needed <= self.instance_transform_capacity {
             return;
         }
@@ -16,7 +17,9 @@ impl Gpu3D {
         self.instance_transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_mesh_instance_transforms"),
             size: (new_capacity * std::mem::size_of::<TransformInstanceGpu>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         self.instance_transform_capacity = new_capacity;
@@ -27,6 +30,7 @@ impl Gpu3D {
         device: &wgpu::Device,
         needed: usize,
     ) {
+        self.shrink.rigid_instance_meta.note_used(needed);
         if needed <= self.rigid_instance_meta_capacity {
             return;
         }
@@ -37,7 +41,9 @@ impl Gpu3D {
         self.rigid_instance_meta_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_mesh_instance_rigid_meta"),
             size: (new_capacity * std::mem::size_of::<RigidInstanceMetaGpu>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         self.rigid_instance_meta_capacity = new_capacity;
@@ -48,6 +54,7 @@ impl Gpu3D {
         device: &wgpu::Device,
         needed: usize,
     ) {
+        self.shrink.skinned_instance_meta.note_used(needed);
         if needed <= self.skinned_instance_meta_capacity {
             return;
         }
@@ -58,7 +65,9 @@ impl Gpu3D {
         self.skinned_instance_meta_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_mesh_instance_skinned_meta"),
             size: (new_capacity * std::mem::size_of::<SkinnedInstanceMetaGpu>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         self.skinned_instance_meta_capacity = new_capacity;
@@ -143,6 +152,7 @@ impl Gpu3D {
         device: &wgpu::Device,
         needed: usize,
     ) {
+        self.shrink.multimesh_instances.note_used(needed);
         if needed <= self.multimesh_instance_capacity {
             return;
         }
@@ -153,7 +163,9 @@ impl Gpu3D {
         self.multimesh_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_multimesh_instances"),
             size: (new_capacity * std::mem::size_of::<MultiMeshInstanceGpu>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         self.multimesh_instance_capacity = new_capacity;
@@ -167,6 +179,7 @@ impl Gpu3D {
         device: &wgpu::Device,
         needed: usize,
     ) {
+        self.shrink.multimesh_draw_params.note_used(needed);
         if needed <= self.multimesh_draw_params_capacity {
             return;
         }
@@ -177,7 +190,9 @@ impl Gpu3D {
         self.multimesh_draw_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_multimesh_draw_params"),
             size: (new_capacity * std::mem::size_of::<MultiMeshDrawParamGpu>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         self.multimesh_draw_params_capacity = new_capacity;
@@ -615,6 +630,7 @@ impl Gpu3D {
         device: &wgpu::Device,
         needed: usize,
     ) {
+        self.shrink.multimesh_cull_instances.note_used(needed);
         if needed <= self.multimesh_cull_instance_capacity {
             return;
         }
@@ -625,13 +641,17 @@ impl Gpu3D {
         self.multimesh_instance_batch_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_multimesh_instance_batch"),
             size: (new_capacity * std::mem::size_of::<u32>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         self.multimesh_visible_index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_multimesh_visible_indices"),
             size: (new_capacity * std::mem::size_of::<u32>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         self.multimesh_cull_instance_capacity = new_capacity;
@@ -687,6 +707,7 @@ impl Gpu3D {
         device: &wgpu::Device,
         needed: usize,
     ) {
+        self.shrink.skeletons.note_used(needed);
         if needed <= self.skeleton_capacity {
             return;
         }
@@ -697,7 +718,9 @@ impl Gpu3D {
         self.skeleton_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_skeleton_palette_buffer"),
             size: (new_capacity * std::mem::size_of::<[[f32; 4]; 3]>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         self.rebuild_camera_bind_groups(device);
@@ -746,6 +769,239 @@ impl Gpu3D {
         }
     }
 
+    /// Periodic GC tick: shrink the biggest grow-only buffers once usage
+    /// stays far below capacity (see `crate::gpu_shrink`). Every shrink
+    /// preserves content with a GPU->GPU prefix copy, so retained draws and
+    /// skip-upload gates stay valid even across skip-prepare frames; bind
+    /// groups referencing a shrunk buffer are rebuilt below.
+    pub fn shrink_tick(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        use crate::gpu_shrink::shrink_buffer_preserving;
+        // Mesh arena lengths are authoritative retained content.
+        self.shrink
+            .mesh_vertices
+            .note_used(self.mesh_vertex_len.max(self.rigid_vertex_len));
+        self.shrink.mesh_indices.note_used(self.mesh_index_len);
+        self.shrink
+            .packed_lod_vertices
+            .note_used(self.packed_lod_vertex_len);
+        self.shrink
+            .packed_lod_indices
+            .note_used(self.packed_lod_index_len);
+        self.shrink
+            .blend_shape_deltas
+            .note_used(self.blend_shape_delta_len);
+
+        let vertex_usage = wgpu::BufferUsages::VERTEX
+            | wgpu::BufferUsages::COPY_DST
+            | wgpu::BufferUsages::COPY_SRC;
+        let storage_usage = wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_DST
+            | wgpu::BufferUsages::COPY_SRC;
+
+        if let Some(new_cap) = self.shrink.mesh_vertices.tick(self.vertex_capacity, 1024) {
+            self.vertex_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.vertex_buffer,
+                "perro_mesh_vertices",
+                (new_cap * std::mem::size_of::<SkinnedMeshVertex>()) as u64,
+                vertex_usage,
+            );
+            self.rigid_vertex_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.rigid_vertex_buffer,
+                "perro_mesh_vertices_rigid",
+                (new_cap * std::mem::size_of::<RigidMeshVertex>()) as u64,
+                vertex_usage,
+            );
+            self.vertex_capacity = new_cap;
+            self.rigid_vertex_capacity = new_cap;
+        }
+        if let Some(new_cap) = self.shrink.mesh_indices.tick(self.index_capacity, 1024) {
+            self.index_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.index_buffer,
+                "perro_mesh_indices",
+                (new_cap * std::mem::size_of::<u32>()) as u64,
+                wgpu::BufferUsages::INDEX
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+            );
+            self.index_capacity = new_cap;
+        }
+        if let Some(new_cap) = self
+            .shrink
+            .packed_lod_vertices
+            .tick(self.packed_lod_vertex_capacity, 256)
+        {
+            self.packed_lod_vertex_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.packed_lod_vertex_buffer,
+                "perro_packed_lod_vertices_rigid",
+                (new_cap * std::mem::size_of::<PackedRigidLodVertex>()) as u64,
+                vertex_usage,
+            );
+            self.packed_lod_vertex_capacity = new_cap;
+        }
+        if let Some(new_cap) = self
+            .shrink
+            .packed_lod_indices
+            .tick(self.packed_lod_index_capacity, 256)
+        {
+            self.packed_lod_index_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.packed_lod_index_buffer,
+                "perro_packed_lod_indices",
+                (new_cap * std::mem::size_of::<u32>()) as u64,
+                wgpu::BufferUsages::INDEX
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+            );
+            self.packed_lod_index_capacity = new_cap;
+        }
+
+        if let Some(new_cap) = self
+            .shrink
+            .instance_transforms
+            .tick(self.instance_transform_capacity, 256)
+        {
+            self.instance_transform_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.instance_transform_buffer,
+                "perro_mesh_instance_transforms",
+                (new_cap * std::mem::size_of::<TransformInstanceGpu>()) as u64,
+                vertex_usage,
+            );
+            self.instance_transform_capacity = new_cap;
+        }
+        if let Some(new_cap) = self
+            .shrink
+            .rigid_instance_meta
+            .tick(self.rigid_instance_meta_capacity, 256)
+        {
+            self.rigid_instance_meta_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.rigid_instance_meta_buffer,
+                "perro_mesh_instance_rigid_meta",
+                (new_cap * std::mem::size_of::<RigidInstanceMetaGpu>()) as u64,
+                vertex_usage,
+            );
+            self.rigid_instance_meta_capacity = new_cap;
+        }
+        if let Some(new_cap) = self
+            .shrink
+            .skinned_instance_meta
+            .tick(self.skinned_instance_meta_capacity, 256)
+        {
+            self.skinned_instance_meta_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.skinned_instance_meta_buffer,
+                "perro_mesh_instance_skinned_meta",
+                (new_cap * std::mem::size_of::<SkinnedInstanceMetaGpu>()) as u64,
+                vertex_usage,
+            );
+            self.skinned_instance_meta_capacity = new_cap;
+        }
+
+        // Buffers below feed bind groups; rebuild them once at the end.
+        let mut rebuild_camera = false;
+        if let Some(new_cap) = self
+            .shrink
+            .blend_shape_deltas
+            .tick(self.blend_shape_delta_capacity, 64)
+        {
+            self.blend_shape_delta_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.blend_shape_delta_buffer,
+                "perro_blend_shape_deltas",
+                (new_cap * std::mem::size_of::<BlendShapeDeltaGpu>()) as u64,
+                storage_usage,
+            );
+            self.blend_shape_delta_capacity = new_cap;
+            rebuild_camera = true;
+        }
+        if let Some(new_cap) = self.shrink.skeletons.tick(self.skeleton_capacity, 64) {
+            self.skeleton_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.skeleton_buffer,
+                "perro_skeleton_palette_buffer",
+                (new_cap * std::mem::size_of::<[[f32; 4]; 3]>()) as u64,
+                storage_usage,
+            );
+            self.skeleton_capacity = new_cap;
+            rebuild_camera = true;
+        }
+        if let Some(new_cap) = self
+            .shrink
+            .multimesh_instances
+            .tick(self.multimesh_instance_capacity, 256)
+        {
+            self.multimesh_instance_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.multimesh_instance_buffer,
+                "perro_multimesh_instances",
+                (new_cap * std::mem::size_of::<MultiMeshInstanceGpu>()) as u64,
+                storage_usage,
+            );
+            self.multimesh_instance_capacity = new_cap;
+            rebuild_camera = true;
+        }
+        if let Some(new_cap) = self
+            .shrink
+            .multimesh_draw_params
+            .tick(self.multimesh_draw_params_capacity, 256)
+        {
+            self.multimesh_draw_params_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.multimesh_draw_params_buffer,
+                "perro_multimesh_draw_params",
+                (new_cap * std::mem::size_of::<MultiMeshDrawParamGpu>()) as u64,
+                storage_usage,
+            );
+            self.multimesh_draw_params_capacity = new_cap;
+            rebuild_camera = true;
+        }
+        if let Some(new_cap) = self
+            .shrink
+            .multimesh_cull_instances
+            .tick(self.multimesh_cull_instance_capacity, 256)
+        {
+            self.multimesh_instance_batch_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.multimesh_instance_batch_buffer,
+                "perro_multimesh_instance_batch",
+                (new_cap * std::mem::size_of::<u32>()) as u64,
+                storage_usage,
+            );
+            self.multimesh_visible_index_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.multimesh_visible_index_buffer,
+                "perro_multimesh_visible_indices",
+                (new_cap * std::mem::size_of::<u32>()) as u64,
+                storage_usage,
+            );
+            self.multimesh_cull_instance_capacity = new_cap;
+            rebuild_camera = true;
+        }
+        if rebuild_camera {
+            // Also rebuilds the multimesh cull + shadow multimesh bind groups.
+            self.rebuild_camera_bind_groups(device);
+        }
+    }
+
     pub(in super::super) fn ensure_frustum_cull_capacity(
         &mut self,
         device: &wgpu::Device,
@@ -779,11 +1035,13 @@ impl Gpu3D {
                 | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
-        self.hiz_debug_readback_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perro_hiz_indirect_readback"),
-            size: (new_capacity * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
+        self.hiz_debug_readback_buffer = self.hiz_debug_readback_buffer.is_some().then(|| {
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("perro_hiz_indirect_readback"),
+                size: (new_capacity * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64,
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            })
         });
         self.pending_hiz_debug_count = 0;
         self.pending_hiz_debug_map_rx = None;

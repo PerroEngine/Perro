@@ -74,8 +74,12 @@ fn convert_gltf_animation_bytes_to_panim(
     skeleton_object: &str,
     label: &str,
 ) -> Result<String, String> {
-    let (doc, buffers, _images) =
-        gltf::import_slice(bytes).map_err(|err| format!("import gltf fail {label}: {err}"))?;
+    let gltf::Gltf {
+        document: doc,
+        blob,
+    } = gltf::Gltf::from_slice(bytes).map_err(|err| format!("import gltf fail {label}: {err}"))?;
+    let buffers = gltf::import_buffers(&doc, None, blob)
+        .map_err(|err| format!("import gltf fail {label}: {err}"))?;
     let animation = doc
         .animations()
         .nth(animation_index)

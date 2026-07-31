@@ -61,13 +61,18 @@ impl Runtime {
         old_parent: perro_ids::NodeID,
         new_parent: perro_ids::NodeID,
     ) {
-        let mut stack = vec![child_id];
+        // Reused scratch stack: no per-subtree-node `children().to_vec()`.
+        let mut stack = std::mem::take(&mut self.node_api_scratch.ui_walk_stack);
+        stack.clear();
+        stack.push(child_id);
         while let Some(id) = stack.pop() {
             let Some(node) = self.nodes.get(id) else {
                 continue;
             };
             let is_ui = ui_base_from_data(&node.data).is_some();
-            let children = self.nodes.children(id).map(<[NodeID]>::to_vec);
+            if let Some(children) = self.nodes.children(id) {
+                stack.extend_from_slice(children);
+            }
             if is_ui {
                 self.mark_ui_dirty(
                     id,
@@ -77,25 +82,23 @@ impl Runtime {
                         | Self::UI_DIRTY_COMMANDS,
                 );
             }
-            stack.extend(children.unwrap_or_default());
         }
+        stack.clear();
+        self.node_api_scratch.ui_walk_stack = stack;
 
-        let mut seen_ui_parents = std::collections::HashSet::new();
+        let old_ui_parent = self.closest_ui_ancestor(old_parent);
+        let new_ui_parent = self.closest_ui_ancestor(new_parent);
         for ui_parent_id in [
-            self.closest_ui_ancestor(old_parent),
-            self.closest_ui_ancestor(new_parent),
+            old_ui_parent,
+            new_ui_parent.filter(|id| Some(*id) != old_ui_parent),
         ]
         .into_iter()
         .flatten()
         {
-            if seen_ui_parents.insert(ui_parent_id) {
-                self.mark_ui_dirty(
-                    ui_parent_id,
-                    Self::UI_DIRTY_LAYOUT_SELF
-                        | Self::UI_DIRTY_LAYOUT_PARENT
-                        | Self::UI_DIRTY_COMMANDS,
-                );
-            }
+            self.mark_ui_dirty(
+                ui_parent_id,
+                Self::UI_DIRTY_LAYOUT_SELF | Self::UI_DIRTY_LAYOUT_PARENT | Self::UI_DIRTY_COMMANDS,
+            );
         }
     }
 
@@ -114,13 +117,18 @@ impl Runtime {
     }
 
     pub(super) fn mark_ui_visibility_dirty_subtree(&mut self, root: perro_ids::NodeID) {
-        let mut stack = vec![root];
+        // Reused scratch stack: no per-subtree-node `children().to_vec()`.
+        let mut stack = std::mem::take(&mut self.node_api_scratch.ui_walk_stack);
+        stack.clear();
+        stack.push(root);
         while let Some(id) = stack.pop() {
             let Some(node) = self.nodes.get(id) else {
                 continue;
             };
             let is_ui = ui_base_from_data(&node.data).is_some();
-            let children = self.nodes.children(id).map(<[NodeID]>::to_vec);
+            if let Some(children) = self.nodes.children(id) {
+                stack.extend_from_slice(children);
+            }
 
             if is_ui {
                 self.mark_ui_dirty(
@@ -131,9 +139,9 @@ impl Runtime {
                         | Self::UI_DIRTY_COMMANDS,
                 );
             }
-
-            stack.extend(children.unwrap_or_default());
         }
+        stack.clear();
+        self.node_api_scratch.ui_walk_stack = stack;
     }
 }
 
@@ -839,7 +847,7 @@ mod fingerprint_tests {
     fn label_text_change_text_layout_commands() {
         let before = SceneNodeData::UiLabel(Box::new(UiLabel::new()));
         let mut label = UiLabel::new();
-        label.text = Cow::Borrowed("hi");
+        label.text = "hi".into();
         let after = SceneNodeData::UiLabel(Box::new(label));
         assert_eq!(
             payload_flags(&before, &after),
@@ -900,7 +908,7 @@ mod fingerprint_tests {
     fn textbox_text_vs_caret_groups() {
         let before = SceneNodeData::UiTextBox(Box::new(UiTextBox::new()));
         let mut text = UiTextBox::new();
-        text.inner.text = Cow::Borrowed("x");
+        text.inner.text = "x".into();
         assert_eq!(
             payload_flags(&before, &SceneNodeData::UiTextBox(Box::new(text))),
             F_TEXT | F_LAYOUT_SELF | F_LAYOUT_PARENT | F_COMMANDS

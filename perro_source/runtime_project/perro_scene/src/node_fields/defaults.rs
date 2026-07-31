@@ -163,6 +163,11 @@ pub(super) fn default_mesh_instance_3d_field_value(
         MeshInstance3DField::BlendMask => bit_mask_value(node.blend.blend_mask),
         MeshInstance3DField::BlendDistance => SceneValue::F32(node.blend.distance),
         MeshInstance3DField::BlendMinDistance => SceneValue::F32(node.blend.min_distance),
+        MeshInstance3DField::BlendNoiseFactor => SceneValue::F32(node.blend.noise_factor),
+        MeshInstance3DField::BlendNoiseScale => SceneValue::F32(node.blend.noise_scale),
+        MeshInstance3DField::BlendSlopeFactor => SceneValue::F32(node.blend.slope_factor),
+        MeshInstance3DField::BlendStrength => SceneValue::F32(node.blend.strength),
+        MeshInstance3DField::BlendSaltInstances => SceneValue::Bool(node.blend.salt_instances),
     })
 }
 
@@ -395,6 +400,26 @@ pub(super) fn mesh_blend_value(value: MeshBlendOptions) -> SceneValue {
         (
             SceneFieldName::BlendMinDistance,
             SceneValue::F32(value.min_distance),
+        ),
+        (
+            SceneFieldName::BlendNoiseFactor,
+            SceneValue::F32(value.noise_factor),
+        ),
+        (
+            SceneFieldName::BlendNoiseScale,
+            SceneValue::F32(value.noise_scale),
+        ),
+        (
+            SceneFieldName::BlendSlopeFactor,
+            SceneValue::F32(value.slope_factor),
+        ),
+        (
+            SceneFieldName::BlendStrength,
+            SceneValue::F32(value.strength),
+        ),
+        (
+            SceneFieldName::BlendSaltInstances,
+            SceneValue::Bool(value.salt_instances),
         ),
     ]))
 }

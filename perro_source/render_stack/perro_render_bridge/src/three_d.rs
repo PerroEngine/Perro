@@ -401,7 +401,9 @@ pub struct PointParticles3DState {
     pub params: Vec<f32>,
     pub simulation_time: f32,
     pub simulation_delta: f32,
-    pub profile: ParticleProfile3D,
+    // Arc: shared with the runtime's profile cache; per-frame emitter
+    // upserts bump a refcount instead of deep-cloning expr bytecode.
+    pub profile: Arc<ParticleProfile3D>,
     pub sim_mode: ParticleSimulationMode3D,
     pub render_mode: ParticleRenderMode3D,
 }
@@ -898,6 +900,18 @@ impl CustomMaterial3D {
     }
 }
 
+/// One debug wire segment inside `Command3D::DrawDebugLines3D`. Carries its
+/// own retained node id so the batch consumer feeds the exact same per-line
+/// path as the single `DrawDebugLine3D` variant.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DebugLine3D {
+    pub node: NodeID,
+    pub start: [f32; 3],
+    pub end: [f32; 3],
+    pub thickness: f32,
+    pub color: [f32; 4],
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Material3D {
     Standard(StandardMaterial3D),
@@ -1028,7 +1042,7 @@ impl Default for Camera3DState {
             rotation: [0.0, 0.0, 0.0, 1.0],
             projection: CameraProjectionState::default(),
             render_mask: BitMask::NONE,
-            post_processing: Arc::from([]),
+            post_processing: crate::empty_arc_slice(),
             audio_options: AudioListenerOptions::new(),
         }
     }
@@ -1118,6 +1132,14 @@ pub struct MeshBlendOptions3D {
     pub min_distance: f32,
     pub noise_factor: f32,
     pub noise_scale: f32,
+    /// Slope falloff exponent for the screen seam pass, 0.0..=8.0; 0 disables
+    /// the falloff.
+    pub slope_factor: f32,
+    /// Overall seam blend scale, 0.0..=1.0.
+    pub strength: f32,
+    /// Salt multimesh instance ids in the seam mask; off shares one id per
+    /// batch.
+    pub salt_instances: bool,
 }
 
 impl MeshBlendOptions3D {
@@ -1132,6 +1154,9 @@ impl MeshBlendOptions3D {
             min_distance: 0.03,
             noise_factor: 0.35,
             noise_scale: 14.0,
+            slope_factor: 2.0,
+            strength: 1.0,
+            salt_instances: true,
         }
     }
 

@@ -12,8 +12,21 @@ impl Runtime {
             return None;
         }
         let mut best: Option<AudioPortalPath2D> = None;
-        let mut stack = vec![(from, initial_dir, 0.0f32, from, 1.0f32, 0usize, 0u32, None)];
-        while let Some((
+        // Reuse the scratch stack across calls; per-tick portal solves used to
+        // allocate a fresh traversal Vec per sound.
+        let mut stack = std::mem::take(&mut self.audio.scratch_portal_stack_2d);
+        stack.clear();
+        stack.push(PortalWalk2D {
+            origin: from,
+            direction: initial_dir,
+            traveled: 0.0,
+            perceived: from,
+            strength: 1.0,
+            hops: 0,
+            bounces: 0,
+            skip_portal: None,
+        });
+        while let Some(PortalWalk2D {
             origin,
             direction,
             traveled,
@@ -22,7 +35,7 @@ impl Runtime {
             hops,
             bounces,
             skip_portal,
-        )) = stack.pop()
+        }) = stack.pop()
         {
             let to_listener = to - origin;
             let listener_distance = to_listener.dot(direction);
@@ -54,16 +67,16 @@ impl Runtime {
                         && let Some(hit) = block_hit
                         && let Some(reflected) = reflect_2d(direction, hit.normal)
                     {
-                        stack.push((
-                            hit.point + reflected * AUDIO_PORTAL_EPSILON,
-                            reflected,
-                            traveled + hit.distance,
+                        stack.push(PortalWalk2D {
+                            origin: hit.point + reflected * AUDIO_PORTAL_EPSILON,
+                            direction: reflected,
+                            traveled: traveled + hit.distance,
                             perceived,
                             strength,
                             hops,
-                            bounces + 1,
-                            None,
-                        ));
+                            bounces: bounces + 1,
+                            skip_portal: None,
+                        });
                     }
                 } else {
                     let distance = traveled + listener_distance;
@@ -102,16 +115,16 @@ impl Runtime {
                     && let Some(ray_hit) = block_hit
                     && let Some(reflected) = reflect_2d(direction, ray_hit.normal)
                 {
-                    stack.push((
-                        ray_hit.point + reflected * AUDIO_PORTAL_EPSILON,
-                        reflected,
-                        traveled + ray_hit.distance,
+                    stack.push(PortalWalk2D {
+                        origin: ray_hit.point + reflected * AUDIO_PORTAL_EPSILON,
+                        direction: reflected,
+                        traveled: traveled + ray_hit.distance,
                         perceived,
                         strength,
                         hops,
-                        bounces + 1,
-                        None,
-                    ));
+                        bounces: bounces + 1,
+                        skip_portal: None,
+                    });
                 }
                 continue;
             }
@@ -132,18 +145,19 @@ impl Runtime {
                 if exit_dir.length_squared() <= 0.0001 {
                     continue;
                 }
-                stack.push((
-                    exit_point + exit_dir * AUDIO_PORTAL_EPSILON,
-                    exit_dir,
-                    traveled + hit.distance,
-                    exit_point,
-                    strength.min(hit.strength).min(exit.strength),
-                    hops + 1,
+                stack.push(PortalWalk2D {
+                    origin: exit_point + exit_dir * AUDIO_PORTAL_EPSILON,
+                    direction: exit_dir,
+                    traveled: traveled + hit.distance,
+                    perceived: exit_point,
+                    strength: strength.min(hit.strength).min(exit.strength),
+                    hops: hops + 1,
                     bounces,
-                    Some(target),
-                ));
+                    skip_portal: Some(target),
+                });
             }
         }
+        self.audio.scratch_portal_stack_2d = stack;
         best
     }
 
@@ -158,7 +172,9 @@ impl Runtime {
         }
         let dir = direction.normalized();
         let sweep = dir * self.audio.config.max_ray_distance_2d;
-        let mut best: Option<AudioPortalHit2D> = None;
+        // Track the best candidate without its target list; the winner's
+        // targets are cloned exactly once at the end instead of per candidate.
+        let mut best: Option<(NodeID, Vector2, Vector2, f32, f32)> = None;
         for index in 0..self.audio.audio_portal_ids_2d.len() {
             let portal_id = self.audio.audio_portal_ids_2d[index];
             if skip_portal == Some(portal_id) {
@@ -169,14 +185,10 @@ impl Runtime {
             else {
                 continue;
             };
-            if !portal.active {
+            if !portal.active || portal.targets.is_empty() {
                 continue;
             }
             let strength = portal.strength;
-            let targets = portal.targets.clone();
-            if targets.is_empty() {
-                continue;
-            }
             let Some(entry_transform) = self.get_global_transform_2d(portal_id) else {
                 continue;
             };
@@ -194,23 +206,37 @@ impl Runtime {
                     if distance <= AUDIO_PORTAL_EPSILON {
                         continue;
                     }
-                    if best.as_ref().is_some_and(|hit| distance >= hit.distance) {
+                    if best
+                        .as_ref()
+                        .is_some_and(|(_, _, _, _, best_distance)| distance >= *best_distance)
+                    {
                         continue;
                     }
                     let entry = from + sweep * t;
                     let local_entry = inverse_transform_point_2d(entry_transform, entry);
-                    best = Some(AudioPortalHit2D {
+                    best = Some((
                         portal_id,
                         local_entry,
-                        local_dir: inverse_transform_dir_2d(entry_transform, dir),
-                        targets: targets.clone(),
+                        inverse_transform_dir_2d(entry_transform, dir),
                         strength,
                         distance,
-                    });
+                    ));
                 }
             }
         }
-        best
+        let (portal_id, local_entry, local_dir, strength, distance) = best?;
+        let Some(SceneNodeData::AudioPortal2D(portal)) = self.nodes.get(portal_id).map(|n| &n.data)
+        else {
+            return None;
+        };
+        Some(AudioPortalHit2D {
+            portal_id,
+            local_entry,
+            local_dir,
+            targets: portal.targets.clone(),
+            strength,
+            distance,
+        })
     }
 
     pub(in super::super) fn best_audio_portal_3d(
@@ -223,8 +249,20 @@ impl Runtime {
             return None;
         }
         let mut best: Option<AudioPortalPath3D> = None;
-        let mut stack = vec![(from, initial_dir, 0.0f32, from, 1.0f32, 0usize, 0u32, None)];
-        while let Some((
+        // Reuse the scratch stack across calls (see best_audio_portal_2d).
+        let mut stack = std::mem::take(&mut self.audio.scratch_portal_stack_3d);
+        stack.clear();
+        stack.push(PortalWalk3D {
+            origin: from,
+            direction: initial_dir,
+            traveled: 0.0,
+            perceived: from,
+            strength: 1.0,
+            hops: 0,
+            bounces: 0,
+            skip_portal: None,
+        });
+        while let Some(PortalWalk3D {
             origin,
             direction,
             traveled,
@@ -233,7 +271,7 @@ impl Runtime {
             hops,
             bounces,
             skip_portal,
-        )) = stack.pop()
+        }) = stack.pop()
         {
             let to_listener = to - origin;
             let listener_distance = to_listener.dot(direction);
@@ -256,16 +294,16 @@ impl Runtime {
                         && let Some(hit) = block_hit
                         && let Some(reflected) = reflect_3d(direction, hit.normal)
                     {
-                        stack.push((
-                            hit.point + reflected * AUDIO_PORTAL_EPSILON,
-                            reflected,
-                            traveled + hit.distance,
+                        stack.push(PortalWalk3D {
+                            origin: hit.point + reflected * AUDIO_PORTAL_EPSILON,
+                            direction: reflected,
+                            traveled: traveled + hit.distance,
                             perceived,
                             strength,
                             hops,
-                            bounces + 1,
-                            None,
-                        ));
+                            bounces: bounces + 1,
+                            skip_portal: None,
+                        });
                     }
                 } else {
                     let distance = traveled + listener_distance;
@@ -294,16 +332,16 @@ impl Runtime {
                     && let Some(ray_hit) = block_hit
                     && let Some(reflected) = reflect_3d(direction, ray_hit.normal)
                 {
-                    stack.push((
-                        ray_hit.point + reflected * AUDIO_PORTAL_EPSILON,
-                        reflected,
-                        traveled + ray_hit.distance,
+                    stack.push(PortalWalk3D {
+                        origin: ray_hit.point + reflected * AUDIO_PORTAL_EPSILON,
+                        direction: reflected,
+                        traveled: traveled + ray_hit.distance,
                         perceived,
                         strength,
                         hops,
-                        bounces + 1,
-                        None,
-                    ));
+                        bounces: bounces + 1,
+                        skip_portal: None,
+                    });
                 }
                 continue;
             }
@@ -324,18 +362,19 @@ impl Runtime {
                 if exit_dir.length_squared() <= 0.0001 {
                     continue;
                 }
-                stack.push((
-                    exit_point + exit_dir * AUDIO_PORTAL_EPSILON,
-                    exit_dir,
-                    traveled + hit.distance,
-                    exit_point,
-                    strength.min(hit.strength).min(exit.strength),
-                    hops + 1,
+                stack.push(PortalWalk3D {
+                    origin: exit_point + exit_dir * AUDIO_PORTAL_EPSILON,
+                    direction: exit_dir,
+                    traveled: traveled + hit.distance,
+                    perceived: exit_point,
+                    strength: strength.min(hit.strength).min(exit.strength),
+                    hops: hops + 1,
                     bounces,
-                    Some(target),
-                ));
+                    skip_portal: Some(target),
+                });
             }
         }
+        self.audio.scratch_portal_stack_3d = stack;
         best
     }
 
@@ -350,7 +389,8 @@ impl Runtime {
         }
         let dir = direction.normalized();
         let sweep = dir * self.audio.config.max_ray_distance_3d;
-        let mut best: Option<AudioPortalHit3D> = None;
+        // Candidate tracked without targets; the winner clones them once.
+        let mut best: Option<(NodeID, Vector3, Vector3, f32, f32)> = None;
         for index in 0..self.audio.audio_portal_ids_3d.len() {
             let portal_id = self.audio.audio_portal_ids_3d[index];
             if skip_portal == Some(portal_id) {
@@ -361,14 +401,10 @@ impl Runtime {
             else {
                 continue;
             };
-            if !portal.active {
+            if !portal.active || portal.targets.is_empty() {
                 continue;
             }
             let strength = portal.strength;
-            let targets = portal.targets.clone();
-            if targets.is_empty() {
-                continue;
-            }
             let Some(entry_transform) = self.get_global_transform_3d(portal_id) else {
                 continue;
             };
@@ -386,22 +422,36 @@ impl Runtime {
                     if distance <= AUDIO_PORTAL_EPSILON {
                         continue;
                     }
-                    if best.as_ref().is_some_and(|hit| distance >= hit.distance) {
+                    if best
+                        .as_ref()
+                        .is_some_and(|(_, _, _, _, best_distance)| distance >= *best_distance)
+                    {
                         continue;
                     }
                     let entry = from + sweep * t;
                     let local_entry = inverse_transform_point_3d(entry_transform, entry);
-                    best = Some(AudioPortalHit3D {
+                    best = Some((
                         portal_id,
                         local_entry,
-                        local_dir: inverse_transform_dir_3d(entry_transform, dir),
-                        targets: targets.clone(),
+                        inverse_transform_dir_3d(entry_transform, dir),
                         strength,
                         distance,
-                    });
+                    ));
                 }
             }
         }
-        best
+        let (portal_id, local_entry, local_dir, strength, distance) = best?;
+        let Some(SceneNodeData::AudioPortal3D(portal)) = self.nodes.get(portal_id).map(|n| &n.data)
+        else {
+            return None;
+        };
+        Some(AudioPortalHit3D {
+            portal_id,
+            local_entry,
+            local_dir,
+            targets: portal.targets.clone(),
+            strength,
+            distance,
+        })
     }
 }

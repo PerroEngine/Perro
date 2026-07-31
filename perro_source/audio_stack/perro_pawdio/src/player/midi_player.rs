@@ -20,16 +20,21 @@ impl BarkPlayer {
             .state
             .lock()
             .map_err(|_| "audio mutex poisoned".to_string())?;
+        let source_bytes = bytes.len();
         let mut cursor = Cursor::new(bytes);
         let font =
             Arc::new(rustysynth::SoundFont::new(&mut cursor).map_err(|err| err.to_string())?);
-        state.soundfonts.insert(
+        state.cache_bytes = state.cache_bytes.saturating_add(source_bytes);
+        if let Some(old) = state.soundfonts.insert(
             id,
             CachedSoundFont {
                 source: Arc::from(source),
                 font,
+                source_bytes,
             },
-        );
+        ) {
+            state.cache_bytes = state.cache_bytes.saturating_sub(old.source_bytes);
+        }
         Ok(())
     }
 

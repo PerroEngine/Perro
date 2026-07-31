@@ -377,6 +377,18 @@ fn water_snells_window(normal: vec3<f32>, view: vec3<f32>, ior: f32) -> f32 {
     return 1.0 - smoothstep(0.96, 1.02, sin_theta * ior);
 }
 
+// The refraction copy behind scene_color_tex may be captured at reduced
+// resolution (half-res downsample on the non-MSAA path). All screen-space
+// coords in this shader live in full-res depth-texture pixel space, so
+// rescale by the dims ratio (and clamp to bounds) before any color load.
+fn water_scene_color_coord(coord: vec2<i32>) -> vec2<i32> {
+    let depth_dims = textureDimensions(scene_depth_tex);
+    let color_dims = textureDimensions(scene_color_tex);
+    let clamped = clamp(coord, vec2<i32>(0), vec2<i32>(depth_dims) - vec2<i32>(1));
+    let scaled = (vec2<u32>(clamped) * color_dims) / max(depth_dims, vec2<u32>(1u));
+    return clamp(vec2<i32>(scaled), vec2<i32>(0), vec2<i32>(color_dims) - vec2<i32>(1));
+}
+
 fn water_scene_world_from_depth(coord: vec2<i32>, dims_u: vec2<u32>, depth: f32) -> vec3<f32> {
     let uv = (vec2<f32>(coord) + vec2<f32>(0.5)) / vec2<f32>(dims_u);
     let ndc_xy = vec2<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
@@ -438,7 +450,7 @@ fn water_ssr(world_pos: vec3<f32>, normal: vec3<f32>, view_dir: vec3<f32>, rough
                 let edge = min(min(uv.x, uv.y), min(1.0 - uv.x, 1.0 - uv.y));
                 let edge_fade = smoothstep(0.0, 0.08, edge);
                 let distance_fade = 1.0 - smoothstep(8.0, 34.0, travel);
-                result.color = textureLoad(scene_color_tex, coord, 0).rgb;
+                result.color = textureLoad(scene_color_tex, water_scene_color_coord(coord), 0).rgb;
                 result.confidence = edge_fade * distance_fade * (1.0 - roughness * 0.78);
                 return result;
             }
@@ -599,14 +611,17 @@ fn water_transmission_tap(coord: vec2<i32>, center_depth: f32, dims: vec2<i32>) 
     let depth_delta = abs(sample_depth - center_depth);
     let depth_span = 0.0008 + (1.0 - center_depth) * 0.004;
     let depth_weight = 1.0 - smoothstep(depth_span, depth_span * 4.0, depth_delta);
-    return vec4<f32>(textureLoad(scene_color_tex, c, 0).rgb * depth_weight, depth_weight);
+    return vec4<f32>(textureLoad(scene_color_tex, water_scene_color_coord(c), 0).rgb * depth_weight, depth_weight);
 }
 
 fn water_diffused_transmission(center: vec2<i32>, thickness: f32, scene_depth: f32, strength: f32) -> vec3<f32> {
-    let dims_u = textureDimensions(scene_color_tex);
+    // Gather coords and radius stay in full-res depth-texture pixel space so
+    // the depth-weighted taps line up with the depth prepass; only the color
+    // loads rescale into the (possibly half-res) refraction copy.
+    let dims_u = textureDimensions(scene_depth_tex);
     let dims = vec2<i32>(i32(dims_u.x), i32(dims_u.y));
     let c = clamp(center, vec2<i32>(0), dims - vec2<i32>(1));
-    let center_rgb = textureLoad(scene_color_tex, c, 0).rgb;
+    let center_rgb = textureLoad(scene_color_tex, water_scene_color_coord(c), 0).rgb;
     let scatter = clamp(strength, 0.0, 2.0)
         * (0.18 + 0.82 * (1.0 - exp(-max(thickness, 0.0) * 0.32)));
     if scatter <= 0.015 {

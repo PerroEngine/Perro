@@ -349,7 +349,8 @@ impl DeriveVariant for String {
 
     #[inline]
     fn to_variant(&self) -> Variant {
-        Variant::from(self.clone())
+        // single alloc: str copy -> Arc; skip intermediate String clone
+        Variant::String(Arc::<str>::from(self.as_str()))
     }
 
     #[inline]

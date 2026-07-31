@@ -6,6 +6,7 @@
 use perro_ids::NodeID;
 use perro_nodes::{PhysicsForceEmitter2D, PhysicsForceEmitter3D, Shape2D, Shape3D};
 use perro_structs::{BitMask, Quaternion, Vector2, Vector3};
+use smallvec::SmallVec;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PhysicsQueryFilter {
@@ -83,7 +84,8 @@ pub struct PhysicsMoveResult3D {
 pub struct PhysicsSlideResult2D {
     pub position: Vector2,
     pub remainder: Vector2,
-    pub hits: Vec<PhysicsShapeHit2D>,
+    /// Inline up to the max slide iteration count; derefs to a slice.
+    pub hits: SmallVec<[PhysicsShapeHit2D; 4]>,
 }
 
 /// Result of an iterative move-and-slide sweep.
@@ -95,7 +97,8 @@ pub struct PhysicsSlideResult2D {
 pub struct PhysicsSlideResult3D {
     pub position: Vector3,
     pub remainder: Vector3,
-    pub hits: Vec<PhysicsShapeHit3D>,
+    /// Inline up to the max slide iteration count; derefs to a slice.
+    pub hits: SmallVec<[PhysicsShapeHit3D; 4]>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -185,7 +188,7 @@ pub trait PhysicsAPI {
         origin: Vector3,
         direction: Vector3,
         max_distance: f32,
-        filter: PhysicsQueryFilter,
+        filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsRayHit3D> {
         self.raycast_3d(origin, direction, max_distance, filter.include_areas)
     }
@@ -194,7 +197,7 @@ pub trait PhysicsAPI {
         origin: Vector2,
         direction: Vector2,
         max_distance: f32,
-        filter: PhysicsQueryFilter,
+        filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsRayHit2D>;
     fn shape_cast_2d(
         &mut self,
@@ -202,7 +205,7 @@ pub trait PhysicsAPI {
         origin: Vector2,
         direction: Vector2,
         max_distance: f32,
-        filter: PhysicsQueryFilter,
+        filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsShapeHit2D>;
     fn shape_cast_3d(
         &mut self,
@@ -210,14 +213,14 @@ pub trait PhysicsAPI {
         origin: Vector3,
         direction: Vector3,
         max_distance: f32,
-        filter: PhysicsQueryFilter,
+        filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsShapeHit3D>;
     fn move_body_2d(
         &mut self,
         body_id: NodeID,
         target: Vector2,
         margin: f32,
-        filter: PhysicsQueryFilter,
+        filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult2D> {
         let _ = (body_id, target, margin, filter);
         None
@@ -227,7 +230,7 @@ pub trait PhysicsAPI {
         body_id: NodeID,
         target: Vector3,
         margin: f32,
-        filter: PhysicsQueryFilter,
+        filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult3D> {
         let _ = (body_id, target, margin, filter);
         None
@@ -236,7 +239,7 @@ pub trait PhysicsAPI {
         &mut self,
         body_id: NodeID,
         motion: Vector2,
-        filter: PhysicsQueryFilter,
+        filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsSlideResult2D> {
         let _ = (body_id, motion, filter);
         None
@@ -245,7 +248,7 @@ pub trait PhysicsAPI {
         &mut self,
         body_id: NodeID,
         motion: Vector3,
-        filter: PhysicsQueryFilter,
+        filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsSlideResult3D> {
         let _ = (body_id, motion, filter);
         None
@@ -255,7 +258,7 @@ pub trait PhysicsAPI {
         body_id: NodeID,
         dt: f32,
         max_fall_speed: f32,
-        filter: PhysicsQueryFilter,
+        filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult2D> {
         let _ = (body_id, dt, max_fall_speed, filter);
         None
@@ -265,7 +268,7 @@ pub trait PhysicsAPI {
         body_id: NodeID,
         dt: f32,
         max_fall_speed: f32,
-        filter: PhysicsQueryFilter,
+        filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult3D> {
         let _ = (body_id, dt, max_fall_speed, filter);
         None
@@ -546,7 +549,7 @@ impl<'rt, R: PhysicsAPI + ?Sized> PhysicsModule<'rt, R> {
         filter: PhysicsQueryFilter,
     ) -> Option<PhysicsRayHit3D> {
         self.rt
-            .raycast_3d_filtered(origin, direction, max_distance, filter)
+            .raycast_3d_filtered(origin, direction, max_distance, &filter)
     }
 
     pub fn raycast_2d(
@@ -559,7 +562,7 @@ impl<'rt, R: PhysicsAPI + ?Sized> PhysicsModule<'rt, R> {
             origin,
             direction,
             max_distance,
-            PhysicsQueryFilter::default(),
+            &PhysicsQueryFilter::default(),
         )
     }
 
@@ -570,7 +573,7 @@ impl<'rt, R: PhysicsAPI + ?Sized> PhysicsModule<'rt, R> {
         max_distance: f32,
         filter: PhysicsQueryFilter,
     ) -> Option<PhysicsRayHit2D> {
-        self.rt.raycast_2d(origin, direction, max_distance, filter)
+        self.rt.raycast_2d(origin, direction, max_distance, &filter)
     }
 
     pub fn shape_cast_2d(
@@ -582,7 +585,7 @@ impl<'rt, R: PhysicsAPI + ?Sized> PhysicsModule<'rt, R> {
         filter: PhysicsQueryFilter,
     ) -> Option<PhysicsShapeHit2D> {
         self.rt
-            .shape_cast_2d(shape, origin, direction, max_distance, filter)
+            .shape_cast_2d(shape, origin, direction, max_distance, &filter)
     }
 
     pub fn shape_cast_3d(
@@ -594,7 +597,7 @@ impl<'rt, R: PhysicsAPI + ?Sized> PhysicsModule<'rt, R> {
         filter: PhysicsQueryFilter,
     ) -> Option<PhysicsShapeHit3D> {
         self.rt
-            .shape_cast_3d(shape, origin, direction, max_distance, filter)
+            .shape_cast_3d(shape, origin, direction, max_distance, &filter)
     }
 
     pub fn move_body_2d(
@@ -604,7 +607,7 @@ impl<'rt, R: PhysicsAPI + ?Sized> PhysicsModule<'rt, R> {
         margin: f32,
         filter: PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult2D> {
-        self.rt.move_body_2d(body_id, target, margin, filter)
+        self.rt.move_body_2d(body_id, target, margin, &filter)
     }
 
     pub fn move_body_3d(
@@ -614,7 +617,7 @@ impl<'rt, R: PhysicsAPI + ?Sized> PhysicsModule<'rt, R> {
         margin: f32,
         filter: PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult3D> {
-        self.rt.move_body_3d(body_id, target, margin, filter)
+        self.rt.move_body_3d(body_id, target, margin, &filter)
     }
 
     /// Sweep `body_id` along `motion`, sliding along hit planes (up to 4 slides).
@@ -624,7 +627,7 @@ impl<'rt, R: PhysicsAPI + ?Sized> PhysicsModule<'rt, R> {
         motion: Vector2,
         filter: PhysicsQueryFilter,
     ) -> Option<PhysicsSlideResult2D> {
-        self.rt.move_and_slide_2d(body_id, motion, filter)
+        self.rt.move_and_slide_2d(body_id, motion, &filter)
     }
 
     /// Sweep `body_id` along `motion`, sliding along hit planes (up to 4 slides).
@@ -634,7 +637,7 @@ impl<'rt, R: PhysicsAPI + ?Sized> PhysicsModule<'rt, R> {
         motion: Vector3,
         filter: PhysicsQueryFilter,
     ) -> Option<PhysicsSlideResult3D> {
-        self.rt.move_and_slide_3d(body_id, motion, filter)
+        self.rt.move_and_slide_3d(body_id, motion, &filter)
     }
 
     /// Script-invoked engine gravity for a character body: integrates an
@@ -647,7 +650,7 @@ impl<'rt, R: PhysicsAPI + ?Sized> PhysicsModule<'rt, R> {
         filter: PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult2D> {
         self.rt
-            .apply_gravity_2d(body_id, dt, max_fall_speed, filter)
+            .apply_gravity_2d(body_id, dt, max_fall_speed, &filter)
     }
 
     /// Script-invoked engine gravity for a character body: integrates an
@@ -660,7 +663,7 @@ impl<'rt, R: PhysicsAPI + ?Sized> PhysicsModule<'rt, R> {
         filter: PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult3D> {
         self.rt
-            .apply_gravity_3d(body_id, dt, max_fall_speed, filter)
+            .apply_gravity_3d(body_id, dt, max_fall_speed, &filter)
     }
 
     pub fn contacts_2d(&mut self, body_id: NodeID) -> Vec<PhysicsContact2D> {

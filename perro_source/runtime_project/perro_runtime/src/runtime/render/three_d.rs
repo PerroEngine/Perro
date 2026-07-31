@@ -20,6 +20,7 @@ use perro_render_bridge::{
     Sky3DState, SkyShaderPass3DState, SkyTime3DState, SpotLight3DState, UiCommand,
     UiImageScaleState, UiRectState, UiTextAlignState, Water3DState, WaterBodyQueryState,
     WaterCoastlineShape3D, WaterIdleModeState, WaterImpact3D, WaterLinkState, WaterShapeState,
+    empty_arc_slice,
 };
 use perro_resource_api::sub_apis::{MaterialAPI, MeshAPI};
 use perro_runtime_render::{material_3d_request, mesh_3d_request};
@@ -130,7 +131,7 @@ fn fallback_camera_3d_state() -> Camera3DState {
             far: 1000.0,
         },
         render_mask: BitMask::NONE,
-        post_processing: Arc::from([]),
+        post_processing: empty_arc_slice(),
         audio_options: perro_structs::AudioListenerOptions::new(),
     }
 }
@@ -591,7 +592,7 @@ fn water_link_overlap_weight(local: perro_structs::Vector2, link: &WaterLinkStat
 /// allocating a new `Sky3DState` first. Mirrors the derived `PartialEq` on
 /// `Sky3DState` field-for-field, so callers can skip the SetSky command and
 /// its Arc allocations when nothing actually changed.
-fn sky_3d_state_matches(retained: &Sky3DState, sky: &perro_nodes::Sky3D) -> bool {
+pub(crate) fn sky_3d_state_matches(retained: &Sky3DState, sky: &perro_nodes::Sky3D) -> bool {
     retained.day_colors[..] == sky.palette.day_colors[..]
         && retained.evening_colors[..] == sky.palette.evening_colors[..]
         && retained.night_colors[..] == sky.palette.night_colors[..]

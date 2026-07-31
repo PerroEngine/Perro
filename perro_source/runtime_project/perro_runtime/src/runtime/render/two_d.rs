@@ -16,7 +16,8 @@ use perro_render_bridge::{
     RayLight2DState, Rect2DCommand, RenderCommand, ResourceCommand, ShadowCaster2DShapeState,
     ShadowCaster2DState, SpotLight2DState, Sprite2DCommand, TileMap2DCommand, UiCommand,
     UiRectState, UiTextAlignState, Water2DState, WaterBodyQueryState, WaterCoastlineShape2D,
-    WaterIdleModeState, WaterImpact2D, WaterLinkState, WaterShapeState,
+    WaterIdleModeState, WaterImpact2D, WaterLinkState, WaterShapeState, arc_slice_from_vec,
+    empty_arc_slice,
 };
 use perro_runtime_render::{sprite_2d_texture_request, tilemap_2d_texture_request};
 use perro_structs::{BitMask, UVector2, Vector2};
@@ -71,6 +72,7 @@ fn label_2d_rect(
     size: Vector2,
     camera: Option<&Camera2DState>,
     viewport: Vector2,
+    virtual_scale: f32,
     z_index: i32,
 ) -> UiRectState {
     let mut center = transform.position;
@@ -83,16 +85,24 @@ fn label_2d_rect(
         let cos = (-camera.rotation_radians).cos();
         center = Vector2::new(x * cos - y * sin, x * sin + y * cos);
         rotation -= camera.rotation_radians;
-        zoom = camera.zoom.max(0.0001);
+        // Match the renderer's zoom coercion: non-finite / non-positive -> 1.
+        zoom = if camera.zoom.is_finite() && camera.zoom > 0.0 {
+            camera.zoom
+        } else {
+            1.0
+        };
     }
+    // World -> screen uses the same aspect-fit virtual-canvas factor as the
+    // 2D renderer; without it labels drift off their nodes away from design res.
+    let world_to_screen = zoom * virtual_scale.max(0.0001);
     let scale = transform.scale;
     UiRectState {
-        center: [center.x * zoom, center.y * zoom],
+        center: [center.x * world_to_screen, center.y * world_to_screen],
         size: [
-            (size.x * scale.x.abs() * zoom)
+            (size.x * scale.x.abs() * world_to_screen)
                 .max(0.001)
                 .min(viewport.x.max(1.0)),
-            (size.y * scale.y.abs() * zoom)
+            (size.y * scale.y.abs() * world_to_screen)
                 .max(0.001)
                 .min(viewport.y.max(1.0)),
         ],
@@ -649,6 +659,57 @@ pub(crate) fn resolve_tileset_2d(
     None
 }
 
+#[inline]
+fn tilemap_mix_u32(hash: u64, value: u32) -> u64 {
+    (hash ^ value as u64).wrapping_mul(0x100000001b3)
+}
+
+#[inline]
+fn tilemap_mix_u64(hash: u64, value: u64) -> u64 {
+    tilemap_mix_u32(tilemap_mix_u32(hash, value as u32), (value >> 32) as u32)
+}
+
+/// Signature over everything a tilemap's emitted sprites + shadow casters
+/// depend on: resolved texture, transform, tint, z, grid shape, tile data,
+/// tileset content (by cache-entry identity; a reload swaps the Arc), and the
+/// collision toggle. A matching signature means the cached output is exact.
+pub(crate) fn tilemap_render_signature(
+    texture: TextureID,
+    base_model: &[[f32; 3]; 3],
+    tint: perro_structs::Color,
+    tileset: &Arc<ParsedTileset2D>,
+    tilemap: &perro_nodes::TileMap2D,
+) -> u64 {
+    let mut hash = 0xcbf29ce484222325u64;
+    hash = tilemap_mix_u64(hash, texture.as_u64());
+    for row in base_model {
+        for value in row {
+            hash = tilemap_mix_u32(hash, value.to_bits());
+        }
+    }
+    for channel in [tint.r(), tint.g(), tint.b(), tint.a()] {
+        hash = tilemap_mix_u32(hash, channel.to_bits());
+    }
+    hash = tilemap_mix_u64(hash, Arc::as_ptr(tileset) as usize as u64);
+    // cheap tileset shape hash on top of the pointer identity: guards the
+    // (rare) case of a reloaded tileset landing on a recycled allocation.
+    hash = tilemap_mix_u32(hash, tileset.tile_size[0].to_bits());
+    hash = tilemap_mix_u32(hash, tileset.tile_size[1].to_bits());
+    hash = tilemap_mix_u32(hash, tileset.columns);
+    hash = tilemap_mix_u32(hash, tileset.rows);
+    hash = tilemap_mix_u32(hash, tileset.tiles.len() as u32);
+    hash = tilemap_mix_u32(hash, tilemap.width);
+    hash = tilemap_mix_u32(hash, tilemap.height);
+    hash = tilemap_mix_u32(hash, tilemap.empty_tile as u32);
+    hash = tilemap_mix_u32(hash, tilemap.z_index as u32);
+    hash = tilemap_mix_u32(hash, tilemap.collision_enabled as u32);
+    hash = tilemap_mix_u32(hash, tilemap.tiles.len() as u32);
+    for tile in &tilemap.tiles {
+        hash = tilemap_mix_u32(hash, *tile as u32);
+    }
+    hash
+}
+
 pub(crate) struct TilemapSpriteBuild<'a> {
     pub texture: TextureID,
     pub width: u32,
@@ -740,7 +801,7 @@ pub(crate) fn resolve_particle_sim_mode_2d(
 pub(crate) fn resolve_particle_profile_2d(
     runtime: &mut Runtime,
     source: &ParticleProfileRef,
-) -> Option<ParticleProfile2D> {
+) -> Option<Arc<ParticleProfile2D>> {
     let source_path = source.source().trim();
     if source_path.is_empty() {
         return None;
@@ -755,20 +816,36 @@ pub(crate) fn resolve_particle_profile_2d(
             .pending_particle_path_loads
             .remove(&loaded_key);
         if let Some(profile) = profile {
-            cache_particle_profile_2d(runtime, loaded_key, profile);
+            cache_particle_profile_2d(runtime, loaded_key, Arc::new(profile));
         }
     }
     if let Some(path) = runtime.render_2d.particle_path_cache.get(&source_key) {
         return Some(path.clone());
     }
-    let parsed = if runtime.provider_mode() == crate::runtime_project::ProviderMode::Static {
-        if let Some(inline) = source_path.strip_prefix("inline://") {
+    let parsed = Arc::new(
+        if runtime.provider_mode() == crate::runtime_project::ProviderMode::Static {
+            if let Some(inline) = source_path.strip_prefix("inline://") {
+                parse_pparticle_source_2d(inline)?
+            } else if let Some(lookup) = runtime
+                .project()
+                .and_then(|project| project.static_particle_lookup)
+            {
+                particle_profile_2d_from_3d(lookup(source_key))
+            } else if runtime
+                .render_2d
+                .pending_particle_path_loads
+                .insert(source_key)
+            {
+                spawn_particle_profile_2d_load(
+                    source_path.to_string(),
+                    runtime.render_2d.particle_path_load_tx.clone(),
+                );
+                return None;
+            } else {
+                return None;
+            }
+        } else if let Some(inline) = source_path.strip_prefix("inline://") {
             parse_pparticle_source_2d(inline)?
-        } else if let Some(lookup) = runtime
-            .project()
-            .and_then(|project| project.static_particle_lookup)
-        {
-            particle_profile_2d_from_3d(lookup(source_key))
         } else if runtime
             .render_2d
             .pending_particle_path_loads
@@ -781,27 +858,17 @@ pub(crate) fn resolve_particle_profile_2d(
             return None;
         } else {
             return None;
-        }
-    } else if let Some(inline) = source_path.strip_prefix("inline://") {
-        parse_pparticle_source_2d(inline)?
-    } else if runtime
-        .render_2d
-        .pending_particle_path_loads
-        .insert(source_key)
-    {
-        spawn_particle_profile_2d_load(
-            source_path.to_string(),
-            runtime.render_2d.particle_path_load_tx.clone(),
-        );
-        return None;
-    } else {
-        return None;
-    };
+        },
+    );
     cache_particle_profile_2d(runtime, source_key, parsed.clone());
     Some(parsed)
 }
 
-fn cache_particle_profile_2d(runtime: &mut Runtime, source_key: u64, parsed: ParticleProfile2D) {
+fn cache_particle_profile_2d(
+    runtime: &mut Runtime,
+    source_key: u64,
+    parsed: Arc<ParticleProfile2D>,
+) {
     if !runtime
         .render_2d
         .particle_path_cache

@@ -303,6 +303,8 @@ impl PhysicsSystem {
         // stuck w/ time_of_impact=0 in every direction.
         let skin = margin.max(RECOVERY_SKIN_2D);
         let mut recovery = na2::Vector2::zeros();
+        // scratch hit buf: kp alloc across calls (up to 16 fills / char / frame).
+        let mut hits = std::mem::take(&mut self.recovery_hits_2d);
         for _ in 0..RECOVERY_ITERATIONS {
             let mut iter_push = na2::Vector2::zeros();
             let mut penetrating = false;
@@ -319,7 +321,7 @@ impl PhysicsSystem {
                     .unwrap_or_else(|| *collider.position());
                 let shape_pos = na2::Translation2::from(recovery) * start_orig * local_pos;
                 let shape = collider.shape();
-                let mut hits: Vec<r2::ColliderHandle> = Vec::new();
+                hits.clear();
                 world.query_pipeline.intersections_with_shape(
                     &world.bodies,
                     &world.colliders,
@@ -331,7 +333,7 @@ impl PhysicsSystem {
                         true
                     },
                 );
-                for other_handle in hits {
+                for other_handle in hits.iter().copied() {
                     let Some(other) = world.colliders.get(other_handle) else {
                         continue;
                     };
@@ -361,6 +363,8 @@ impl PhysicsSystem {
                 break;
             }
         }
+        hits.clear();
+        self.recovery_hits_2d = hits;
 
         let start = na2::Translation2::from(recovery) * start_orig;
         let delta = na2::Vector2::new(
@@ -469,6 +473,8 @@ impl PhysicsSystem {
         // stuck w/ time_of_impact=0 in every direction.
         let skin = margin.max(RECOVERY_SKIN_3D);
         let mut recovery = na3::Vector3::zeros();
+        // scratch hit buf: kp alloc across calls (up to 16 fills / char / frame).
+        let mut hits = std::mem::take(&mut self.recovery_hits_3d);
         for _ in 0..RECOVERY_ITERATIONS {
             let mut iter_push = na3::Vector3::zeros();
             let mut penetrating = false;
@@ -485,7 +491,7 @@ impl PhysicsSystem {
                     .unwrap_or_else(|| *collider.position());
                 let shape_pos = na3::Translation3::from(recovery) * start_orig * local_pos;
                 let shape = collider.shape();
-                let mut hits: Vec<r3::ColliderHandle> = Vec::new();
+                hits.clear();
                 world.query_pipeline.intersections_with_shape(
                     &world.bodies,
                     &world.colliders,
@@ -497,7 +503,7 @@ impl PhysicsSystem {
                         true
                     },
                 );
-                for other_handle in hits {
+                for other_handle in hits.iter().copied() {
                     let Some(other) = world.colliders.get(other_handle) else {
                         continue;
                     };
@@ -527,6 +533,8 @@ impl PhysicsSystem {
                 break;
             }
         }
+        hits.clear();
+        self.recovery_hits_3d = hits;
 
         let start = na3::Translation3::from(recovery) * start_orig;
         let delta = na3::Vector3::new(
@@ -625,9 +633,15 @@ impl PhysicsSystem {
         };
         // set_position(., true) wake body -> mirror sync_world_2d wake.
         rb.set_position(transform_to_iso2(global), true);
+        let woke_dynamic = rb.is_dynamic();
         state.sync_signature = sync_signature;
         self.query_pipeline_dirty_2d = true;
-        self.refresh_world_2d_idle_cache();
+        // O(1) idle upkeep: kinematic/static commit can't chg dynamic sleep, so
+        // cached val stay valid. dynamic commit wake the body (! yet in rapier's
+        // active set) => force next step; post-step refresh re-derives cache.
+        if woke_dynamic {
+            self.world_2d_idle_cached = false;
+        }
         true
     }
 
@@ -648,92 +662,120 @@ impl PhysicsSystem {
             return false;
         };
         rb.set_position(transform_to_iso3(global), true);
+        let woke_dynamic = rb.is_dynamic();
         state.sync_signature = sync_signature;
         self.query_pipeline_dirty_3d = true;
-        self.refresh_world_3d_idle_cache();
+        // see commit_moved_body_2d idle-cache note.
+        if woke_dynamic {
+            self.world_3d_idle_cached = false;
+        }
         true
     }
 
     pub fn contacts_2d(&self, body_id: NodeID) -> Vec<PhysicsContact2D> {
-        let Some(world) = self.world_2d.as_ref() else {
-            return Vec::new();
-        };
         let mut out = Vec::new();
-        for pair in world.narrow_phase.contact_pairs() {
-            if !pair.has_any_active_contact {
-                continue;
-            }
-            let Some(&a) = world.collider_owners.get(&pair.collider1) else {
-                continue;
-            };
-            let Some(&b) = world.collider_owners.get(&pair.collider2) else {
-                continue;
-            };
-            let other = if a == body_id {
-                b
-            } else if b == body_id {
-                a
-            } else {
-                continue;
-            };
-            for manifold in &pair.manifolds {
-                let normal = if a == body_id {
-                    manifold.data.normal
-                } else {
-                    -manifold.data.normal
-                };
-                for contact in &manifold.data.solver_contacts {
-                    out.push(PhysicsContact2D {
-                        node: other,
-                        point: Vector2::new(contact.point.x, contact.point.y),
-                        normal: Vector2::new(normal.x, normal.y),
-                        impulse: contact.warmstart_impulse,
-                    });
-                }
-            }
-        }
+        self.contacts_2d_into(body_id, &mut out);
         out
     }
 
-    pub fn contacts_3d(&self, body_id: NodeID) -> Vec<PhysicsContact3D> {
-        let Some(world) = self.world_3d.as_ref() else {
-            return Vec::new();
+    /// alloc-free variant of [`Self::contacts_2d`]: clear + fill `out`.
+    /// walk only this body's collider contact pairs (narrow-phase graph),
+    /// ! the whole world's pair list.
+    pub fn contacts_2d_into(&self, body_id: NodeID, out: &mut Vec<PhysicsContact2D>) {
+        out.clear();
+        let Some(world) = self.world_2d.as_ref() else {
+            return;
         };
-        let mut out = Vec::new();
-        for pair in world.narrow_phase.contact_pairs() {
-            if !pair.has_any_active_contact {
-                continue;
-            }
-            let Some(&a) = world.collider_owners.get(&pair.collider1) else {
-                continue;
-            };
-            let Some(&b) = world.collider_owners.get(&pair.collider2) else {
-                continue;
-            };
-            let other = if a == body_id {
-                b
-            } else if b == body_id {
-                a
-            } else {
-                continue;
-            };
-            for manifold in &pair.manifolds {
-                let normal = if a == body_id {
-                    manifold.data.normal
-                } else {
-                    -manifold.data.normal
+        let Some(state) = world.body_map.get(&body_id) else {
+            return;
+        };
+        for collider_handle in &state.colliders {
+            for pair in world.narrow_phase.contact_pairs_with(*collider_handle) {
+                if !pair.has_any_active_contact {
+                    continue;
+                }
+                let Some(&a) = world.collider_owners.get(&pair.collider1) else {
+                    continue;
                 };
-                for contact in &manifold.data.solver_contacts {
-                    out.push(PhysicsContact3D {
-                        node: other,
-                        point: Vector3::new(contact.point.x, contact.point.y, contact.point.z),
-                        normal: Vector3::new(normal.x, normal.y, normal.z),
-                        impulse: contact.warmstart_impulse,
-                    });
+                let Some(&b) = world.collider_owners.get(&pair.collider2) else {
+                    continue;
+                };
+                let other = if a == body_id {
+                    b
+                } else if b == body_id {
+                    a
+                } else {
+                    continue;
+                };
+                for manifold in &pair.manifolds {
+                    let normal = if a == body_id {
+                        manifold.data.normal
+                    } else {
+                        -manifold.data.normal
+                    };
+                    for contact in &manifold.data.solver_contacts {
+                        out.push(PhysicsContact2D {
+                            node: other,
+                            point: Vector2::new(contact.point.x, contact.point.y),
+                            normal: Vector2::new(normal.x, normal.y),
+                            impulse: contact.warmstart_impulse,
+                        });
+                    }
                 }
             }
         }
+    }
+
+    pub fn contacts_3d(&self, body_id: NodeID) -> Vec<PhysicsContact3D> {
+        let mut out = Vec::new();
+        self.contacts_3d_into(body_id, &mut out);
         out
+    }
+
+    /// 3d twin of [`Self::contacts_2d_into`].
+    pub fn contacts_3d_into(&self, body_id: NodeID, out: &mut Vec<PhysicsContact3D>) {
+        out.clear();
+        let Some(world) = self.world_3d.as_ref() else {
+            return;
+        };
+        let Some(state) = world.body_map.get(&body_id) else {
+            return;
+        };
+        for collider_handle in &state.colliders {
+            for pair in world.narrow_phase.contact_pairs_with(*collider_handle) {
+                if !pair.has_any_active_contact {
+                    continue;
+                }
+                let Some(&a) = world.collider_owners.get(&pair.collider1) else {
+                    continue;
+                };
+                let Some(&b) = world.collider_owners.get(&pair.collider2) else {
+                    continue;
+                };
+                let other = if a == body_id {
+                    b
+                } else if b == body_id {
+                    a
+                } else {
+                    continue;
+                };
+                for manifold in &pair.manifolds {
+                    let normal = if a == body_id {
+                        manifold.data.normal
+                    } else {
+                        -manifold.data.normal
+                    };
+                    for contact in &manifold.data.solver_contacts {
+                        out.push(PhysicsContact3D {
+                            node: other,
+                            point: Vector3::new(contact.point.x, contact.point.y, contact.point.z),
+                            normal: Vector3::new(normal.x, normal.y, normal.z),
+                            impulse: contact.warmstart_impulse,
+                        });
+                    }
+                }
+            }
+        }
     }
 
     pub fn update_query_pipeline_2d(&mut self) {

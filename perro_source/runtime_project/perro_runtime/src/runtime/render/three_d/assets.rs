@@ -1,20 +1,11 @@
 use super::*;
 
 impl Runtime {
-    pub(crate) fn resolve_render_mesh_assets(
-        &mut self,
-        node: NodeID,
-        mesh: MeshID,
-        mut surfaces: Vec<MeshSurfaceBinding>,
-    ) -> Option<(MeshID, std::sync::Arc<[MeshSurfaceBinding3D]>)> {
-        self.resolve_render_mesh_assets_scratch(node, mesh, &mut surfaces)
-    }
-
     // Resolve a mesh's surface materials into a render-bridge binding list using a
     // caller-owned `surfaces` buffer. Taking `&mut Vec` lets the per-frame
     // extraction path recycle one scratch allocation instead of cloning a fresh
     // Vec per moving mesh (see resolve_mesh_surfaces_modulated).
-    pub(super) fn resolve_render_mesh_assets_scratch(
+    pub(crate) fn resolve_render_mesh_assets_scratch(
         &mut self,
         node: NodeID,
         mut mesh: MeshID,
@@ -120,15 +111,15 @@ impl Runtime {
             let material = material_override.unwrap_or_else(Material3D::default);
             if !self.render.is_inflight(request) {
                 self.render.mark_inflight(request);
-                self.queue_render_command(RenderCommand::Resource(
+                self.queue_render_command(RenderCommand::Resource(Box::new(
                     ResourceCommand::CreateMaterial {
                         request,
                         id: MaterialID::nil(),
-                        material,
+                        material: std::sync::Arc::new(material),
                         source,
                         reserved: false,
                     },
-                ));
+                )));
             }
             return None;
         }
@@ -229,7 +220,18 @@ impl Runtime {
     pub(crate) fn scene_mesh_asset_progress(&self) -> (u32, u32) {
         let mut pending = 0u32;
         let mut total = 0u32;
-        for (node, scene_node) in self.nodes.iter() {
+        // node_types lane pre-filter (1B/slot): only mesh-draw slots deref
+        // their SceneNode.
+        for index in 1..self.nodes.slot_count() {
+            if !matches!(
+                self.nodes.node_type_slots()[index],
+                perro_nodes::NodeType::MeshInstance3D | perro_nodes::NodeType::MultiMeshInstance3D
+            ) {
+                continue;
+            }
+            let Some((node, scene_node)) = self.nodes.slot_get(index) else {
+                continue;
+            };
             let mesh = match &scene_node.data {
                 SceneNodeData::MeshInstance3D(mesh) => mesh.mesh,
                 SceneNodeData::MultiMeshInstance3D(mesh) => mesh.mesh,
@@ -253,14 +255,21 @@ impl Runtime {
     // storms deliver many MaterialLoaded events per frame; per-material passes
     // were O(materials × nodes).
     pub(crate) fn invalidate_3d_mesh_draws_using_materials(&mut self, materials: &[MaterialID]) {
-        let materials: ahash::AHashSet<MaterialID> = materials
-            .iter()
-            .copied()
-            .filter(|material| !material.is_nil())
-            .collect();
-        if materials.is_empty() {
+        // recycled scratch sets: this runs once per resource-event batch and
+        // must not allocate fresh maps every load storm.
+        let mut material_set = std::mem::take(&mut self.material_invalidation_ids_scratch);
+        material_set.clear();
+        material_set.extend(
+            materials
+                .iter()
+                .copied()
+                .filter(|material| !material.is_nil()),
+        );
+        if material_set.is_empty() {
+            self.material_invalidation_ids_scratch = material_set;
             return;
         }
+        let materials = &material_set;
         let uses_any = |surfaces: &[MeshSurfaceBinding]| {
             surfaces.iter().any(|surface| {
                 surface
@@ -268,7 +277,8 @@ impl Runtime {
                     .is_some_and(|material| materials.contains(&material))
             })
         };
-        let mut nodes: ahash::AHashSet<NodeID> = ahash::AHashSet::default();
+        let mut nodes = std::mem::take(&mut self.material_invalidation_nodes_scratch);
+        nodes.clear();
         for (node, scene_node) in self.nodes.iter() {
             let uses_material = match &scene_node.data {
                 SceneNodeData::MeshInstance3D(mesh) => uses_any(&mesh.surfaces),
@@ -288,10 +298,12 @@ impl Runtime {
                 nodes.insert(*node);
             }
         }
-        for node in nodes {
+        for node in nodes.drain() {
             self.render_3d.retained_mesh_draws.remove(&node);
             self.mark_needs_rerender(node);
         }
+        self.material_invalidation_ids_scratch = material_set;
+        self.material_invalidation_nodes_scratch = nodes;
     }
 
     pub(crate) fn resolve_render_mesh_id(
@@ -356,14 +368,14 @@ impl Runtime {
                 }
                 if !self.render.is_inflight(request) {
                     self.render.mark_inflight(request);
-                    self.queue_render_command(RenderCommand::Resource(
+                    self.queue_render_command(RenderCommand::Resource(Box::new(
                         ResourceCommand::CreateMesh {
                             request,
                             id: MeshID::nil(),
                             source,
                             reserved: false,
                         },
-                    ));
+                    )));
                 }
                 return None;
             }

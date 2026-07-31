@@ -24,7 +24,11 @@ pub(crate) fn decode_static_pawdio(blob: &[u8]) -> Result<(Vec<u8>, Duration), S
     if (flags & perro_asset_formats::pawdio::FLAG_ZLIB) != 0 {
         #[cfg(feature = "profile")]
         let decompress_begin = Instant::now();
-        let decompressed = perro_io::decompress_zlib(payload).map_err(|err| err.to_string())?;
+        // The header's raw_len doubles as the decompression ceiling, so the
+        // output buffer preallocates exactly and a corrupt stream cannot
+        // balloon toward the crate-wide 1GiB default.
+        let decompressed =
+            perro_io::decompress_zlib_limited(payload, raw_len).map_err(|err| err.to_string())?;
         #[cfg(feature = "profile")]
         let decompress_elapsed = decompress_begin.elapsed();
         #[cfg(not(feature = "profile"))]

@@ -44,12 +44,26 @@ impl Runtime {
             self.render_ui.nav_pressed_button = None;
         }
 
-        for (node, scene_node) in self.nodes.iter() {
-            let effectively_visible = self.is_effectively_visible_for_ui(node);
+        // node_types lane pre-filter (1B/slot) instead of deref'ing every
+        // SceneNode in the arena; only button-like slots load node data.
+        for index in 1..self.nodes.slot_count() {
+            if !matches!(
+                self.nodes.node_type_slots()[index],
+                perro_nodes::NodeType::UiButton
+                    | perro_nodes::NodeType::UiDropdown
+                    | perro_nodes::NodeType::UiCheckbox
+                    | perro_nodes::NodeType::UiImageButton
+                    | perro_nodes::NodeType::UiNineSliceButton
+            ) {
+                continue;
+            }
+            let Some((node, scene_node)) = self.nodes.slot_get(index) else {
+                continue;
+            };
             let Some(inactive) = ui_button_like_inactive(&scene_node.data) else {
                 continue;
             };
-            let inactive = inactive || !effectively_visible;
+            let inactive = inactive || !self.is_effectively_visible_for_ui(node);
             let focused_without_hover =
                 hovered.is_none() && self.render_ui.focused_ui_node == Some(node);
             let next = if inactive {

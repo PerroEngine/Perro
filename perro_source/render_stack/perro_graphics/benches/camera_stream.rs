@@ -235,11 +235,11 @@ fn setup_stream_2d(
         let stream = camera_stream_2d_state(output, resolution, sprites.clone());
         graphics.submit(RenderCommand::CameraStream(CameraStreamCommand::Upsert {
             node,
-            state: Box::new(stream.clone()),
+            state: Arc::new(stream.clone()),
         }));
         graphics.submit(RenderCommand::TwoD(Command2D::UpsertCameraStream {
             node,
-            stream: Box::new(stream),
+            stream: Arc::new(stream),
             sprite: stream_display_sprite(i, output, resolution),
         }));
     }
@@ -265,12 +265,12 @@ fn setup_stream_3d(
         let stream = camera_stream_3d_state(output, resolution, draws.clone());
         graphics.submit(RenderCommand::CameraStream(CameraStreamCommand::Upsert {
             node,
-            state: Box::new(stream.clone()),
+            state: Arc::new(stream.clone()),
         }));
         graphics.submit(RenderCommand::ThreeD(Box::new(
             Command3D::UpsertCameraStream {
                 node,
-                stream: Box::new(stream),
+                stream: Arc::new(stream),
                 quad: CameraStream3DState {
                     model: quad_model(i),
                     size: [1.5, 1.0],
@@ -286,7 +286,7 @@ fn setup_stream_3d(
 fn setup_stream_webcam(window: &Arc<Window>, resolution: u32, sprite_count: u32) -> PerroGraphics {
     let mut graphics = base_graphics(window);
     let texture = TextureID::from_parts(900_001, 1);
-    graphics.submit(RenderCommand::Resource(
+    graphics.submit(RenderCommand::Resource(Box::new(
         ResourceCommand::CreateExternalTexture {
             request: RenderRequestID::new(9),
             id: texture,
@@ -295,7 +295,7 @@ fn setup_stream_webcam(window: &Arc<Window>, resolution: u32, sprite_count: u32)
             width: resolution,
             height: resolution,
         },
-    ));
+    )));
     for i in 0..sprite_count {
         graphics.submit(RenderCommand::TwoD(Command2D::UpsertSprite {
             node: NodeID::from_parts(600_000 + i, 0),
@@ -304,12 +304,14 @@ fn setup_stream_webcam(window: &Arc<Window>, resolution: u32, sprite_count: u32)
     }
     // prime the first frame so the displayed sprite texture builds; subsequent
     // redraws hit the persistent-texture in-place upload path.
-    graphics.submit(RenderCommand::Resource(ResourceCommand::WriteTextureRgba {
-        id: texture,
-        width: resolution,
-        height: resolution,
-        rgba: webcam_frame_bytes(resolution, resolution).into(),
-    }));
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::WriteTextureRgba {
+            id: texture,
+            width: resolution,
+            height: resolution,
+            rgba: webcam_frame_bytes(resolution, resolution).into(),
+        },
+    )));
     let _ = graphics.draw_frame_timed();
     WEBCAM_STREAM.with(|state| state.set((texture.as_u64(), resolution, resolution)));
     graphics
@@ -317,12 +319,14 @@ fn setup_stream_webcam(window: &Arc<Window>, resolution: u32, sprite_count: u32)
 
 fn redraw_webcam(graphics: &mut PerroGraphics) {
     let (raw, width, height) = WEBCAM_STREAM.with(|state| state.get());
-    graphics.submit(RenderCommand::Resource(ResourceCommand::WriteTextureRgba {
-        id: TextureID::from_u64(raw),
-        width,
-        height,
-        rgba: webcam_frame_bytes(width, height).into(),
-    }));
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::WriteTextureRgba {
+            id: TextureID::from_u64(raw),
+            width,
+            height,
+            rgba: webcam_frame_bytes(width, height).into(),
+        },
+    )));
 }
 
 fn webcam_frame_bytes(width: u32, height: u32) -> Vec<u8> {
@@ -467,7 +471,7 @@ fn surface(material: MaterialID) -> Arc<[MeshSurfaceBinding3D]> {
 }
 
 fn create_texture(graphics: &mut PerroGraphics) -> TextureID {
-    graphics.submit(RenderCommand::Resource(
+    graphics.submit(RenderCommand::Resource(Box::new(
         ResourceCommand::CreateRuntimeTexture {
             request: RenderRequestID::new(1),
             id: TextureID::nil(),
@@ -477,7 +481,7 @@ fn create_texture(graphics: &mut PerroGraphics) -> TextureID {
             height: 1,
             rgba: Arc::from([255, 255, 255, 255]),
         },
-    ));
+    )));
     graphics.draw_frame();
     let mut events = Vec::new();
     graphics.drain_events(&mut events);
@@ -492,20 +496,20 @@ fn create_texture(graphics: &mut PerroGraphics) -> TextureID {
 
 fn create_mesh_material(graphics: &mut PerroGraphics) -> (MeshID, MaterialID) {
     graphics.submit_many([
-        RenderCommand::Resource(ResourceCommand::CreateRuntimeMesh {
+        RenderCommand::Resource(Box::new(ResourceCommand::CreateRuntimeMesh {
             request: RenderRequestID::new(2),
             id: MeshID::nil(),
             source: "__bench_mesh__".to_string(),
             mesh: tiny_mesh(),
             reserved: true,
-        }),
-        RenderCommand::Resource(ResourceCommand::CreateMaterial {
+        })),
+        RenderCommand::Resource(Box::new(ResourceCommand::CreateMaterial {
             request: RenderRequestID::new(3),
             id: MaterialID::nil(),
-            material: Material3D::default(),
+            material: Material3D::default().into(),
             source: Some("__bench_material__".to_string()),
             reserved: true,
-        }),
+        })),
     ]);
     graphics.draw_frame();
     let mut events = Vec::new();

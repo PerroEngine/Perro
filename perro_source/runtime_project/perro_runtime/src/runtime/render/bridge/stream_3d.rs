@@ -6,13 +6,18 @@ impl Runtime {
         camera_mask: BitMask,
         stream_node: NodeID,
     ) -> Arc<[CameraStreamDraw3DState]> {
-        let mut out = Vec::new();
+        // take-pattern scratch: rebuilt every stream refresh, keep capacity.
+        let mut out = std::mem::take(&mut self.render_3d.stream_draws_scratch);
+        out.clear();
         // Reuse the render-state scratch for skeleton palettes (see
         // `stream_skeleton_palette`) instead of allocating per skinned draw.
         let mut skeleton_global_scratch =
             std::mem::take(&mut self.render_3d.skeleton_global_scratch);
         let mut skeleton_palette_scratch =
             std::mem::take(&mut self.render_3d.skeleton_palette_scratch);
+        // Recycled surface buffer: the node's surface list is copied in here
+        // for material resolve instead of cloning a fresh Vec per mesh.
+        let mut surfaces_scratch = std::mem::take(&mut self.mesh_surface_scratch);
         for idx in 0..self.camera_stream_node_scratch.len() {
             let node = self.camera_stream_node_scratch[idx];
             if node == stream_node
@@ -45,103 +50,113 @@ impl Runtime {
                 });
                 continue;
             }
-            let Some((mesh, surfaces, _skeleton, meshlet_override, lod, blend, instance_kind)) =
-                self.nodes
-                    .get(node)
-                    .and_then(|node_ref| match &node_ref.data {
-                        SceneNodeData::MeshInstance3D(mesh)
-                            if mesh.visible
-                                && stream_render_mask_matches(camera_mask, mesh.render_layers) =>
-                        {
-                            Some((
-                                mesh.mesh,
-                                mesh.surfaces.clone(),
-                                Some(mesh.skeleton),
-                                mesh.meshlet_override,
-                                LODOptions3D {
-                                    min_lod: mesh.lod.min_lod,
-                                    max_lod: mesh.lod.max_lod,
-                                },
-                                MeshBlendOptions3D {
-                                    enabled: mesh.blend.enabled,
-                                    screen_blending: mesh.blend.screen_blending,
-                                    normal_blending: mesh.blend.normal_blending,
-                                    blend_layers: mesh.blend.blend_layers,
-                                    blend_mask: mesh.blend.blend_mask,
-                                    distance: mesh.blend.distance,
-                                    min_distance: mesh.blend.min_distance,
-                                    noise_factor: mesh.blend.noise_factor,
-                                    noise_scale: mesh.blend.noise_scale,
-                                },
-                                StreamMeshInstanceKind::Single,
-                            ))
-                        }
-                        SceneNodeData::MultiMeshInstance3D(mesh)
-                            if mesh.visible
-                                && stream_render_mask_matches(camera_mask, mesh.render_layers) =>
-                        {
-                            Some((
-                                mesh.mesh,
-                                mesh.surfaces.clone(),
-                                None,
-                                mesh.meshlet_override,
-                                LODOptions3D {
-                                    min_lod: mesh.lod.min_lod,
-                                    max_lod: mesh.lod.max_lod,
-                                },
-                                MeshBlendOptions3D {
-                                    enabled: mesh.blend.enabled,
-                                    screen_blending: mesh.blend.screen_blending,
-                                    normal_blending: mesh.blend.normal_blending,
-                                    blend_layers: mesh.blend.blend_layers,
-                                    blend_mask: mesh.blend.blend_mask,
-                                    distance: mesh.blend.distance,
-                                    min_distance: mesh.blend.min_distance,
-                                    noise_factor: mesh.blend.noise_factor,
-                                    noise_scale: mesh.blend.noise_scale,
-                                },
-                                StreamMeshInstanceKind::Dense {
-                                    instance_scale: mesh.instance_scale.max(0.0001),
-                                    poses: Arc::from(
-                                        mesh.instances
-                                            .iter()
-                                            .map(|instance| DenseInstancePose3D {
-                                                position: [
-                                                    instance.transform.position.x,
-                                                    instance.transform.position.y,
-                                                    instance.transform.position.z,
-                                                ],
-                                                scale: [
-                                                    instance.transform.scale.x,
-                                                    instance.transform.scale.y,
-                                                    instance.transform.scale.z,
-                                                ],
-                                                rotation: [
-                                                    instance.transform.rotation.x,
-                                                    instance.transform.rotation.y,
-                                                    instance.transform.rotation.z,
-                                                    instance.transform.rotation.w,
-                                                ],
-                                                has_blend_shape_weight_override: instance
-                                                    .blend_shape_weights
-                                                    .is_some(),
-                                                blend_shape_weights: instance
-                                                    .blend_shape_weights
-                                                    .clone()
-                                                    .map(Arc::<[f32]>::from)
-                                                    .unwrap_or_else(|| Arc::from([])),
-                                            })
-                                            .collect::<Vec<_>>(),
-                                    ),
-                                },
-                            ))
-                        }
-                        _ => None,
-                    })
+            let Some((mesh, _skeleton, meshlet_override, lod, blend, instance_kind)) = self
+                .nodes
+                .get(node)
+                .and_then(|node_ref| match &node_ref.data {
+                    SceneNodeData::MeshInstance3D(mesh)
+                        if mesh.visible
+                            && stream_render_mask_matches(camera_mask, mesh.render_layers) =>
+                    {
+                        surfaces_scratch.clear();
+                        surfaces_scratch.extend(mesh.surfaces.iter().cloned());
+                        Some((
+                            mesh.mesh,
+                            Some(mesh.skeleton),
+                            mesh.meshlet_override,
+                            LODOptions3D {
+                                min_lod: mesh.lod.min_lod,
+                                max_lod: mesh.lod.max_lod,
+                            },
+                            MeshBlendOptions3D {
+                                enabled: mesh.blend.enabled,
+                                screen_blending: mesh.blend.screen_blending,
+                                normal_blending: mesh.blend.normal_blending,
+                                blend_layers: mesh.blend.blend_layers,
+                                blend_mask: mesh.blend.blend_mask,
+                                distance: mesh.blend.distance,
+                                min_distance: mesh.blend.min_distance,
+                                noise_factor: mesh.blend.noise_factor,
+                                noise_scale: mesh.blend.noise_scale,
+                                slope_factor: mesh.blend.slope_factor,
+                                strength: mesh.blend.strength,
+                                salt_instances: mesh.blend.salt_instances,
+                            },
+                            StreamMeshInstanceKind::Single,
+                        ))
+                    }
+                    SceneNodeData::MultiMeshInstance3D(mesh)
+                        if mesh.visible
+                            && stream_render_mask_matches(camera_mask, mesh.render_layers) =>
+                    {
+                        surfaces_scratch.clear();
+                        surfaces_scratch.extend(mesh.surfaces.iter().cloned());
+                        Some((
+                            mesh.mesh,
+                            None,
+                            mesh.meshlet_override,
+                            LODOptions3D {
+                                min_lod: mesh.lod.min_lod,
+                                max_lod: mesh.lod.max_lod,
+                            },
+                            MeshBlendOptions3D {
+                                enabled: mesh.blend.enabled,
+                                screen_blending: mesh.blend.screen_blending,
+                                normal_blending: mesh.blend.normal_blending,
+                                blend_layers: mesh.blend.blend_layers,
+                                blend_mask: mesh.blend.blend_mask,
+                                distance: mesh.blend.distance,
+                                min_distance: mesh.blend.min_distance,
+                                noise_factor: mesh.blend.noise_factor,
+                                noise_scale: mesh.blend.noise_scale,
+                                slope_factor: mesh.blend.slope_factor,
+                                strength: mesh.blend.strength,
+                                salt_instances: mesh.blend.salt_instances,
+                            },
+                            StreamMeshInstanceKind::Dense {
+                                instance_scale: mesh.instance_scale.max(0.0001),
+                                // slice iter is TrustedLen: collects into
+                                // the Arc directly (no Vec round trip).
+                                poses: mesh
+                                    .instances
+                                    .iter()
+                                    .map(|instance| DenseInstancePose3D {
+                                        position: [
+                                            instance.transform.position.x,
+                                            instance.transform.position.y,
+                                            instance.transform.position.z,
+                                        ],
+                                        scale: [
+                                            instance.transform.scale.x,
+                                            instance.transform.scale.y,
+                                            instance.transform.scale.z,
+                                        ],
+                                        rotation: [
+                                            instance.transform.rotation.x,
+                                            instance.transform.rotation.y,
+                                            instance.transform.rotation.z,
+                                            instance.transform.rotation.w,
+                                        ],
+                                        has_blend_shape_weight_override: instance
+                                            .blend_shape_weights
+                                            .is_some(),
+                                        blend_shape_weights: instance
+                                            .blend_shape_weights
+                                            .clone()
+                                            .map(Arc::<[f32]>::from)
+                                            .unwrap_or_else(empty_arc_slice),
+                                    })
+                                    .collect(),
+                            },
+                        ))
+                    }
+                    _ => None,
+                })
             else {
                 continue;
             };
-            let Some((mesh, surfaces)) = self.resolve_render_mesh_assets(node, mesh, surfaces)
+            let Some((mesh, surfaces)) =
+                self.resolve_render_mesh_assets_scratch(node, mesh, &mut surfaces_scratch)
             else {
                 continue;
             };
@@ -189,7 +204,16 @@ impl Runtime {
         }
         self.render_3d.skeleton_global_scratch = skeleton_global_scratch;
         self.render_3d.skeleton_palette_scratch = skeleton_palette_scratch;
-        Arc::from(out)
+        surfaces_scratch.clear();
+        self.mesh_surface_scratch = surfaces_scratch;
+        let draws = if out.is_empty() {
+            empty_arc_slice()
+        } else {
+            Arc::from(out.as_slice())
+        };
+        out.clear();
+        self.render_3d.stream_draws_scratch = out;
+        draws
     }
 
     pub(super) fn collect_camera_stream_lighting_3d(
@@ -235,9 +259,13 @@ impl Runtime {
         let mut lighting = CameraStreamLighting3DState::default();
         let mut best_ambient: Option<(NodeID, AmbientLight3DState)> = None;
         let mut best_sky: Option<(NodeID, Sky3DState)> = None;
-        let mut ray_lights: Vec<(NodeID, RayLight3DState)> = Vec::new();
-        let mut point_lights: Vec<(NodeID, PointLight3DState)> = Vec::new();
-        let mut spot_lights: Vec<(NodeID, SpotLight3DState)> = Vec::new();
+        // take-pattern scratch: rebuilt every stream refresh, keep capacity.
+        let mut ray_lights = std::mem::take(&mut self.render_3d.stream_ray_lights_scratch);
+        let mut point_lights = std::mem::take(&mut self.render_3d.stream_point_lights_scratch);
+        let mut spot_lights = std::mem::take(&mut self.render_3d.stream_spot_lights_scratch);
+        ray_lights.clear();
+        point_lights.clear();
+        spot_lights.clear();
         // single pass over the full scene scratch; no clone/sort of scene ids.
         // min-NodeID wins ambient/sky (was sorted-first-wins). capped light
         // arrays keep deterministic lowest-id selection by sorting only the
@@ -271,33 +299,44 @@ impl Runtime {
                             && sky.active
                             && stream_render_mask_matches(camera_mask, sky.render_layers) =>
                     {
-                        Some(StreamLight3DData::Sky(Sky3DState {
-                            day_colors: Arc::from(sky.palette.day_colors.as_ref()),
-                            evening_colors: Arc::from(sky.palette.evening_colors.as_ref()),
-                            night_colors: Arc::from(sky.palette.night_colors.as_ref()),
-                            horizon_colors: Arc::from(sky.palette.horizon_colors.as_ref()),
-                            time: SkyTime3DState {
-                                time_of_day: sky.time.time_of_day,
-                                paused: sky.time.paused,
-                                scale: sky.time.scale,
-                            },
-                            shaders: Arc::from(
-                                sky.shaders
+                        // The main extraction retains an identical state per
+                        // sky node; when it still matches, share its Arcs
+                        // instead of rebuilding palettes + shader passes.
+                        let state = self
+                            .render_3d
+                            .retained_skies
+                            .get(&node)
+                            .filter(|retained| sky_3d_state_matches(retained, sky))
+                            .map(|retained| (**retained).clone())
+                            .unwrap_or_else(|| Sky3DState {
+                                day_colors: Arc::from(sky.palette.day_colors.as_ref()),
+                                evening_colors: Arc::from(sky.palette.evening_colors.as_ref()),
+                                night_colors: Arc::from(sky.palette.night_colors.as_ref()),
+                                horizon_colors: Arc::from(sky.palette.horizon_colors.as_ref()),
+                                time: SkyTime3DState {
+                                    time_of_day: sky.time.time_of_day,
+                                    paused: sky.time.paused,
+                                    scale: sky.time.scale,
+                                },
+                                // slice iter is TrustedLen: collects into the
+                                // Arc directly (no Vec round trip).
+                                shaders: sky
+                                    .shaders
                                     .iter()
                                     .map(|shader| SkyShaderPass3DState {
                                         path: shader.path.clone(),
                                         params: Arc::from(shader.params.as_ref()),
                                     })
-                                    .collect::<Vec<_>>(),
-                            ),
-                            environment: sky.environment.as_ref().map(|environment| {
-                                EnvironmentMap3DState {
-                                    source: environment.source.clone(),
-                                    intensity: environment.intensity,
-                                    rotation_degrees: environment.rotation_degrees,
-                                }
-                            }),
-                        }))
+                                    .collect(),
+                                environment: sky.environment.as_ref().map(|environment| {
+                                    EnvironmentMap3DState {
+                                        source: environment.source.clone(),
+                                        intensity: environment.intensity,
+                                        rotation_degrees: environment.rotation_degrees,
+                                    }
+                                }),
+                            });
+                        Some(StreamLight3DData::Sky(state))
                     }
                     SceneNodeData::RayLight3D(light)
                         if light.visible
@@ -463,15 +502,18 @@ impl Runtime {
         spot_lights.sort_unstable_by_key(|(id, _)| id.as_u64());
         lighting.ambient_light = best_ambient.map(|(_, light)| light);
         lighting.sky = best_sky.map(|(_, sky)| sky);
-        for (slot, (_, light)) in lighting.ray_lights.iter_mut().zip(ray_lights) {
+        for (slot, (_, light)) in lighting.ray_lights.iter_mut().zip(ray_lights.drain(..)) {
             *slot = Some(light);
         }
-        for (slot, (_, light)) in lighting.point_lights.iter_mut().zip(point_lights) {
+        for (slot, (_, light)) in lighting.point_lights.iter_mut().zip(point_lights.drain(..)) {
             *slot = Some(light);
         }
-        for (slot, (_, light)) in lighting.spot_lights.iter_mut().zip(spot_lights) {
+        for (slot, (_, light)) in lighting.spot_lights.iter_mut().zip(spot_lights.drain(..)) {
             *slot = Some(light);
         }
+        self.render_3d.stream_ray_lights_scratch = ray_lights;
+        self.render_3d.stream_point_lights_scratch = point_lights;
+        self.render_3d.stream_spot_lights_scratch = spot_lights;
         lighting
     }
 
@@ -480,7 +522,9 @@ impl Runtime {
         camera_mask: BitMask,
         stream_node: NodeID,
     ) -> Arc<[(NodeID, PointParticles3DState)]> {
-        let mut out = Vec::new();
+        // take-pattern scratch: rebuilt every stream refresh, keep capacity.
+        let mut out = std::mem::take(&mut self.render_3d.stream_particles_scratch);
+        out.clear();
         for idx in 0..self.camera_stream_node_scratch.len() {
             let node = self.camera_stream_node_scratch[idx];
             if node == stream_node
@@ -572,7 +616,14 @@ impl Runtime {
                 },
             ));
         }
-        Arc::from(out)
+        let particles = if out.is_empty() {
+            empty_arc_slice()
+        } else {
+            Arc::from(out.as_slice())
+        };
+        out.clear();
+        self.render_3d.stream_particles_scratch = out;
+        particles
     }
 
     pub(super) fn collect_camera_stream_waters_3d(
@@ -580,7 +631,9 @@ impl Runtime {
         camera_mask: BitMask,
         stream_node: NodeID,
     ) -> Arc<[(NodeID, Water3DState)]> {
-        let mut out = Vec::new();
+        // take-pattern scratch: rebuilt every stream refresh, keep capacity.
+        let mut out = std::mem::take(&mut self.render_3d.stream_waters_scratch);
+        out.clear();
         for idx in 0..self.camera_stream_node_scratch.len() {
             let node = self.camera_stream_node_scratch[idx];
             if node == stream_node
@@ -673,6 +726,13 @@ impl Runtime {
                 },
             ));
         }
-        Arc::from(out)
+        let waters = if out.is_empty() {
+            empty_arc_slice()
+        } else {
+            Arc::from(out.as_slice())
+        };
+        out.clear();
+        self.render_3d.stream_waters_scratch = out;
+        waters
     }
 }

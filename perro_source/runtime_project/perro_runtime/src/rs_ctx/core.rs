@@ -48,6 +48,23 @@ pub(crate) struct RuntimeVideoClip {
     pub(crate) frames: Arc<[RuntimeVideoFrame]>,
 }
 
+pub(crate) struct VideoClipCacheEntry {
+    pub(crate) clip: Arc<RuntimeVideoClip>,
+    pub(crate) bytes: usize,
+    pub(crate) last_use: u64,
+}
+
+/// Decoded-clip cache. Clips referenced by a live node are never evicted
+/// (video_update_node re-fetches per frame; evicting would force a full
+/// re-decode every frame). Unreferenced clips leave on last node release
+/// and via the LRU byte budget.
+#[derive(Default)]
+pub(crate) struct VideoClipCache {
+    pub(crate) entries: HashMap<u64, VideoClipCacheEntry>,
+    pub(crate) total_bytes: usize,
+    pub(crate) tick: u64,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct RuntimeVideoNode {
     pub(crate) source_hash: u64,
@@ -151,7 +168,8 @@ pub(crate) enum QueuedSpatialAudioPos {
 
 #[derive(Clone, Debug)]
 pub(crate) struct QueuedSpatialAudio {
-    pub source: String,
+    // Shared to avoid a String copy per queued spatial play.
+    pub source: std::sync::Arc<str>,
     pub bus_id: Option<perro_ids::AudioBusID>,
     pub looped: bool,
     pub volume: f32,
@@ -309,7 +327,7 @@ pub struct RuntimeResourceApi {
     pub(super) csv_cache: Mutex<HashMap<u64, &'static perro_csv::Csv>>,
     pub(super) skeleton_bones_2d_cache: Mutex<HashMap<u64, Vec<perro_nodes::skeleton_2d::Bone2D>>>,
     pub(super) skeleton_bones_3d_cache: Mutex<HashMap<u64, Vec<perro_nodes::skeleton_3d::Bone3D>>>,
-    pub(super) video_clip_cache: Mutex<HashMap<u64, Arc<RuntimeVideoClip>>>,
+    pub(super) video_clip_cache: Mutex<VideoClipCache>,
     pub(super) video_node_state: Mutex<HashMap<NodeID, RuntimeVideoNode>>,
     pub(super) skeleton_bones_2d_pending: Mutex<std::collections::HashSet<u64>>,
     pub(super) skeleton_bones_3d_pending: Mutex<std::collections::HashSet<u64>>,
@@ -392,7 +410,7 @@ impl RuntimeResourceApi {
             csv_cache: Mutex::new(HashMap::new()),
             skeleton_bones_2d_cache: Mutex::new(HashMap::new()),
             skeleton_bones_3d_cache: Mutex::new(HashMap::new()),
-            video_clip_cache: Mutex::new(HashMap::new()),
+            video_clip_cache: Mutex::new(VideoClipCache::default()),
             video_node_state: Mutex::new(HashMap::new()),
             skeleton_bones_2d_pending: Mutex::new(std::collections::HashSet::new()),
             skeleton_bones_3d_pending: Mutex::new(std::collections::HashSet::new()),
@@ -512,13 +530,14 @@ impl RuntimeResourceApi {
             .or_else(|| crate::material_schema::load_from_source(normalized.as_ref()))
             .or_else(|| crate::material_schema::load_from_source(normalized_path))
         {
+            let material = std::sync::Arc::new(material);
             let mut state = self.state.lock().expect("resource api mutex poisoned");
             state.material_load_pending_by_id.remove(&id);
             state.material_data_by_id.insert(id, material.clone());
             state.material_write_pending_by_id.insert(id);
-            state.queued_commands.push(RenderCommand::Resource(
+            state.queued_commands.push(RenderCommand::Resource(Box::new(
                 perro_render_bridge::ResourceCommand::WriteMaterialData { id, material },
-            ));
+            )));
         } else {
             let mut state = self.state.lock().expect("resource api mutex poisoned");
             state.material_load_pending_by_id.remove(&id);
@@ -556,16 +575,17 @@ impl RuntimeResourceApi {
             }
             state.material_load_pending_by_id.remove(&result.id);
             if let Some(material) = result.material {
+                let material = std::sync::Arc::new(material);
                 state
                     .material_data_by_id
                     .insert(result.id, material.clone());
                 state.material_write_pending_by_id.insert(result.id);
-                state.queued_commands.push(RenderCommand::Resource(
+                state.queued_commands.push(RenderCommand::Resource(Box::new(
                     perro_render_bridge::ResourceCommand::WriteMaterialData {
                         id: result.id,
                         material,
                     },
-                ));
+                )));
                 if !state
                     .material_pending_id_by_request
                     .values()

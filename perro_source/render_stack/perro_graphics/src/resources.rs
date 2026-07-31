@@ -1,12 +1,22 @@
 use ahash::{AHashMap, AHashSet};
 use perro_ids::{MaterialID, MeshID, TextureID};
-use perro_render_bridge::{Material3D, Mesh3D};
+use perro_render_bridge::{Material3D, Mesh3D, StreamRgba};
+use std::sync::Arc;
 
 pub const MAX_EXPLICIT_RESOURCE_INDEX: u32 = 1_048_576;
 
+/// Byte budget for resident decoded-texture CPU copies. TTL eviction alone let
+/// texture-heavy scenes hold every decoded rgba buffer for the full idle
+/// window; when an insert pushes the total past this budget, least-recently
+/// touched re-decodable entries are reclaimed immediately (pinned and
+/// non-re-decodable entries are never budget-evicted).
+pub(crate) const DECODED_TEXTURE_CACHE_MAX_BYTES: usize = 128 * 1024 * 1024;
+
 #[derive(Debug, Clone)]
 pub(crate) struct DecodedTextureRgba {
-    pub rgba: Vec<u8>,
+    // Arc: consumers (materials, decals, env bake, save) share the decoded
+    // bytes by refcount instead of cloning full pixel buffers.
+    pub rgba: Arc<[u8]>,
     pub width: u32,
     pub height: u32,
 }
@@ -138,7 +148,12 @@ pub struct ResourceStore {
     // idle past the TTL get their rgba bytes reclaimed (dims stay).
     decoded_texture_stamp: AHashMap<TextureID, u64>,
     decoded_evict_clock: u64,
-    material_by: AHashMap<MaterialID, Material3D>,
+    // Incrementally tracked sum of resident decoded rgba bytes (all entries,
+    // pinned included); keeps budget checks O(1), no per-frame scans.
+    decoded_texture_bytes: usize,
+    // Arc: shares the producer's allocation from Create/WriteMaterialData
+    // commands; per-frame material writes stay deep-clone-free.
+    material_by: AHashMap<MaterialID, Arc<Material3D>>,
     material_by_source: AHashMap<u64, MaterialID>,
     material_source_by: AHashMap<MaterialID, String>,
     mesh_meta_by: AHashMap<MeshID, ResourceMeta>,
@@ -599,10 +614,11 @@ impl ResourceStore {
     #[inline]
     pub fn create_material(
         &mut self,
-        material: Material3D,
+        material: impl Into<Arc<Material3D>>,
         source: Option<&str>,
         reserved: bool,
     ) -> MaterialID {
+        let material = material.into();
         if let Some(source) = source
             && let Some(id) = self.material_by_source.get(&source_key(source)).copied()
         {
@@ -643,10 +659,11 @@ impl ResourceStore {
     pub fn create_material_with_id(
         &mut self,
         id: MaterialID,
-        material: Material3D,
+        material: impl Into<Arc<Material3D>>,
         source: Option<&str>,
         reserved: bool,
     ) -> MaterialID {
+        let material = material.into();
         if let Some(source) = source
             && let Some(existing) = self.material_by_source.get(&source_key(source)).copied()
         {
@@ -719,9 +736,14 @@ impl ResourceStore {
         if !self.has_texture(id) {
             return false;
         }
-        self.decoded_texture_by_id.insert(id, texture);
+        let new_len = texture.rgba.len();
+        if let Some(old) = self.decoded_texture_by_id.insert(id, texture) {
+            self.decoded_texture_bytes = self.decoded_texture_bytes.saturating_sub(old.rgba.len());
+        }
+        self.decoded_texture_bytes = self.decoded_texture_bytes.saturating_add(new_len);
         self.decoded_texture_stamp
             .insert(id, self.decoded_evict_clock);
+        self.enforce_decoded_texture_budget(id, DECODED_TEXTURE_CACHE_MAX_BYTES);
         true
     }
 
@@ -735,7 +757,9 @@ impl ResourceStore {
 
     #[inline]
     fn remove_decoded_texture_state(&mut self, id: TextureID) {
-        self.decoded_texture_by_id.remove(&id);
+        if let Some(old) = self.decoded_texture_by_id.remove(&id) {
+            self.decoded_texture_bytes = self.decoded_texture_bytes.saturating_sub(old.rgba.len());
+        }
         self.decoded_texture_pinned.remove(&id);
         self.decoded_texture_stamp.remove(&id);
     }
@@ -764,19 +788,75 @@ impl ResourceStore {
                 continue;
             }
             freed += entry.rgba.len();
-            entry.rgba = Vec::new();
+            entry.rgba = Arc::from(&[][..]);
         }
+        self.decoded_texture_bytes = self.decoded_texture_bytes.saturating_sub(freed);
         freed
     }
 
-    /// Update a stream texture's resident CPU copy in place. Reuses the existing
-    /// `by_id` buffer via `copy_from_slice` when dims + len match (no realloc, no
-    /// clone). Stream textures skip the `by_source` duplicate entirely: per-frame
-    /// streams never dedup by source, and by-source lookups fall back to `by_id`.
+    /// LRU eviction on top of the TTL sweep: when the tracked resident bytes
+    /// exceed `max_bytes`, reclaim the least-recently-stamped re-decodable,
+    /// unpinned entries until back under budget (or none remain). `keep` (the
+    /// entry that triggered enforcement) is never evicted. Runs only on
+    /// over-budget inserts, so steady-state frames scan nothing.
+    fn enforce_decoded_texture_budget(&mut self, keep: TextureID, max_bytes: usize) {
+        if self.decoded_texture_bytes <= max_bytes {
+            return;
+        }
+        let now = self.decoded_evict_clock;
+        let mut candidates: Vec<(u64, usize, TextureID)> = self
+            .decoded_texture_by_id
+            .iter()
+            .filter(|(id, entry)| {
+                **id != keep && entry.has_pixels() && !self.decoded_texture_pinned.contains(*id)
+            })
+            .filter(|(id, _)| {
+                self.texture_source_by
+                    .get(*id)
+                    .is_some_and(|source| redecodable_texture_source(source))
+            })
+            .map(|(id, entry)| {
+                let stamp = self.decoded_texture_stamp.get(id).copied().unwrap_or(0);
+                (now.wrapping_sub(stamp), entry.rgba.len(), *id)
+            })
+            .collect();
+        // oldest (largest stamp age) first.
+        candidates.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+        for (_, len, id) in candidates {
+            if self.decoded_texture_bytes <= max_bytes {
+                break;
+            }
+            if let Some(entry) = self.decoded_texture_by_id.get_mut(&id) {
+                entry.rgba = Arc::from(&[][..]);
+                self.decoded_texture_bytes = self.decoded_texture_bytes.saturating_sub(len);
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn decoded_texture_bytes_for_test(&self) -> usize {
+        self.decoded_texture_bytes
+    }
+
+    #[cfg(test)]
+    pub(crate) fn enforce_decoded_texture_budget_for_test(
+        &mut self,
+        keep: TextureID,
+        max_bytes: usize,
+    ) {
+        self.enforce_decoded_texture_budget(keep, max_bytes);
+    }
+
+    /// Update a stream texture's resident CPU copy. `Shared` frames adopt the
+    /// incoming Arc by refcount (no copy); `Owned` frames reuse the resident
+    /// buffer via `copy_from_slice` when it is unshared and dims + len match
+    /// (no realloc). Stream textures skip the `by_source` duplicate entirely:
+    /// per-frame streams never dedup by source, and by-source lookups fall
+    /// back to `by_id`.
     pub(crate) fn write_stream_texture_data(
         &mut self,
         id: TextureID,
-        rgba: &[u8],
+        rgba: &StreamRgba,
         width: u32,
         height: u32,
     ) -> bool {
@@ -784,28 +864,47 @@ impl ResourceStore {
             return false;
         }
         match self.decoded_texture_by_id.get_mut(&id) {
-            Some(existing)
-                if existing.width == width
-                    && existing.height == height
-                    && existing.rgba.len() == rgba.len() =>
-            {
-                existing.rgba.copy_from_slice(rgba);
+            Some(existing) if existing.width == width && existing.height == height => {
+                let old_len = existing.rgba.len();
+                match rgba {
+                    StreamRgba::Shared(shared) => existing.rgba = Arc::clone(shared),
+                    StreamRgba::Owned(bytes) => match Arc::get_mut(&mut existing.rgba) {
+                        Some(resident) if resident.len() == bytes.len() => {
+                            resident.copy_from_slice(bytes);
+                        }
+                        _ => existing.rgba = Arc::from(bytes.as_slice()),
+                    },
+                }
+                let new_len = existing.rgba.len();
+                self.decoded_texture_bytes = self
+                    .decoded_texture_bytes
+                    .saturating_sub(old_len)
+                    .saturating_add(new_len);
             }
             _ => {
-                self.decoded_texture_by_id.insert(
-                    id,
-                    DecodedTextureRgba {
-                        rgba: rgba.to_vec(),
-                        width,
-                        height,
+                let entry = DecodedTextureRgba {
+                    rgba: match rgba {
+                        StreamRgba::Shared(shared) => Arc::clone(shared),
+                        StreamRgba::Owned(bytes) => Arc::from(bytes.as_slice()),
                     },
-                );
+                    width,
+                    height,
+                };
+                let new_len = entry.rgba.len();
+                if let Some(old) = self.decoded_texture_by_id.insert(id, entry) {
+                    self.decoded_texture_bytes =
+                        self.decoded_texture_bytes.saturating_sub(old.rgba.len());
+                }
+                self.decoded_texture_bytes = self.decoded_texture_bytes.saturating_add(new_len);
             }
         }
         // stream bytes exist only here; the idle sweep must not reclaim them.
         self.decoded_texture_pinned.insert(id);
         self.decoded_texture_stamp
             .insert(id, self.decoded_evict_clock);
+        // pinned itself, but its bytes still count: shed idle entries if the
+        // stream upsert pushed the total past the budget.
+        self.enforce_decoded_texture_budget(id, DECODED_TEXTURE_CACHE_MAX_BYTES);
         true
     }
 
@@ -851,10 +950,16 @@ impl ResourceStore {
         }
         let texture_stride = texture.width as usize * 4;
         let region_stride = width as usize * 4;
+        // copy-on-write: consumers may share the Arc; clone the bytes only
+        // when it is not uniquely owned, then mutate in place.
+        if Arc::get_mut(&mut texture.rgba).is_none() {
+            texture.rgba = Arc::from(&texture.rgba[..]);
+        }
+        let pixels = Arc::get_mut(&mut texture.rgba).expect("unshared after copy-on-write");
         for row in 0..height as usize {
             let dst_start = (y as usize + row) * texture_stride + x as usize * 4;
             let src_start = row * region_stride;
-            texture.rgba[dst_start..dst_start + region_stride]
+            pixels[dst_start..dst_start + region_stride]
                 .copy_from_slice(&rgba[src_start..src_start + region_stride]);
         }
         // the CPU copy now diverges from the source; never reclaim it.
@@ -959,11 +1064,15 @@ impl ResourceStore {
     }
 
     #[inline]
-    pub fn set_material_data(&mut self, id: MaterialID, material: Material3D) -> bool {
+    pub fn set_material_data(
+        &mut self,
+        id: MaterialID,
+        material: impl Into<Arc<Material3D>>,
+    ) -> bool {
         if !self.has_material(id) {
             return false;
         }
-        self.material_by.insert(id, material);
+        self.material_by.insert(id, material.into());
         true
     }
 
@@ -982,22 +1091,27 @@ impl ResourceStore {
 
     #[inline]
     pub fn material(&self, id: MaterialID) -> Option<Material3D> {
-        self.material_by.get(&id).cloned()
+        self.material_by
+            .get(&id)
+            .map(|material| (**material).clone())
     }
 
     #[inline]
     pub(crate) fn material_ref(&self, id: MaterialID) -> Option<&Material3D> {
-        self.material_by.get(&id)
+        self.material_by.get(&id).map(|material| &**material)
     }
 
     #[inline]
     pub(crate) fn material_is_custom(&self, id: MaterialID) -> bool {
-        matches!(self.material_by.get(&id), Some(Material3D::Custom(_)))
+        matches!(
+            self.material_by.get(&id).map(|material| &**material),
+            Some(Material3D::Custom(_))
+        )
     }
 
     #[inline]
     pub(crate) fn custom_shader_path(&self, id: MaterialID) -> Option<&str> {
-        match self.material_by.get(&id) {
+        match self.material_by.get(&id).map(|material| &**material) {
             Some(Material3D::Custom(custom)) => Some(custom.shader_path.as_ref()),
             _ => None,
         }

@@ -1,7 +1,8 @@
+use std::sync::Arc;
 #[cfg(not(target_arch = "wasm32"))]
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 #[cfg(not(target_arch = "wasm32"))]
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicI16, AtomicUsize, Ordering};
 use std::time::Duration;
 
 const PMIC_MAGIC: &[u8; 4] = b"PMIC";
@@ -23,7 +24,9 @@ const PMIC_MAX_SAMPLES: usize = 1 << 26;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MicClip {
-    samples: Vec<i16>,
+    // Shared so cloning a clip (network fan-out, playback handoff) bumps a
+    // refcount instead of copying the whole sample buffer.
+    samples: Arc<[i16]>,
     sample_rate: u32,
     channels: u16,
 }
@@ -71,7 +74,7 @@ impl MicClip {
             .ok_or_else(|| "mic clip WAV byte rate exceeds u32".to_string())?;
 
         Ok(Self {
-            samples,
+            samples: Arc::from(samples),
             sample_rate,
             channels,
         })
@@ -98,31 +101,15 @@ impl MicClip {
         self.duration().as_secs_f32()
     }
 
+    // Encode with the delta codec family only (raw delta + fast-zlib delta).
+    // The old 4-way codec race (pcm, zlib-pcm, delta, zlib-delta at best
+    // compression) cost two payload clones and two `Compression::best` passes
+    // per packet for marginal size wins on voice data; delta + fast zlib is
+    // within a few percent on speech and far cheaper. `unpack` still accepts
+    // every historical codec.
     pub fn pack(&self) -> Vec<u8> {
         let frames = (self.samples.len() / self.channels.max(1) as usize) as u32;
-        let v1 = self.pack_v1(frames);
-        let mut best = v1;
-        let pcm = pcm_payload(&self.samples);
-
-        try_best_pmic(
-            &mut best,
-            PMIC_CODEC_PCM,
-            self.channels,
-            self.sample_rate,
-            frames,
-            pcm.clone(),
-        );
-
-        if let Ok(compressed) = perro_io::compress_zlib_best(&pcm) {
-            try_best_pmic(
-                &mut best,
-                PMIC_CODEC_ZLIB_PCM,
-                self.channels,
-                self.sample_rate,
-                frames,
-                compressed,
-            );
-        }
+        let mut best = self.pack_v1(frames);
 
         let delta = delta_payload(&self.samples, self.channels);
         try_best_pmic(
@@ -131,17 +118,17 @@ impl MicClip {
             self.channels,
             self.sample_rate,
             frames,
-            delta.clone(),
+            &delta,
         );
 
-        if let Ok(compressed) = perro_io::compress_zlib_best(&delta) {
+        if let Ok(compressed) = perro_io::compress_zlib_fast(&delta) {
             try_best_pmic(
                 &mut best,
                 PMIC_CODEC_ZLIB_DELTA,
                 self.channels,
                 self.sample_rate,
                 frames,
-                compressed,
+                &compressed,
             );
         }
 
@@ -155,7 +142,7 @@ impl MicClip {
         out.extend_from_slice(&self.channels.to_le_bytes());
         out.extend_from_slice(&self.sample_rate.to_le_bytes());
         out.extend_from_slice(&frames.to_le_bytes());
-        for sample in &self.samples {
+        for sample in self.samples.iter() {
             out.extend_from_slice(&sample.to_le_bytes());
         }
         out
@@ -252,7 +239,7 @@ impl MicClip {
         out.extend_from_slice(&16u16.to_le_bytes());
         out.extend_from_slice(b"data");
         out.extend_from_slice(&data_len.to_le_bytes());
-        for sample in &self.samples {
+        for sample in self.samples.iter() {
             out.extend_from_slice(&sample.to_le_bytes());
         }
         out
@@ -319,6 +306,7 @@ fn checked_zlib_limit(expected_samples: usize, bytes_per_sample: usize) -> Resul
         .ok_or_else(|| "mic clip zlib limit overflow".to_string())
 }
 
+#[cfg(test)]
 fn pcm_payload(samples: &[i16]) -> Vec<u8> {
     let mut out = Vec::with_capacity(samples.len() * 2);
     for sample in samples {
@@ -333,7 +321,7 @@ fn try_best_pmic(
     channels: u16,
     sample_rate: u32,
     frames: u32,
-    payload: Vec<u8>,
+    payload: &[u8],
 ) {
     let mut packed = Vec::with_capacity(PMIC_COMPRESSED_HEADER_LEN + payload.len());
     packed.extend_from_slice(PMIC_MAGIC);
@@ -343,7 +331,7 @@ fn try_best_pmic(
     packed.extend_from_slice(&frames.to_le_bytes());
     packed.push(codec);
     packed.extend_from_slice(&[0, 0, 0]);
-    packed.extend_from_slice(&payload);
+    packed.extend_from_slice(payload);
     if packed.len() < best.len() {
         *best = packed;
     }
@@ -978,12 +966,111 @@ struct MicStreamMeta {
     channels: u16,
 }
 
+/// Fixed-size lock-free capture ring: single writer (the audio callback),
+/// any number of snapshot readers on game/worker threads.
+///
+/// Soundness scheme (seqlock-style, fully safe Rust — every slot is an
+/// `AtomicI16`, so reads can race writes without UB or torn values):
+/// - `reserved` is bumped *before* a batch's sample stores, separated by a
+///   `Release` fence; `written` is published *after* them with a `Release`
+///   store. Both are monotonic totals; slot = total % capacity.
+/// - Readers `Acquire`-load `written`, copy, then issue an `Acquire` fence and
+///   re-read `reserved`. Any copied sample the writer may have overwritten in
+///   the meantime lies below `reserved - capacity` and is discarded. If a
+///   reader observed an in-flight overwrite, fence pairing guarantees it also
+///   observes the covering `reserved` bump, so the affected prefix is dropped
+///   rather than returned with mixed old/new samples.
+/// - Overwritten history is simply lost (ring semantics), which matches the
+///   old drain-oldest behavior without the per-callback memmove.
+#[cfg(not(target_arch = "wasm32"))]
+struct MicRing {
+    data: Box<[AtomicI16]>,
+    /// Total samples the writer has started writing (bumped before stores).
+    reserved: AtomicUsize,
+    /// Total samples fully written and published (bumped after stores).
+    written: AtomicUsize,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl MicRing {
+    /// Capacity when the caller asked for an unbounded capture (`max_samples`
+    /// of 0, tests only in practice): 64Ki samples (~1.4s mono @ 48kHz).
+    const UNBOUNDED_FALLBACK_CAPACITY: usize = 1 << 16;
+
+    fn new(max_samples: usize) -> Self {
+        let capacity = if max_samples == 0 {
+            Self::UNBOUNDED_FALLBACK_CAPACITY
+        } else {
+            max_samples
+        };
+        Self {
+            data: (0..capacity).map(|_| AtomicI16::new(0)).collect(),
+            reserved: AtomicUsize::new(0),
+            written: AtomicUsize::new(0),
+        }
+    }
+
+    /// Placeholder ring for a recorder that has never opened a stream; holds
+    /// no storage so idle recorders cost nothing.
+    fn empty() -> Self {
+        Self {
+            data: Box::new([]),
+            reserved: AtomicUsize::new(0),
+            written: AtomicUsize::new(0),
+        }
+    }
+
+    /// Writer side: append `chunk` starting at total index `start`.
+    /// `start` must equal the writer's running total (single writer).
+    fn append(&self, start: usize, chunk: &[i16]) {
+        let capacity = self.data.len();
+        if capacity == 0 || chunk.is_empty() {
+            return;
+        }
+        let end = start.wrapping_add(chunk.len());
+        self.reserved.store(end, Ordering::Relaxed);
+        std::sync::atomic::fence(Ordering::Release);
+        for (offset, sample) in chunk.iter().enumerate() {
+            self.data[(start.wrapping_add(offset)) % capacity].store(*sample, Ordering::Relaxed);
+        }
+        self.written.store(end, Ordering::Release);
+    }
+
+    /// Reader side: copy samples in `[from_total, written)`, clamped to what
+    /// the ring still holds. Returns the copied samples plus the new total to
+    /// resume from.
+    fn snapshot_from(&self, from_total: usize) -> (Vec<i16>, usize) {
+        let capacity = self.data.len();
+        let end = self.written.load(Ordering::Acquire);
+        if capacity == 0 {
+            return (Vec::new(), end);
+        }
+        let start = from_total.max(end.saturating_sub(capacity)).min(end);
+        let mut out = Vec::with_capacity(end - start);
+        for total in start..end {
+            out.push(self.data[total % capacity].load(Ordering::Relaxed));
+        }
+        // Validation read: discard any prefix the writer may have overwritten
+        // while we copied (see the type-level soundness comment).
+        std::sync::atomic::fence(Ordering::Acquire);
+        let reserved = self.reserved.load(Ordering::Relaxed);
+        let valid_start = reserved.saturating_sub(capacity);
+        if valid_start > start {
+            out.drain(..(valid_start - start).min(out.len()));
+        }
+        (out, end)
+    }
+}
+
 /// State shared between the caller, the mic worker, and the audio callback.
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone)]
 struct MicShared {
-    samples: Arc<Mutex<Vec<i16>>>,
-    cursor: Arc<Mutex<usize>>,
+    /// Current capture ring. The callback holds its own `Arc<MicRing>` and
+    /// never touches this mutex; consumers lock it only to clone the handle.
+    ring: Arc<Mutex<Arc<MicRing>>>,
+    /// Stream-read position in ring total-sample space (see `MicRing`).
+    stream_cursor: Arc<AtomicUsize>,
     meta: Arc<Mutex<Option<MicStreamMeta>>>,
     /// Capture healthy. Cleared on stop and on device loss.
     listening: Arc<AtomicBool>,
@@ -992,23 +1079,24 @@ struct MicShared {
     error: Arc<Mutex<Option<String>>>,
     /// Live input peak (0..=1, f32 bits) for level meters / sensitivity UIs.
     level: Arc<std::sync::atomic::AtomicU32>,
-    /// Non-fatal capture health hint (e.g. the stream is delivering pure
-    /// silence, which usually means an OS microphone-permission block).
-    diagnostic: Arc<Mutex<Option<String>>>,
+    /// Set while the stream delivers pure silence (usually an OS microphone
+    /// permission block). Flag only — the callback never formats or locks; the
+    /// human-readable hint is materialized game-side in [`MicRecorder::diagnostic`].
+    silence: Arc<AtomicBool>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl MicShared {
     fn new() -> Self {
         Self {
-            samples: Arc::new(Mutex::new(Vec::new())),
-            cursor: Arc::new(Mutex::new(0)),
+            ring: Arc::new(Mutex::new(Arc::new(MicRing::empty()))),
+            stream_cursor: Arc::new(AtomicUsize::new(0)),
             meta: Arc::new(Mutex::new(None)),
             listening: Arc::new(AtomicBool::new(false)),
             armed: Arc::new(AtomicBool::new(false)),
             error: Arc::new(Mutex::new(None)),
             level: Arc::new(std::sync::atomic::AtomicU32::new(0)),
-            diagnostic: Arc::new(Mutex::new(None)),
+            silence: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -1018,10 +1106,16 @@ impl MicShared {
         }
     }
 
-    fn set_diagnostic(&self, hint: Option<String>) {
-        if let Ok(mut slot) = self.diagnostic.lock() {
-            *slot = hint;
+    /// Install a fresh ring for a new stream and rewind the stream cursor.
+    fn install_ring(&self, ring: Arc<MicRing>) {
+        if let Ok(mut slot) = self.ring.lock() {
+            *slot = ring;
         }
+        self.stream_cursor.store(0, Ordering::Relaxed);
+    }
+
+    fn current_ring(&self) -> Option<Arc<MicRing>> {
+        self.ring.lock().ok().map(|ring| Arc::clone(&ring))
     }
 }
 
@@ -1108,6 +1202,9 @@ impl MicRecorder {
     /// Non-fatal capture health hint while listening. Set when the stream
     /// keeps delivering pure silence — the classic symptom of an OS
     /// microphone-permission block rather than a broken device.
+    ///
+    /// The audio callback only flips an atomic flag; the string is built here,
+    /// on the caller's thread.
     pub fn diagnostic(&self) -> Option<String> {
         #[cfg(target_arch = "wasm32")]
         {
@@ -1115,8 +1212,10 @@ impl MicRecorder {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let diagnostic = self.shared.diagnostic.lock().ok()?;
-            diagnostic.clone()
+            self.shared
+                .silence
+                .load(Ordering::Relaxed)
+                .then(silence_diagnostic_message)
         }
     }
 
@@ -1181,14 +1280,15 @@ impl MicRecorder {
         #[cfg(not(target_arch = "wasm32"))]
         {
             let meta = self.shared.meta.lock().ok()?.clone()?;
-            let samples = self.shared.samples.lock().ok()?;
-            let mut cursor = self.shared.cursor.lock().ok()?;
-            let start = (*cursor).min(samples.len());
-            if start == samples.len() {
+            let ring = self.shared.current_ring()?;
+            let cursor = self.shared.stream_cursor.load(Ordering::Relaxed);
+            let (chunk, next_cursor) = ring.snapshot_from(cursor);
+            self.shared
+                .stream_cursor
+                .store(next_cursor, Ordering::Relaxed);
+            if chunk.is_empty() {
                 return None;
             }
-            let chunk = samples[start..].to_vec();
-            *cursor = samples.len();
             MicClip::try_new(chunk, meta.sample_rate, meta.channels).ok()
         }
     }
@@ -1200,7 +1300,8 @@ impl MicRecorder {
     #[cfg(not(target_arch = "wasm32"))]
     fn clip_from_state(&self) -> Option<MicClip> {
         let meta = self.shared.meta.lock().ok()?.clone()?;
-        let samples = self.shared.samples.lock().ok()?.clone();
+        let ring = self.shared.current_ring()?;
+        let (samples, _) = ring.snapshot_from(0);
         MicClip::try_new(samples, meta.sample_rate, meta.channels).ok()
     }
 }
@@ -1245,7 +1346,7 @@ fn mic_worker(rx: std::sync::mpsc::Receiver<MicCommand>, shared: MicShared) {
                 shared.listening.store(false, Ordering::Relaxed);
                 shared.armed.store(false, Ordering::Relaxed);
                 shared.level.store(0.0_f32.to_bits(), Ordering::Relaxed);
-                shared.set_diagnostic(None);
+                shared.silence.store(false, Ordering::Relaxed);
                 let _ = reply.send(());
             }
         }
@@ -1264,19 +1365,20 @@ const MIC_PERMISSION_HINT: &str = "check OS microphone permissions \
     macOS: System Settings > Privacy & Security > Microphone; \
     Linux: verify the default ALSA/Pulse/PipeWire input)";
 
+/// Hint materialized game-side when the silence flag is set; the audio
+/// callback itself never allocates a string.
+#[cfg(not(target_arch = "wasm32"))]
+fn silence_diagnostic_message() -> String {
+    format!("mic is capturing pure silence; {MIC_PERMISSION_HINT}")
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn start_stream(
     settings: &MicSettings,
     shared: &MicShared,
 ) -> Result<(cpal::Stream, MicStreamMeta), String> {
-    if let Ok(mut samples) = shared.samples.lock() {
-        samples.clear();
-    }
-    if let Ok(mut cursor) = shared.cursor.lock() {
-        *cursor = 0;
-    }
     shared.level.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    shared.set_diagnostic(None);
+    shared.silence.store(false, Ordering::Relaxed);
 
     // Explicit selection is the developer's call: fail loud so their fallback
     // logic (resolve_mic_device + rescan) can run.
@@ -1527,20 +1629,31 @@ fn average_i16(frame: &[i16]) -> i16 {
     (sum / frame.len() as i32).clamp(i16::MIN as i32, i16::MAX as i32) as i16
 }
 
-/// Audio-callback side of capture: convert, fold, gain/denoise, append, trim.
-/// Also feeds the live level meter and the pure-silence diagnostic.
+/// Processed samples buffered on the stack between ring flushes so the
+/// reserve/publish fences amortize over a chunk instead of firing per sample.
+#[cfg(not(target_arch = "wasm32"))]
+const MIC_SINK_CHUNK: usize = 128;
+
+/// Audio-callback side of capture: convert, fold, gain/denoise, then store
+/// into the lock-free ring. Also feeds the live level meter and the
+/// pure-silence flag. The hot path takes no locks and performs no heap
+/// allocation (the fold frame buffer is preallocated and never grows past
+/// `src_channels`).
 #[cfg(not(target_arch = "wasm32"))]
 struct MicSink {
-    out: Arc<Mutex<Vec<i16>>>,
-    cursor: Arc<Mutex<usize>>,
-    max_samples: usize,
+    ring: Arc<MicRing>,
+    /// Writer-local running total mirrored into the ring on flush.
+    total: usize,
     process: MicProcessState,
     src_channels: usize,
     /// Partial frame carried over when a callback splits one.
     frame: Vec<i16>,
     fold: bool,
+    /// Stack chunk of processed samples pending a ring flush.
+    chunk: [i16; MIC_SINK_CHUNK],
+    chunk_len: usize,
     level: Arc<std::sync::atomic::AtomicU32>,
-    diagnostic: Arc<Mutex<Option<String>>>,
+    silence: Arc<AtomicBool>,
     /// Consecutive exactly-zero raw samples seen so far.
     silence_run: usize,
     /// Raw-sample count that flips the silence diagnostic (~2s of capture).
@@ -1562,16 +1675,20 @@ impl MicSink {
         out_channels: u16,
     ) -> Self {
         let src_channels = src_channels.max(1) as usize;
+        // Fresh ring per stream; sized off-thread here, never on the callback.
+        let ring = Arc::new(MicRing::new(max_samples));
+        shared.install_ring(Arc::clone(&ring));
         Self {
-            out: Arc::clone(&shared.samples),
-            cursor: Arc::clone(&shared.cursor),
-            max_samples,
+            ring,
+            total: 0,
             process: MicProcessState::new(settings, sample_rate),
             src_channels,
             frame: Vec::with_capacity(src_channels),
             fold: (out_channels.max(1) as usize) < src_channels,
+            chunk: [0; MIC_SINK_CHUNK],
+            chunk_len: 0,
             level: Arc::clone(&shared.level),
-            diagnostic: Arc::clone(&shared.diagnostic),
+            silence: Arc::clone(&shared.silence),
             silence_run: 0,
             silence_limit: (sample_rate.max(1) as usize)
                 .saturating_mul(src_channels)
@@ -1582,37 +1699,48 @@ impl MicSink {
 
     fn push<I: IntoIterator<Item = i16>>(&mut self, data: I) {
         let mut batch_peak: i16 = 0;
-        {
-            // Detach the guard's borrow from `self` so the loop can call
-            // `&mut self` helpers while the lock is held.
-            let out = Arc::clone(&self.out);
-            let Ok(mut samples) = out.lock() else {
-                return;
-            };
-            if self.fold {
-                for sample in data {
-                    self.track_silence(sample);
-                    self.frame.push(sample);
-                    if self.frame.len() >= self.src_channels {
-                        let mono = average_i16(&self.frame);
-                        self.frame.clear();
-                        let processed = self.process.apply(mono);
-                        batch_peak = batch_peak.max(processed.saturating_abs());
-                        samples.push(processed);
-                    }
-                }
-            } else {
-                for sample in data {
-                    self.track_silence(sample);
-                    let processed = self.process.apply(sample);
+        if self.fold {
+            for sample in data {
+                self.track_silence(sample);
+                self.frame.push(sample);
+                if self.frame.len() >= self.src_channels {
+                    let mono = average_i16(&self.frame);
+                    self.frame.clear();
+                    let processed = self.process.apply(mono);
                     batch_peak = batch_peak.max(processed.saturating_abs());
-                    samples.push(processed);
+                    self.buffer_sample(processed);
                 }
             }
-            trim_samples(&mut samples, &self.cursor, self.max_samples);
+        } else {
+            for sample in data {
+                self.track_silence(sample);
+                let processed = self.process.apply(sample);
+                batch_peak = batch_peak.max(processed.saturating_abs());
+                self.buffer_sample(processed);
+            }
         }
+        self.flush_chunk();
         self.publish_level(batch_peak);
         self.publish_silence_diagnostic();
+    }
+
+    #[inline]
+    fn buffer_sample(&mut self, sample: i16) {
+        self.chunk[self.chunk_len] = sample;
+        self.chunk_len += 1;
+        if self.chunk_len == MIC_SINK_CHUNK {
+            self.flush_chunk();
+        }
+    }
+
+    #[inline]
+    fn flush_chunk(&mut self) {
+        if self.chunk_len == 0 {
+            return;
+        }
+        self.ring.append(self.total, &self.chunk[..self.chunk_len]);
+        self.total = self.total.wrapping_add(self.chunk_len);
+        self.chunk_len = 0;
     }
 
     /// Track consecutive exactly-zero RAW samples. Gain and denoise can zero a
@@ -1637,30 +1765,12 @@ impl MicSink {
         if self.silence_run >= self.silence_limit {
             if !self.silence_flagged {
                 self.silence_flagged = true;
-                if let Ok(mut slot) = self.diagnostic.lock() {
-                    *slot = Some(format!(
-                        "mic is capturing pure silence; {MIC_PERMISSION_HINT}"
-                    ));
-                }
+                self.silence.store(true, Ordering::Relaxed);
             }
         } else if self.silence_flagged && self.silence_run == 0 {
             self.silence_flagged = false;
-            if let Ok(mut slot) = self.diagnostic.lock() {
-                *slot = None;
-            }
+            self.silence.store(false, Ordering::Relaxed);
         }
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn trim_samples(samples: &mut Vec<i16>, stream_cursor: &Mutex<usize>, max_samples: usize) {
-    if max_samples == 0 || samples.len() <= max_samples {
-        return;
-    }
-    let drain = samples.len() - max_samples;
-    samples.drain(..drain);
-    if let Ok(mut cursor) = stream_cursor.lock() {
-        *cursor = cursor.saturating_sub(drain);
     }
 }
 
@@ -2001,7 +2111,11 @@ mod capture_tests {
     }
 
     fn captured(shared: &MicShared) -> Vec<i16> {
-        shared.samples.lock().expect("lock mic samples").clone()
+        shared
+            .current_ring()
+            .expect("mic ring installed")
+            .snapshot_from(0)
+            .0
     }
 
     fn config_range(
@@ -2089,15 +2203,31 @@ mod capture_tests {
     }
 
     #[test]
-    fn sink_trims_to_max_samples_and_rewinds_cursor() {
+    fn sink_ring_keeps_newest_max_samples() {
         let (mut sink, shared) = sink(1, 4, MicChannels::Auto);
         sink.push([1i16, 2, 3, 4]);
-        if let Ok(mut cursor) = shared.cursor.lock() {
-            *cursor = 4;
-        }
         sink.push([5i16, 6]);
         assert_eq!(captured(&shared), vec![3, 4, 5, 6]);
-        assert_eq!(*shared.cursor.lock().expect("lock cursor"), 2);
+    }
+
+    /// Stream reads resume from the cursor and clamp to what the ring still
+    /// holds after older samples were overwritten.
+    #[test]
+    fn sink_ring_stream_snapshot_clamps_overwritten_history() {
+        let (mut sink, shared) = sink(1, 4, MicChannels::Auto);
+        sink.push([1i16, 2, 3, 4]);
+        let ring = shared.current_ring().expect("mic ring installed");
+        let (chunk, cursor) = ring.snapshot_from(0);
+        assert_eq!(chunk, vec![1, 2, 3, 4]);
+        assert_eq!(cursor, 4);
+        // Overwrite far past the cursor: the next snapshot must skip lost
+        // history instead of rereading stale slots.
+        sink.push([5i16, 6, 7, 8, 9, 10]);
+        let (chunk, cursor) = ring.snapshot_from(cursor);
+        assert_eq!(chunk, vec![7, 8, 9, 10]);
+        assert_eq!(cursor, 10);
+        let (chunk, _) = ring.snapshot_from(cursor);
+        assert!(chunk.is_empty());
     }
 
     #[test]
@@ -2240,19 +2370,18 @@ mod capture_tests {
         let (mut sink, shared) = sink_with(1, 0, MicChannels::Auto, super::MicSettings::default());
         sink.silence_limit = 4;
         sink.push([0i16; 5]);
-        let hint = shared
-            .diagnostic
-            .lock()
-            .expect("lock diagnostic")
-            .clone()
-            .expect("silence diagnostic set");
+        assert!(
+            shared.silence.load(std::sync::atomic::Ordering::Relaxed),
+            "silence flag set"
+        );
+        let hint = super::silence_diagnostic_message();
         assert!(
             hint.contains("permission"),
             "hint mentions permissions: {hint}"
         );
         // Real signal clears the hint: the mic was just muted, not blocked.
         sink.push([500i16]);
-        assert!(shared.diagnostic.lock().expect("lock diagnostic").is_none());
+        assert!(!shared.silence.load(std::sync::atomic::Ordering::Relaxed));
     }
 
     #[test]
@@ -2260,7 +2389,7 @@ mod capture_tests {
         let (mut sink, shared) = sink_with(1, 0, MicChannels::Auto, super::MicSettings::default());
         sink.silence_limit = 4;
         sink.push([1i16, 0, -1, 0, 1, 0, -1, 0, 1, 0]);
-        assert!(shared.diagnostic.lock().expect("lock diagnostic").is_none());
+        assert!(!shared.silence.load(std::sync::atomic::Ordering::Relaxed));
     }
 
     #[test]

@@ -1,10 +1,17 @@
 //! 3D material texture decode and GPU cache allocation.
+//!
+//! The actual texel uploads live in the Gpu-level `SharedTextureStore`; each
+//! Gpu3D keeps per-slot handles (`Arc<SharedGpuTexture>`) plus its own
+//! samplers and bind groups. Two material slots resolving to the same source
+//! (same color space + mip decision) therefore share one `wgpu::Texture`,
+//! as do the 2D/UI consumers and every per-camera-stream Gpu3D.
 
-use crate::texture_mips::{
-    build_rgba_levels_for_filter_owned, sampler_descriptor, write_rgba_mip_chain,
-    write_texture_base_level,
+use crate::shared_textures::{
+    SharedGpuTexture, SharedTextureColorSpace, SharedTextureKey, SharedTextureStore,
 };
+use crate::texture_mips::{sampler_descriptor, write_texture_base_level};
 use perro_structs::TextureFilterMode;
+use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum MaterialTextureColorSpace {
@@ -13,17 +20,18 @@ pub(super) enum MaterialTextureColorSpace {
 }
 
 impl MaterialTextureColorSpace {
-    fn format(self) -> wgpu::TextureFormat {
+    fn shared(self) -> SharedTextureColorSpace {
         match self {
-            Self::Srgb => wgpu::TextureFormat::Rgba8UnormSrgb,
-            Self::Linear => wgpu::TextureFormat::Rgba8Unorm,
+            Self::Srgb => SharedTextureColorSpace::Srgb,
+            Self::Linear => SharedTextureColorSpace::Linear,
         }
     }
 }
 
 pub(super) struct CachedMaterialTexture {
     pub(super) source: String,
-    pub(super) texture: Option<wgpu::Texture>,
+    // shared upload handle; None for external render-target views.
+    pub(super) shared: Option<Arc<SharedGpuTexture>>,
     pub(super) view: wgpu::TextureView,
     pub(super) sampler: wgpu::Sampler,
     pub(super) width: u32,
@@ -41,19 +49,21 @@ impl CachedMaterialTexture {
         height: u32,
         rgba: &[u8],
     ) -> bool {
-        let Some(texture) = self.texture.as_ref() else {
+        let Some(shared) = self.shared.as_ref() else {
             return false;
         };
-        if self.width != width || self.height != height || texture.mip_level_count() != 1 {
+        if self.width != width || self.height != height || shared.texture.mip_level_count() != 1 {
             return false;
         }
-        write_texture_base_level(queue, texture, width, height, rgba);
+        write_texture_base_level(queue, &shared.texture, width, height, rgba);
         true
     }
 }
 
 pub(super) struct CachedMaterialTextureInput {
-    pub(super) rgba: Vec<u8>,
+    // Arc: resident decoded buffers are shared in by refcount; the mip
+    // builder borrows and copies only the base level.
+    pub(super) rgba: Arc<[u8]>,
     pub(super) width: u32,
     pub(super) height: u32,
     pub(super) source: String,
@@ -61,46 +71,49 @@ pub(super) struct CachedMaterialTextureInput {
     pub(super) color_space: MaterialTextureColorSpace,
 }
 
-pub(super) fn create_cached_material_texture(
+pub(super) fn material_shared_texture_key(
+    source: &str,
+    color_space: MaterialTextureColorSpace,
+    filter: TextureFilterMode,
+) -> SharedTextureKey {
+    SharedTextureKey::from_source(source, color_space.shared(), filter)
+}
+
+/// Wrap an already-uploaded shared texture in a per-consumer cache entry
+/// (own sampler; the view + texture stay shared).
+pub(super) fn cached_material_texture_from_shared(
     device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    input: CachedMaterialTextureInput,
+    shared: Arc<SharedGpuTexture>,
+    source: String,
+    filter: TextureFilterMode,
 ) -> CachedMaterialTexture {
-    let width = input.width.max(1);
-    let height = input.height.max(1);
-    let mips = build_rgba_levels_for_filter_owned(input.rgba, width, height, input.filter);
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("perro_material_texture"),
-        size: wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: mips.len() as u32,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: input.color_space.format(),
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        view_formats: &[],
-    });
-    write_rgba_mip_chain(queue, &texture, &mips);
-    let view = texture.create_view(&wgpu::TextureViewDescriptor {
-        label: Some("perro_material_texture_view"),
-        ..Default::default()
-    });
+    let view = shared.view.clone();
     let sampler = device.create_sampler(&sampler_descriptor(
         "perro_material_texture_sampler",
-        input.filter,
+        filter,
         wgpu::AddressMode::Repeat,
     ));
+    let (width, height) = (shared.width, shared.height);
     CachedMaterialTexture {
-        source: input.source,
-        texture: Some(texture),
+        source,
+        shared: Some(shared),
         view,
         sampler,
         width,
         height,
     }
+}
+
+pub(super) fn create_cached_material_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    shared_textures: &mut SharedTextureStore,
+    input: CachedMaterialTextureInput,
+) -> CachedMaterialTexture {
+    let key = material_shared_texture_key(&input.source, input.color_space, input.filter);
+    let shared =
+        shared_textures.ensure_rgba(device, queue, key, &input.rgba, input.width, input.height);
+    cached_material_texture_from_shared(device, shared, input.source, input.filter)
 }
 
 pub(super) fn create_external_material_texture(
@@ -120,7 +133,7 @@ pub(super) fn create_external_material_texture(
     });
     CachedMaterialTexture {
         source,
-        texture: None,
+        shared: None,
         view: view.clone(),
         sampler,
         width: 0,

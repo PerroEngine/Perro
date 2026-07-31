@@ -177,7 +177,7 @@ impl AudioAPI for RuntimeResourceApi {
             return false;
         };
         queue.push(QueuedSpatialAudio {
-            source: audio.audio.source.to_string(),
+            source: Arc::from(audio.audio.source),
             bus_id,
             looped: audio.audio.looped,
             volume: audio.audio.volume,
@@ -199,7 +199,7 @@ impl AudioAPI for RuntimeResourceApi {
             return false;
         };
         queue.push(QueuedSpatialAudio {
-            source: audio.audio.source.to_string(),
+            source: Arc::from(audio.audio.source),
             bus_id,
             looped: audio.audio.looped,
             volume: audio.audio.volume,
@@ -272,11 +272,16 @@ impl AudioAPI for RuntimeResourceApi {
     }
 
     fn audio_length_seconds(&self, source: &str) -> Option<f32> {
-        let Ok(guard) = self.bark.lock() else {
-            return None;
+        // Grab a detached prober and drop the bark guard before the query:
+        // the first probe of a source blocks on the audio worker, and holding
+        // the bark lock through that stalled every other audio call.
+        let prober = {
+            let Ok(guard) = self.bark.lock() else {
+                return None;
+            };
+            guard.as_ref()?.length_prober()
         };
-        let player = guard.as_ref()?;
-        player.source_length_seconds(source)
+        prober.source_length_seconds(source)
     }
 
     fn stop_all_audio(&self) {

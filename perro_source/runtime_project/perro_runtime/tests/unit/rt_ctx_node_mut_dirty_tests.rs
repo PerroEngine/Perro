@@ -217,7 +217,7 @@ fn with_node_mut_uilabel_text_change_flags() {
     reset_all(&mut runtime);
 
     <Runtime as NodeAPI>::with_node_mut::<UiLabel, _, _>(&mut runtime, label, |l| {
-        l.text = Cow::Borrowed("hello");
+        l.text = "hello".into();
     });
 
     assert_eq!(
@@ -332,7 +332,7 @@ fn with_node_mut_uitextbox_text_change_flags() {
     reset_all(&mut runtime);
 
     <Runtime as NodeAPI>::with_node_mut::<UiTextBox, _, _>(&mut runtime, tb, |t| {
-        t.inner.text = Cow::Borrowed("typed");
+        t.inner.text = "typed".into();
     });
 
     assert_eq!(

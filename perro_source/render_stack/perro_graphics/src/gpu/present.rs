@@ -174,16 +174,26 @@ pub(super) fn choose_surface_selection(
     }
 }
 
-const MAX_FRAME_RENDER_PIXELS: u64 = 16_777_216;
+pub(super) const MAX_FRAME_RENDER_PIXELS: u64 = 16_777_216;
 
 pub(crate) fn capped_render_size(width: u32, height: u32, max_dimension: u32) -> (u32, u32) {
+    capped_render_size_with_pixel_limit(width, height, max_dimension, MAX_FRAME_RENDER_PIXELS)
+}
+
+pub(crate) fn capped_render_size_with_pixel_limit(
+    width: u32,
+    height: u32,
+    max_dimension: u32,
+    max_pixels: u64,
+) -> (u32, u32) {
     let width = width.max(1);
     let height = height.max(1);
     let max_dimension = max_dimension.max(1);
+    let max_pixels = max_pixels.max(1);
     let dim_scale = (max_dimension as f64 / width.max(height) as f64).min(1.0);
     let pixels = width as u64 * height as u64;
-    let pixel_scale = if pixels > MAX_FRAME_RENDER_PIXELS {
-        (MAX_FRAME_RENDER_PIXELS as f64 / pixels as f64).sqrt()
+    let pixel_scale = if pixels > max_pixels {
+        (max_pixels as f64 / pixels as f64).sqrt()
     } else {
         1.0
     };
@@ -930,6 +940,14 @@ mod tests {
         let (width, height) = capped_render_size(8192, 8192, 8192);
         assert!(width as u64 * height as u64 <= MAX_FRAME_RENDER_PIXELS + 8192);
         assert_eq!(width, height);
+    }
+
+    #[test]
+    fn capped_render_size_honors_low_memory_pixel_limit() {
+        assert_eq!(
+            capped_render_size_with_pixel_limit(3840, 2160, 8192, 1920 * 1080),
+            (1920, 1080)
+        );
     }
 
     #[test]

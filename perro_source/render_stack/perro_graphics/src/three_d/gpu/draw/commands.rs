@@ -134,6 +134,9 @@ mod tests {
                 min_distance: 0.0,
                 noise_factor: 0.0,
                 noise_scale: 1.0,
+                slope_factor: 2.0,
+                strength: 1.0,
+                salt_instances: true,
             },
             cast_shadows: true,
             receive_shadows: true,
@@ -194,6 +197,7 @@ mod tests {
             mesh_blend: false,
             mesh_blend_screen: false,
             mesh_blend_params: 0,
+            mesh_blend_params_ext: 0,
             mesh_blend_depth: false,
             blend_layers: BitMask::ALL.bits(),
             blend_mask: BitMask::NONE.bits(),
@@ -416,6 +420,9 @@ mod tests {
                 min_distance: 0.0,
                 noise_factor: 0.0,
                 noise_scale: 1.0,
+                slope_factor: 2.0,
+                strength: 1.0,
+                salt_instances: true,
             }
             .active()
         );
@@ -518,6 +525,7 @@ mod tests {
             debug_color: [1.0, 1.0, 1.0, 1.0],
             mesh_blend: ResolvedMeshBlend {
                 packed_params: 1,
+                packed_params_ext: 0,
                 packed_flags: RESOLVED_MESH_BLEND_ACTIVE
                     | RESOLVED_MESH_BLEND_SCREEN_BLEND
                     | RESOLVED_MESH_BLEND_NORMAL_BLEND,
@@ -543,6 +551,7 @@ mod tests {
         let inactive = BuildInstanceArgs {
             mesh_blend: ResolvedMeshBlend {
                 packed_params: 1,
+                packed_params_ext: 0,
                 packed_flags: RESOLVED_MESH_BLEND_NORMAL_BLEND,
                 depth_receiver: false,
             },
@@ -554,31 +563,58 @@ mod tests {
     }
 
     #[test]
-    pub(super) fn material_params_allow_normal_blend_without_screen_alpha() {
+    pub(super) fn material_params_engage_legacy_fade_when_screen_pass_off() {
+        // screen_blending=false (no SCREEN_BLEND / SCREEN_PASS flags) must
+        // still turn on the in-material depth fade: the batch routes to the
+        // soft-depth pipeline, and without MATERIAL_FLAG_MESH_BLEND the fade
+        // silently never ran.
         let material = perro_render_bridge::Material3D::default();
+        let base_args = BuildInstanceArgs {
+            debug_view: false,
+            debug_color: [1.0, 1.0, 1.0, 1.0],
+            mesh_blend: ResolvedMeshBlend {
+                packed_params: 1,
+                packed_params_ext: 0,
+                packed_flags: RESOLVED_MESH_BLEND_ACTIVE | RESOLVED_MESH_BLEND_NORMAL_BLEND,
+                depth_receiver: false,
+            },
+            skeleton_start: 0,
+            skeleton_count: 0,
+            custom_params_offset: 0,
+            custom_params_len: 0,
+            packed_lod_param_id: 0,
+            receive_shadows: true,
+            modulate_bias: false,
+        };
         let built = build_instance(
             glam::Mat4::IDENTITY.to_cols_array_2d(),
             &material,
-            BuildInstanceArgs {
-                debug_view: false,
-                debug_color: [1.0, 1.0, 1.0, 1.0],
-                mesh_blend: ResolvedMeshBlend {
-                    packed_params: 1,
-                    packed_flags: RESOLVED_MESH_BLEND_ACTIVE | RESOLVED_MESH_BLEND_NORMAL_BLEND,
-                    depth_receiver: false,
-                },
-                skeleton_start: 0,
-                skeleton_count: 0,
-                custom_params_offset: 0,
-                custom_params_len: 0,
-                packed_lod_param_id: 0,
-                receive_shadows: true,
-                modulate_bias: false,
+            base_args,
+        );
+        let flags = (built.rigid_meta.material.packed_material_params >> 3) & 0x1fff;
+        assert_ne!(flags & MATERIAL_FLAG_MESH_BLEND, 0);
+        assert_ne!(flags & MATERIAL_FLAG_NORMAL_BLEND, 0);
+
+        // Once the screen pass claims the draw, the source renders opaque and
+        // the in-material fade stays off.
+        let screen_pass = BuildInstanceArgs {
+            mesh_blend: ResolvedMeshBlend {
+                packed_params: 1,
+                packed_params_ext: 0,
+                packed_flags: RESOLVED_MESH_BLEND_ACTIVE
+                    | RESOLVED_MESH_BLEND_SCREEN_BLEND
+                    | RESOLVED_MESH_BLEND_SCREEN_PASS,
+                depth_receiver: false,
             },
+            ..base_args
+        };
+        let built = build_instance(
+            glam::Mat4::IDENTITY.to_cols_array_2d(),
+            &material,
+            screen_pass,
         );
         let flags = (built.rigid_meta.material.packed_material_params >> 3) & 0x1fff;
         assert_eq!(flags & MATERIAL_FLAG_MESH_BLEND, 0);
-        assert_ne!(flags & MATERIAL_FLAG_NORMAL_BLEND, 0);
     }
 
     pub(super) fn dense_pose(pos: [f32; 3]) -> perro_render_bridge::DenseInstancePose3D {
@@ -722,6 +758,7 @@ mod tests {
             mesh_blend: false,
             mesh_blend_screen: false,
             mesh_blend_params: 0,
+            mesh_blend_params_ext: 0,
             mesh_blend_depth: false,
             blend_layers: 0,
             blend_mask: 0,
@@ -835,6 +872,7 @@ mod tests {
             mesh_blend: false,
             mesh_blend_screen: false,
             mesh_blend_params: 0,
+            mesh_blend_params_ext: 0,
             mesh_blend_depth: false,
             blend_layers: BitMask::ALL.bits(),
             blend_mask: BitMask::NONE.bits(),

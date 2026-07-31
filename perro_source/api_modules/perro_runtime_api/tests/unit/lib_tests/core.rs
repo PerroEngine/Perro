@@ -11,7 +11,7 @@ mod core {
         }
 
         let _node_type = NodeType::Label3D;
-        let _data = SceneNodeData::Label3D(Label3D::new());
+        let _data = SceneNodeData::from(Label3D::new());
     }
 
 }

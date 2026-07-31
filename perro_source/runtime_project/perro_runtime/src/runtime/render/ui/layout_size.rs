@@ -45,6 +45,25 @@ impl Runtime {
         available: Vector2,
         fill_size: Option<Vector2>,
     ) -> Vector2 {
+        self.resolve_ui_size_with_basis(node, available, fill_size, None)
+    }
+
+    /// `size_basis` is the percent-size basis override for layout roots
+    /// (nodes whose parent rect is the window or a sub-view target instead of
+    /// another UI node). `Some(basis)` makes percent sizes resolve against
+    /// `basis` -- the aspect-fit virtual canvas from `ui_root_size_basis` --
+    /// so ratio-authored nodes keep their designed shape on non-16:9 targets.
+    /// Fill-mode axes still resolve against `available` (a Fill root spans
+    /// the real target), and FitChildren, min/max clamps, and fill sizes are
+    /// unaffected. `None` keeps nested-child behavior: percent of the
+    /// parent's actual rect.
+    pub(super) fn resolve_ui_size_with_basis(
+        &self,
+        node: NodeID,
+        available: Vector2,
+        fill_size: Option<Vector2>,
+        size_basis: Option<Vector2>,
+    ) -> Vector2 {
         let Some(scene_node) = self.nodes.get(node) else {
             return Vector2::ZERO;
         };
@@ -56,7 +75,21 @@ impl Runtime {
         }
         let layout = ui.layout;
         let transform = ui.transform;
-        let mut size = layout.size.resolve(available);
+        let mut size = match size_basis {
+            Some(basis) => Vector2::new(
+                if layout.h_size == UiSizeMode::Fill {
+                    layout.size.x.resolve(available.x)
+                } else {
+                    layout.size.x.resolve(basis.x)
+                },
+                if layout.v_size == UiSizeMode::Fill {
+                    layout.size.y.resolve(available.y)
+                } else {
+                    layout.size.y.resolve(basis.y)
+                },
+            ),
+            None => layout.size.resolve(available),
+        };
         if ui.layout.h_size == UiSizeMode::FitChildren
             || ui.layout.v_size == UiSizeMode::FitChildren
         {
@@ -76,6 +109,7 @@ impl Runtime {
                 size.y = fill.y;
             }
         }
+        let viewport = self.input.viewport_size();
         let baseline_size = {
             let mut baselines = self.render_ui.size_clamp_baselines.borrow_mut();
             let baseline = baselines
@@ -84,11 +118,16 @@ impl Runtime {
                     if baseline.size_def != layout.size
                         || baseline.h_mode != layout.h_size
                         || baseline.v_mode != layout.v_size
+                        // A window resize moves every ratio-derived size, so a
+                        // baseline captured at the old viewport would pin
+                        // min/max clamps to the startup window.
+                        || baseline.viewport != viewport
                     {
                         baseline.size = size;
                         baseline.size_def = layout.size;
                         baseline.h_mode = layout.h_size;
                         baseline.v_mode = layout.v_size;
+                        baseline.viewport = viewport;
                     } else {
                         // Dynamically loaded UI can get its first layout pass before its
                         // parent has a computed rect. Do not let that placeholder-sized
@@ -106,17 +145,16 @@ impl Runtime {
                     size_def: layout.size,
                     h_mode: layout.h_size,
                     v_mode: layout.v_size,
+                    viewport,
                 });
             baseline.size
         };
+        // Absolute-px min/max clamps are authored in virtual-canvas px.
+        let content_scale = self.ui_content_scale();
         let min_size = Vector2::new(
-            layout
-                .min_size
-                .x
+            (layout.min_size.x * content_scale)
                 .max(baseline_size.x * layout.min_size_scale.x.max(0.0)),
-            layout
-                .min_size
-                .y
+            (layout.min_size.y * content_scale)
                 .max(baseline_size.y * layout.min_size_scale.y.max(0.0)),
         );
         let max_x_scale = if layout.max_size_scale.x.is_finite() {
@@ -130,8 +168,8 @@ impl Runtime {
             f32::INFINITY
         };
         let max_size = Vector2::new(
-            layout.max_size.x.min(baseline_size.x * max_x_scale),
-            layout.max_size.y.min(baseline_size.y * max_y_scale),
+            (layout.max_size.x * content_scale).min(baseline_size.x * max_x_scale),
+            (layout.max_size.y * content_scale).min(baseline_size.y * max_y_scale),
         );
         size = Vector2::new(
             size.x.clamp(min_size.x, max_size.x.max(min_size.x)),
@@ -147,7 +185,9 @@ impl Runtime {
         let Some(ui) = ui_root_from_data(&scene_node.data) else {
             return Vector2::ZERO;
         };
-        let text = ui_text_measure(&scene_node.data);
+        // Fallback-px text scales with the virtual canvas at render time, so
+        // fit-children boxes must measure with the same factor.
+        let text = ui_text_measure(&scene_node.data) * self.ui_content_scale();
         let children = self.nodes.children(node).unwrap_or_default();
         let child_size = match &scene_node.data {
             SceneNodeData::UiTreeList(list) => self.ui_tree_list_content_size(list, available),
@@ -170,6 +210,7 @@ impl Runtime {
         available: Vector2,
         auto: UiAutoLayout,
     ) -> Vector2 {
+        let content_scale = self.ui_content_scale();
         match auto.mode {
             UiLayoutMode::H => {
                 let h_spacing = ui_h_spacing_amount(auto.h_spacing, available.x);
@@ -186,8 +227,8 @@ impl Runtime {
                         continue;
                     };
                     let size = self.resolve_ui_size(child, available, None);
-                    width += size.x + layout.margin.horizontal();
-                    height = height.max(size.y + layout.margin.vertical());
+                    width += size.x + layout.margin.horizontal() * content_scale;
+                    height = height.max(size.y + layout.margin.vertical() * content_scale);
                     count += 1;
                 }
                 if count > 1 {
@@ -210,8 +251,8 @@ impl Runtime {
                         continue;
                     };
                     let size = self.resolve_ui_size(child, available, None);
-                    width = width.max(size.x + layout.margin.horizontal());
-                    height += size.y + layout.margin.vertical();
+                    width = width.max(size.x + layout.margin.horizontal() * content_scale);
+                    height += size.y + layout.margin.vertical() * content_scale;
                     count += 1;
                 }
                 if count > 1 {
@@ -242,8 +283,8 @@ impl Runtime {
                     if col > 0 {
                         row_width += h_spacing;
                     }
-                    row_width += size.x + layout.margin.horizontal();
-                    row_height = row_height.max(size.y + layout.margin.vertical());
+                    row_width += size.x + layout.margin.horizontal() * content_scale;
+                    row_height = row_height.max(size.y + layout.margin.vertical() * content_scale);
                     col += 1;
                     if col >= columns {
                         width = width.max(row_width);
@@ -272,6 +313,7 @@ impl Runtime {
         children: &[NodeID],
         available: Vector2,
     ) -> Vector2 {
+        let content_scale = self.ui_content_scale();
         let mut size = Vector2::ZERO;
         for child in children.iter().copied() {
             let Some(layout) = self
@@ -283,8 +325,12 @@ impl Runtime {
                 continue;
             };
             let child_size = self.resolve_ui_size(child, available, None);
-            size.x = size.x.max(child_size.x + layout.margin.horizontal());
-            size.y = size.y.max(child_size.y + layout.margin.vertical());
+            size.x = size
+                .x
+                .max(child_size.x + layout.margin.horizontal() * content_scale);
+            size.y = size
+                .y
+                .max(child_size.y + layout.margin.vertical() * content_scale);
         }
         size
     }
@@ -298,20 +344,24 @@ impl Runtime {
         if rows.is_empty() {
             return Vector2::ZERO;
         }
+        let content_scale = self.ui_content_scale();
         let max_depth = rows.iter().fold(0, |max_depth, row| {
             let _ = (row.index, row.has_children, row.last_child);
             max_depth.max(row.depth)
         });
-        let height = rows.len() as f32 * list.row_height
+        let row_height = list.row_height * content_scale;
+        let height = rows.len() as f32 * row_height
             + rows.len().saturating_sub(1) as f32
                 * ui_v_spacing_amount(list.v_spacing, available.y);
-        let width = available
-            .x
-            .max(list.indent * max_depth as f32 + list.toggle_size + list.icon_size + 96.0);
+        let width = available.x.max(
+            (list.indent * max_depth as f32 + list.toggle_size + list.icon_size + 96.0)
+                * content_scale,
+        );
         Vector2::new(width, height)
     }
 
     pub(super) fn h_fill_width(&self, children: &[NodeID], width: f32, spacing: f32) -> f32 {
+        let content_scale = self.ui_content_scale();
         let mut fixed = 0.0_f32;
         let mut fill_count = 0_u32;
         let mut ui_count = 0_u32;
@@ -325,7 +375,7 @@ impl Runtime {
                 continue;
             };
             ui_count += 1;
-            fixed += layout.margin.horizontal();
+            fixed += layout.margin.horizontal() * content_scale;
             if layout.h_size == UiSizeMode::Fill {
                 fill_count += 1;
             } else {
@@ -351,6 +401,7 @@ impl Runtime {
         spacing: f32,
         fill_width: f32,
     ) -> f32 {
+        let content_scale = self.ui_content_scale();
         let mut width = 0.0_f32;
         let mut count = 0_u32;
         for child in children.iter().copied() {
@@ -371,7 +422,7 @@ impl Runtime {
                 0.0,
             );
             width += self.resolve_ui_size(child, available, Some(fill_size)).x
-                + layout.margin.horizontal();
+                + layout.margin.horizontal() * content_scale;
             count += 1;
         }
         if count > 1 {
@@ -381,6 +432,7 @@ impl Runtime {
     }
 
     pub(super) fn v_fill_height(&self, children: &[NodeID], height: f32, spacing: f32) -> f32 {
+        let content_scale = self.ui_content_scale();
         let mut fixed = 0.0_f32;
         let mut fill_count = 0_u32;
         let mut ui_count = 0_u32;
@@ -394,7 +446,7 @@ impl Runtime {
                 continue;
             };
             ui_count += 1;
-            fixed += layout.margin.vertical();
+            fixed += layout.margin.vertical() * content_scale;
             if layout.v_size == UiSizeMode::Fill {
                 fill_count += 1;
             } else {
@@ -420,6 +472,7 @@ impl Runtime {
         spacing: f32,
         fill_height: f32,
     ) -> f32 {
+        let content_scale = self.ui_content_scale();
         let mut height = 0.0_f32;
         let mut count = 0_u32;
         for child in children.iter().copied() {
@@ -440,7 +493,7 @@ impl Runtime {
                 },
             );
             height += self.resolve_ui_size(child, available, Some(fill_size)).y
-                + layout.margin.vertical();
+                + layout.margin.vertical() * content_scale;
             count += 1;
         }
         if count > 1 {

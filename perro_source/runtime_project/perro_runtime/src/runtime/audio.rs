@@ -100,7 +100,8 @@ struct SpatialMidiNoteStart {
 
 #[derive(Clone, Debug)]
 struct ActiveSpatialSound {
-    source: String,
+    // Interned/shared so per-play bookkeeping never copies the source string.
+    source: std::sync::Arc<str>,
     kind: ActiveSpatialSoundKind,
     looped: bool,
     volume: f32,
@@ -278,6 +279,32 @@ struct AudioPortalPath2D {
     distance: f32,
 }
 
+// One pending ray in the portal traversal; kept in a reusable scratch stack on
+// AudioPropagationState instead of a per-call Vec.
+#[derive(Clone, Copy, Debug)]
+struct PortalWalk2D {
+    origin: Vector2,
+    direction: Vector2,
+    traveled: f32,
+    perceived: Vector2,
+    strength: f32,
+    hops: usize,
+    bounces: u32,
+    skip_portal: Option<NodeID>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PortalWalk3D {
+    origin: Vector3,
+    direction: Vector3,
+    traveled: f32,
+    perceived: Vector3,
+    strength: f32,
+    hops: usize,
+    bounces: u32,
+    skip_portal: Option<NodeID>,
+}
+
 #[derive(Clone, Debug)]
 struct AudioPortalHit2D {
     portal_id: NodeID,
@@ -335,6 +362,9 @@ pub(crate) struct AudioPropagationState {
     scratch_reconcile_source_2d: Vec<ReconcilePoint2D>,
     scratch_reconcile_listener_3d: Vec<ReconcilePoint3D>,
     scratch_reconcile_source_3d: Vec<ReconcilePoint3D>,
+    // Portal traversal stacks, reused across best_audio_portal_* calls.
+    scratch_portal_stack_2d: Vec<PortalWalk2D>,
+    scratch_portal_stack_3d: Vec<PortalWalk3D>,
     has_audio_mask_2d: bool,
     has_audio_mask_3d: bool,
     has_audio_portal_2d: bool,
@@ -376,6 +406,8 @@ impl AudioPropagationState {
             scratch_reconcile_source_2d: Vec::new(),
             scratch_reconcile_listener_3d: Vec::new(),
             scratch_reconcile_source_3d: Vec::new(),
+            scratch_portal_stack_2d: Vec::new(),
+            scratch_portal_stack_3d: Vec::new(),
             has_audio_mask_2d: false,
             has_audio_mask_3d: false,
             has_audio_portal_2d: false,
@@ -588,6 +620,10 @@ impl Runtime {
             .ok()
             .map(|slot| slot.options.clone())
             .unwrap_or_default();
+        // Bark locked once for the whole per-sound loop (see apply_spatial_result).
+        let resource_api = std::sync::Arc::clone(&self.resource_api);
+        let bark = resource_api.bark.lock().ok();
+        let player = bark.as_deref().and_then(|guard| guard.as_ref());
         for (index, sound) in sounds.iter_mut().enumerate() {
             if sound.elapsed_since_prop < tick {
                 self.audio.counters.cache_hits = self.audio.counters.cache_hits.saturating_add(1);
@@ -607,17 +643,18 @@ impl Runtime {
                 self.audio.scratch_sound_ray_results[index],
             ) {
                 (Some(pos), _, AudioRaycastResult::TwoD(hit)) => {
-                    self.solve_2d(pos, sound, hit, listener_2d, listener_options_2d.clone())
+                    self.solve_2d(pos, sound, hit, listener_2d, &listener_options_2d)
                 }
                 (_, Some(pos), AudioRaycastResult::ThreeD(hit)) => {
-                    self.solve_3d(pos, sound, hit, listener_3d, listener_options_3d.clone())
+                    self.solve_3d(pos, sound, hit, listener_3d, &listener_options_3d)
                 }
                 _ => None,
             };
             if let Some(result) = result {
-                self.apply_spatial_result(sound, result);
+                self.apply_spatial_result(player, sound, result);
             }
         }
+        drop(bark);
         self.audio.counters.active_positional = sounds.len() as u32;
         self.audio.counters.propagation_time = start.elapsed();
         self.audio.sounds = sounds;
@@ -687,18 +724,22 @@ impl RuntimeAudioAPI for Runtime {
 
     fn stop_runtime_audio_attached(&mut self, node: NodeID, source: &str) -> bool {
         let mut stopped = false;
+        // Lock bark once for the whole sweep instead of per matching sound.
+        let bark = self.resource_api.bark.lock().ok();
+        let player = bark.as_deref().and_then(|guard| guard.as_ref());
         let mut i = 0usize;
         while i < self.audio.sounds.len() {
             let matches = matches!(self.audio.sounds[i].pos, SpatialSoundPos::Attached(id) if id == node)
-                && self.audio.sounds[i].source == source;
+                && self.audio.sounds[i].source.as_ref() == source;
             if matches {
                 if let Some(id) = self.audio.sounds[i].playback_id
-                    && let Ok(guard) = self.resource_api.bark.lock()
-                    && let Some(player) = guard.as_ref()
+                    && let Some(player) = player
                 {
                     let _ = player.stop_playback(id);
                 }
-                self.audio.sounds.remove(i);
+                // Sound ordering carries no audible meaning; swap_remove skips
+                // the tail memmove.
+                self.audio.sounds.swap_remove(i);
                 stopped = true;
             } else {
                 i += 1;
@@ -795,6 +836,9 @@ impl RuntimeAudioAPI for Runtime {
 
     fn stop_midi_attached(&mut self, node: NodeID, target: AttachedMidiTarget<'_>) -> bool {
         let mut stopped = false;
+        // Lock bark once for the whole sweep instead of per matching sound.
+        let bark = self.resource_api.bark.lock().ok();
+        let player = bark.as_deref().and_then(|guard| guard.as_ref());
         let mut i = 0usize;
         while i < self.audio.sounds.len() {
             let attached =
@@ -804,18 +848,18 @@ impl RuntimeAudioAPI for Runtime {
                     self.audio.sounds[i].playback_id == Some(handle.0)
                 }
                 (ActiveSpatialSoundKind::MidiFile, AttachedMidiTarget::Source(source)) => {
-                    self.audio.sounds[i].source == source
+                    self.audio.sounds[i].source.as_ref() == source
                 }
                 _ => false,
             };
             if attached && matches_target {
                 if let Some(id) = self.audio.sounds[i].playback_id
-                    && let Ok(guard) = self.resource_api.bark.lock()
-                    && let Some(player) = guard.as_ref()
+                    && let Some(player) = player
                 {
                     let _ = player.stop_playback(id);
                 }
-                self.audio.sounds.remove(i);
+                // Order-insensitive removal; see stop_runtime_audio_attached.
+                self.audio.sounds.swap_remove(i);
                 stopped = true;
             } else {
                 i += 1;

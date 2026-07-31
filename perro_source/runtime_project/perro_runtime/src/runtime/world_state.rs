@@ -4,6 +4,86 @@ use perro_nodes::{Node2D, Node3D, SceneNodeData};
 use perro_structs::{Color, NodeModulate};
 use perro_ui::UiNode;
 
+/// Per-epoch memo for the O(depth) ancestor walks in
+/// [`Runtime::is_effectively_visible`] and
+/// [`Runtime::effective_self_modulate`].
+///
+/// Slot-indexed stamp arrays: a slot whose stamp equals `current` holds a
+/// valid value for this epoch. The epoch is the arena `mutation_revision`
+/// (every visibility / modulate / structural change bumps it, so the memo can
+/// never serve a stale ancestor chain); within one render/extraction pass the
+/// revision is stable, which is where the repeated walks happen.
+#[derive(Default)]
+pub(crate) struct VisibilityModulateMemo {
+    revision: u64,
+    initialized: bool,
+    current: u32,
+    vis_stamp: Vec<u32>,
+    /// generation of the id the stamp was written for; a hit requires both the
+    /// stamp and the generation to match so stale ids can't read a reused
+    /// slot's value.
+    vis_generation: Vec<u32>,
+    vis_value: Vec<u8>,
+    modulate_stamp: Vec<u32>,
+    modulate_generation: Vec<u32>,
+    /// memoized fold of `modulate * children_modulate` from this node up.
+    modulate_value: Vec<Color>,
+    vis_chain_scratch: Vec<(NodeID, bool)>,
+    modulate_chain_scratch: Vec<(NodeID, Color)>,
+}
+
+impl VisibilityModulateMemo {
+    fn refresh(&mut self, revision: u64, slot_count: usize) {
+        if !self.initialized || self.revision != revision {
+            self.initialized = true;
+            self.revision = revision;
+            self.current = self.current.wrapping_add(1);
+            if self.current == 0 {
+                // wrapped: reset stamps so stale 0 entries don't read as hits.
+                self.vis_stamp.iter_mut().for_each(|s| *s = 0);
+                self.modulate_stamp.iter_mut().for_each(|s| *s = 0);
+                self.current = 1;
+            }
+        }
+        if self.vis_stamp.len() < slot_count {
+            self.vis_stamp.resize(slot_count, 0);
+            self.vis_generation.resize(slot_count, 0);
+            self.vis_value.resize(slot_count, 0);
+        }
+        if self.modulate_stamp.len() < slot_count {
+            self.modulate_stamp.resize(slot_count, 0);
+            self.modulate_generation.resize(slot_count, 0);
+            self.modulate_value.resize(slot_count, Color::WHITE);
+        }
+    }
+
+    #[inline]
+    fn vis_hit(&self, id: NodeID) -> Option<bool> {
+        let index = id.index() as usize;
+        if index < self.vis_stamp.len()
+            && self.vis_stamp[index] == self.current
+            && self.vis_generation[index] == id.generation()
+        {
+            Some(self.vis_value[index] != 0)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    fn modulate_hit(&self, id: NodeID) -> Option<Color> {
+        let index = id.index() as usize;
+        if index < self.modulate_stamp.len()
+            && self.modulate_stamp[index] == self.current
+            && self.modulate_generation[index] == id.generation()
+        {
+            Some(self.modulate_value[index])
+        } else {
+            None
+        }
+    }
+}
+
 impl Runtime {
     #[inline]
     fn is_sub_view_data(data: &SceneNodeData) -> bool {
@@ -43,6 +123,7 @@ impl Runtime {
         cache.owner_by_slot.clear();
         cache.owner_by_slot.resize(slot_count, NodeID::nil());
         cache.members.clear();
+        cache.members_shared.clear();
         cache.stream_nodes.clear();
 
         let mut visited = vec![false; slot_count];
@@ -115,6 +196,23 @@ impl Runtime {
         if let Some(members) = self.world_membership.borrow().members.get(&world) {
             out.extend_from_slice(members);
         }
+    }
+
+    /// Shared view of a world's direct member list. Built once per world per
+    /// structural revision; later reads are a refcount clone, so per-frame
+    /// callers can iterate while mutating `self` without copying the list.
+    pub(crate) fn world_members_arc(&self, world: NodeID) -> std::sync::Arc<[NodeID]> {
+        self.refresh_world_membership();
+        let mut cache = self.world_membership.borrow_mut();
+        if let Some(shared) = cache.members_shared.get(&world) {
+            return shared.clone();
+        }
+        let shared: std::sync::Arc<[NodeID]> = match cache.members.get(&world) {
+            Some(members) if !members.is_empty() => std::sync::Arc::from(members.as_slice()),
+            _ => perro_render_bridge::empty_arc_slice(),
+        };
+        cache.members_shared.insert(world, shared.clone());
+        shared
     }
 
     /// Every stream/sub-view node in the arena (UiCameraStream, UiSubView,
@@ -257,23 +355,58 @@ impl Runtime {
         if node.is_nil() {
             return false;
         }
+        // memoized ancestor walk: per-frame loops query this per node, so the
+        // naive O(depth) walk per query is O(n * depth) per pass. Walk up only
+        // until a slot already stamped this epoch, then fold results back down
+        // and stamp the whole chain.
+        let mut memo = self.vis_memo.borrow_mut();
+        let memo = &mut *memo;
+        memo.refresh(self.nodes.mutation_revision(), self.nodes.slot_count());
+        if let Some(hit) = memo.vis_hit(node) {
+            return hit;
+        }
+
+        let mut chain = std::mem::take(&mut memo.vis_chain_scratch);
+        chain.clear();
         let mut current = node;
         let mut hops = 0usize;
         let max_hops = self.nodes.len().saturating_add(1);
-        while hops < max_hops {
-            let Some(scene_node) = self.nodes.get(current) else {
-                return false;
-            };
-            if !Self::node_local_visible(&scene_node.data) {
+        let base = loop {
+            if hops >= max_hops {
+                // cycle: fail closed like the legacy walk, skip memo writes so
+                // a corrupt chain can't stamp bogus values.
+                chain.clear();
+                memo.vis_chain_scratch = chain;
                 return false;
             }
+            if let Some(hit) = memo.vis_hit(current) {
+                break hit;
+            }
+            let Some(scene_node) = self.nodes.get(current) else {
+                // missing / stale ancestor: everything below it is invisible.
+                break false;
+            };
+            chain.push((current, Self::node_local_visible(&scene_node.data)));
             if scene_node.parent.is_nil() {
-                return true;
+                break true;
             }
             current = scene_node.parent;
             hops += 1;
+        };
+
+        let stamp = memo.current;
+        let mut acc = base;
+        for &(id, local_visible) in chain.iter().rev() {
+            acc = acc && local_visible;
+            let index = id.index() as usize;
+            memo.vis_stamp[index] = stamp;
+            memo.vis_generation[index] = id.generation();
+            memo.vis_value[index] = acc as u8;
         }
-        false
+        let result = if chain.is_empty() { base } else { acc };
+        chain.clear();
+        memo.vis_chain_scratch = chain;
+        result
     }
 
     pub(crate) fn sub_view_ancestor(&self, node: NodeID) -> Option<NodeID> {
@@ -358,33 +491,79 @@ impl Runtime {
             return Color::WHITE;
         }
         // color_modulate is a component-wise multiply: commutative + associative,
-        // so the product does not depend on root->node ordering. Fold upward in a
-        // single pass with no buffer. node contributes its own self_modulate;
-        // strict ancestors contribute children_modulate. modulate applies to both.
-        let mut acc = Color::WHITE;
+        // so the product does not depend on root->node ordering. node contributes
+        // `modulate * self_modulate`; strict ancestors contribute
+        // `modulate * children_modulate` — that ancestor fold is memoized per
+        // slot in `ancestor_children_modulate`.
+        let Some(scene_node) = self.nodes.get(node) else {
+            return Color::WHITE;
+        };
+        let own = match self.local_node_modulate(node) {
+            Some(local) => Self::color_modulate(local.modulate, local.self_modulate),
+            None => Color::WHITE,
+        };
+        let ancestors = self.ancestor_children_modulate(scene_node.parent);
+        Self::color_modulate(ancestors, own)
+    }
+
+    /// Memoized fold of `modulate * children_modulate` from `node` up through
+    /// its ancestors (inclusive). `WHITE` for nil / missing nodes, matching the
+    /// legacy walk that stopped contributing at a broken parent link.
+    fn ancestor_children_modulate(&self, node: NodeID) -> Color {
+        if node.is_nil() {
+            return Color::WHITE;
+        }
+        let mut memo = self.vis_memo.borrow_mut();
+        let memo = &mut *memo;
+        memo.refresh(self.nodes.mutation_revision(), self.nodes.slot_count());
+        if let Some(hit) = memo.modulate_hit(node) {
+            return hit;
+        }
+
+        let mut chain = std::mem::take(&mut memo.modulate_chain_scratch);
+        chain.clear();
         let mut current = node;
         let mut hops = 0usize;
         let max_hops = self.nodes.len().saturating_add(1);
-        while hops < max_hops {
+        let base = loop {
+            if hops >= max_hops {
+                // cycle: stop contributing like the legacy bounded walk, skip
+                // memo writes so a corrupt chain can't stamp bogus values.
+                chain.clear();
+                memo.modulate_chain_scratch = chain;
+                return Color::WHITE;
+            }
+            if let Some(hit) = memo.modulate_hit(current) {
+                break hit;
+            }
             let Some(scene_node) = self.nodes.get(current) else {
-                break;
+                break Color::WHITE;
             };
-            let parent = scene_node.parent;
-            if let Some(local) = self.local_node_modulate(current) {
-                let own = if current == node {
-                    local.self_modulate
-                } else {
-                    local.children_modulate
-                };
-                acc = Self::color_modulate(Self::color_modulate(acc, local.modulate), own);
+            let contribution = match self.local_node_modulate(current) {
+                Some(local) => Self::color_modulate(local.modulate, local.children_modulate),
+                None => Color::WHITE,
+            };
+            chain.push((current, contribution));
+            if scene_node.parent.is_nil() {
+                break Color::WHITE;
             }
-            if parent.is_nil() {
-                break;
-            }
-            current = parent;
+            current = scene_node.parent;
             hops += 1;
+        };
+
+        let stamp = memo.current;
+        let mut acc = base;
+        for &(id, contribution) in chain.iter().rev() {
+            acc = Self::color_modulate(acc, contribution);
+            let index = id.index() as usize;
+            memo.modulate_stamp[index] = stamp;
+            memo.modulate_generation[index] = id.generation();
+            memo.modulate_value[index] = acc;
         }
-        acc
+        let result = if chain.is_empty() { base } else { acc };
+        chain.clear();
+        memo.modulate_chain_scratch = chain;
+        result
     }
 
     fn local_node_modulate(&self, node: NodeID) -> Option<NodeModulate> {

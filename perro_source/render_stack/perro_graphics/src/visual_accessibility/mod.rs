@@ -28,7 +28,13 @@ pub struct VisualAccessibilityProcessor {
     // view varies between frames (sampler + uniform buffer are stable), so we
     // rebuild solely when that view identity changes or on resize.
     cached_bind_group: Option<(usize, wgpu::BindGroup)>,
+    // Frames without any consumer of the intermediate (no post chain, no
+    // accessibility filter); the full-res target releases to 1x1 after enough.
+    idle_frames: u32,
 }
+
+// Idle frames before the full-res intermediate releases back to 1x1.
+const ACCESSIBILITY_IDLE_RELEASE_FRAMES: u32 = 120;
 
 impl VisualAccessibilityProcessor {
     pub fn new(
@@ -145,12 +151,16 @@ impl VisualAccessibilityProcessor {
             pipeline,
             uniform_buffer,
             cached_bind_group: None,
+            idle_frames: 0,
         }
     }
 
-    pub fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
+    /// Returns true when the intermediate target was recreated, so callers can
+    /// refresh bind groups built on the old view.
+    pub fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) -> bool {
+        self.idle_frames = 0;
         if self.width == width && self.height == height {
-            return;
+            return false;
         }
         self.width = width;
         self.height = height;
@@ -166,10 +176,22 @@ impl VisualAccessibilityProcessor {
         // Input views (scene / intermediate) are recreated on resize, so the
         // cached bind group is stale.
         self.cached_bind_group = None;
+        true
     }
 
-    pub fn has_settings(&self, settings: VisualAccessibilitySettings) -> bool {
-        settings.color_blind.is_some()
+    /// Per-frame tick while nothing writes the intermediate. Releases the
+    /// full-res target to 1x1 after enough idle frames; returns true on the
+    /// frame it releases so callers can drop bind groups built on the old view.
+    pub fn note_idle_frame(&mut self, device: &wgpu::Device) -> bool {
+        if self.width <= 1 && self.height <= 1 {
+            self.idle_frames = 0;
+            return false;
+        }
+        self.idle_frames = self.idle_frames.saturating_add(1);
+        if self.idle_frames < ACCESSIBILITY_IDLE_RELEASE_FRAMES {
+            return false;
+        }
+        self.resize(device, 1, 1)
     }
 
     pub fn intermediate_view(&self) -> &wgpu::TextureView {

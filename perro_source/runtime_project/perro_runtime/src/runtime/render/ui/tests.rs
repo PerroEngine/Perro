@@ -21,6 +21,7 @@ use perro_ui::{
     UiPanel, UiScrollContainer, UiShape, UiShapeKind, UiVLayout, UiVector2,
 };
 use std::any::Any;
+use std::borrow::Cow;
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
@@ -39,11 +40,12 @@ fn collect_resource_texture_request(
     commands
         .into_iter()
         .find_map(|command| match command {
-            RenderCommand::Resource(ResourceCommand::CreateTexture { request, id, .. })
-                if id == texture =>
-            {
-                Some(request)
-            }
+            RenderCommand::Resource(r0) => match *r0 {
+                ResourceCommand::CreateTexture { request, id, .. } if id == texture => {
+                    Some(request)
+                }
+                _ => None,
+            },
             _ => None,
         })
         .expect("expected texture create request")
@@ -53,8 +55,7 @@ fn has_external_texture_create(commands: &[RenderCommand]) -> bool {
     commands.iter().any(|command| {
         matches!(
             command,
-            RenderCommand::Resource(ResourceCommand::CreateExternalTexture { .. })
-        )
+            RenderCommand::Resource(r0) if matches!(&**r0, ResourceCommand::CreateExternalTexture { .. }))
     })
 }
 

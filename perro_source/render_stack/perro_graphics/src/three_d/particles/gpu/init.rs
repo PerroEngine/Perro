@@ -552,14 +552,18 @@ impl GpuPointParticles3D {
         let particle_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_particles3d_points"),
             size: (particle_capacity * std::mem::size_of::<PointParticleGpu>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let billboard_particle_capacity = 1024usize;
         let billboard_particle_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_particles3d_billboards"),
             size: (billboard_particle_capacity * std::mem::size_of::<PointParticleGpu>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let hybrid_emitter_capacity = 64usize;
@@ -573,14 +577,18 @@ impl GpuPointParticles3D {
         let hybrid_particle_emitter_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_particles3d_hybrid_particle_emitters"),
             size: (hybrid_particle_emitter_capacity * std::mem::size_of::<u32>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let hybrid_particle_spawn_origin_capacity = 1024usize;
         let hybrid_particle_spawn_origin_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_particles3d_hybrid_particle_spawn_origins"),
             size: (hybrid_particle_spawn_origin_capacity * std::mem::size_of::<[f32; 4]>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let hybrid_particle_spawn_rotation_capacity = 1024usize;
@@ -588,7 +596,9 @@ impl GpuPointParticles3D {
             label: Some("perro_particles3d_hybrid_particle_spawn_rotations"),
             size: (hybrid_particle_spawn_rotation_capacity * std::mem::size_of::<[f32; 4]>())
                 as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let hybrid_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -634,14 +644,18 @@ impl GpuPointParticles3D {
         let compute_particle_emitter_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_particles3d_compute_particle_emitters"),
             size: (compute_particle_emitter_capacity * std::mem::size_of::<u32>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let compute_particle_spawn_origin_capacity = 1024usize;
         let compute_particle_spawn_origin_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_particles3d_compute_particle_spawn_origins"),
             size: (compute_particle_spawn_origin_capacity * std::mem::size_of::<[f32; 4]>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let compute_particle_spawn_rotation_capacity = 1024usize;
@@ -650,7 +664,9 @@ impl GpuPointParticles3D {
                 label: Some("perro_particles3d_compute_particle_spawn_rotations"),
                 size: (compute_particle_spawn_rotation_capacity * std::mem::size_of::<[f32; 4]>())
                     as u64,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
                 mapped_at_creation: false,
             });
         let compute_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -663,7 +679,9 @@ impl GpuPointParticles3D {
         let compute_particle_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_particles3d_compute_particles"),
             size: (compute_particle_capacity * std::mem::size_of::<GpuComputedParticle>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let compute_expr_op_capacity = 1024usize;
@@ -810,6 +828,15 @@ impl GpuPointParticles3D {
             compute_map_fingerprint: 0,
             compute_map_uploaded_fingerprint: 0,
             compute_map_uploaded_count: 0,
+            shrink_points: ShrinkTracker::default(),
+            shrink_billboards: ShrinkTracker::default(),
+            shrink_compute_particles: ShrinkTracker::default(),
+            shrink_compute_map: ShrinkTracker::default(),
+            shrink_compute_spawn_origins: ShrinkTracker::default(),
+            shrink_compute_spawn_rotations: ShrinkTracker::default(),
+            shrink_hybrid_map: ShrinkTracker::default(),
+            shrink_hybrid_spawn_origins: ShrinkTracker::default(),
+            shrink_hybrid_spawn_rotations: ShrinkTracker::default(),
         }
     }
 }

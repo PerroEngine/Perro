@@ -62,16 +62,18 @@ impl<B: GraphicsBackend> RunnerState<B> {
             && let Some(source) = self.startup_splash.source.clone()
         {
             self.startup_splash.texture_requested = true;
-            commands.push(RenderCommand::Resource(ResourceCommand::CreateTexture {
-                request: STARTUP_SPLASH_TEXTURE_REQUEST,
-                id: TextureID::nil(),
-                source: self
-                    .startup_splash
-                    .source_hash
-                    .map(|v| v.to_string())
-                    .unwrap_or(source),
-                reserved: true,
-            }));
+            commands.push(RenderCommand::Resource(Box::new(
+                ResourceCommand::CreateTexture {
+                    request: STARTUP_SPLASH_TEXTURE_REQUEST,
+                    id: TextureID::nil(),
+                    source: self
+                        .startup_splash
+                        .source_hash
+                        .map(|v| v.to_string())
+                        .unwrap_or(source),
+                    reserved: true,
+                },
+            )));
         }
 
         let Some(texture_id) = self.startup_splash.texture_id else {

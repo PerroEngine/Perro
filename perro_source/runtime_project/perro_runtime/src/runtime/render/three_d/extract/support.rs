@@ -20,7 +20,7 @@ impl Runtime {
         self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::RemoveNode {
             node,
         })));
-        self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode { node }));
+        self.queue_render_command(RenderCommand::Ui(Box::new(UiCommand::RemoveNode { node })));
     }
 
     pub(in super::super) fn world_overlay_point_occluded_3d(
@@ -96,8 +96,8 @@ impl Runtime {
 
     pub(in super::super) fn active_render_camera_3d(&mut self) -> Option<Camera3DState> {
         let mut found: Option<Camera3DPick> = None;
-        let mut members = std::mem::take(&mut self.world_member_scratch);
-        self.fill_world_members(NodeID::nil(), &mut members);
+        // shared member view: refcount clone, no per-call Vec copy.
+        let members = self.world_members_arc(NodeID::nil());
         for &node in members.iter() {
             let Some(scene_node) = self.nodes.get(node) else {
                 continue;
@@ -131,8 +131,6 @@ impl Runtime {
                 ));
             }
         }
-        members.clear();
-        self.world_member_scratch = members;
         let (
             _priority,
             node,
@@ -155,7 +153,7 @@ impl Runtime {
             ],
             projection: camera_projection_state(&projection),
             render_mask,
-            post_processing: Arc::from(post_processing.to_effects_vec()),
+            post_processing: self.camera_postfx_arc(node, &post_processing),
             audio_options,
         })
     }
@@ -173,22 +171,35 @@ impl Runtime {
         shape: Shape3D,
         world_from_shape: Mat4,
     ) -> u32 {
-        let segments = collision_shape_wire_segments(shape);
+        // recycled scratch bufs + one batched command per body: a moving body
+        // re-emits its full wire set (100s of edges) every frame, so per-edge
+        // boxed commands + fresh segment Vecs were the dominant alloc source.
+        let mut segments = std::mem::take(&mut self.collision_wire_scratch);
+        segments.clear();
+        collision_shape_wire_segments_into(shape, &mut segments);
+        let mut lines = std::mem::take(&mut self.collision_debug_lines_scratch);
+        lines.clear();
         let mut edge_count = 0u32;
-        for (start, end) in segments {
-            let world_start = world_from_shape.transform_point3(start).to_array();
-            let world_end = world_from_shape.transform_point3(end).to_array();
-            self.queue_render_command(RenderCommand::ThreeD(Box::new(
-                Command3D::DrawDebugLine3D {
-                    node: collision_debug_edge_node(node, edge_count),
-                    start: world_start,
-                    end: world_end,
-                    thickness: 0.035,
-                    color: [0.15, 0.95, 0.95, 1.0],
-                },
-            )));
+        for (start, end) in segments.drain(..) {
+            lines.push(perro_render_bridge::DebugLine3D {
+                node: collision_debug_edge_node(node, edge_count),
+                start: world_from_shape.transform_point3(start).to_array(),
+                end: world_from_shape.transform_point3(end).to_array(),
+                thickness: 0.035,
+                color: [0.15, 0.95, 0.95, 1.0],
+            });
             edge_count = edge_count.saturating_add(1);
         }
+        if !lines.is_empty() {
+            self.queue_render_command(RenderCommand::ThreeD(Box::new(
+                Command3D::DrawDebugLines3D {
+                    lines: Arc::from(lines.as_slice()),
+                },
+            )));
+        }
+        lines.clear();
+        self.collision_wire_scratch = segments;
+        self.collision_debug_lines_scratch = lines;
         edge_count
     }
 

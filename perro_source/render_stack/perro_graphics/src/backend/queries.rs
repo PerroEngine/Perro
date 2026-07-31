@@ -10,9 +10,7 @@ impl PerroGraphics {
         let Some(mut gpu) = slot.lock().ok().and_then(|mut guard| guard.take()) else {
             return;
         };
-        let [vw, vh] = Gpu::virtual_size();
-        self.renderer_2d.set_virtual_viewport(vw, vh);
-        self.late_overlay_2d.set_virtual_viewport(vw, vh);
+        gpu.set_virtual_size_2d(self.renderer_2d.virtual_viewport());
         gpu.resize(self.viewport.0.max(1), self.viewport.1.max(1));
         self.events
             .push(RenderEvent::HdrStatusChanged(gpu.hdr_status()));

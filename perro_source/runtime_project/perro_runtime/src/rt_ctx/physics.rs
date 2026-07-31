@@ -130,9 +130,9 @@ impl PhysicsAPI for Runtime {
         origin: Vector3,
         direction: Vector3,
         max_distance: f32,
-        filter: PhysicsQueryFilter,
+        filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsRayHit3D> {
-        self.physics_raycast_3d_filtered(origin, direction, max_distance, &filter)
+        self.physics_raycast_3d_filtered(origin, direction, max_distance, filter)
     }
 
     fn raycast_2d(
@@ -140,9 +140,9 @@ impl PhysicsAPI for Runtime {
         origin: Vector2,
         direction: Vector2,
         max_distance: f32,
-        filter: PhysicsQueryFilter,
+        filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsRayHit2D> {
-        self.physics_raycast_2d(origin, direction, max_distance, &filter)
+        self.physics_raycast_2d(origin, direction, max_distance, filter)
     }
 
     fn shape_cast_2d(
@@ -151,9 +151,9 @@ impl PhysicsAPI for Runtime {
         origin: Vector2,
         direction: Vector2,
         max_distance: f32,
-        filter: PhysicsQueryFilter,
+        filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsShapeHit2D> {
-        self.physics_shape_cast_2d(shape, origin, direction, max_distance, &filter)
+        self.physics_shape_cast_2d(shape, origin, direction, max_distance, filter)
     }
 
     fn shape_cast_3d(
@@ -162,9 +162,9 @@ impl PhysicsAPI for Runtime {
         origin: Vector3,
         direction: Vector3,
         max_distance: f32,
-        filter: PhysicsQueryFilter,
+        filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsShapeHit3D> {
-        self.physics_shape_cast_3d(shape, origin, direction, max_distance, &filter)
+        self.physics_shape_cast_3d(shape, origin, direction, max_distance, filter)
     }
 
     fn move_body_2d(
@@ -172,9 +172,9 @@ impl PhysicsAPI for Runtime {
         body_id: NodeID,
         target: Vector2,
         margin: f32,
-        filter: PhysicsQueryFilter,
+        filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult2D> {
-        self.physics_move_body_2d(body_id, target, margin, &filter)
+        self.physics_move_body_2d(body_id, target, margin, filter)
     }
 
     fn move_body_3d(
@@ -182,27 +182,27 @@ impl PhysicsAPI for Runtime {
         body_id: NodeID,
         target: Vector3,
         margin: f32,
-        filter: PhysicsQueryFilter,
+        filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult3D> {
-        self.physics_move_body_3d(body_id, target, margin, &filter)
+        self.physics_move_body_3d(body_id, target, margin, filter)
     }
 
     fn move_and_slide_2d(
         &mut self,
         body_id: NodeID,
         motion: Vector2,
-        filter: PhysicsQueryFilter,
+        filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsSlideResult2D> {
-        self.physics_move_and_slide_2d(body_id, motion, &filter)
+        self.physics_move_and_slide_2d(body_id, motion, filter)
     }
 
     fn move_and_slide_3d(
         &mut self,
         body_id: NodeID,
         motion: Vector3,
-        filter: PhysicsQueryFilter,
+        filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsSlideResult3D> {
-        self.physics_move_and_slide_3d(body_id, motion, &filter)
+        self.physics_move_and_slide_3d(body_id, motion, filter)
     }
 
     fn apply_gravity_2d(
@@ -210,9 +210,9 @@ impl PhysicsAPI for Runtime {
         body_id: NodeID,
         dt: f32,
         max_fall_speed: f32,
-        filter: PhysicsQueryFilter,
+        filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult2D> {
-        self.physics_apply_gravity_2d(body_id, dt, max_fall_speed, &filter)
+        self.physics_apply_gravity_2d(body_id, dt, max_fall_speed, filter)
     }
 
     fn apply_gravity_3d(
@@ -220,9 +220,9 @@ impl PhysicsAPI for Runtime {
         body_id: NodeID,
         dt: f32,
         max_fall_speed: f32,
-        filter: PhysicsQueryFilter,
+        filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult3D> {
-        self.physics_apply_gravity_3d(body_id, dt, max_fall_speed, &filter)
+        self.physics_apply_gravity_3d(body_id, dt, max_fall_speed, filter)
     }
 
     fn contacts_2d(&mut self, body_id: NodeID) -> Vec<PhysicsContact2D> {

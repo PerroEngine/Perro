@@ -57,9 +57,9 @@ impl Runtime {
             self.render_2d.last_camera = active_camera.clone();
         }
 
+        // shared member view: refcount clone, no per-pass Vec copy.
+        let main_world_ids = self.world_members_arc(NodeID::nil());
         let nodes = &self.nodes;
-        let mut main_world_ids = std::mem::take(&mut self.world_member_scratch);
-        self.fill_world_members(NodeID::nil(), &mut main_world_ids);
         let mut dirty_ids = self.render_2d.take_dirty_ids_scratch();
         dirty_ids.clear();
         dirty_ids.extend(
@@ -90,8 +90,6 @@ impl Runtime {
                 }
             },
         );
-        main_world_ids.clear();
-        self.world_member_scratch = main_world_ids;
         self.render_2d.restore_dirty_ids_scratch(dirty_ids);
         if !full_traversal {
             self.append_dirty_world_stream_nodes_2d(&mut traversal_ids);
@@ -215,6 +213,7 @@ impl Runtime {
                             && render_mask_matches(camera_render_mask, label.render_layers),
                         label.transform,
                         label.size,
+                        // Arc<str> refcount bump, no text copy.
                         label.text.clone(),
                         label.color,
                         label.font_size,
@@ -244,34 +243,41 @@ impl Runtime {
                     let transform = self
                         .get_render_global_transform_2d(node)
                         .unwrap_or(local_transform);
+                    let virtual_scale = self.ui_virtual_font_scale(self.input.viewport_size());
                     let rect = label_2d_rect(
                         transform,
                         size,
                         active_camera.as_ref(),
                         self.input.viewport_size(),
+                        virtual_scale,
                         z_index,
                     );
-                    self.queue_render_command(RenderCommand::Ui(UiCommand::UpsertLabel {
-                        node,
-                        rect,
-                        clip_rect: viewport_clip(self.input.viewport_size()),
-                        text: std::sync::Arc::from(text.as_ref()),
-                        color: Runtime::color_modulate(color, modulate),
-                        font_size: (font_size * transform.scale.y.abs()).max(0.001),
-                        font,
-                        wrap_width: None,
-                        h_align: text_align_state_2d(h_align),
-                        v_align: text_align_state_2d(v_align),
-                        backdrop_color: perro_structs::Color::TRANSPARENT,
-                        corner_radii: Default::default(),
-                        padding: [0.0; 4],
-                        projected_quad: None,
-                        depth_test: false,
-                        fit_content: false,
-                    }));
+                    self.queue_render_command(RenderCommand::Ui(Box::new(
+                        UiCommand::UpsertLabel {
+                            node,
+                            rect,
+                            clip_rect: viewport_clip(self.input.viewport_size()),
+                            text,
+                            color: Runtime::color_modulate(color, modulate),
+                            font_size: (font_size * transform.scale.y.abs() * virtual_scale)
+                                .max(0.001),
+                            font,
+                            wrap_width: None,
+                            h_align: text_align_state_2d(h_align),
+                            v_align: text_align_state_2d(v_align),
+                            backdrop_color: perro_structs::Color::TRANSPARENT,
+                            corner_radii: Default::default(),
+                            padding: [0.0; 4],
+                            projected_quad: None,
+                            depth_test: false,
+                            fit_content: false,
+                        },
+                    )));
                     visible_now.insert(node);
                 } else {
-                    self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode { node }));
+                    self.queue_render_command(RenderCommand::Ui(Box::new(UiCommand::RemoveNode {
+                        node,
+                    })));
                 }
             }
 
@@ -349,6 +355,7 @@ impl Runtime {
                             .unwrap_or(local_transform)
                             .to_mat3()
                             .to_cols_array_2d();
+                        let stream_state = Arc::new(stream_state);
                         let sprite = Sprite2DCommand {
                             texture: stream_state.output_texture,
                             model,
@@ -363,7 +370,7 @@ impl Runtime {
                         self.queue_render_command(RenderCommand::TwoD(
                             Command2D::UpsertCameraStream {
                                 node,
-                                stream: Box::new(stream_state),
+                                stream: stream_state,
                                 sprite,
                             },
                         ));
@@ -438,7 +445,7 @@ impl Runtime {
                     tilemap: TileMap2DCommand {
                         texture,
                         sprites: Arc::from(sprites),
-                        shadow_casters: Arc::from([]),
+                        shadow_casters: empty_arc_slice(),
                     },
                 }));
                 visible_now.insert(node);
@@ -562,6 +569,7 @@ impl Runtime {
                             .unwrap_or(local_transform)
                             .to_mat3()
                             .to_cols_array_2d();
+                        let stream_state = Arc::new(stream_state);
                         let sprite = Sprite2DCommand {
                             texture: stream_state.output_texture,
                             model,
@@ -576,7 +584,7 @@ impl Runtime {
                         self.queue_render_command(RenderCommand::TwoD(
                             Command2D::UpsertCameraStream {
                                 node,
-                                stream: Box::new(stream_state),
+                                stream: stream_state,
                                 sprite,
                             },
                         ));
@@ -923,50 +931,82 @@ impl Runtime {
                 }
             }
 
-            let tilemap_data = self.nodes.get(node).and_then(|node| match &node.data {
+            // Header only (no `tilemap.clone()`): the tiles Vec is read by
+            // reference in the signature/rebuild pass below, after the
+            // `&mut self` tileset/texture resolves are done.
+            let tilemap_meta = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::TileMap2D(tilemap) => Some((
                     effective_visible
                         && tilemap.visible
                         && render_mask_matches(camera_render_mask, tilemap.render_layers),
-                    tilemap.clone(),
+                    tilemap.tileset.clone(),
+                    tilemap.transform,
                 )),
                 _ => None,
             });
-            if let Some((visible, tilemap)) = tilemap_data {
+            if let Some((visible, tileset_ref, local_transform)) = tilemap_meta {
                 if visible {
-                    if let Some(tileset) = resolve_tileset_2d(self, &tilemap.tileset)
+                    if let Some(tileset) = resolve_tileset_2d(self, &tileset_ref)
                         && let Some(texture) =
                             self.resolve_tilemap_texture(node, tileset.texture.as_ref())
                     {
                         let global_transform = self
                             .get_render_global_transform_2d(node)
-                            .unwrap_or(tilemap.transform);
+                            .unwrap_or(local_transform);
                         let global = global_transform.to_mat3().to_cols_array_2d();
-                        let sprites = build_tilemap_sprites(TilemapSpriteBuild {
-                            texture,
-                            base_model: global,
-                            z_index: tilemap.z_index,
-                            width: tilemap.width,
-                            height: tilemap.height,
-                            empty_tile: tilemap.empty_tile,
-                            tint: self.effective_self_modulate(node),
-                            tiles: &tilemap.tiles,
-                            tileset: &tileset,
-                        });
-                        let shadow_casters = if tilemap.collision_enabled {
-                            build_tilemap_shadow_casters(&tilemap, global_transform, &tileset)
-                        } else {
-                            Vec::new()
-                        };
-                        self.queue_render_command(RenderCommand::TwoD(Command2D::UpsertTileMap {
-                            node,
-                            tilemap: TileMap2DCommand {
+                        let tint = self.effective_self_modulate(node);
+                        let command = if let Some(scene_node) = self.nodes.get(node)
+                            && let SceneNodeData::TileMap2D(tilemap) = &scene_node.data
+                        {
+                            let signature =
+                                tilemap_render_signature(texture, &global, tint, &tileset, tilemap);
+                            let cache = &mut self.render_2d.tilemap_render_cache;
+                            let entry = match cache.get(&node) {
+                                Some(cached) if cached.signature == signature => cached.clone(),
+                                _ => {
+                                    let sprites = build_tilemap_sprites(TilemapSpriteBuild {
+                                        texture,
+                                        base_model: global,
+                                        z_index: tilemap.z_index,
+                                        width: tilemap.width,
+                                        height: tilemap.height,
+                                        empty_tile: tilemap.empty_tile,
+                                        tint,
+                                        tiles: &tilemap.tiles,
+                                        tileset: &tileset,
+                                    });
+                                    let shadow_casters = if tilemap.collision_enabled {
+                                        build_tilemap_shadow_casters(
+                                            tilemap,
+                                            global_transform,
+                                            &tileset,
+                                        )
+                                    } else {
+                                        Vec::new()
+                                    };
+                                    let entry = crate::runtime::state::TilemapRenderCache {
+                                        signature,
+                                        sprites: arc_slice_from_vec(sprites),
+                                        shadow_casters: arc_slice_from_vec(shadow_casters),
+                                    };
+                                    cache.insert(node, entry.clone());
+                                    entry
+                                }
+                            };
+                            Some(TileMap2DCommand {
                                 texture,
-                                sprites: Arc::from(sprites),
-                                shadow_casters: Arc::from(shadow_casters),
-                            },
-                        }));
-                        visible_now.insert(node);
+                                sprites: entry.sprites,
+                                shadow_casters: entry.shadow_casters,
+                            })
+                        } else {
+                            None
+                        };
+                        if let Some(tilemap) = command {
+                            self.queue_render_command(RenderCommand::TwoD(
+                                Command2D::UpsertTileMap { node, tilemap },
+                            ));
+                            visible_now.insert(node);
+                        }
                     }
                 } else {
                     self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
@@ -980,7 +1020,7 @@ impl Runtime {
                 continue;
             }
             self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
-            self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode { node }));
+            self.queue_render_command(RenderCommand::Ui(Box::new(UiCommand::RemoveNode { node })));
             self.render_2d.retained_sprites.remove(&node);
         }
         self.render_2d
@@ -989,8 +1029,8 @@ impl Runtime {
 
     pub(super) fn active_render_camera_2d(&mut self) -> Option<Camera2DState> {
         let mut found = None;
-        let mut members = std::mem::take(&mut self.world_member_scratch);
-        self.fill_world_members(NodeID::nil(), &mut members);
+        // shared member view: refcount clone, no per-call Vec copy.
+        let members = self.world_members_arc(NodeID::nil());
         for &node in members.iter() {
             let Some(scene_node) = self.nodes.get(node) else {
                 continue;
@@ -1010,8 +1050,6 @@ impl Runtime {
                 camera.audio_options.clone(),
             ));
         }
-        members.clear();
-        self.world_member_scratch = members;
         let (node, local_transform, zoom, render_mask, post_processing, audio_options) = found?;
         let global = self
             .get_render_global_transform_2d(node)
@@ -1021,7 +1059,7 @@ impl Runtime {
             rotation_radians: global.rotation,
             zoom,
             render_mask,
-            post_processing: Arc::from(post_processing.to_effects_vec()),
+            post_processing: self.camera_postfx_arc(node, &post_processing),
             audio_options,
         })
     }

@@ -16,7 +16,7 @@ use perro_render_bridge::{
     PointLight3DState, PointParticles2DState, PointParticles3DState, RayLight2DState,
     RayLight3DState, RenderCommand, RenderEvent, RenderRequestID, ResourceCommand, Sky3DState,
     SkyShaderPass3DState, SkyTime3DState, SpotLight2DState, SpotLight3DState, Sprite2DCommand,
-    Water2DState, Water3DState,
+    Water2DState, Water3DState, arc_slice_from_vec, empty_arc_slice,
 };
 use perro_runtime_render::{decode_3d_mesh_request_node, decode_render_request_node_from_event};
 use perro_structs::{BitMask, Color, Vector2};
@@ -32,7 +32,7 @@ use crate::runtime::render_2d::{
 use crate::runtime::render_3d::{
     derived_particle_budget_3d, resolve_particle_profile as resolve_particle_profile_3d,
     resolve_particle_render_mode as resolve_particle_render_mode_3d,
-    resolve_particle_sim_mode as resolve_particle_sim_mode_3d,
+    resolve_particle_sim_mode as resolve_particle_sim_mode_3d, sky_3d_state_matches,
     water_idle_mode_state as water_idle_mode_state_3d, water_render_size as water_render_size_3d,
     water_shape_state as water_shape_state_3d,
 };
@@ -170,16 +170,40 @@ fn camera_stream_projection_state(projection: &CameraProjection) -> CameraProjec
 }
 
 impl Runtime {
+    /// Flattened post-processing effects for a camera node. Unchanged sets
+    /// (the steady state) hand out a refcount clone; a change re-flattens and
+    /// replaces the cached pair. Entries drop with the node in
+    /// `note_removed_render_node`.
+    pub(crate) fn camera_postfx_arc(
+        &mut self,
+        node: NodeID,
+        set: &perro_structs::PostProcessSet,
+    ) -> Arc<[perro_structs::PostProcessEffect]> {
+        if let Some((cached_set, cached)) = self.camera_postfx_cache.get(&node)
+            && cached_set == set
+        {
+            return cached.clone();
+        }
+        let effects = arc_slice_from_vec(set.to_effects_vec());
+        self.camera_postfx_cache
+            .insert(node, (set.clone(), effects.clone()));
+        effects
+    }
+
     /// All CameraStream upsert/remove traffic for stream + sub-view nodes
     /// funnels through these two: `camera_stream_active` mirrors what the gpu
     /// retains, so idle passes stop re-sending RemoveNode for streams that
     /// were never (or are no longer) upserted — each command wakes a full gpu
     /// frame. One-shot camera captures bypass this (always paired).
-    pub(crate) fn queue_camera_stream_upsert(&mut self, node: NodeID, state: CameraStreamState) {
+    pub(crate) fn queue_camera_stream_upsert(
+        &mut self,
+        node: NodeID,
+        state: Arc<CameraStreamState>,
+    ) {
         self.camera_stream_active.insert(node);
         self.queue_render_command(RenderCommand::CameraStream(CameraStreamCommand::Upsert {
             node,
-            state: Box::new(state),
+            state,
         }));
     }
 

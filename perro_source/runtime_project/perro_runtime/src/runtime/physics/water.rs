@@ -3,6 +3,7 @@ use glam::{Mat3, Mat4, Vec3};
 use perro_ids::NodeID;
 use perro_nodes::{Shape2D, Shape3D, WaterShape};
 use perro_structs::{BitMask, Vector2, Vector3};
+use smallvec::{SmallVec, smallvec};
 pub(super) const WATER_FORCE_PAR_BODY_THRESHOLD: usize = 512;
 pub(super) const WATER_WAVE_FOLLOW_DT: f32 = 1.0 / 60.0;
 pub(super) const WATER_BODY_SAMPLE_TTL: f32 = 0.20;
@@ -162,14 +163,14 @@ pub(super) struct BlendedWaterSample3D {
 }
 
 #[derive(Clone, Copy)]
-pub(super) struct WaterBodyForce2D {
+pub(crate) struct WaterBodyForce2D {
     pub(super) id: NodeID,
     pub(super) force: Vector2,
     pub(super) impulse: Vector2,
 }
 
 #[derive(Clone, Copy)]
-pub(super) struct WaterBodyForce3D {
+pub(crate) struct WaterBodyForce3D {
     pub(super) id: NodeID,
     pub(super) force: Vector3,
     pub(super) impulse: Vector3,
@@ -192,21 +193,22 @@ pub(super) fn water_shape_2d(shape: WaterShape) -> Shape2D {
 }
 
 pub(super) fn blend_water_candidates_2d(
-    candidates: Vec<WaterCandidate2D>,
-) -> Vec<BlendedWaterSample2D> {
+    candidates: &[WaterCandidate2D],
+) -> SmallVec<[BlendedWaterSample2D; 2]> {
     if candidates.len() <= 1 {
         return candidates
-            .into_iter()
+            .iter()
+            .copied()
             .map(blended_water_sample_2d)
             .collect();
     }
-    let mut used = vec![false; candidates.len()];
-    let mut out = Vec::new();
+    let mut used: SmallVec<[bool; 8]> = smallvec![false; candidates.len()];
+    let mut out = SmallVec::new();
     for start in 0..candidates.len() {
         if used[start] {
             continue;
         }
-        let mut group = vec![start];
+        let mut group: SmallVec<[usize; 8]> = smallvec![start];
         used[start] = true;
         let mut cursor = 0;
         while cursor < group.len() {
@@ -228,21 +230,22 @@ pub(super) fn blend_water_candidates_2d(
 }
 
 pub(super) fn blend_water_candidates_3d(
-    candidates: Vec<WaterCandidate3D>,
-) -> Vec<BlendedWaterSample3D> {
+    candidates: &[WaterCandidate3D],
+) -> SmallVec<[BlendedWaterSample3D; 2]> {
     if candidates.len() <= 1 {
         return candidates
-            .into_iter()
+            .iter()
+            .copied()
             .map(blended_water_sample_3d)
             .collect();
     }
-    let mut used = vec![false; candidates.len()];
-    let mut out = Vec::new();
+    let mut used: SmallVec<[bool; 8]> = smallvec![false; candidates.len()];
+    let mut out = SmallVec::new();
     for start in 0..candidates.len() {
         if used[start] {
             continue;
         }
-        let mut group = vec![start];
+        let mut group: SmallVec<[usize; 8]> = smallvec![start];
         used[start] = true;
         let mut cursor = 0;
         while cursor < group.len() {
@@ -273,7 +276,7 @@ pub(super) fn water_forces_for_body_2d(
     >,
     elapsed: f32,
     camera_pos: Vector2,
-) -> Vec<WaterBodyForce2D> {
+) -> SmallVec<[WaterBodyForce2D; 2]> {
     let samples = blended_water_samples_2d(WaterBlendQuery2D {
         point: body.pos,
         body_layers: body.collision_layers,
@@ -285,7 +288,7 @@ pub(super) fn water_forces_for_body_2d(
         point_id: 0,
         elapsed,
     });
-    let mut forces = Vec::with_capacity(samples.len());
+    let mut forces = SmallVec::new();
     for blend in samples {
         let float_radius = body.float_radius.max(0.0);
         let submerged = (blend.submerged + float_radius).max(0.0);
@@ -371,7 +374,7 @@ pub(super) fn water_forces_for_body_3d(
     >,
     elapsed: f32,
     camera_pos: Vector2,
-) -> Vec<WaterBodyForce3D> {
+) -> SmallVec<[WaterBodyForce3D; 1]> {
     let radius = body.float_radius.max(0.5);
     let sample_points = [
         (0u8, body.pos),
@@ -468,7 +471,7 @@ pub(super) fn water_forces_for_body_3d(
             }
         }
     }
-    let mut forces = Vec::new();
+    let mut forces = SmallVec::new();
     if total_force.length_squared() > 0.0 {
         forces.push(WaterBodyForce3D {
             id: body.id,
@@ -629,11 +632,13 @@ pub(super) struct WaterBlendQuery2D<'a> {
     pub(super) elapsed: f32,
 }
 
-pub(super) fn blended_water_samples_2d(query: WaterBlendQuery2D<'_>) -> Vec<BlendedWaterSample2D> {
+pub(super) fn blended_water_samples_2d(
+    query: WaterBlendQuery2D<'_>,
+) -> SmallVec<[BlendedWaterSample2D; 2]> {
     let mut first = None;
-    let mut candidates: Vec<WaterCandidate2D> = Vec::new();
+    let mut candidates: SmallVec<[WaterCandidate2D; 2]> = SmallVec::new();
     let Some(bin) = query.water_index.bin(query.point.x) else {
-        return Vec::new();
+        return SmallVec::new();
     };
     for &idx in bin {
         let water = query.water_index.waters[idx];
@@ -686,7 +691,7 @@ pub(super) fn blended_water_samples_2d(query: WaterBlendQuery2D<'_>) -> Vec<Blen
     if candidates.is_empty() {
         return first.map(blended_water_sample_2d).into_iter().collect();
     }
-    blend_water_candidates_2d(candidates)
+    blend_water_candidates_2d(&candidates)
 }
 
 pub(super) struct WaterBlendQuery3D<'a> {
@@ -702,11 +707,13 @@ pub(super) struct WaterBlendQuery3D<'a> {
     pub(super) elapsed: f32,
 }
 
-pub(super) fn blended_water_samples_3d(query: WaterBlendQuery3D<'_>) -> Vec<BlendedWaterSample3D> {
+pub(super) fn blended_water_samples_3d(
+    query: WaterBlendQuery3D<'_>,
+) -> SmallVec<[BlendedWaterSample3D; 2]> {
     let mut first = None;
-    let mut candidates: Vec<WaterCandidate3D> = Vec::new();
+    let mut candidates: SmallVec<[WaterCandidate3D; 2]> = SmallVec::new();
     let Some(bin) = query.water_index.bin(query.point.x) else {
-        return Vec::new();
+        return SmallVec::new();
     };
     for &idx in bin {
         let water = query.water_index.waters[idx];
@@ -762,7 +769,7 @@ pub(super) fn blended_water_samples_3d(query: WaterBlendQuery3D<'_>) -> Vec<Blen
     if candidates.is_empty() {
         return first.map(blended_water_sample_3d).into_iter().collect();
     }
-    blend_water_candidates_3d(candidates)
+    blend_water_candidates_3d(&candidates)
 }
 
 pub(super) fn blended_water_sample_2d(candidate: WaterCandidate2D) -> BlendedWaterSample2D {
@@ -790,9 +797,17 @@ pub(super) fn blended_water_sample_3d(candidate: WaterCandidate3D) -> BlendedWat
 }
 
 impl RuntimeWaterIndex2D {
+    #[cfg(test)]
     pub(super) fn new(waters: Vec<RuntimeWater2D>) -> Self {
-        let (bins, origin_x, inv_cell_width) =
-            build_water_bins(waters.iter().map(|water| (water.min_x, water.max_x)));
+        Self::new_with_bins(waters, Vec::new())
+    }
+
+    /// `bins` = reusable storage frm a prior index (inner Vec allocs kp).
+    pub(super) fn new_with_bins(waters: Vec<RuntimeWater2D>, mut bins: Vec<Vec<usize>>) -> Self {
+        let (origin_x, inv_cell_width) = build_water_bins(
+            &mut bins,
+            waters.iter().map(|water| (water.min_x, water.max_x)),
+        );
         Self {
             waters,
             bins,
@@ -807,9 +822,17 @@ impl RuntimeWaterIndex2D {
 }
 
 impl RuntimeWaterIndex3D {
+    #[cfg(test)]
     pub(super) fn new(waters: Vec<RuntimeWater3D>) -> Self {
-        let (bins, origin_x, inv_cell_width) =
-            build_water_bins(waters.iter().map(|water| (water.min_x, water.max_x)));
+        Self::new_with_bins(waters, Vec::new())
+    }
+
+    /// `bins` = reusable storage frm a prior index (inner Vec allocs kp).
+    pub(super) fn new_with_bins(waters: Vec<RuntimeWater3D>, mut bins: Vec<Vec<usize>>) -> Self {
+        let (origin_x, inv_cell_width) = build_water_bins(
+            &mut bins,
+            waters.iter().map(|water| (water.min_x, water.max_x)),
+        );
         Self {
             waters,
             bins,
@@ -823,9 +846,14 @@ impl RuntimeWaterIndex3D {
     }
 }
 
+/// Fill `bins` in place (reuse inner Vec allocs); ret (origin_x, inv_cell_width).
 pub(super) fn build_water_bins(
+    bins: &mut Vec<Vec<usize>>,
     waters: impl Iterator<Item = (f32, f32)> + Clone,
-) -> (Vec<Vec<usize>>, f32, f32) {
+) -> (f32, f32) {
+    for bin in bins.iter_mut() {
+        bin.clear();
+    }
     let mut min_x = f32::INFINITY;
     let mut max_x = f32::NEG_INFINITY;
     let mut max_width = 0.0f32;
@@ -837,14 +865,19 @@ pub(super) fn build_water_bins(
         count += 1;
     }
     if count == 0 || !min_x.is_finite() || !max_x.is_finite() {
-        return (Vec::new(), 0.0, 1.0);
+        // kp cleared storage: all-empty bins resolve same as no bins.
+        bins.clear();
+        return (0.0, 1.0);
     }
     let cell_width = (max_width * 0.5).max(1.0);
     let inv_cell_width = 1.0 / cell_width;
     let bin_count = (((max_x - min_x) * inv_cell_width).ceil() as usize)
         .saturating_add(1)
         .max(1);
-    let mut bins = vec![Vec::new(); bin_count];
+    // grow only; extra trailing (cleared) bins resolve like empty cells.
+    if bins.len() < bin_count {
+        bins.resize_with(bin_count, Vec::new);
+    }
     for (idx, (water_min_x, water_max_x)) in waters.enumerate() {
         let first = (((water_min_x - min_x) * inv_cell_width).floor() as isize)
             .clamp(0, bin_count.saturating_sub(1) as isize) as usize;
@@ -854,7 +887,7 @@ pub(super) fn build_water_bins(
             bin.push(idx);
         }
     }
-    (bins, min_x, inv_cell_width)
+    (min_x, inv_cell_width)
 }
 
 pub(super) fn water_bin(

@@ -392,6 +392,11 @@ perro_app::entry::{native_entry}(perro_app::entry::StaticEmbeddedProject {{\n\
     );
     if options.headless {
         embedded_block = embedded_block.replace("perro_app::entry", "perro_headless");
+    } else {
+        embedded_block = format!(
+            "perro_app::entry::install_native_crash_reporter(\"{}\");\n{embedded_block}",
+            escape_str(&cfg.name)
+        );
     }
     let embedded_block = indent_block(&embedded_block, 2);
     let embedded_web_block = format!(

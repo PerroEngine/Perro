@@ -382,6 +382,68 @@ fn build_surface_lods(
 }
 
 fn simplify_surface(vertices: &[LodVertex], surface_indices: &[u32], keep_tris: usize) -> Vec<u32> {
+    let target_count = keep_tris.saturating_mul(3);
+    let positions = vertices
+        .iter()
+        .map(|vertex| vertex.position)
+        .collect::<Vec<_>>();
+    let attributes = vertices
+        .iter()
+        .flat_map(|vertex| {
+            [
+                vertex.normal[0],
+                vertex.normal[1],
+                vertex.normal[2],
+                vertex.uv[0],
+                vertex.uv[1],
+            ]
+        })
+        .collect::<Vec<_>>();
+    let Ok(adapter) = meshopt::VertexDataAdapter::new(
+        meshopt::typed_to_bytes(&positions),
+        std::mem::size_of::<[f32; 3]>(),
+        0,
+    ) else {
+        return simplify_surface_fallback(vertices, surface_indices, keep_tris);
+    };
+    let vertex_locks = vec![false; vertices.len()];
+    let simplified = meshopt::simplify_with_attributes_and_locks(
+        surface_indices,
+        &adapter,
+        &attributes,
+        &[0.5, 0.5, 0.5, 0.1, 0.1],
+        5 * std::mem::size_of::<f32>(),
+        &vertex_locks,
+        target_count,
+        1.0,
+        meshopt::SimplifyOptions::None,
+        None,
+    );
+    if simplified.len() >= 3 && simplified.len() < surface_indices.len() {
+        simplified
+    } else {
+        simplify_surface_fallback(vertices, surface_indices, keep_tris)
+    }
+}
+
+fn simplify_surface_fallback(
+    vertices: &[LodVertex],
+    surface_indices: &[u32],
+    keep_tris: usize,
+) -> Vec<u32> {
+    const SLOW_SIMPLIFY_TRI_LIMIT: usize = 2_048;
+    if surface_indices.len() / 3 <= SLOW_SIMPLIFY_TRI_LIMIT {
+        simplify_surface_slow(vertices, surface_indices, keep_tris)
+    } else {
+        surface_indices.to_vec()
+    }
+}
+
+fn simplify_surface_slow(
+    vertices: &[LodVertex],
+    surface_indices: &[u32],
+    keep_tris: usize,
+) -> Vec<u32> {
     let tri_count = surface_indices.len() / 3;
     if keep_tris >= tri_count {
         return surface_indices[..tri_count * 3].to_vec();
@@ -907,6 +969,20 @@ mod tests {
         assert_eq!(lods[0].indices.len(), indices.len());
         assert!(lods[1].indices.len() < lods[0].indices.len());
         assert!(lods[2].indices.len() <= lods[1].indices.len());
+    }
+
+    #[test]
+    fn large_lod_build_finishes() {
+        let (vertices, indices, surfaces) = grid_mesh(160);
+        let lods = build_lod_sets(&vertices, &indices, &surfaces, &DEFAULT_LOD_TARGET_RATIOS);
+        assert_eq!(lods[0].indices.len(), indices.len());
+        assert!(
+            lods.last()
+                .expect("large mesh must emit at least one LOD")
+                .indices
+                .len()
+                < indices.len()
+        );
     }
 
     #[test]

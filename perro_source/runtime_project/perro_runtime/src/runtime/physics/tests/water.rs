@@ -311,7 +311,7 @@ mod water {
             mover,
             Vector2::new(0.0, 0.0),
             0.01,
-            PhysicsQueryFilter::default(),
+            &PhysicsQueryFilter::default(),
         )
         .expect("move should return result");
 
@@ -353,7 +353,7 @@ mod water {
             mover,
             Vector3::new(0.0, 0.0, 0.0),
             0.01,
-            PhysicsQueryFilter::default(),
+            &PhysicsQueryFilter::default(),
         )
         .expect("move should return result");
 
@@ -673,5 +673,4 @@ mod water {
                 .is_none_or(|world| !world.joint_map.contains_key(&joint))
         );
     }
-
 }

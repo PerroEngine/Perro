@@ -10,7 +10,22 @@ impl Runtime {
         let Some(root) = self.get_global_transform_2d(world) else {
             return Some(scene);
         };
-        let local = root.to_mat3().inverse() * scene.to_mat3();
+        // memo root inverse per (world, root mat): sync passes cal this / body,
+        // root mat rarely chg w/in a pass -> skip per-body inversion.
+        let root_mat = root.to_mat3();
+        let root_inv = match self.physics_root_inv_2d {
+            Some((cached_world, cached_mat, inv))
+                if cached_world == world && cached_mat == root_mat =>
+            {
+                inv
+            }
+            _ => {
+                let inv = root_mat.inverse();
+                self.physics_root_inv_2d = Some((world, root_mat, inv));
+                inv
+            }
+        };
+        let local = root_inv * scene.to_mat3();
         local.is_finite().then(|| Transform2D::from_mat3(local))
     }
 
@@ -23,7 +38,21 @@ impl Runtime {
         let Some(root) = self.get_global_transform_3d(world) else {
             return Some(scene);
         };
-        let local = root.to_mat4().inverse() * scene.to_mat4();
+        // see physics_transform_2d memo note.
+        let root_mat = root.to_mat4();
+        let root_inv = match self.physics_root_inv_3d {
+            Some((cached_world, cached_mat, inv))
+                if cached_world == world && cached_mat == root_mat =>
+            {
+                inv
+            }
+            _ => {
+                let inv = root_mat.inverse();
+                self.physics_root_inv_3d = Some((world, root_mat, inv));
+                inv
+            }
+        };
+        let local = root_inv * scene.to_mat4();
         local.is_finite().then(|| Transform3D::from_mat4(local))
     }
 

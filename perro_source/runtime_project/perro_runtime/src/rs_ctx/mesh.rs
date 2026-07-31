@@ -39,7 +39,7 @@ impl MeshAPI for RuntimeResourceApi {
             .mesh_pending_source_by_request
             .insert(request, source.clone());
         state.mesh_pending_id_by_request.insert(request, id);
-        state.queued_commands.push(RenderCommand::Resource(
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
             ResourceCommand::CreateRuntimeMesh {
                 request,
                 id,
@@ -47,7 +47,7 @@ impl MeshAPI for RuntimeResourceApi {
                 reserved: false,
                 mesh: data,
             },
-        ));
+        )));
         id
     }
 
@@ -67,7 +67,7 @@ impl MeshAPI for RuntimeResourceApi {
             .mesh_pending_source_by_request
             .insert(request, source.clone());
         state.mesh_pending_id_by_request.insert(request, id);
-        state.queued_commands.push(RenderCommand::Resource(
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
             ResourceCommand::CreateRuntimeMeshBytes {
                 request,
                 id,
@@ -75,7 +75,7 @@ impl MeshAPI for RuntimeResourceApi {
                 reserved: false,
                 bytes: Arc::from(bytes),
             },
-        ));
+        )));
         id
     }
 
@@ -104,12 +104,9 @@ impl MeshAPI for RuntimeResourceApi {
         state.mesh_data_by_id.insert(id, data.clone());
         let revision = state.mesh_revision_by_id.entry(id).or_insert(0);
         *revision = revision.wrapping_add(1).max(1);
-        state
-            .queued_commands
-            .push(RenderCommand::Resource(ResourceCommand::WriteMeshData {
-                id,
-                mesh: data,
-            }));
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
+            ResourceCommand::WriteMeshData { id, mesh: data },
+        )));
         true
     }
 
@@ -158,14 +155,14 @@ impl MeshAPI for RuntimeResourceApi {
             .mesh_pending_source_by_request
             .insert(request, source.to_string());
         state.mesh_pending_id_by_request.insert(request, id);
-        state
-            .queued_commands
-            .push(RenderCommand::Resource(ResourceCommand::CreateMesh {
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
+            ResourceCommand::CreateMesh {
                 request,
                 id,
                 source: source.to_string(),
                 reserved: false,
-            }));
+            },
+        )));
         id
     }
 
@@ -176,12 +173,9 @@ impl MeshAPI for RuntimeResourceApi {
                 state.mesh_reserve_pending.insert(source_hash);
                 return id;
             }
-            state
-                .queued_commands
-                .push(RenderCommand::Resource(ResourceCommand::SetMeshReserved {
-                    id,
-                    reserved: true,
-                }));
+            state.queued_commands.push(RenderCommand::Resource(Box::new(
+                ResourceCommand::SetMeshReserved { id, reserved: true },
+            )));
             return id;
         }
         let Some(source) = source else {
@@ -195,12 +189,9 @@ impl MeshAPI for RuntimeResourceApi {
                 state.mesh_reserve_pending.insert(source_hash);
                 return id;
             }
-            state
-                .queued_commands
-                .push(RenderCommand::Resource(ResourceCommand::SetMeshReserved {
-                    id,
-                    reserved: true,
-                }));
+            state.queued_commands.push(RenderCommand::Resource(Box::new(
+                ResourceCommand::SetMeshReserved { id, reserved: true },
+            )));
             return id;
         }
         state.mesh_drop_pending.remove(&source_hash);
@@ -214,14 +205,14 @@ impl MeshAPI for RuntimeResourceApi {
             .mesh_pending_source_by_request
             .insert(request, source.to_string());
         state.mesh_pending_id_by_request.insert(request, id);
-        state
-            .queued_commands
-            .push(RenderCommand::Resource(ResourceCommand::CreateMesh {
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
+            ResourceCommand::CreateMesh {
                 request,
                 id,
                 source: source.to_string(),
                 reserved: true,
-            }));
+            },
+        )));
         id
     }
 
@@ -271,12 +262,9 @@ impl MeshAPI for RuntimeResourceApi {
             state.mesh_reserve_pending.insert(source_hash);
             state.mesh_drop_pending.remove(&source_hash);
         }
-        state
-            .queued_commands
-            .push(RenderCommand::Resource(ResourceCommand::SetMeshReserved {
-                id,
-                reserved: true,
-            }));
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
+            ResourceCommand::SetMeshReserved { id, reserved: true },
+        )));
         true
     }
 
@@ -298,9 +286,9 @@ impl MeshAPI for RuntimeResourceApi {
         }
         state.mesh_source_by_id.remove(&id);
         let _ = state.free_mesh_id(id);
-        state
-            .queued_commands
-            .push(RenderCommand::Resource(ResourceCommand::DropMesh { id }));
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
+            ResourceCommand::DropMesh { id },
+        )));
         true
     }
 }
@@ -472,8 +460,9 @@ impl super::state::RuntimeResourceState {
             let source_hash = string_to_u64(&source);
             self.mesh_pending_by_source.remove(&source_hash);
             if self.mesh_drop_pending.remove(&source_hash) {
-                self.queued_commands
-                    .push(RenderCommand::Resource(ResourceCommand::DropMesh { id }));
+                self.queued_commands.push(RenderCommand::Resource(Box::new(
+                    ResourceCommand::DropMesh { id },
+                )));
                 self.mesh_by_source.remove(&source_hash);
                 self.mesh_source_by_id.remove(&id);
                 self.mesh_loaded_by_id.remove(&id);
@@ -484,9 +473,9 @@ impl super::state::RuntimeResourceState {
                 self.mesh_by_source.insert(source_hash, id);
                 self.mesh_source_by_id.insert(id, source);
                 if self.mesh_reserve_pending.remove(&source_hash) {
-                    self.queued_commands.push(RenderCommand::Resource(
+                    self.queued_commands.push(RenderCommand::Resource(Box::new(
                         ResourceCommand::SetMeshReserved { id, reserved: true },
-                    ));
+                    )));
                 }
             }
         }
@@ -608,9 +597,7 @@ mod tests {
         api.drain_commands(&mut commands);
         assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Resource(ResourceCommand::SetMeshReserved { id, reserved: true })
-                if *id == mesh
-        )));
+            RenderCommand::Resource(r0) if matches!(&**r0, ResourceCommand::SetMeshReserved { id, reserved: true } if *id == mesh))));
     }
 
     #[test]
@@ -626,9 +613,7 @@ mod tests {
         api.drain_commands(&mut commands);
         assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Resource(ResourceCommand::SetTextureReserved { id, reserved: true })
-                if *id == texture
-        )));
+            RenderCommand::Resource(r0) if matches!(&**r0, ResourceCommand::SetTextureReserved { id, reserved: true } if *id == texture))));
     }
 
     #[test]
@@ -644,9 +629,7 @@ mod tests {
         api.drain_commands(&mut commands);
         assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Resource(ResourceCommand::SetMaterialReserved { id, reserved: true })
-                if *id == material
-        )));
+            RenderCommand::Resource(r0) if matches!(&**r0, ResourceCommand::SetMaterialReserved { id, reserved: true } if *id == material))));
     }
 
     #[test]
@@ -766,9 +749,12 @@ mod tests {
             commands
                 .into_iter()
                 .find_map(|command| match command {
-                    RenderCommand::Resource(ResourceCommand::CreateMesh {
-                        request, id, ..
-                    }) if id == loaded => Some(request),
+                    RenderCommand::Resource(r0) => match *r0 {
+                        ResourceCommand::CreateMesh { request, id, .. } if id == loaded => {
+                            Some(request)
+                        }
+                        _ => None,
+                    },
                     _ => None,
                 })
                 .expect("mesh load command")
@@ -795,11 +781,12 @@ mod tests {
             commands
                 .into_iter()
                 .find_map(|command| match command {
-                    RenderCommand::Resource(ResourceCommand::CreateRuntimeMesh {
-                        request,
-                        id,
-                        ..
-                    }) if id == mesh => Some(request),
+                    RenderCommand::Resource(r0) => match *r0 {
+                        ResourceCommand::CreateRuntimeMesh { request, id, .. } if id == mesh => {
+                            Some(request)
+                        }
+                        _ => None,
+                    },
                     _ => None,
                 })
                 .expect("expected runtime mesh create command")
@@ -826,9 +813,12 @@ mod tests {
             commands
                 .into_iter()
                 .find_map(|command| match command {
-                    RenderCommand::Resource(ResourceCommand::CreateMesh {
-                        request, id, ..
-                    }) if id == mesh => Some(request),
+                    RenderCommand::Resource(r0) => match *r0 {
+                        ResourceCommand::CreateMesh { request, id, .. } if id == mesh => {
+                            Some(request)
+                        }
+                        _ => None,
+                    },
                     _ => None,
                 })
                 .expect("expected mesh create command")
@@ -855,11 +845,12 @@ mod tests {
             commands
                 .into_iter()
                 .find_map(|command| match command {
-                    RenderCommand::Resource(ResourceCommand::CreateMaterial {
-                        request,
-                        id,
-                        ..
-                    }) if id == material => Some(request),
+                    RenderCommand::Resource(r0) => match *r0 {
+                        ResourceCommand::CreateMaterial { request, id, .. } if id == material => {
+                            Some(request)
+                        }
+                        _ => None,
+                    },
                     _ => None,
                 })
                 .expect("expected material create command")
@@ -885,11 +876,12 @@ mod tests {
             commands
                 .into_iter()
                 .find_map(|command| match command {
-                    RenderCommand::Resource(ResourceCommand::CreateMaterial {
-                        request,
-                        id,
-                        ..
-                    }) if id == material => Some(request),
+                    RenderCommand::Resource(r0) => match *r0 {
+                        ResourceCommand::CreateMaterial { request, id, .. } if id == material => {
+                            Some(request)
+                        }
+                        _ => None,
+                    },
                     _ => None,
                 })
                 .expect("expected static material create command")
@@ -918,11 +910,12 @@ mod tests {
             commands
                 .into_iter()
                 .find_map(|command| match command {
-                    RenderCommand::Resource(ResourceCommand::CreateMaterial {
-                        request,
-                        id,
-                        ..
-                    }) if id == material => Some(request),
+                    RenderCommand::Resource(r0) => match *r0 {
+                        ResourceCommand::CreateMaterial { request, id, .. } if id == material => {
+                            Some(request)
+                        }
+                        _ => None,
+                    },
                     _ => None,
                 })
                 .expect("expected material create command")
@@ -957,11 +950,12 @@ mod tests {
             commands
                 .into_iter()
                 .find_map(|command| match command {
-                    RenderCommand::Resource(ResourceCommand::CreateMaterial {
-                        request,
-                        id,
-                        ..
-                    }) if id == material => Some(request),
+                    RenderCommand::Resource(r0) => match *r0 {
+                        ResourceCommand::CreateMaterial { request, id, .. } if id == material => {
+                            Some(request)
+                        }
+                        _ => None,
+                    },
                     _ => None,
                 })
                 .expect("expected material create command")

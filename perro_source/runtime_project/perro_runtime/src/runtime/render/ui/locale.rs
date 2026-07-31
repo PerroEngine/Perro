@@ -4,7 +4,7 @@ use super::Runtime;
 use crate::runtime::state::{LocaleTextBinding, LocaleTextField};
 use perro_ids::{NodeID, string_to_u64};
 use perro_nodes::SceneNodeData;
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 impl Runtime {
     pub(crate) fn add_locale_text_binding(
@@ -118,14 +118,14 @@ impl Runtime {
                 if label.text.as_ref() == text {
                     return false;
                 }
-                label.text = Cow::Borrowed(text);
+                label.text = Arc::from(text);
                 true
             }
             (SceneNodeData::Label2D(label), LocaleTextField::LabelText) => {
                 if label.text.as_ref() == text {
                     return false;
                 }
-                label.text = Cow::Borrowed(text);
+                label.text = Arc::from(text);
                 true
             }
             (SceneNodeData::Label3D(label), LocaleTextField::LabelText) => {
@@ -139,7 +139,7 @@ impl Runtime {
                 if text_box.inner.text.as_ref() == text {
                     return false;
                 }
-                text_box.inner.text = Cow::Borrowed(text);
+                text_box.inner.text = Arc::from(text);
                 text_box.inner.caret = text_box.inner.text.len();
                 text_box.inner.anchor = text_box.inner.caret;
                 true
@@ -148,7 +148,7 @@ impl Runtime {
                 if text_block.inner.text.as_ref() == text {
                     return false;
                 }
-                text_block.inner.text = Cow::Borrowed(text);
+                text_block.inner.text = Arc::from(text);
                 text_block.inner.caret = text_block.inner.text.len();
                 text_block.inner.anchor = text_block.inner.caret;
                 true
@@ -157,14 +157,14 @@ impl Runtime {
                 if text_box.inner.placeholder.as_ref() == text {
                     return false;
                 }
-                text_box.inner.placeholder = Cow::Borrowed(text);
+                text_box.inner.placeholder = Arc::from(text);
                 true
             }
             (SceneNodeData::UiTextBlock(text_block), LocaleTextField::TextEditPlaceholder) => {
                 if text_block.inner.placeholder.as_ref() == text {
                     return false;
                 }
-                text_block.inner.placeholder = Cow::Borrowed(text);
+                text_block.inner.placeholder = Arc::from(text);
                 true
             }
             _ => false,

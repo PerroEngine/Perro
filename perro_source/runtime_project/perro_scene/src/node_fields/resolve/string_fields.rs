@@ -344,6 +344,21 @@ pub(in super::super) fn resolve_node_field_for_type(
             "blend_min_distance" | "blend_min_size" => Some(NodeField::MeshInstance3D(
                 MeshInstance3DField::BlendMinDistance,
             )),
+            "blend_noise_factor" | "blend_noise" => Some(NodeField::MeshInstance3D(
+                MeshInstance3DField::BlendNoiseFactor,
+            )),
+            "blend_noise_scale" => Some(NodeField::MeshInstance3D(
+                MeshInstance3DField::BlendNoiseScale,
+            )),
+            "blend_slope_factor" | "slope_factor" => Some(NodeField::MeshInstance3D(
+                MeshInstance3DField::BlendSlopeFactor,
+            )),
+            "blend_strength" => Some(NodeField::MeshInstance3D(
+                MeshInstance3DField::BlendStrength,
+            )),
+            "blend_salt_instances" | "salt_instances" => Some(NodeField::MeshInstance3D(
+                MeshInstance3DField::BlendSaltInstances,
+            )),
             _ => None,
         },
         NodeType::MultiMeshInstance3D => match field {
@@ -384,6 +399,21 @@ pub(in super::super) fn resolve_node_field_for_type(
             )),
             "blend_min_distance" | "blend_min_size" => Some(NodeField::MeshInstance3D(
                 MeshInstance3DField::BlendMinDistance,
+            )),
+            "blend_noise_factor" | "blend_noise" => Some(NodeField::MeshInstance3D(
+                MeshInstance3DField::BlendNoiseFactor,
+            )),
+            "blend_noise_scale" => Some(NodeField::MeshInstance3D(
+                MeshInstance3DField::BlendNoiseScale,
+            )),
+            "blend_slope_factor" | "slope_factor" => Some(NodeField::MeshInstance3D(
+                MeshInstance3DField::BlendSlopeFactor,
+            )),
+            "blend_strength" => Some(NodeField::MeshInstance3D(
+                MeshInstance3DField::BlendStrength,
+            )),
+            "blend_salt_instances" | "salt_instances" => Some(NodeField::MeshInstance3D(
+                MeshInstance3DField::BlendSaltInstances,
             )),
             _ => None,
         },

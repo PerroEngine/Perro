@@ -111,24 +111,36 @@ pub(super) fn ui_root_mut_from_data(data: &mut SceneNodeData) -> Option<&mut UiN
 pub(super) fn ui_scroll_content_rect(
     data: &SceneNodeData,
     content: ComputedUiRect,
+    content_scale: f32,
 ) -> ComputedUiRect {
     let SceneNodeData::UiScrollContainer(node) = data else {
         return content;
     };
-    let content = content.inset(ui_scrollbar_content_inset(node, content));
+    let content = content.inset(ui_scrollbar_content_inset(node, content, content_scale));
     ComputedUiRect::new(
         content.center + Vector2::new(-node.scroll.x, node.scroll.y),
         content.size,
     )
 }
 
-pub(super) fn ui_scrollbar_thickness(rect: ComputedUiRect) -> f32 {
-    6.0_f32.min(rect.size.x.min(rect.size.y) * 0.20).max(2.0)
+pub(super) fn ui_scrollbar_thickness(rect: ComputedUiRect, content_scale: f32) -> f32 {
+    let scale = if content_scale.is_finite() && content_scale > 0.0 {
+        content_scale
+    } else {
+        1.0
+    };
+    (6.0 * scale)
+        .min(rect.size.x.min(rect.size.y) * 0.20)
+        .max(2.0 * scale)
 }
 
-pub(super) fn ui_scrollbar_padding(scroller: &perro_ui::UiScrollContainer, thickness: f32) -> f32 {
+pub(super) fn ui_scrollbar_padding(
+    scroller: &perro_ui::UiScrollContainer,
+    thickness: f32,
+    content_scale: f32,
+) -> f32 {
     if scroller.scroll_bar_padding >= 0.0 {
-        scroller.scroll_bar_padding
+        scroller.scroll_bar_padding * content_scale
     } else {
         thickness
     }
@@ -137,9 +149,10 @@ pub(super) fn ui_scrollbar_padding(scroller: &perro_ui::UiScrollContainer, thick
 pub(super) fn ui_scrollbar_content_inset(
     scroller: &perro_ui::UiScrollContainer,
     rect: ComputedUiRect,
+    content_scale: f32,
 ) -> perro_ui::UiRect {
-    let amount =
-        ui_scrollbar_thickness(rect) + ui_scrollbar_padding(scroller, ui_scrollbar_thickness(rect));
+    let thickness = ui_scrollbar_thickness(rect, content_scale);
+    let amount = thickness + ui_scrollbar_padding(scroller, thickness, content_scale);
     match scroller.scroll_dir {
         perro_ui::UiScrollDirection::Horizontal => match scroller.scroll_bar_side {
             perro_ui::UiScrollBarSide::Top | perro_ui::UiScrollBarSide::Left => {
@@ -166,8 +179,9 @@ pub(super) fn ui_scroll_child_rect(
     child_transform: &UiTransform,
     content: ComputedUiRect,
     size: Vector2,
+    content_scale: f32,
 ) -> ComputedUiRect {
-    let child_content = content.inset(child_layout.margin);
+    let child_content = content.inset(ui_margin_scaled(child_layout.margin, content_scale));
     let h_align = match scroll_dir {
         perro_ui::UiScrollDirection::Horizontal => UiHorizontalAlign::Left,
         perro_ui::UiScrollDirection::Vertical => match child_layout.anchor.direction().x {
@@ -195,8 +209,9 @@ pub(super) fn ui_scrollbar_command(
     clip_rect: [f32; 4],
     max_scroll: Vector2,
     effective_z: i32,
+    content_scale: f32,
 ) -> Option<UiCommand> {
-    let bar_rect = ui_scrollbar_rect(scroller, rect, max_scroll)?;
+    let bar_rect = ui_scrollbar_rect(scroller, rect, max_scroll, content_scale)?;
     Some(UiCommand::UpsertShape {
         node,
         rect: UiRectState {
@@ -218,8 +233,9 @@ pub(super) fn ui_scrollbar_rect(
     scroller: &perro_ui::UiScrollContainer,
     rect: ComputedUiRect,
     max_scroll: Vector2,
+    content_scale: f32,
 ) -> Option<ComputedUiRect> {
-    let thickness = ui_scrollbar_thickness(rect);
+    let thickness = ui_scrollbar_thickness(rect, content_scale);
     Some(match scroller.scroll_dir {
         perro_ui::UiScrollDirection::Horizontal => {
             if max_scroll.x <= 0.0 || rect.size.x <= 0.0 {
@@ -266,11 +282,12 @@ pub(super) fn ui_scrollbar_track_rect(
     scroller: &perro_ui::UiScrollContainer,
     rect: ComputedUiRect,
     max_scroll: Vector2,
+    content_scale: f32,
 ) -> Option<ComputedUiRect> {
     if max_scroll.x <= 0.0 && max_scroll.y <= 0.0 {
         return None;
     }
-    let thickness = ui_scrollbar_thickness(rect);
+    let thickness = ui_scrollbar_thickness(rect, content_scale);
     match scroller.scroll_dir {
         perro_ui::UiScrollDirection::Horizontal if max_scroll.x > 0.0 => {
             let y = match scroller.scroll_bar_side {
@@ -408,9 +425,10 @@ pub(super) fn ui_fill_width(
     layout: &UiLayoutData,
     parent_layout: &UiLayoutData,
     available: f32,
+    content_scale: f32,
 ) -> f32 {
     if layout.h_size == UiSizeMode::Fill || parent_layout.h_align == UiHorizontalAlign::Fill {
-        (available - layout.margin.horizontal()).max(0.0)
+        (available - layout.margin.horizontal() * content_scale).max(0.0)
     } else {
         0.0
     }
@@ -420,12 +438,29 @@ pub(super) fn ui_fill_height(
     layout: &UiLayoutData,
     parent_layout: &UiLayoutData,
     available: f32,
+    content_scale: f32,
 ) -> f32 {
     if layout.v_size == UiSizeMode::Fill || parent_layout.v_align == UiVerticalAlign::Fill {
-        (available - layout.margin.vertical()).max(0.0)
+        (available - layout.margin.vertical() * content_scale).max(0.0)
     } else {
         0.0
     }
+}
+
+/// Layout margins are authored in virtual-canvas px; scale them with the
+/// uniform content scale so they stay proportional on any window size.
+pub(super) fn ui_margin_scaled(margin: perro_ui::UiRect, content_scale: f32) -> perro_ui::UiRect {
+    let scale = if content_scale.is_finite() && content_scale > 0.0 {
+        content_scale
+    } else {
+        1.0
+    };
+    perro_ui::UiRect::new(
+        margin.left * scale,
+        margin.top * scale,
+        margin.right * scale,
+        margin.bottom * scale,
+    )
 }
 
 pub(super) fn ui_h_spacing_amount(spacing_ratio: f32, container_width: f32) -> f32 {
@@ -599,6 +634,7 @@ pub(super) fn ui_command_from_node(
             rect,
             clip_rect,
             scale,
+            virtual_font_scale,
             &panel.style,
             modulate,
         )),
@@ -622,11 +658,11 @@ pub(super) fn ui_command_from_node(
             kind: shape.kind,
             fill: Runtime::color_modulate_rgba(shape.fill.to_rgba(), modulate),
             stroke: Runtime::color_modulate_rgba(shape.stroke.to_rgba(), modulate),
-            stroke_width: shape.stroke_width * ui_style_scale(scale),
+            stroke_width: shape.stroke_width * ui_style_scale(scale) * virtual_font_scale,
         }),
         SceneNodeData::UiButton(button) => {
             let style = button_style(button, button_state);
-            let style_scale = ui_style_scale(scale);
+            let style_scale = ui_style_scale(scale) * virtual_font_scale;
             Some(UiCommand::UpsertButton {
                 node,
                 rect,
@@ -646,7 +682,7 @@ pub(super) fn ui_command_from_node(
         }
         SceneNodeData::UiDropdown(dropdown) => {
             let style = button_style(&dropdown.button, button_state);
-            let style_scale = ui_style_scale(scale);
+            let style_scale = ui_style_scale(scale) * virtual_font_scale;
             Some(UiCommand::UpsertButton {
                 node,
                 rect,
@@ -666,7 +702,7 @@ pub(super) fn ui_command_from_node(
         }
         SceneNodeData::UiCheckbox(checkbox) => {
             let style = checkbox_style(checkbox, button_state);
-            let style_scale = ui_style_scale(scale);
+            let style_scale = ui_style_scale(scale) * virtual_font_scale;
             Some(UiCommand::UpsertCheckbox {
                 node,
                 rect,
@@ -691,16 +727,22 @@ pub(super) fn ui_command_from_node(
             node,
             rect,
             clip_rect,
-            text: std::sync::Arc::from(label.text.as_ref()),
+            text: label.text.clone(),
             color: Runtime::color_modulate(label.color, modulate),
             font_size: {
-                let (base, node_scale) =
+                // Rect-ratio text is already viewport-relative through its
+                // rect; only fixed-px fallback text takes the virtual scale.
+                let (base, node_scale, viewport_scale) =
                     if let Some(px) = text_size_from_rect_ratio(rect.size, label.text_size_ratio) {
-                        (px, 1.0)
+                        (px, 1.0, 1.0)
                     } else {
-                        (fallback_text_size(label.font_size), ui_font_scale(scale))
+                        (
+                            fallback_text_size(label.font_size),
+                            ui_font_scale(scale),
+                            virtual_font_scale,
+                        )
                     };
-                resolve_font_size(base, node_scale, virtual_font_scale, label.font_sizing)
+                resolve_font_size(base, node_scale, viewport_scale, label.font_sizing)
             },
             font: label.font.clone(),
             wrap_width: None,
@@ -1149,41 +1191,6 @@ pub(super) fn snap_computed_ui_rect(
 pub(super) fn ui_pivot_state(transform: &UiTransform) -> [f32; 2] {
     let pivot = transform.pivot.resolve(Vector2::new(1.0, 1.0));
     [pivot.x, pivot.y]
-}
-
-pub(super) fn ui_command_matches_node(
-    command: &UiCommand,
-    data: &SceneNodeData,
-    command_ctx: UiCommandCtx,
-    button_state: UiButtonVisualState,
-    focused_text_edit: Option<NodeID>,
-) -> bool {
-    let node = match command {
-        UiCommand::UpsertPanel { node, .. }
-        | UiCommand::UpsertProgressBar { node, .. }
-        | UiCommand::UpsertShape { node, .. }
-        | UiCommand::UpsertColorWheel { node, .. }
-        | UiCommand::UpsertButton { node, .. }
-        | UiCommand::UpsertCheckbox { node, .. }
-        | UiCommand::UpsertLabel { node, .. }
-        | UiCommand::UpsertImage { node, .. }
-        | UiCommand::UpsertNineSlice { node, .. }
-        | UiCommand::UpsertTextEdit { node, .. }
-        | UiCommand::RemoveNode { node } => *node,
-        UiCommand::Clear => NodeID::nil(),
-    };
-    let Some(expected) = ui_command_from_node(
-        data,
-        UiCommandCtx {
-            node,
-            ..command_ctx
-        },
-        button_state,
-        focused_text_edit,
-    ) else {
-        return false;
-    };
-    *command == expected
 }
 
 pub(super) fn ui_font_scale(scale: Vector2) -> f32 {

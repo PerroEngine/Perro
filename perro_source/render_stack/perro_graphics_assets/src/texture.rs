@@ -43,13 +43,17 @@ pub fn encode_rgba_image(
         .ok_or_else(|| format!("image path has no extension: {path}"))?;
     let format = image::ImageFormat::from_extension(extension)
         .ok_or_else(|| format!("unsupported image extension: {extension}"))?;
-    let rgba = image::RgbaImage::from_raw(width, height, rgba.to_vec())
-        .ok_or_else(|| "invalid rgba image buffer".to_string())?;
-    let image = image::DynamicImage::ImageRgba8(rgba);
+    // encode straight from the caller's slice: no owned RgbaImage copy.
     let mut out = Cursor::new(Vec::new());
-    image
-        .write_to(&mut out, format)
-        .map_err(|error| format!("image encode failed: {error}"))?;
+    image::write_buffer_with_format(
+        &mut out,
+        rgba,
+        width,
+        height,
+        image::ExtendedColorType::Rgba8,
+        format,
+    )
+    .map_err(|error| format!("image encode failed: {error}"))?;
     Ok(out.into_inner())
 }
 
@@ -81,6 +85,27 @@ pub fn load_texture_rgba(source: &str) -> Option<(Vec<u8>, u32, u32)> {
     decode_image_rgba(&bytes)
 }
 
+/// `load_texture_rgba` returning `Arc<[u8]>`. SVG cache hits hand out the
+/// cached Arc by refcount (no full-buffer copy); consumers that store the
+/// pixels behind an Arc (`DecodedTextureRgba`) adopt it without converting.
+pub fn load_texture_rgba_arc(source: &str) -> Option<(Arc<[u8]>, u32, u32)> {
+    let (path, fragment) = split_source_fragment(source);
+    if (path.ends_with(".glb") || path.ends_with(".gltf"))
+        && let Some(texture_index) = parse_fragment_index(fragment, "tex")
+            .or_else(|| parse_fragment_index(fragment, "texture"))
+            .or_else(|| parse_fragment_index(fragment, "img"))
+    {
+        return decode_gltf_texture(path, texture_index as usize)
+            .map(|(rgba, width, height)| (rgba.into(), width, height));
+    }
+
+    let bytes = load_asset(source).ok()?;
+    if source.ends_with(".ptex") {
+        return decode_ptex(&bytes).map(|(rgba, width, height)| (rgba.into(), width, height));
+    }
+    decode_image_rgba_arc(&bytes)
+}
+
 pub fn gltf_texture_source_from_mesh_source(mesh_source: &str, slot: u32) -> Option<String> {
     let (path, _) = split_source_fragment(mesh_source);
     if !(path.ends_with(".glb") || path.ends_with(".gltf")) {
@@ -91,20 +116,33 @@ pub fn gltf_texture_source_from_mesh_source(mesh_source: &str, slot: u32) -> Opt
 
 pub fn decode_image_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
     if looks_like_svg(bytes) {
-        return decode_svg_rgba(bytes);
+        return decode_svg_rgba(bytes)
+            .map(|(rgba, width, height)| (rgba.as_ref().to_vec(), width, height));
     }
     if bytes.starts_with(PTEX_MAGIC) {
         return decode_ptex(bytes);
     }
     let image = image::load_from_memory(bytes).ok()?;
-    let rgba = image.to_rgba8();
+    // into_rgba8 consumes the DynamicImage: no source + RGBA copy alive at once.
+    let rgba = image.into_rgba8();
     let (w, h) = rgba.dimensions();
     Some((rgba.into_raw(), w.max(1), h.max(1)))
 }
 
+/// `decode_image_rgba` returning `Arc<[u8]>`. SVG cache hits share the cached
+/// raster by refcount instead of copying it; raster/ptex decodes pay the same
+/// single Vec -> Arc conversion their Arc-storing callers already paid.
+pub fn decode_image_rgba_arc(bytes: &[u8]) -> Option<(Arc<[u8]>, u32, u32)> {
+    if looks_like_svg(bytes) {
+        return decode_svg_rgba(bytes);
+    }
+    decode_image_rgba(bytes).map(|(rgba, width, height)| (rgba.into(), width, height))
+}
+
 pub fn decode_image_rgba_max_size(bytes: &[u8], max_dim: u32) -> Option<(Vec<u8>, u32, u32)> {
     if looks_like_svg(bytes) {
-        return decode_svg_rgba_max_size(bytes, max_dim);
+        return decode_svg_rgba_max_size(bytes, max_dim)
+            .map(|(rgba, width, height)| (rgba.as_ref().to_vec(), width, height));
     }
     if bytes.starts_with(PTEX_MAGIC) {
         let (rgba, width, height) = decode_ptex(bytes)?;
@@ -114,11 +152,12 @@ pub fn decode_image_rgba_max_size(bytes: &[u8], max_dim: u32) -> Option<(Vec<u8>
     let (width, height) = (image.width().max(1), image.height().max(1));
     let target = fit_size((width, height), max_dim.max(1));
     let rgba = if target == (width, height) {
-        image.to_rgba8()
+        image.into_rgba8()
     } else {
-        image
-            .resize_exact(target.0, target.1, image::imageops::FilterType::Lanczos3)
-            .to_rgba8()
+        let resized = image.resize_exact(target.0, target.1, image::imageops::FilterType::Lanczos3);
+        // drop full-size source before the RGBA conversion of the resized copy.
+        drop(image);
+        resized.into_rgba8()
     };
     Some((rgba.into_raw(), target.0, target.1))
 }
@@ -146,13 +185,13 @@ fn looks_like_svg(bytes: &[u8]) -> bool {
     src.starts_with("<svg") || src.starts_with("<?xml") && src.contains("<svg")
 }
 
-fn decode_svg_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
+fn decode_svg_rgba(bytes: &[u8]) -> Option<(Arc<[u8]>, u32, u32)> {
     let cache_key = svg_cache_key(bytes);
     let (logical_size, raster_size) = svg_sizes(bytes)?;
     decode_svg_rgba_sized(bytes, cache_key, logical_size, raster_size)
 }
 
-fn decode_svg_rgba_max_size(bytes: &[u8], max_dim: u32) -> Option<(Vec<u8>, u32, u32)> {
+fn decode_svg_rgba_max_size(bytes: &[u8], max_dim: u32) -> Option<(Arc<[u8]>, u32, u32)> {
     let cache_key = svg_cache_key(bytes);
     let (logical_size, _) = svg_sizes(bytes)?;
     let raster_size = fit_size(logical_size, max_dim.max(1));
@@ -164,9 +203,10 @@ fn decode_svg_rgba_sized(
     cache_key: u64,
     logical_size: (u32, u32),
     raster_size: (u32, u32),
-) -> Option<(Vec<u8>, u32, u32)> {
+) -> Option<(Arc<[u8]>, u32, u32)> {
     if let Some(rgba) = load_svg_rgba_cache_entry(cache_key, raster_size) {
-        return Some((rgba.as_ref().to_vec(), raster_size.0, raster_size.1));
+        // refcount share of the cached raster: hits copy nothing.
+        return Some((rgba, raster_size.0, raster_size.1));
     }
     let options = resvg::usvg::Options::default();
     let tree = resvg::usvg::Tree::from_data(bytes, &options).ok()?;
@@ -192,7 +232,7 @@ fn decode_svg_rgba_sized(
     let _ = logical_size;
     let rgba: Arc<[u8]> = rgba.into();
     store_svg_rgba_cache_entry(cache_key, raster_size, Arc::clone(&rgba));
-    Some((rgba.as_ref().to_vec(), width, height))
+    Some((rgba, width, height))
 }
 
 fn svg_target_size(bytes: &[u8]) -> Option<(u32, u32)> {
@@ -340,8 +380,10 @@ fn svg_rgba_cache() -> &'static Mutex<SvgRgbaCache> {
     SVG_RGBA_CACHE.get_or_init(|| Mutex::new(SvgRgbaCache::new(SVG_RGBA_CACHE_MAX_BYTES)))
 }
 
-#[cfg(test)]
-fn clear_svg_caches() {
+/// Drop every cached SVG raster + size entry. The rasters are process-global
+/// (keyed by content hash) and otherwise only shrink via LRU pressure; callers
+/// with a scene-teardown hook can reclaim them eagerly here.
+pub fn clear_svg_caches() {
     if let Ok(mut cache) = svg_size_cache().lock() {
         cache.clear();
     }
@@ -483,37 +525,87 @@ fn size_component(value: f32) -> Option<u32> {
 
 pub fn decode_gltf_texture(source_path: &str, texture_index: usize) -> Option<(Vec<u8>, u32, u32)> {
     let bytes = load_asset(source_path).ok()?;
-    let (doc, _buffers, images) = gltf::import_slice(&bytes).ok()?;
+    // this runs once per material texture slot on the same .glb, so decode
+    // ONLY the target image; import_slice would re-decode every embedded
+    // image on each call.
+    let gltf::Gltf {
+        document: doc,
+        blob,
+    } = gltf::Gltf::from_slice(&bytes).ok()?;
     let texture = doc.textures().nth(texture_index)?;
-    let image_index = texture.source().index();
-    let image = images.get(image_index)?;
-    let (width, height) = (image.width.max(1), image.height.max(1));
-    let rgba = match image.format {
-        gltf::image::Format::R8G8B8A8 => image.pixels.clone(),
-        gltf::image::Format::R8G8B8 => {
-            let mut out = Vec::with_capacity((width * height * 4) as usize);
-            for px in image.pixels.chunks_exact(3) {
-                out.extend_from_slice(&[px[0], px[1], px[2], 255]);
-            }
-            out
+    match texture.source().source() {
+        gltf::image::Source::View { view, mime_type } => {
+            let buffers = gltf::import_buffers(&doc, None, blob).ok()?;
+            let data = buffers.get(view.buffer().index())?;
+            let start = view.offset();
+            let end = start.checked_add(view.length())?;
+            decode_gltf_image_rgba(data.0.get(start..end)?, Some(mime_type))
         }
-        gltf::image::Format::R8G8 => {
-            let mut out = Vec::with_capacity((width * height * 4) as usize);
-            for px in image.pixels.chunks_exact(2) {
-                out.extend_from_slice(&[px[0], px[1], 0, 255]);
-            }
-            out
+        gltf::image::Source::Uri { .. } => {
+            // rare data-URI image path: keep the old full import (external
+            // file URIs already failed here with base = None).
+            let (doc, _buffers, images) = gltf::import_slice(&bytes).ok()?;
+            let texture = doc.textures().nth(texture_index)?;
+            let image = images.get(texture.source().index())?;
+            let (width, height) = (image.width.max(1), image.height.max(1));
+            let rgba = match image.format {
+                gltf::image::Format::R8G8B8A8 => image.pixels.clone(),
+                gltf::image::Format::R8G8B8 => expand_rgb8(&image.pixels, width, height),
+                gltf::image::Format::R8G8 => expand_rg8(&image.pixels, width, height),
+                gltf::image::Format::R8 => expand_r8(&image.pixels, width, height),
+                _ => return None,
+            };
+            Some((rgba, width, height))
         }
-        gltf::image::Format::R8 => {
-            let mut out = Vec::with_capacity((width * height * 4) as usize);
-            for &v in &image.pixels {
-                out.extend_from_slice(&[v, v, v, 255]);
-            }
-            out
-        }
+    }
+}
+
+// mirrors the gltf importer's DynamicImage -> Format mapping + the old
+// Format -> RGBA8 expansion above, so output bytes stay identical.
+fn decode_gltf_image_rgba(bytes: &[u8], mime_type: Option<&str>) -> Option<(Vec<u8>, u32, u32)> {
+    let format = match mime_type {
+        Some("image/png") => Some(image::ImageFormat::Png),
+        Some("image/jpeg") => Some(image::ImageFormat::Jpeg),
+        Some("image/webp") => Some(image::ImageFormat::WebP),
+        _ => None,
+    };
+    let decoded = match format {
+        Some(format) => image::load_from_memory_with_format(bytes, format).ok()?,
+        None => image::load_from_memory(bytes).ok()?,
+    };
+    let (width, height) = (decoded.width().max(1), decoded.height().max(1));
+    let rgba = match decoded {
+        image::DynamicImage::ImageRgba8(img) => img.into_raw(),
+        image::DynamicImage::ImageRgb8(img) => expand_rgb8(&img.into_raw(), width, height),
+        image::DynamicImage::ImageLumaA8(img) => expand_rg8(&img.into_raw(), width, height),
+        image::DynamicImage::ImageLuma8(img) => expand_r8(&img.into_raw(), width, height),
         _ => return None,
     };
     Some((rgba, width, height))
+}
+
+fn expand_rgb8(pixels: &[u8], width: u32, height: u32) -> Vec<u8> {
+    let mut out = Vec::with_capacity((width * height * 4) as usize);
+    for px in pixels.chunks_exact(3) {
+        out.extend_from_slice(&[px[0], px[1], px[2], 255]);
+    }
+    out
+}
+
+fn expand_rg8(pixels: &[u8], width: u32, height: u32) -> Vec<u8> {
+    let mut out = Vec::with_capacity((width * height * 4) as usize);
+    for px in pixels.chunks_exact(2) {
+        out.extend_from_slice(&[px[0], px[1], 0, 255]);
+    }
+    out
+}
+
+fn expand_r8(pixels: &[u8], width: u32, height: u32) -> Vec<u8> {
+    let mut out = Vec::with_capacity((width * height * 4) as usize);
+    for &v in pixels {
+        out.extend_from_slice(&[v, v, v, 255]);
+    }
+    out
 }
 
 pub fn decode_ptex(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {

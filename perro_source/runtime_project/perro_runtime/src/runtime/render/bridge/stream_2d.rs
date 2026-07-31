@@ -7,7 +7,14 @@ impl Runtime {
         stream_node: NodeID,
         stream_resolution: Option<[u32; 2]>,
     ) -> Arc<[Sprite2DCommand]> {
-        let mut out = Vec::new();
+        // take-pattern scratch: rebuilt every stream refresh, keep capacity.
+        let mut out = std::mem::take(&mut self.render_2d.stream_sprites_scratch);
+        out.clear();
+        // take-pattern scratch for nested sub-view rect computes (see
+        // prepare_nested_sub_views); avoids fresh hash containers per node.
+        let mut rect_computed = std::mem::take(&mut self.render_ui.nested_rect_computed_scratch);
+        let mut rect_scales = std::mem::take(&mut self.render_ui.nested_rect_scales_scratch);
+        let mut rect_auto = std::mem::take(&mut self.render_ui.nested_rect_auto_scratch);
         for idx in 0..self.camera_stream_node_scratch.len() {
             let node = self.camera_stream_node_scratch[idx];
             if node == stream_node
@@ -23,7 +30,14 @@ impl Runtime {
                 if !view.visible || !view.enabled {
                     return None;
                 }
-                let rect = self.nested_ui_sub_view_rect(stream_node, node, stream_resolution?)?;
+                let rect = self.nested_ui_sub_view_rect(
+                    stream_node,
+                    node,
+                    stream_resolution?,
+                    &mut rect_computed,
+                    &mut rect_scales,
+                    &mut rect_auto,
+                )?;
                 Some((view.as_ref().clone(), rect))
             }) {
                 let model = perro_structs::Transform2D::new(
@@ -107,7 +121,9 @@ impl Runtime {
                         _ => None,
                     })
             else {
-                let tilemap_data = self
+                // Header only (no tiles clone): tiles are read by reference in
+                // the shared per-node cache pass below.
+                let tilemap_meta = self
                     .nodes
                     .get(node)
                     .and_then(|node_ref| match &node_ref.data {
@@ -118,47 +134,66 @@ impl Runtime {
                                     tilemap.render_layers,
                                 ) =>
                         {
-                            Some((
-                                tilemap.tileset.clone(),
-                                tilemap.width,
-                                tilemap.height,
-                                tilemap.empty_tile,
-                                tilemap.tiles.clone(),
-                                tilemap.transform,
-                                tilemap.z_index,
-                            ))
+                            Some((tilemap.tileset.clone(), tilemap.transform))
                         }
                         _ => None,
                     });
-                if let Some((
-                    tileset_source,
-                    width,
-                    height,
-                    empty_tile,
-                    tiles,
-                    local_transform,
-                    z_index,
-                )) = tilemap_data
+                if let Some((tileset_source, local_transform)) = tilemap_meta
                     && let Some(tileset) = resolve_tileset_2d(self, &tileset_source)
                     && let Some(texture) =
                         self.resolve_tilemap_texture(node, tileset.texture.as_ref())
                 {
-                    let base_model = self
+                    let global_transform = self
                         .stream_render_transform_2d(node, stream_node)
-                        .unwrap_or(local_transform)
-                        .to_mat3()
-                        .to_cols_array_2d();
-                    out.extend(build_tilemap_sprites(TilemapSpriteBuild {
-                        texture,
-                        width,
-                        height,
-                        z_index,
-                        empty_tile,
-                        tint: self.effective_self_modulate(node),
-                        base_model,
-                        tiles: &tiles,
-                        tileset: &tileset,
-                    }));
+                        .unwrap_or(local_transform);
+                    let base_model = global_transform.to_mat3().to_cols_array_2d();
+                    let tint = self.effective_self_modulate(node);
+                    if let Some(scene_node) = self.nodes.get(node)
+                        && let SceneNodeData::TileMap2D(tilemap) = &scene_node.data
+                    {
+                        let signature = crate::runtime::render_2d::tilemap_render_signature(
+                            texture,
+                            &base_model,
+                            tint,
+                            &tileset,
+                            tilemap,
+                        );
+                        let cache = &mut self.render_2d.tilemap_render_cache;
+                        let sprites = match cache.get(&node) {
+                            Some(cached) if cached.signature == signature => cached.sprites.clone(),
+                            _ => {
+                                let sprites = build_tilemap_sprites(TilemapSpriteBuild {
+                                    texture,
+                                    width: tilemap.width,
+                                    height: tilemap.height,
+                                    z_index: tilemap.z_index,
+                                    empty_tile: tilemap.empty_tile,
+                                    tint,
+                                    base_model,
+                                    tiles: &tilemap.tiles,
+                                    tileset: &tileset,
+                                });
+                                let shadow_casters = if tilemap.collision_enabled {
+                                    crate::runtime::render_2d::build_tilemap_shadow_casters(
+                                        tilemap,
+                                        global_transform,
+                                        &tileset,
+                                    )
+                                } else {
+                                    Vec::new()
+                                };
+                                let entry = crate::runtime::state::TilemapRenderCache {
+                                    signature,
+                                    sprites: arc_slice_from_vec(sprites),
+                                    shadow_casters: arc_slice_from_vec(shadow_casters),
+                                };
+                                let sprites = entry.sprites.clone();
+                                cache.insert(node, entry);
+                                sprites
+                            }
+                        };
+                        out.extend_from_slice(&sprites);
+                    }
                 }
                 continue;
             };
@@ -182,7 +217,20 @@ impl Runtime {
                 z_index,
             });
         }
-        Arc::from(out)
+        rect_computed.clear();
+        rect_scales.clear();
+        rect_auto.clear();
+        self.render_ui.nested_rect_computed_scratch = rect_computed;
+        self.render_ui.nested_rect_scales_scratch = rect_scales;
+        self.render_ui.nested_rect_auto_scratch = rect_auto;
+        let sprites = if out.is_empty() {
+            empty_arc_slice()
+        } else {
+            Arc::from(out.as_slice())
+        };
+        out.clear();
+        self.render_2d.stream_sprites_scratch = out;
+        sprites
     }
 
     pub(super) fn collect_camera_stream_lights_2d(
@@ -227,7 +275,9 @@ impl Runtime {
                 shadow_samples: u32,
             },
         }
-        let mut out = Vec::new();
+        // take-pattern scratch: rebuilt every stream refresh, keep capacity.
+        let mut out = std::mem::take(&mut self.render_2d.stream_lights_scratch);
+        out.clear();
         for idx in 0..self.camera_stream_node_scratch.len() {
             let node = self.camera_stream_node_scratch[idx];
             if node == stream_node
@@ -392,7 +442,14 @@ impl Runtime {
                 None => {}
             }
         }
-        Arc::from(out)
+        let lights = if out.is_empty() {
+            empty_arc_slice()
+        } else {
+            Arc::from(out.as_slice())
+        };
+        out.clear();
+        self.render_2d.stream_lights_scratch = out;
+        lights
     }
 
     pub(super) fn collect_camera_stream_point_particles_2d(
@@ -400,7 +457,9 @@ impl Runtime {
         camera_mask: BitMask,
         stream_node: NodeID,
     ) -> Arc<[(NodeID, PointParticles2DState)]> {
-        let mut out = Vec::new();
+        // take-pattern scratch: rebuilt every stream refresh, keep capacity.
+        let mut out = std::mem::take(&mut self.render_2d.stream_particles_scratch);
+        out.clear();
         for idx in 0..self.camera_stream_node_scratch.len() {
             let node = self.camera_stream_node_scratch[idx];
             if node == stream_node
@@ -487,7 +546,14 @@ impl Runtime {
                 },
             ));
         }
-        Arc::from(out)
+        let particles = if out.is_empty() {
+            empty_arc_slice()
+        } else {
+            Arc::from(out.as_slice())
+        };
+        out.clear();
+        self.render_2d.stream_particles_scratch = out;
+        particles
     }
 
     pub(super) fn collect_camera_stream_waters_2d(
@@ -495,7 +561,9 @@ impl Runtime {
         camera_mask: BitMask,
         stream_node: NodeID,
     ) -> Arc<[(NodeID, Water2DState)]> {
-        let mut out = Vec::new();
+        // take-pattern scratch: rebuilt every stream refresh, keep capacity.
+        let mut out = std::mem::take(&mut self.render_2d.stream_waters_scratch);
+        out.clear();
         for idx in 0..self.camera_stream_node_scratch.len() {
             let node = self.camera_stream_node_scratch[idx];
             if node == stream_node
@@ -589,6 +657,13 @@ impl Runtime {
                 },
             ));
         }
-        Arc::from(out)
+        let waters = if out.is_empty() {
+            empty_arc_slice()
+        } else {
+            Arc::from(out.as_slice())
+        };
+        out.clear();
+        self.render_2d.stream_waters_scratch = out;
+        waters
     }
 }

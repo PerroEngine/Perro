@@ -16,6 +16,11 @@ use crate::types::AudioPan;
 
 pub const SAMPLE_RATE: u32 = 44_100;
 const BUILT_IN_MIXER_MAX_VOICES: usize = 4096;
+// Drain control channels every N samples (~1.45ms @ 44.1kHz) instead of a
+// try_recv per sample; matches the PARAM_REFRESH_SAMPLES cadence in dsp.rs.
+const CONTROL_DRAIN_SAMPLES: u32 = 64;
+// Frames per rustysynth render block; drained sample-wise by `next`.
+const RENDER_BLOCK_FRAMES: usize = 64;
 const SINE_TABLE_SIZE: usize = 2048;
 const SINE_TABLE_MASK: usize = SINE_TABLE_SIZE - 1;
 const ATTACK_STEP: f32 = 128.0 / SAMPLE_RATE as f32;
@@ -500,7 +505,7 @@ impl Voice {
         self.released = true;
     }
 
-    fn next_sample(&mut self) -> Option<f32> {
+    fn next_sample(&mut self, sine: &[f32; SINE_TABLE_SIZE]) -> Option<f32> {
         if self
             .auto_release_sample
             .is_some_and(|sample| self.age_samples >= sample)
@@ -519,7 +524,7 @@ impl Voice {
         }
 
         let raw = match self.wave {
-            WaveKind::Sine => fast_sine(self.phase),
+            WaveKind::Sine => fast_sine(sine, self.phase),
             WaveKind::Square => {
                 if self.phase < std::f32::consts::PI {
                     1.0
@@ -546,8 +551,11 @@ impl Voice {
     }
 }
 
-fn fast_sine(phase: f32) -> f32 {
-    let table = SINE_TABLE.get_or_init(|| {
+/// Resolve the shared sine table once, at source construction (off the audio
+/// thread). Voices then index the borrowed table directly, so the per-sample
+/// path skips the `OnceLock` acquire-load + branch entirely.
+fn sine_table() -> &'static [f32; SINE_TABLE_SIZE] {
+    SINE_TABLE.get_or_init(|| {
         let mut table = [0.0f32; SINE_TABLE_SIZE];
         let mut i = 0usize;
         while i < SINE_TABLE_SIZE {
@@ -555,7 +563,11 @@ fn fast_sine(phase: f32) -> f32 {
             i += 1;
         }
         table
-    });
+    })
+}
+
+#[inline]
+fn fast_sine(table: &[f32; SINE_TABLE_SIZE], phase: f32) -> f32 {
     let idx = ((phase * (SINE_TABLE_SIZE as f32 / TAU)) as usize) & SINE_TABLE_MASK;
     table[idx]
 }
@@ -567,6 +579,8 @@ pub struct BuiltInMidiMixerSource {
     voice_index: HashMap<u64, usize>,
     rx: Receiver<MidiMixerControl>,
     stopped: bool,
+    sine: &'static [f32; SINE_TABLE_SIZE],
+    control_counter: u32,
 }
 
 impl BuiltInMidiMixerSource {
@@ -576,6 +590,8 @@ impl BuiltInMidiMixerSource {
             voice_index: HashMap::with_capacity(BUILT_IN_MIXER_MAX_VOICES),
             rx,
             stopped: false,
+            sine: sine_table(),
+            control_counter: 0,
         }
     }
 
@@ -630,11 +646,19 @@ impl Iterator for BuiltInMidiMixerSource {
         if self.stopped {
             return None;
         }
-        self.process_controls();
+        // Drain the control channel every CONTROL_DRAIN_SAMPLES samples instead
+        // of per sample; sub-2ms command latency stays inaudible.
+        if self.control_counter == 0 {
+            self.process_controls();
+        }
+        self.control_counter += 1;
+        if self.control_counter >= CONTROL_DRAIN_SAMPLES {
+            self.control_counter = 0;
+        }
         let mut mixed = 0.0;
         let mut i = 0usize;
         while i < self.voices.len() {
-            if let Some(sample) = self.voices[i].next_sample() {
+            if let Some(sample) = self.voices[i].next_sample(self.sine) {
                 mixed += sample;
                 i += 1;
             } else {
@@ -684,12 +708,17 @@ pub struct BuiltInMidiSource {
     stopped: bool,
     volume: f32,
     current_program: MidiProgram,
+    sine: &'static [f32; SINE_TABLE_SIZE],
+    control_counter: u32,
 }
 
 impl BuiltInMidiSource {
     pub fn note(request: MidiNoteRequest, rx: Receiver<MidiControl>) -> Self {
         let mut source = Self {
-            voices: Vec::new(),
+            // A note source only ever holds this one voice (its events are at
+            // most the auto NoteOff), so capacity 1 keeps the audio thread
+            // allocation-free without paying the mixer-sized buffer.
+            voices: Vec::with_capacity(1),
             events: Arc::from(Vec::<MidiEvent>::new().into_boxed_slice()),
             event_index: 0,
             sample: 0,
@@ -699,6 +728,8 @@ impl BuiltInMidiSource {
             stopped: false,
             volume: request.options.volume.max(0.0),
             current_program: request.options.program,
+            sine: sine_table(),
+            control_counter: 0,
         };
         source.voices.push(Voice::new(
             request.note,
@@ -733,7 +764,9 @@ impl BuiltInMidiSource {
             .looped
             .then_some(data.end_sample.max(SAMPLE_RATE as u64 / 2));
         Self {
-            voices: Vec::new(),
+            // Preallocate the full voice cap so NoteOn pushes on the audio
+            // thread never grow the vec; `push_file_voice` enforces the cap.
+            voices: Vec::with_capacity(BUILT_IN_MIXER_MAX_VOICES),
             events: data.events.clone(),
             event_index: 0,
             sample: 0,
@@ -743,6 +776,8 @@ impl BuiltInMidiSource {
             stopped: false,
             volume: song.volume.max(0.0),
             current_program: MidiProgram::default(),
+            sine: sine_table(),
+            control_counter: 0,
         }
     }
 
@@ -760,6 +795,15 @@ impl BuiltInMidiSource {
         }
     }
 
+    /// Push a file voice, stealing the oldest when the cap is hit so the
+    /// preallocated vec never grows on the audio thread.
+    fn push_file_voice(&mut self, voice: Voice) {
+        if self.voices.len() >= BUILT_IN_MIXER_MAX_VOICES {
+            self.voices.swap_remove(0);
+        }
+        self.voices.push(voice);
+    }
+
     fn process_events(&mut self) {
         while self
             .events
@@ -772,9 +816,7 @@ impl BuiltInMidiSource {
                     note,
                     velocity,
                     program,
-                } => self
-                    .voices
-                    .push(Voice::new(note, velocity, self.volume, program)),
+                } => self.push_file_voice(Voice::new(note, velocity, self.volume, program)),
                 MidiEventKind::NoteOff { note } => {
                     for voice in &mut self.voices {
                         if voice.note == note {
@@ -803,12 +845,20 @@ impl Iterator for BuiltInMidiSource {
         if self.stopped {
             return None;
         }
-        self.process_controls();
+        // Controls drain on the shared 64-sample cadence; events stay
+        // per-sample for accurate note timing.
+        if self.control_counter == 0 {
+            self.process_controls();
+        }
+        self.control_counter += 1;
+        if self.control_counter >= CONTROL_DRAIN_SAMPLES {
+            self.control_counter = 0;
+        }
         self.process_events();
         let mut mixed = 0.0;
         let mut i = 0usize;
         while i < self.voices.len() {
-            if let Some(sample) = self.voices[i].next_sample() {
+            if let Some(sample) = self.voices[i].next_sample(self.sine) {
                 mixed += sample;
                 i += 1;
             } else {
@@ -850,6 +900,50 @@ impl Source for BuiltInMidiSource {
     }
 }
 
+/// Reusable stereo render block: rustysynth renders up to
+/// [`RENDER_BLOCK_FRAMES`] frames at once and `next` drains them sample-wise,
+/// replacing the old per-sample `render(&mut [f32; 1], ..)` calls.
+struct StereoBlock {
+    left: [f32; RENDER_BLOCK_FRAMES],
+    right: [f32; RENDER_BLOCK_FRAMES],
+    /// Frames rendered into the block.
+    frames: usize,
+    /// Next interleaved sample index in `0..frames * 2`.
+    pos: usize,
+}
+
+impl StereoBlock {
+    fn new() -> Self {
+        Self {
+            left: [0.0; RENDER_BLOCK_FRAMES],
+            right: [0.0; RENDER_BLOCK_FRAMES],
+            frames: 0,
+            pos: 0,
+        }
+    }
+
+    #[inline]
+    fn take(&mut self) -> Option<f32> {
+        if self.pos >= self.frames * 2 {
+            return None;
+        }
+        let frame = self.pos / 2;
+        let sample = if self.pos.is_multiple_of(2) {
+            self.left[frame]
+        } else {
+            self.right[frame]
+        };
+        self.pos += 1;
+        Some(sample)
+    }
+
+    #[inline]
+    fn rendered(&mut self, frames: usize) {
+        self.frames = frames;
+        self.pos = 0;
+    }
+}
+
 pub struct RustyNoteMixerSource {
     synth: Synthesizer,
     rx: Receiver<SoundFontMixerControl>,
@@ -857,7 +951,7 @@ pub struct RustyNoteMixerSource {
     auto_releases: Vec<(u64, u64)>,
     sample: u64,
     stopped: bool,
-    next_right: Option<f32>,
+    block: StereoBlock,
 }
 
 impl RustyNoteMixerSource {
@@ -871,7 +965,7 @@ impl RustyNoteMixerSource {
             auto_releases: Vec::with_capacity(BUILT_IN_MIXER_MAX_VOICES),
             sample: 0,
             stopped: false,
-            next_right: None,
+            block: StereoBlock::new(),
         })
     }
 
@@ -925,20 +1019,28 @@ impl Iterator for RustyNoteMixerSource {
     type Item = f32;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(right) = self.next_right.take() {
-            return Some(right);
+        if let Some(sample) = self.block.take() {
+            return Some(sample);
         }
         if self.stopped {
             return None;
         }
         self.process_controls();
         self.process_auto_releases();
-        let mut left = [0.0f32];
-        let mut right = [0.0f32];
-        self.synth.render(&mut left, &mut right);
-        self.sample = self.sample.saturating_add(1);
-        self.next_right = Some(right[0]);
-        Some(left[0])
+        // Cap the block at the nearest auto-release deadline so note-offs stay
+        // sample-accurate despite block rendering.
+        let mut frames = RENDER_BLOCK_FRAMES as u64;
+        for (deadline, _) in &self.auto_releases {
+            frames = frames.min(deadline.saturating_sub(self.sample).max(1));
+        }
+        let frames = frames as usize;
+        self.synth.render(
+            &mut self.block.left[..frames],
+            &mut self.block.right[..frames],
+        );
+        self.sample = self.sample.saturating_add(frames as u64);
+        self.block.rendered(frames);
+        self.block.take()
     }
 }
 
@@ -974,7 +1076,7 @@ pub struct RustyNoteSource {
     released: bool,
     stopped: bool,
     silent_run: u32,
-    next_right: Option<f32>,
+    block: StereoBlock,
 }
 
 impl RustyNoteSource {
@@ -1008,7 +1110,7 @@ impl RustyNoteSource {
             released: false,
             stopped: false,
             silent_run: 0,
-            next_right: None,
+            block: StereoBlock::new(),
         })
     }
 
@@ -1036,13 +1138,16 @@ impl Iterator for RustyNoteSource {
     type Item = f32;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(right) = self.next_right.take() {
-            return Some(right);
+        if let Some(sample) = self.block.take() {
+            return Some(sample);
         }
         if self.stopped {
             return None;
         }
         self.process_controls();
+        if self.stopped {
+            return None;
+        }
         if self
             .release_at
             .is_some_and(|release_at| release_at <= self.sample)
@@ -1061,19 +1166,41 @@ impl Iterator for RustyNoteSource {
                 return None;
             }
         }
-        let mut left = [0.0f32];
-        let mut right = [0.0f32];
-        self.synth.render(&mut left, &mut right);
-        self.sample = self.sample.saturating_add(1);
+        // Cap the block so the pending release / deadline sample lands exactly
+        // on a block boundary and stays sample-accurate.
+        let mut frames = RENDER_BLOCK_FRAMES as u64;
+        if let Some(release_at) = self.release_at {
+            frames = frames.min(release_at.saturating_sub(self.sample).max(1));
+        }
+        if let Some(deadline) = self.release_deadline {
+            frames = frames.min(deadline.saturating_sub(self.sample).max(1));
+        }
+        let frames = frames as usize;
+        self.synth.render(
+            &mut self.block.left[..frames],
+            &mut self.block.right[..frames],
+        );
+        self.sample = self.sample.saturating_add(frames as u64);
+        let mut emit_frames = frames;
         if self.released {
-            if left[0].abs() + right[0].abs() < Self::SILENCE_FLOOR {
-                self.silent_run = self.silent_run.saturating_add(1);
-            } else {
-                self.silent_run = 0;
+            for frame in 0..frames {
+                if self.block.left[frame].abs() + self.block.right[frame].abs()
+                    < Self::SILENCE_FLOOR
+                {
+                    self.silent_run = self.silent_run.saturating_add(1);
+                    if self.silent_run >= Self::SILENCE_END_SAMPLES {
+                        // Emit up to and including the frame that crossed the
+                        // threshold; the next refill returns None.
+                        emit_frames = frame + 1;
+                        break;
+                    }
+                } else {
+                    self.silent_run = 0;
+                }
             }
         }
-        self.next_right = Some(right[0]);
-        Some(left[0])
+        self.block.rendered(emit_frames);
+        self.block.take()
     }
 }
 
@@ -1100,7 +1227,7 @@ pub struct RustyFileSource {
     rx: Receiver<MidiControl>,
     looped: bool,
     stopped: bool,
-    next_right: Option<f32>,
+    block: StereoBlock,
 }
 
 impl RustyFileSource {
@@ -1121,7 +1248,7 @@ impl RustyFileSource {
             rx,
             looped,
             stopped: false,
-            next_right: None,
+            block: StereoBlock::new(),
         })
     }
 }
@@ -1130,22 +1257,27 @@ impl Iterator for RustyFileSource {
     type Item = f32;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(right) = self.next_right.take() {
-            return Some(right);
+        if let Some(sample) = self.block.take() {
+            return Some(sample);
         }
         if self.stopped || (!self.looped && self.sequencer.end_of_sequence()) {
             return None;
         }
+        // Controls drain once per rendered block (~1.45ms) instead of per sample.
         while let Ok(cmd) = self.rx.try_recv() {
             match cmd {
                 MidiControl::Release | MidiControl::Stop => self.stopped = true,
             }
         }
-        let mut left = [0.0f32];
-        let mut right = [0.0f32];
-        self.sequencer.render(&mut left, &mut right);
-        self.next_right = Some(right[0]);
-        Some(left[0])
+        if self.stopped {
+            return None;
+        }
+        self.sequencer.render(
+            &mut self.block.left[..RENDER_BLOCK_FRAMES],
+            &mut self.block.right[..RENDER_BLOCK_FRAMES],
+        );
+        self.block.rendered(RENDER_BLOCK_FRAMES);
+        self.block.take()
     }
 }
 

@@ -69,7 +69,7 @@ fn load_gltf_material(path: &str, fragment: Option<&str>) -> Option<Material3D> 
 }
 
 fn load_gltf_material_from_bytes(bytes: &[u8], fragment: Option<&str>) -> Option<Material3D> {
-    let (doc, _buffers, _images) = gltf::import_slice(bytes).ok()?;
+    let doc = gltf::Gltf::from_slice(bytes).ok()?.document;
     let index = parse_fragment_index(fragment, &["mat", "material"]).unwrap_or(0) as usize;
 
     let material = doc.materials().nth(index);

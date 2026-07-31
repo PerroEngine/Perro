@@ -237,7 +237,9 @@ macro_rules! define_scene_nodes {
             pub name: Cow<'static, str>,
             pub parent: NodeID,
             pub children: Vec<NodeID>,
-            pub tags: Vec<NodeTag>,
+            /// Bare tag ids; display names live in the global
+            /// `perro_ids` tag-name registry (see [`NodeTag::intern`]).
+            pub tags: Vec<TagID>,
         }
 
         #[derive(Clone, Debug)]
@@ -303,31 +305,32 @@ macro_rules! define_scene_nodes {
                 self.children = children.map(Into::into).unwrap_or_default();
             }
 
-            pub fn get_tags(&self) -> &[NodeTag] {
+            pub fn get_tags(&self) -> &[TagID] {
                 &self.tags
             }
 
-            pub fn get_tag_ids(&self) -> Vec<TagID> {
-                self.tags.iter().map(NodeTag::id).collect()
+            /// Borrowed view of the node's tag ids (no allocation).
+            pub fn get_tag_ids(&self) -> &[TagID] {
+                &self.tags
             }
 
             pub fn set_tag_ids<T>(&mut self, tags: Option<T>)
             where
                 T: Into<Vec<TagID>>,
             {
-                self.tags = tags
-                    .map(Into::into)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(NodeTag::from)
-                    .collect();
+                self.tags = tags.map(Into::into).unwrap_or_default();
             }
 
             pub fn set_tags<T>(&mut self, tags: Option<T>)
             where
                 T: Into<Vec<NodeTag>>,
             {
-                self.tags = tags.map(Into::into).unwrap_or_default();
+                self.tags = tags
+                    .map(Into::into)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(NodeTag::intern)
+                    .collect();
             }
 
             pub const fn node_type(&self) -> NodeType {
@@ -399,11 +402,11 @@ macro_rules! define_scene_nodes {
             where
                 T: Into<NodeTag>,
             {
-                self.tags.push(tag.into());
+                self.tags.push(tag.into().intern());
             }
 
             pub fn remove_tag(&mut self, tag: TagID) {
-                self.tags.retain(|t| t.id != tag);
+                self.tags.retain(|t| *t != tag);
             }
 
             pub fn clear_tags(&mut self) {
@@ -411,10 +414,10 @@ macro_rules! define_scene_nodes {
             }
 
             pub fn has_tag(&self, tag: TagID) -> bool {
-                self.tags.iter().any(|node_tag| node_tag.id == tag)
+                self.tags.contains(&tag)
             }
 
-            pub fn tags_slice(&self) -> &[NodeTag] {
+            pub fn tags_slice(&self) -> &[TagID] {
                 self.get_tags()
             }
 
@@ -865,9 +868,9 @@ define_scene_nodes! {
         VideoPlayer2D => (Node2D, VideoPlayer2D, Inline, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         Label2D => (Node2D, Label2D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         NineSlice2D => (Node2D, NineSlice2D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        AnimatedSprite2D => (Node2D, AnimatedSprite2D, Inline, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
-        TileMap2D => (Node2D, TileMap2D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::True),
-        ParticleEmitter2D => (Node2D, ParticleEmitter2D, Inline, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
+        AnimatedSprite2D => (Node2D, AnimatedSprite2D, Boxed, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
+        TileMap2D => (Node2D, TileMap2D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::True),
+        ParticleEmitter2D => (Node2D, ParticleEmitter2D, Boxed, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         WaterBody2D => (Node2D, WaterBody2D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::True),
 
         // lights
@@ -885,10 +888,10 @@ define_scene_nodes! {
 
         // physics
         CollisionShape2D => (Node2D, CollisionShape2D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        StaticBody2D => (Node2D, StaticBody2D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
+        StaticBody2D => (Node2D, StaticBody2D, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         Area2D => (Node2D, Area2D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
-        RigidBody2D => (Node2D, RigidBody2D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
-        CharacterBody2D => (Node2D, CharacterBody2D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
+        RigidBody2D => (Node2D, RigidBody2D, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
+        CharacterBody2D => (Node2D, CharacterBody2D, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         PhysicsForceEmitter2D => (Node2D, PhysicsForceEmitter2D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         PinJoint2D => (Node2D, PinJoint2D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         DistanceJoint2D => (Node2D, DistanceJoint2D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
@@ -904,19 +907,19 @@ define_scene_nodes! {
         Node3D => (None, Node3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
 
         // camera
-        Camera3D => (Node3D, Camera3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        Camera3D => (Node3D, Camera3D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
 
         // visual
         SubView3D => (Node3D, SubView3D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         CameraStream3D => (Node3D, CameraStream3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        MeshInstance3D => (Node3D, MeshInstance3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        MeshInstance3D => (Node3D, MeshInstance3D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         MultiMeshInstance3D => (Node3D, MultiMeshInstance3D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         Sprite3D => (Node3D, Sprite3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        VideoPlayer3D => (Node3D, VideoPlayer3D, Inline, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
-        Label3D => (Node3D, Label3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        ParticleEmitter3D => (Node3D, ParticleEmitter3D, Inline, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
+        VideoPlayer3D => (Node3D, VideoPlayer3D, Boxed, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
+        Label3D => (Node3D, Label3D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        ParticleEmitter3D => (Node3D, ParticleEmitter3D, Boxed, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         WaterBody3D => (Node3D, WaterBody3D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::True),
-        Decal3D => (Node3D, Decal3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        Decal3D => (Node3D, Decal3D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         Sky3D => (None, Sky3D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
 
         // lights
@@ -934,10 +937,10 @@ define_scene_nodes! {
 
         // physics
         CollisionShape3D => (Node3D, CollisionShape3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        StaticBody3D => (Node3D, StaticBody3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
-        Area3D => (Node3D, Area3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
+        StaticBody3D => (Node3D, StaticBody3D, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
+        Area3D => (Node3D, Area3D, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         RigidBody3D => (Node3D, RigidBody3D, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
-        CharacterBody3D => (Node3D, CharacterBody3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
+        CharacterBody3D => (Node3D, CharacterBody3D, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         PhysicsForceEmitter3D => (Node3D, PhysicsForceEmitter3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         BallJoint3D => (Node3D, BallJoint3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         HingeJoint3D => (Node3D, HingeJoint3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
@@ -950,7 +953,7 @@ define_scene_nodes! {
     }
     ui: {
         // core
-        UiNode => (None, UiNode, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        UiNode => (None, UiNode, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
 
         // visual
         UiCameraStream => (UiNode, UiCameraStream, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
@@ -985,8 +988,8 @@ define_scene_nodes! {
         Webcam => (None, Webcam, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
 
         // animation
-        AnimationPlayer => (None, AnimationPlayer, Inline, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False),
-        AnimationTree => (None, AnimationTree, Inline, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False)
+        AnimationPlayer => (None, AnimationPlayer, Boxed, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False),
+        AnimationTree => (None, AnimationTree, Boxed, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False)
     }
 }
 

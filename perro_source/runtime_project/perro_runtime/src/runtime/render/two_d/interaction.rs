@@ -113,11 +113,23 @@ impl Runtime {
     pub(super) fn pointer_world_2d(&self, camera: Option<&Camera2DState>) -> Vector2 {
         let mouse = self.input.mouse_position();
         let viewport = self.input.viewport_size();
-        let screen = Vector2::new((mouse.x - 0.5) * viewport.x, (mouse.y - 0.5) * viewport.y);
+        // The renderer maps world -> screen with the aspect-fit virtual-canvas
+        // scale min(w/vw, h/vh) times zoom; picking must invert the same rule
+        // or hitboxes drift as soon as the window is not the design size.
+        let virtual_scale = self.ui_virtual_font_scale(viewport);
+        let screen = Vector2::new(
+            (mouse.x - 0.5) * viewport.x / virtual_scale,
+            (mouse.y - 0.5) * viewport.y / virtual_scale,
+        );
         let Some(camera) = camera else {
             return screen;
         };
-        let zoom = camera.zoom.max(0.0001);
+        // Match the renderer's zoom coercion: non-finite / non-positive -> 1.
+        let zoom = if camera.zoom.is_finite() && camera.zoom > 0.0 {
+            camera.zoom
+        } else {
+            1.0
+        };
         let x = screen.x / zoom;
         let y = screen.y / zoom;
         let sin = camera.rotation_radians.sin();
@@ -198,5 +210,69 @@ impl Runtime {
         }
         out.extend(custom.iter().copied());
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pointer_world_2d_inverts_renderer_virtual_scale() {
+        let mut runtime = Runtime::new();
+        runtime.project = Some(std::sync::Arc::new(
+            crate::runtime_project::RuntimeProject::new("Test", "."),
+        ));
+        runtime.set_viewport_size(3440, 1440);
+        // Window px; normalized mouse = (0.75, 0.75) (y flipped upward).
+        runtime.set_mouse_position(2580.0, 360.0);
+
+        let camera = Camera2DState {
+            position: [100.0, -50.0],
+            rotation_radians: 0.0,
+            zoom: 2.0,
+            ..Camera2DState::default()
+        };
+        let world = runtime.pointer_world_2d(Some(&camera));
+
+        // Renderer world->screen scale = min(3440/1920, 1440/1080) * zoom.
+        let virtual_scale = (3440.0_f32 / 1920.0).min(1440.0 / 1080.0);
+        let screen = Vector2::new((0.75 - 0.5) * 3440.0, (0.75 - 0.5) * 1440.0);
+        let expected = Vector2::new(
+            camera.position[0] + screen.x / (virtual_scale * camera.zoom),
+            camera.position[1] + screen.y / (virtual_scale * camera.zoom),
+        );
+        assert!(
+            (world.x - expected.x).abs() < 1e-3,
+            "{world:?} vs {expected:?}"
+        );
+        assert!(
+            (world.y - expected.y).abs() < 1e-3,
+            "{world:?} vs {expected:?}"
+        );
+
+        // Roundtrip world -> screen with the renderer rule lands on the cursor.
+        let back = Vector2::new(
+            (world.x - camera.position[0]) * virtual_scale * camera.zoom,
+            (world.y - camera.position[1]) * virtual_scale * camera.zoom,
+        );
+        assert!((back.x - screen.x).abs() < 1e-3);
+        assert!((back.y - screen.y).abs() < 1e-3);
+    }
+
+    #[test]
+    fn pointer_world_2d_is_identity_at_design_resolution() {
+        let mut runtime = Runtime::new();
+        runtime.project = Some(std::sync::Arc::new(
+            crate::runtime_project::RuntimeProject::new("Test", "."),
+        ));
+        runtime.set_viewport_size(1920, 1080);
+        runtime.set_mouse_position(1920.0, 540.0);
+        let camera = Camera2DState::default();
+        // zoom <= 0 coerces to 1.0 like the renderer, so the design-res
+        // mapping is exactly screen px from center.
+        let world = runtime.pointer_world_2d(Some(&camera));
+        assert!((world.x - 960.0).abs() < 1e-3, "{world:?}");
+        assert!(world.y.abs() < 1e-3, "{world:?}");
     }
 }

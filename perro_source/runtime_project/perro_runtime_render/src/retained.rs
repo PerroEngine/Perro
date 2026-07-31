@@ -1,10 +1,12 @@
 use ahash::{AHashMap, AHashSet};
 use perro_ids::{MeshID, NodeID, SignalID};
 use perro_render_bridge::{
-    AmbientLight3DState, Camera2DState, Camera3DState, Decal3DState, DenseInstancePose3D,
-    LODOptions3D, Material3D, MeshBlendOptions3D, MeshSurfaceBinding3D, PointLight3DState,
-    RayLight3DState, RenderEvent, RenderRequestID, SkeletonPalette, Sky3DState, SpotLight3DState,
-    Sprite2DCommand, UiCommand, UiRectState,
+    AmbientLight3DState, Camera2DState, Camera3DState, CameraStreamDraw3DState, Decal3DState,
+    DenseInstancePose3D, LODOptions3D, Light2DState, Material3D, MeshBlendOptions3D,
+    MeshSurfaceBinding3D, PointLight3DState, PointParticles2DState, PointParticles3DState,
+    RayLight3DState, RenderEvent, RenderRequestID, ShadowCaster2DState, SkeletonPalette,
+    Sky3DState, SpotLight3DState, Sprite2DCommand, UiCommand, UiRectState, Water2DState,
+    Water3DState,
 };
 use perro_structs::Vector2;
 use perro_ui::{ComputedUiRect, UiSizeMode, UiVector2};
@@ -169,7 +171,7 @@ pub struct Render2DState {
     pub visible_now: AHashSet<NodeID>,
     pub prev_visible: AHashSet<NodeID>,
     pub retained_sprites: AHashMap<NodeID, Sprite2DCommand>,
-    pub particle_path_cache: AHashMap<u64, perro_render_bridge::ParticleProfile2D>,
+    pub particle_path_cache: AHashMap<u64, Arc<perro_render_bridge::ParticleProfile2D>>,
     pub particle_path_cache_order: VecDeque<u64>,
     pub pending_particle_path_loads: AHashSet<u64>,
     pub particle_path_load_tx:
@@ -185,6 +187,18 @@ pub struct Render2DState {
     pub last_button_pointer: Option<(Vector2, bool)>,
     pub removed_nodes: Vec<NodeID>,
     pub force_full_scan_once: bool,
+    /// Per-node tilemap render cache. Rebuilding an NxM map emitted W*H
+    /// sprite commands (plus shadow casters) per dirty visit / stream
+    /// refresh; the signature covers everything the output depends on, so a
+    /// hit is a refcount clone.
+    pub tilemap_render_cache: AHashMap<NodeID, TilemapRenderCache>,
+    // take-pattern scratch for the per-stream 2D collectors: they rebuild
+    // their output every stream refresh, so reuse Vec capacity and only pay
+    // the final `Arc::from(slice)` copy per emit.
+    pub stream_sprites_scratch: Vec<Sprite2DCommand>,
+    pub stream_lights_scratch: Vec<Light2DState>,
+    pub stream_particles_scratch: Vec<(NodeID, PointParticles2DState)>,
+    pub stream_waters_scratch: Vec<(NodeID, Water2DState)>,
 }
 
 pub type Render2dSystem = Render2DState;
@@ -215,10 +229,16 @@ impl Render2DState {
             last_button_pointer: None,
             removed_nodes: Vec::new(),
             force_full_scan_once: false,
+            tilemap_render_cache: AHashMap::default(),
+            stream_sprites_scratch: Vec::new(),
+            stream_lights_scratch: Vec::new(),
+            stream_particles_scratch: Vec::new(),
+            stream_waters_scratch: Vec::new(),
         }
     }
 
     pub fn note_removed_node(&mut self, node: NodeID) {
+        self.tilemap_render_cache.remove(&node);
         self.removed_nodes.push(node);
     }
 
@@ -352,7 +372,20 @@ pub struct RenderUiState {
     pub command_seen: AHashSet<NodeID>,
     pub dirty_entries_scratch: Vec<(NodeID, u16)>,
     pub all_ids_scratch: Vec<NodeID>,
-    pub parent_siblings_scratch: AHashMap<NodeID, Vec<NodeID>>,
+    /// dirty node -> its auto-layout ui parent; siblings resolve through
+    /// `layout_children_memo_scratch` so no per-node Vec clones happen.
+    pub layout_parent_scratch: AHashMap<NodeID, NodeID>,
+    /// ui parent -> range into `layout_children_flat_scratch`.
+    pub layout_children_memo_scratch: AHashMap<NodeID, (u32, u32)>,
+    pub layout_children_flat_scratch: Vec<NodeID>,
+    /// Pool of node id vecs for `&self` layout walks (recursion safe: each
+    /// depth pops its own vec; steady state allocates nothing).
+    pub ui_node_vec_pool: RefCell<Vec<Vec<NodeID>>>,
+    /// Reused rect-compute containers for nested sub-view sizing (take
+    /// pattern; nested recursion falls back to fresh empty maps).
+    pub nested_rect_computed_scratch: AHashMap<NodeID, ComputedUiRect>,
+    pub nested_rect_scales_scratch: AHashMap<NodeID, Vector2>,
+    pub nested_rect_auto_scratch: AHashSet<NodeID>,
     pub traversal_child_scratch: Vec<NodeID>,
     pub visible_now: AHashSet<NodeID>,
     pub prev_visible: AHashSet<NodeID>,
@@ -432,7 +465,13 @@ impl RenderUiState {
             command_seen: AHashSet::default(),
             dirty_entries_scratch: Vec::new(),
             all_ids_scratch: Vec::new(),
-            parent_siblings_scratch: AHashMap::default(),
+            layout_parent_scratch: AHashMap::default(),
+            layout_children_memo_scratch: AHashMap::default(),
+            layout_children_flat_scratch: Vec::new(),
+            ui_node_vec_pool: RefCell::new(Vec::new()),
+            nested_rect_computed_scratch: AHashMap::default(),
+            nested_rect_scales_scratch: AHashMap::default(),
+            nested_rect_auto_scratch: AHashSet::default(),
             traversal_child_scratch: Vec::new(),
             visible_now: AHashSet::default(),
             prev_visible: AHashSet::default(),
@@ -477,6 +516,15 @@ impl RenderUiState {
 
     pub fn note_removed_node(&mut self, node: NodeID) {
         self.removed_nodes.push(node);
+    }
+
+    pub fn acquire_node_vec(&self) -> Vec<NodeID> {
+        self.ui_node_vec_pool.borrow_mut().pop().unwrap_or_default()
+    }
+
+    pub fn release_node_vec(&self, mut vec: Vec<NodeID>) {
+        vec.clear();
+        self.ui_node_vec_pool.borrow_mut().push(vec);
     }
 
     pub fn collect_extraction_plan<I, A, FP, FC>(
@@ -665,6 +713,9 @@ pub struct UiSizeClampBaseline {
     pub size_def: UiVector2,
     pub h_mode: UiSizeMode,
     pub v_mode: UiSizeMode,
+    /// Viewport the baseline was captured at. A window resize invalidates the
+    /// cached baseline so ratio-based min/max clamps track the new size.
+    pub viewport: Vector2,
 }
 
 pub struct Render3DState {
@@ -678,7 +729,7 @@ pub struct Render3DState {
     pub material_surface_sources: AHashMap<NodeID, Vec<Option<String>>>,
     pub material_surface_overrides: AHashMap<NodeID, Vec<Option<Material3D>>>,
     pub collision_debug_state: AHashMap<NodeID, CollisionDebugState>,
-    pub particle_path_cache: AHashMap<u64, perro_render_bridge::ParticleProfile3D>,
+    pub particle_path_cache: AHashMap<u64, Arc<perro_render_bridge::ParticleProfile3D>>,
     pub particle_path_cache_order: VecDeque<u64>,
     pub pending_particle_path_loads: AHashSet<u64>,
     pub particle_path_load_tx:
@@ -687,7 +738,9 @@ pub struct Render3DState {
         mpsc::Receiver<(String, Option<perro_render_bridge::ParticleProfile3D>)>,
     pub last_camera: Option<Camera3DState>,
     pub retained_ambient_lights: AHashMap<NodeID, AmbientLight3DState>,
-    pub retained_skies: AHashMap<NodeID, Sky3DState>,
+    // Arc: shared with the SetSky payload and the camera-stream sky reuse
+    // path, so a retained hit is a refcount bump instead of a rebuild.
+    pub retained_skies: AHashMap<NodeID, Arc<Sky3DState>>,
     pub retained_ray_lights: AHashMap<NodeID, RayLight3DState>,
     pub retained_point_lights: AHashMap<NodeID, PointLight3DState>,
     pub retained_spot_lights: AHashMap<NodeID, SpotLight3DState>,
@@ -712,6 +765,14 @@ pub struct Render3DState {
     pub overlay_occluders_scratch: Vec<NodeID>,
     pub removed_nodes: Vec<NodeID>,
     pub force_full_scan_once: bool,
+    // take-pattern scratch for the per-stream 3D collectors (see the 2D
+    // equivalents on `Render2DState`).
+    pub stream_draws_scratch: Vec<CameraStreamDraw3DState>,
+    pub stream_ray_lights_scratch: Vec<(NodeID, RayLight3DState)>,
+    pub stream_point_lights_scratch: Vec<(NodeID, PointLight3DState)>,
+    pub stream_spot_lights_scratch: Vec<(NodeID, SpotLight3DState)>,
+    pub stream_particles_scratch: Vec<(NodeID, PointParticles3DState)>,
+    pub stream_waters_scratch: Vec<(NodeID, Water3DState)>,
 }
 
 pub type Render3dSystem = Render3DState;
@@ -758,6 +819,12 @@ impl Render3DState {
             overlay_occluders_scratch: Vec::new(),
             removed_nodes: Vec::new(),
             force_full_scan_once: false,
+            stream_draws_scratch: Vec::new(),
+            stream_ray_lights_scratch: Vec::new(),
+            stream_point_lights_scratch: Vec::new(),
+            stream_spot_lights_scratch: Vec::new(),
+            stream_particles_scratch: Vec::new(),
+            stream_waters_scratch: Vec::new(),
         }
     }
 
@@ -891,7 +958,14 @@ pub struct DenseInstancePoseCache {
     pub poses: Arc<[DenseInstancePose3D]>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
+pub struct TilemapRenderCache {
+    pub signature: u64,
+    pub sprites: Arc<[Sprite2DCommand]>,
+    pub shadow_casters: Arc<[ShadowCaster2DState]>,
+}
+
+#[derive(Debug, Clone)]
 pub struct RetainedMeshDrawState {
     pub mesh: MeshID,
     pub surfaces: Arc<[MeshSurfaceBinding3D]>,
@@ -903,6 +977,34 @@ pub struct RetainedMeshDrawState {
     pub blend: MeshBlendOptions3D,
     pub cast_shadows: bool,
     pub receive_shadows: bool,
+}
+
+// Hand-written: the derived eq walks surfaces + palettes + blend weights
+// element-wise every retained-diff. Unchanged nodes reuse the exact same Arcs
+// frame to frame, so pointer identity short-circuits the deep compares.
+impl PartialEq for RetainedMeshDrawState {
+    fn eq(&self, other: &Self) -> bool {
+        fn skeleton_eq(a: Option<&SkeletonPalette>, b: Option<&SkeletonPalette>) -> bool {
+            match (a, b) {
+                (None, None) => true,
+                (Some(a), Some(b)) => {
+                    Arc::ptr_eq(&a.matrices, &b.matrices) || a.matrices == b.matrices
+                }
+                _ => false,
+            }
+        }
+        self.mesh == other.mesh
+            && self.meshlet_override == other.meshlet_override
+            && self.lod == other.lod
+            && self.blend == other.blend
+            && self.cast_shadows == other.cast_shadows
+            && self.receive_shadows == other.receive_shadows
+            && self.instances == other.instances
+            && (Arc::ptr_eq(&self.surfaces, &other.surfaces) || self.surfaces == other.surfaces)
+            && (Arc::ptr_eq(&self.blend_shape_weights, &other.blend_shape_weights)
+                || self.blend_shape_weights == other.blend_shape_weights)
+            && skeleton_eq(self.skeleton.as_ref(), other.skeleton.as_ref())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -951,10 +1053,43 @@ pub struct CollisionDebugState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use perro_ids::TextureID;
+    use perro_ids::{MeshID, TextureID};
 
     fn node(raw: u64) -> NodeID {
         NodeID::from_u64(raw)
+    }
+
+    fn retained_mesh_state(blend: MeshBlendOptions3D) -> RetainedMeshDrawState {
+        RetainedMeshDrawState {
+            mesh: MeshID::new(1),
+            surfaces: Arc::from([]),
+            instances: RetainedMeshInstanceState::Single(glam::Mat4::IDENTITY.to_cols_array_2d()),
+            skeleton: None,
+            blend_shape_weights: Arc::from([]),
+            meshlet_override: None,
+            lod: LODOptions3D::default(),
+            blend,
+            cast_shadows: true,
+            receive_shadows: true,
+        }
+    }
+
+    #[test]
+    fn retained_mesh_eq_detects_screen_seam_field_changes() {
+        let base = retained_mesh_state(MeshBlendOptions3D::default());
+        assert_eq!(base, retained_mesh_state(MeshBlendOptions3D::default()));
+
+        let mut slope = MeshBlendOptions3D::default();
+        slope.slope_factor = 0.0;
+        assert_ne!(base, retained_mesh_state(slope));
+
+        let mut strength = MeshBlendOptions3D::default();
+        strength.strength = 0.5;
+        assert_ne!(base, retained_mesh_state(strength));
+
+        let mut salt = MeshBlendOptions3D::default();
+        salt.salt_instances = false;
+        assert_ne!(base, retained_mesh_state(salt));
     }
 
     fn node_set(ids: &[NodeID]) -> AHashSet<NodeID> {

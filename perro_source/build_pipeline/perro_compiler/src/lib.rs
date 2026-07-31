@@ -12,6 +12,7 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
+    time::Instant,
 };
 
 include!("error.rs");

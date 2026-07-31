@@ -229,9 +229,7 @@ fn label_2d_emits_ui_label_with_world_rect() {
 
     assert!(commands.iter().any(|command| matches!(
         command,
-        RenderCommand::Ui(UiCommand::UpsertLabel { node, rect, text, .. })
-            if *node == label && text.as_ref() == "HP" && rect.center == [12.0, 8.0]
-    )));
+        RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertLabel { node, rect, text, .. } if *node == label && text.as_ref() == "HP" && rect.center == [12.0, 8.0]))));
 }
 
 #[test]
@@ -513,7 +511,7 @@ fn particle_emitter_2d_queues_point_particles() {
     };
     let expected_node = runtime
         .nodes
-        .insert(SceneNode::new(SceneNodeData::ParticleEmitter2D(emitter)));
+        .insert(SceneNode::new(SceneNodeData::from(emitter)));
 
     runtime.extract_render_2d_commands();
     let commands = collect_commands(&mut runtime);
@@ -673,17 +671,20 @@ fn sprite_requests_texture_once_until_created() {
     let first = collect_commands(&mut runtime);
     assert_eq!(first.len(), 1);
     let request = match &first[0] {
-        RenderCommand::Resource(ResourceCommand::CreateTexture {
-            request,
-            id,
-            source,
-            reserved,
-        }) => {
-            assert_eq!(source, "__default__");
-            assert!(!reserved);
-            assert!(id.is_nil());
-            *request
-        }
+        RenderCommand::Resource(r0) => match &**r0 {
+            ResourceCommand::CreateTexture {
+                request,
+                id,
+                source,
+                reserved,
+            } => {
+                assert_eq!(source, "__default__");
+                assert!(!reserved);
+                assert!(id.is_nil());
+                *request
+            }
+            _ => panic!("expected CreateTexture"),
+        },
         _ => panic!("expected CreateTexture"),
     };
 
@@ -716,23 +717,26 @@ fn texture_create_from_rgba_queues_runtime_texture() {
     let commands = collect_commands(&mut runtime);
     assert_eq!(commands.len(), 1);
     let request = match &commands[0] {
-        RenderCommand::Resource(ResourceCommand::CreateRuntimeTexture {
-            request,
-            id,
-            source,
-            reserved,
-            width,
-            height,
-            rgba: command_rgba,
-        }) => {
-            assert_eq!(*id, texture);
-            assert!(source.starts_with("runtime://texture/"));
-            assert!(!reserved);
-            assert_eq!(*width, 2);
-            assert_eq!(*height, 1);
-            assert_eq!(command_rgba.as_ref(), rgba.as_slice());
-            *request
-        }
+        RenderCommand::Resource(r0) => match &**r0 {
+            ResourceCommand::CreateRuntimeTexture {
+                request,
+                id,
+                source,
+                reserved,
+                width,
+                height,
+                rgba: command_rgba,
+            } => {
+                assert_eq!(*id, texture);
+                assert!(source.starts_with("runtime://texture/"));
+                assert!(!reserved);
+                assert_eq!(*width, 2);
+                assert_eq!(*height, 1);
+                assert_eq!(command_rgba.as_ref(), rgba.as_slice());
+                *request
+            }
+            _ => panic!("expected CreateRuntimeTexture"),
+        },
         _ => panic!("expected CreateRuntimeTexture"),
     };
 
@@ -822,15 +826,14 @@ fn texture_write_rgba_region_queues_region_command() {
     let commands = collect_commands(&mut runtime);
     assert!(matches!(
         &commands[0],
-        RenderCommand::Resource(ResourceCommand::WriteTextureRgbaRegion {
+        RenderCommand::Resource(r0) if matches!(&**r0, ResourceCommand::WriteTextureRgbaRegion {
             id,
             x: 1,
             y: 2,
             width: 2,
             height: 1,
             rgba,
-        }) if *id == texture && rgba.as_ref() == [1u8; 8]
-    ));
+        } if *id == texture && rgba.as_ref() == [1u8; 8])));
 }
 
 #[test]
@@ -867,9 +870,7 @@ fn texture_save_image_queues_save_command() {
     let commands = collect_commands(&mut runtime);
     assert!(matches!(
         &commands[0],
-        RenderCommand::Resource(ResourceCommand::SaveTextureImage { id, path })
-            if *id == texture && path == "user://shot.png"
-    ));
+        RenderCommand::Resource(r0) if matches!(&**r0, ResourceCommand::SaveTextureImage { id, path } if *id == texture && path == "user://shot.png")));
 }
 
 #[test]
@@ -898,9 +899,7 @@ fn camera_save_image_uses_camera_id_and_cleans_temp_target() {
         .expect("camera capture upsert");
     assert!(commands.iter().any(|command| matches!(
         command,
-        RenderCommand::Resource(ResourceCommand::SaveTextureImage { id, path })
-            if *id == output && path == "user://camera.png"
-    )));
+        RenderCommand::Resource(r0) if matches!(&**r0, ResourceCommand::SaveTextureImage { id, path } if *id == output && path == "user://camera.png"))));
 
     let cleanup = collect_commands(&mut runtime);
     assert!(cleanup.iter().any(|command| matches!(
@@ -922,9 +921,7 @@ fn texture_create_from_bytes_queues_runtime_texture_bytes() {
     assert_eq!(commands.len(), 1);
     assert!(matches!(
         &commands[0],
-        RenderCommand::Resource(ResourceCommand::CreateRuntimeTextureBytes { id, bytes: got, .. })
-            if *id == texture && got.as_ref() == bytes
-    ));
+        RenderCommand::Resource(r0) if matches!(&**r0, ResourceCommand::CreateRuntimeTextureBytes { id, bytes: got, .. } if *id == texture && got.as_ref() == bytes)));
 }
 
 #[test]
@@ -939,9 +936,7 @@ fn mesh_create_from_bytes_queues_runtime_mesh_bytes() {
     assert_eq!(commands.len(), 1);
     assert!(matches!(
         &commands[0],
-        RenderCommand::Resource(ResourceCommand::CreateRuntimeMeshBytes { id, bytes: got, .. })
-            if *id == mesh && got.as_ref() == bytes
-    ));
+        RenderCommand::Resource(r0) if matches!(&**r0, ResourceCommand::CreateRuntimeMeshBytes { id, bytes: got, .. } if *id == mesh && got.as_ref() == bytes)));
 }
 
 #[test]
@@ -1031,11 +1026,12 @@ fn sprite_keeps_retained_texture_while_replacement_texture_is_pending() {
     let pending_request = collect_commands(&mut runtime)
         .into_iter()
         .find_map(|command| match command {
-            RenderCommand::Resource(ResourceCommand::CreateTexture { request, id, .. })
-                if id == pending_texture =>
-            {
-                Some(request)
-            }
+            RenderCommand::Resource(r0) => match *r0 {
+                ResourceCommand::CreateTexture { request, id, .. } if id == pending_texture => {
+                    Some(request)
+                }
+                _ => None,
+            },
             _ => None,
         })
         .expect("expected pending texture create request");
@@ -1093,7 +1089,7 @@ fn animated_sprite_advances_frame_and_emits_region() {
     sprite.animations.push(animation);
     let expected_node = runtime
         .nodes
-        .insert(SceneNode::new(SceneNodeData::AnimatedSprite2D(sprite)));
+        .insert(SceneNode::new(SceneNodeData::from(sprite)));
     runtime
         .register_internal_node_schedules(expected_node, perro_nodes::NodeType::AnimatedSprite2D);
 
@@ -1264,11 +1260,9 @@ fn sprite_becoming_invisible_emits_remove_node() {
     )));
     assert!(second.iter().any(|command| matches!(
         command,
-        RenderCommand::Resource(ResourceCommand::SetSceneResourceRefs { textures, .. })
-            if textures.iter().any(|(texture, nodes)| {
+        RenderCommand::Resource(r0) if matches!(&**r0, ResourceCommand::SetSceneResourceRefs { textures, .. } if textures.iter().any(|(texture, nodes)| {
                 *texture == TextureID::from_parts(7, 0) && nodes == &vec![expected_node]
-            })
-    )));
+            })))));
 }
 
 #[test]

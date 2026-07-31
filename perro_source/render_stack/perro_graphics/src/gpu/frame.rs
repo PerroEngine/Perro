@@ -91,33 +91,34 @@ impl Gpu {
             .as_ref()
             .is_some_and(|three_d| three_d.decals_pending());
 
-        let three_d_content_changed = self.last_prepare_3d_camera.as_ref() != Some(&camera_3d)
-            || self.last_prepare_3d_lighting.as_ref() != Some(lighting_3d)
-            || self.last_prepare_3d_draws_revision != draws_3d_revision
-            || self.last_prepare_3d_decals_revision != decals_3d_revision
-            || decals_texture_pending
-            || self.last_prepare_3d_width != self.render_width
-            || self.last_prepare_3d_height != self.render_height;
+        let three_d_content_changed = self.three_d.is_some()
+            && (self.last_prepare_3d_camera.as_ref() != Some(&camera_3d)
+                || self.last_prepare_3d_lighting.as_ref() != Some(lighting_3d)
+                || self.last_prepare_3d_draws_revision != draws_3d_revision
+                || self.last_prepare_3d_decals_revision != decals_3d_revision
+                || decals_texture_pending
+                || self.last_prepare_3d_width != self.render_width
+                || self.last_prepare_3d_height != self.render_height);
 
         let needs_3d = !draws_3d.is_empty();
         let needs_particles_3d = !point_particles_3d.is_empty();
         let needs_water = !waters_2d.is_empty() || !waters_3d.is_empty();
-
-        let needs_3d_pipeline = has(DIRTY_3D)
-            || has(DIRTY_CAMERA_3D)
-            || has(DIRTY_LIGHTS_3D)
-            || has(DIRTY_RESOURCES)
-            || needs_3d
+        let has_3d_content = needs_3d
             || needs_particles_3d
             || needs_water
-            || post_requested
-            || three_d_content_changed;
+            || !decals_3d.is_empty()
+            || lighting_3d.sky.is_some()
+            || ui_primitive_depths.iter().any(Option::is_some);
+        let three_d_dirty =
+            has(DIRTY_3D) || has(DIRTY_CAMERA_3D) || has(DIRTY_LIGHTS_3D) || has(DIRTY_RESOURCES);
 
-        let needs_3d_prepare = has(DIRTY_3D)
-            || has(DIRTY_CAMERA_3D)
-            || has(DIRTY_LIGHTS_3D)
-            || has(DIRTY_RESOURCES)
-            || three_d_content_changed;
+        let needs_3d_pipeline = has_3d_content
+            || post_requested
+            || three_d_content_changed
+            || (self.three_d.is_some() && three_d_dirty);
+
+        let needs_3d_prepare =
+            needs_3d_pipeline && (has_3d_content || three_d_content_changed || three_d_dirty);
 
         let needs_3d_particles_path = has(DIRTY_PARTICLES_3D) || needs_particles_3d;
         let needs_3d_particles_prepare = needs_3d_particles_path
@@ -198,7 +199,7 @@ impl Gpu {
 
         let prepare_2d_start = Instant::now();
         let mut did_prepare_2d = false;
-        if needs_2d_prepare {
+        if needs_2d_prepare && has_2d_content {
             if self.two_d.is_none() {
                 self.two_d = Some(Gpu2D::new(
                     &self.device,
@@ -213,6 +214,7 @@ impl Gpu {
                     &self.queue,
                     Prepare2D {
                         resources,
+                        shared_textures: &mut self.shared_textures,
                         camera: camera_2d,
                         rects: rects_2d,
                         upload: upload_2d,
@@ -262,6 +264,14 @@ impl Gpu {
                 ));
             }
             if self.water.is_none() {
+                if self.two_d.is_none() {
+                    self.two_d = Some(Gpu2D::new(
+                        &self.device,
+                        self.render_format,
+                        self.sample_count,
+                        self.texture_filter,
+                    ));
+                }
                 let Some(two_d) = self.two_d.as_ref() else {
                     return timing;
                 };
@@ -305,6 +315,7 @@ impl Gpu {
         } else if !needs_water {
             if let Some(water) = self.water.as_mut() {
                 water.clear_active();
+                water.note_scene_color_idle(&self.device);
             }
             self.last_prepare_water_2d_revision = u64::MAX;
             self.last_prepare_water_3d_revision = u64::MAX;
@@ -377,6 +388,7 @@ impl Gpu {
                     &self.queue,
                     Prepare3D {
                         resources,
+                        shared_textures: &mut self.shared_textures,
                         camera: camera_3d.clone(),
                         lighting: lighting_3d,
                         draws: draws_3d,
@@ -469,7 +481,7 @@ impl Gpu {
         let mut exposure_settings = PresentExposureSettings::default();
         exposure_settings.apply_effects(camera_post_chain);
         exposure_settings.apply_effects(global_post_chain);
-        let accessibility_enabled = self.accessibility.has_settings(accessibility);
+        let accessibility_enabled = accessibility.color_blind.is_some();
         // The seam pass needs a sampleable offscreen scene texture, so it
         // forces the non-direct path while active.
         let blend_screen_active = self
@@ -519,7 +531,41 @@ impl Gpu {
             swap_view = Some(view);
         }
         let scene_view = self.post.scene_view().clone();
-        let intermediate_view = self.accessibility.intermediate_view().clone();
+        let intermediate_needed =
+            camera_post_enabled || global_post_enabled || accessibility_enabled;
+        if intermediate_needed {
+            if self.accessibility.is_none() {
+                let processor = VisualAccessibilityProcessor::new(
+                    &self.device,
+                    self.render_format,
+                    self.render_width,
+                    self.render_height,
+                );
+                self.present_intermediate_bind_group = Some(
+                    self.present
+                        .create_bind_group(&self.device, processor.intermediate_view()),
+                );
+                self.accessibility = Some(processor);
+            } else if let Some(processor) = self.accessibility.as_mut() {
+                // Re-promote an idle-released intermediate; the present bind
+                // group built on the old view is stale after recreation.
+                if processor.resize(&self.device, self.render_width, self.render_height) {
+                    self.present_intermediate_bind_group = Some(
+                        self.present
+                            .create_bind_group(&self.device, processor.intermediate_view()),
+                    );
+                }
+            }
+        } else if let Some(processor) = self.accessibility.as_mut()
+            && processor.note_idle_frame(&self.device)
+        {
+            self.present_intermediate_bind_group = None;
+        }
+        let intermediate_view = self
+            .accessibility
+            .as_ref()
+            .map(|processor| processor.intermediate_view().clone())
+            .unwrap_or_else(|| scene_view.clone());
         let color_view = if direct_present {
             let Some(view) = swap_view.as_ref() else {
                 timing.total = total_start.elapsed();
@@ -607,14 +653,7 @@ impl Gpu {
             let tone_map_stream = stream.tone_map_output
                 && !matches!(stream.source, CameraStreamSourceState::Webcam { .. });
             let needs_intermediate = has_stream_post || tone_map_stream;
-            let (
-                target_view,
-                post_input_view,
-                tonemap_input_view,
-                post_depth_view,
-                post_view_key,
-                render_texture,
-            ) = {
+            let (target_view, post_input_view, tonemap_input_view, post_depth_view, post_view_key) = {
                 let Some(target) = self.camera_stream_targets.get(node) else {
                     continue;
                 };
@@ -641,15 +680,6 @@ impl Gpu {
                         .as_ref()
                         .map(|depth| depth.create_view(&wgpu::TextureViewDescriptor::default())),
                     target.post_view_key,
-                    if needs_intermediate {
-                        target
-                            .post_input
-                            .as_ref()
-                            .expect("camera stream intermediate texture")
-                            .clone()
-                    } else {
-                        target.texture.clone()
-                    },
                 )
             };
             let Some(render_view) = (if needs_intermediate {
@@ -669,6 +699,7 @@ impl Gpu {
                 let source_view = stream_2d.ensure_sampled_texture_view(
                     &self.device,
                     &self.queue,
+                    &mut self.shared_textures,
                     resources,
                     *texture,
                     static_texture_lookup,
@@ -726,6 +757,7 @@ impl Gpu {
                         depth_view_key: post_view_key.wrapping_add(1),
                         static_shader_lookup,
                         static_texture_lookup,
+                        hdr_output: self.hdr_status.active,
                     };
                     let post_chain_data = PostProcessChainData {
                         input_view: &source_view,
@@ -796,6 +828,7 @@ impl Gpu {
                         camera,
                         stream.resolution[0],
                         stream.resolution[1],
+                        self.virtual_size_2d,
                     );
                     let empty_upload = RectUploadPlan {
                         full_reupload: true,
@@ -807,6 +840,7 @@ impl Gpu {
                         &self.queue,
                         Prepare2D {
                             resources,
+                            shared_textures: &mut self.shared_textures,
                             camera,
                             rects: &[],
                             upload: &empty_upload,
@@ -951,6 +985,7 @@ impl Gpu {
                         &self.queue,
                         Prepare3D {
                             resources,
+                            shared_textures: &mut self.shared_textures,
                             camera: camera.clone(),
                             lighting: &stream_lighting,
                             draws: &self.camera_stream_draws_scratch,
@@ -1034,14 +1069,22 @@ impl Gpu {
                             },
                         );
                         water.encode(&mut encoder);
-                        water.capture_scene_color(&mut encoder, &render_texture, render_view);
+                        water.capture_scene_color(&self.device, &mut encoder, render_view);
+                        // Streams render at 1x: water depth-tests against a
+                        // scene-depth copy (the scene depth target aliases the
+                        // sampled prepass texture).
+                        let water_depth_view =
+                            stream_3d.water_depth_attachment(&self.device, &mut encoder);
                         water.render_3d(
                             &mut encoder,
                             render_view,
-                            stream_3d.depth_view(),
+                            &water_depth_view,
                             stream_3d.water_camera_bind_group(),
                             false,
                         );
+                    }
+                    if stream.waters_3d.is_empty() {
+                        stream_3d.release_water_depth();
                     }
                     if has_stream_post {
                         stream_post_depth_view = Some(stream_3d.depth_prepass_view().clone());
@@ -1096,6 +1139,7 @@ impl Gpu {
                             overlay_camera,
                             stream.resolution[0],
                             stream.resolution[1],
+                            self.virtual_size_2d,
                         );
                         let empty_upload = RectUploadPlan {
                             full_reupload: true,
@@ -1107,6 +1151,7 @@ impl Gpu {
                             &self.queue,
                             Prepare2D {
                                 resources,
+                                shared_textures: &mut self.shared_textures,
                                 camera,
                                 rects: &[],
                                 upload: &empty_upload,
@@ -1201,6 +1246,7 @@ impl Gpu {
                         depth_view_key: post_view_key.wrapping_add(1),
                         static_shader_lookup,
                         static_texture_lookup,
+                        hdr_output: self.hdr_status.active,
                     };
                     let post_chain_data = PostProcessChainData {
                         input_view,
@@ -1268,15 +1314,34 @@ impl Gpu {
             if let Some(point_particles_3d_gpu) = self.point_particles_3d.as_mut() {
                 point_particles_3d_gpu.render_pass(&mut encoder, color_view, three_d.depth_view());
             }
-            if let Some(water) = self.water.as_ref() {
+            if let Some(water) = self.water.as_mut() {
                 let clear_water_depth = draws_3d.is_empty()
                     && point_particles_3d.is_empty()
                     && lighting_3d.sky.is_none();
-                water.capture_scene_color(&mut encoder, self.post.scene_texture(), color_view);
+                let water_depth_view = if waters_3d.is_empty() {
+                    // No 3D water: nothing attaches this view (chunk and flip
+                    // passes are gated on 3D water counts).
+                    three_d.release_water_depth();
+                    three_d.depth_view().clone()
+                } else {
+                    // Promote the lazily allocated refraction copy target
+                    // before the capture that fills it.
+                    water.set_scene_color_size(
+                        &self.device,
+                        three_d.depth_prepass_view(),
+                        self.render_width,
+                        self.render_height,
+                    );
+                    // At 1x this is a scene-depth copy: water samples the
+                    // prepass view while depth-testing, and the scene depth
+                    // target aliases the prepass texture.
+                    three_d.water_depth_attachment(&self.device, &mut encoder)
+                };
+                water.capture_scene_color(&self.device, &mut encoder, color_view);
                 water.render_3d(
                     &mut encoder,
                     color_view,
-                    three_d.depth_view(),
+                    &water_depth_view,
                     three_d.water_camera_bind_group(),
                     clear_water_depth,
                 );
@@ -1367,6 +1432,8 @@ impl Gpu {
         timing.encode_main = encode_start.elapsed();
 
         let post_start = Instant::now();
+        self.post
+            .set_constrained(self.max_render_pixels < MAX_FRAME_RENDER_PIXELS);
         #[derive(Clone, Copy)]
         enum FrameTex {
             Scene,
@@ -1393,6 +1460,7 @@ impl Gpu {
                 depth_view_key: view_key_base.wrapping_add(3),
                 static_shader_lookup,
                 static_texture_lookup,
+                hdr_output: self.hdr_status.active,
             };
             let Some(three_d) = self.three_d.as_ref() else {
                 return;
@@ -1412,6 +1480,11 @@ impl Gpu {
         if global_post_enabled {
             apply_post_chain(global_post_chain, &mut current_tex);
         }
+        if !camera_post_enabled && !global_post_enabled {
+            // Promoted ping / bloom scratch targets otherwise latch full-res
+            // after the last effect is removed.
+            self.post.note_idle_frame(&self.device);
+        }
         timing.post_process = post_start.elapsed();
 
         let accessibility_start = Instant::now();
@@ -1421,22 +1494,27 @@ impl Gpu {
                 FrameTex::Scene => (&scene_view, &intermediate_view, FrameTex::Intermediate),
                 FrameTex::Intermediate => (&intermediate_view, &scene_view, FrameTex::Scene),
             };
-            self.accessibility.apply(
-                &self.device,
-                &self.queue,
-                &mut encoder,
-                accessibility_input_view,
-                accessibility_output_view,
-                accessibility,
-            );
-            current_tex = next_tex;
+            if let Some(processor) = self.accessibility.as_mut() {
+                processor.apply(
+                    &self.device,
+                    &self.queue,
+                    &mut encoder,
+                    accessibility_input_view,
+                    accessibility_output_view,
+                    accessibility,
+                );
+                current_tex = next_tex;
+            }
         }
         timing.accessibility = accessibility_start.elapsed();
 
         if !direct_present && !msaa_direct_present {
             let final_bind_group = match current_tex {
                 FrameTex::Scene => &self.present_scene_bind_group,
-                FrameTex::Intermediate => &self.present_intermediate_bind_group,
+                FrameTex::Intermediate => self
+                    .present_intermediate_bind_group
+                    .as_ref()
+                    .expect("intermediate frame needs present bind group"),
             };
             let acquire_start = Instant::now();
             let acquire_surface_start = Instant::now();
@@ -1494,11 +1572,13 @@ impl Gpu {
             }
             if let (Some(ui), Some(output_view)) = (self.ui.as_mut(), swap_view.as_ref()) {
                 let viewport = [self.config.width.max(1), self.config.height.max(1)];
+                ui.set_max_render_pixels(self.max_render_pixels);
                 ui.prepare(
                     &self.device,
                     &self.queue,
                     UiPrepareInput {
                         resources,
+                        shared_textures: &mut self.shared_textures,
                         viewport,
                         primitives: ui_primitives,
                         primitive_depths: ui_primitive_depths,
@@ -1539,6 +1619,7 @@ impl Gpu {
                     &self.queue,
                     Prepare2D {
                         resources,
+                        shared_textures: &mut self.shared_textures,
                         camera: late_overlay_camera_2d,
                         rects: late_overlay_rects_2d,
                         upload: late_overlay_upload_2d,
@@ -1604,8 +1685,54 @@ impl Gpu {
             timing.present = present_start.elapsed();
             timing.presented = true;
         }
+        // Periodic refcount sweep: shared uploads whose consumer handles are
+        // all gone (stream teardown, invalidation, filter-mode change) free
+        // after a short grace instead of lingering for the session.
+        self.shared_texture_frame_counter = self.shared_texture_frame_counter.wrapping_add(1);
+        if self
+            .shared_texture_frame_counter
+            .is_multiple_of(SHARED_TEXTURE_SWEEP_INTERVAL_FRAMES)
+        {
+            self.shared_textures.sweep();
+        }
         timing.total = total_start.elapsed();
         timing
+    }
+
+    /// Periodic GC tick (driven by the backend's GC interval): give every
+    /// grow-only GPU buffer owner a chance to shrink back toward its current
+    /// usage. One heavy scene otherwise pins the high-water mark for the whole
+    /// session, which is brutal on shared-memory iGPUs.
+    pub fn shrink_gpu_buffers_tick(&mut self) {
+        let device = self.device.clone();
+        let queue = self.queue.clone();
+        if let Some(three_d) = self.three_d.as_mut() {
+            three_d.shrink_tick(&device, &queue);
+        }
+        if let Some(two_d) = self.two_d.as_mut() {
+            two_d.shrink_tick(&device, &queue);
+        }
+        if let Some(late_overlay_2d) = self.late_overlay_2d.as_mut() {
+            late_overlay_2d.shrink_tick(&device, &queue);
+        }
+        if let Some(particles) = self.point_particles_3d.as_mut() {
+            particles.shrink_tick(&device, &queue);
+        }
+        if let Some(water) = self.water.as_mut() {
+            water.shrink_tick(&device, &queue);
+        }
+        for three_d in self.camera_stream_3d.values_mut() {
+            three_d.shrink_tick(&device, &queue);
+        }
+        for two_d in self.camera_stream_2d.values_mut() {
+            two_d.shrink_tick(&device, &queue);
+        }
+        for particles in self.camera_stream_particles_3d.values_mut() {
+            particles.shrink_tick(&device, &queue);
+        }
+        for water in self.camera_stream_water.values_mut() {
+            water.shrink_tick(&device, &queue);
+        }
     }
 
     pub fn drain_water_samples(&mut self, out: &mut Vec<WaterSampleState>) {
@@ -1618,9 +1745,5 @@ impl Gpu {
         if let Some(water) = self.water.as_mut() {
             water.drain_body_samples(out);
         }
-    }
-
-    pub fn virtual_size() -> [f32; 2] {
-        Gpu2D::virtual_size()
     }
 }

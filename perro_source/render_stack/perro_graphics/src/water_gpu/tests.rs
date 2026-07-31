@@ -489,6 +489,18 @@ mod wgsl_validation_tests {
         parse_and_validate(WATER_WGSL, "water compute");
         parse_and_validate(WATER_3D_RENDER_WGSL, "water 3d render");
         parse_and_validate(&water_render_wgsl(), "water render composed");
+        parse_and_validate(WATER_SCENE_COLOR_BLIT_WGSL, "water scene color blit");
+        // Half-res refraction copy: every scene color load must rescale its
+        // full-res pixel coord through the shared remap helper.
+        assert!(WATER_3D_RENDER_WGSL.contains("fn water_scene_color_coord("));
+        assert_eq!(
+            WATER_3D_RENDER_WGSL
+                .matches("textureLoad(scene_color_tex,")
+                .count(),
+            WATER_3D_RENDER_WGSL
+                .matches("textureLoad(scene_color_tex, water_scene_color_coord(")
+                .count(),
+        );
         assert!(WATER_3D_RENDER_WGSL.contains("fn water_refraction_offset("));
         assert!(WATER_3D_RENDER_WGSL.contains("let slope = clamp("));
         assert!(WATER_3D_RENDER_WGSL.contains("let wave_speed = clamp(abs(cell.y)"));

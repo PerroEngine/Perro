@@ -14,7 +14,9 @@ use perro_structs::TextureFilterMode;
 
 pub(super) const DECAL_LAYER_SIZE: u32 = 512;
 pub(super) const DECAL_MAX_LAYERS: u32 = 64;
-pub(super) const DECAL_INITIAL_LAYERS: u32 = 4;
+// Single layer up front; grow_decal_texture doubles (1 -> 2 -> 4 ...) as
+// decal textures actually arrive, so decal-free scenes pay one 512^2 layer.
+pub(super) const DECAL_INITIAL_LAYERS: u32 = 1;
 pub(super) const DECAL_MAX_DECALS: usize = 64;
 
 #[repr(C)]
@@ -276,7 +278,7 @@ impl Gpu3D {
             queue,
             &self.decal_texture,
             layer,
-            &decal_layer_levels(rgba, width, height),
+            &decal_layer_levels(&rgba, width, height),
         );
         self.decal_layer_by_texture.insert(id, layer);
         Some(layer)
@@ -308,25 +310,30 @@ impl Gpu3D {
                 queue,
                 &self.decal_texture,
                 layer,
-                &decal_layer_levels(rgba, width, height),
+                &decal_layer_levels(&rgba, width, height),
             );
         }
         self.rebuild_camera_bind_groups(device);
     }
 }
 
-fn decal_texture_rgba(resources: &ResourceStore, id: TextureID) -> Option<(Vec<u8>, u32, u32)> {
+fn decal_texture_rgba(
+    resources: &ResourceStore,
+    id: TextureID,
+) -> Option<(std::sync::Arc<[u8]>, u32, u32)> {
     let source = resources.texture_source(id)?;
     resources
         .decoded_texture_data_by_source(source)
         // evicted resident copies fall through to the source decode below
         .filter(|decoded| decoded.has_pixels())
+        // refcount share: the layer build reads the full-res buffer, it never
+        // owns it (resize copies straight into DECAL_LAYER_SIZE).
         .map(|decoded| (decoded.rgba.clone(), decoded.width, decoded.height))
-        .or_else(|| load_texture_rgba(source))
+        .or_else(|| load_texture_rgba_arc(source))
 }
 
-fn decal_layer_levels(rgba: Vec<u8>, width: u32, height: u32) -> Vec<RgbaMipLevel> {
-    let resized = resize_rgba_bilinear(&rgba, width, height, DECAL_LAYER_SIZE);
+fn decal_layer_levels(rgba: &[u8], width: u32, height: u32) -> Vec<RgbaMipLevel> {
+    let resized = resize_rgba_bilinear(rgba, width, height, DECAL_LAYER_SIZE);
     build_rgba_levels_for_filter_owned(
         resized,
         DECAL_LAYER_SIZE,

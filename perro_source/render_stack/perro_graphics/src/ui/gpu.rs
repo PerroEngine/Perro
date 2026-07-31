@@ -1,10 +1,10 @@
 use crate::{
     backend::StaticTextureLookup,
     resources::ResourceStore,
-    texture_mips::{
-        build_rgba_levels_for_filter, sampler_descriptor, write_rgba_mip_chain,
-        write_texture_base_level,
+    shared_textures::{
+        SharedGpuTexture, SharedTextureColorSpace, SharedTextureKey, SharedTextureStore,
     },
+    texture_mips::{sampler_descriptor, write_texture_base_level},
 };
 use ahash::{AHashMap, AHashSet};
 use bytemuck::{Pod, Zeroable};
@@ -23,10 +23,15 @@ mod shaders;
 use helpers::*;
 use shaders::*;
 
-const UI_SUPERSAMPLE_SCALE: u32 = 3;
-// UI may contain engine camera-stream pixels. Keep its intermediate linear HDR
-// so viewport highlights survive until the final present tone map.
-const UI_SUPERSAMPLE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+// The UI pass has no MSAA: epaint's feathered vector edges and glyphs render
+// oversized here and the linear composite sampler minifies them for edge AA.
+// 1 disables supersampling (still renders through the intermediate + composite
+// pass; skipping that entirely needs a direct-to-surface pipeline variant).
+const UI_SUPERSAMPLE_SCALE: u32 = 2;
+// sRGB8 stores the linear composite input at 1/4 the memory of Rgba16Float.
+// Camera-stream pixels composited into UI clamp to SDR in this intermediate,
+// so HDR headroom inside UI-embedded viewports does not survive it.
+const UI_SUPERSAMPLE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 const UI_HARFBUZZ_TEXTURE_ID: TextureId = TextureId::Managed(1);
 
 #[repr(C)]
@@ -46,7 +51,10 @@ struct UiUniform {
 }
 
 struct UiTextureGpu {
+    // owned upload (font atlases only; images share via the Gpu-level store).
     texture: Option<wgpu::Texture>,
+    // shared upload handle for image textures (None for fonts + externals).
+    shared: Option<Arc<SharedGpuTexture>>,
     bind_group: wgpu::BindGroup,
     size: [u32; 2],
 }
@@ -115,11 +123,15 @@ pub struct GpuUi {
     prepared_mesh_signature: Option<UiMeshSignature>,
     prepared_revision: u64,
     prepared_viewport: [u32; 2],
+    // Per-adapter render pixel budget (low-memory adapters cap at 1080p); the
+    // supersample target obeys it instead of only the global frame cap.
+    max_render_pixels: u64,
     perf_counters: UiPerfCounters,
 }
 
 pub struct UiPrepareInput<'a> {
     pub resources: &'a ResourceStore,
+    pub(crate) shared_textures: &'a mut SharedTextureStore,
     pub viewport: [u32; 2],
     pub primitives: &'a [Arc<ClippedPrimitive>],
     pub primitive_depths: &'a [Option<Arc<[f32]>>],
@@ -131,6 +143,7 @@ pub struct UiPrepareInput<'a> {
 
 struct UiMeshSignatureInput<'a> {
     resources: &'a ResourceStore,
+    shared_textures: &'a mut SharedTextureStore,
     primitives: &'a [Arc<ClippedPrimitive>],
     render_viewport: [u32; 2],
     render_scale: [f32; 2],
@@ -409,8 +422,13 @@ impl GpuUi {
             prepared_mesh_signature: None,
             prepared_revision: u64::MAX,
             prepared_viewport: [0, 0],
+            max_render_pixels: u64::MAX,
             perf_counters: UiPerfCounters::default(),
         }
+    }
+
+    pub fn set_max_render_pixels(&mut self, max_render_pixels: u64) {
+        self.max_render_pixels = max_render_pixels.max(1);
     }
 
     pub fn prepare(
@@ -421,6 +439,7 @@ impl GpuUi {
     ) {
         let UiPrepareInput {
             resources,
+            shared_textures,
             viewport,
             primitives,
             primitive_depths,
@@ -430,7 +449,11 @@ impl GpuUi {
             static_texture_lookup,
         } = input;
         let viewport = [viewport[0].max(1), viewport[1].max(1)];
-        let render_viewport = supersampled_size(viewport, device.limits().max_texture_dimension_2d);
+        let render_viewport = supersampled_size(
+            viewport,
+            device.limits().max_texture_dimension_2d,
+            self.max_render_pixels,
+        );
         let render_scale = viewport_scale(viewport, render_viewport);
         if self.prepared_revision == revision
             && self.prepared_viewport == viewport
@@ -459,6 +482,7 @@ impl GpuUi {
             queue,
             UiMeshSignatureInput {
                 resources,
+                shared_textures: &mut *shared_textures,
                 primitives,
                 render_viewport,
                 render_scale,
@@ -490,6 +514,7 @@ impl GpuUi {
                 && !self.ensure_image_texture(
                     device,
                     queue,
+                    shared_textures,
                     resources,
                     mesh.texture_id,
                     static_texture_lookup,
@@ -555,7 +580,11 @@ impl GpuUi {
             return;
         }
         let viewport = [viewport[0].max(1), viewport[1].max(1)];
-        let render_viewport = supersampled_size(viewport, device.limits().max_texture_dimension_2d);
+        let render_viewport = supersampled_size(
+            viewport,
+            device.limits().max_texture_dimension_2d,
+            self.max_render_pixels,
+        );
         self.ensure_supersample_target(device, render_viewport);
         let (Some(vertex_buffer), Some(index_buffer)) =
             (self.vertex_buffer.as_ref(), self.index_buffer.as_ref())
@@ -656,6 +685,7 @@ impl GpuUi {
     ) -> (UiMeshSignature, UiMeshTotals) {
         let UiMeshSignatureInput {
             resources,
+            shared_textures,
             primitives,
             render_viewport,
             render_scale,
@@ -667,6 +697,7 @@ impl GpuUi {
                 || self.ensure_image_texture(
                     device,
                     queue,
+                    shared_textures,
                     resources,
                     texture_id,
                     static_texture_lookup,
@@ -778,9 +809,44 @@ impl GpuUi {
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Rgba8Unorm,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::COPY_DST
+                    | wgpu::TextureUsages::COPY_SRC,
                 view_formats: &[],
             });
+            if let Some(copy_size) = font_texture_copy_extent(
+                self.font_texture.as_ref().map(|texture| texture.size),
+                required_size,
+                delta.pos.is_some(),
+            ) && let Some(old_texture) = self
+                .font_texture
+                .as_ref()
+                .and_then(|texture| texture.texture.as_ref())
+            {
+                let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("perro_ui_font_grow_copy"),
+                });
+                encoder.copy_texture_to_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: old_texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    wgpu::Extent3d {
+                        width: copy_size[0],
+                        height: copy_size[1],
+                        depth_or_array_layers: 1,
+                    },
+                );
+                queue.submit(std::iter::once(encoder.finish()));
+            }
             let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
             let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("perro_ui_font_bg"),
@@ -798,6 +864,7 @@ impl GpuUi {
             });
             self.font_texture = Some(UiTextureGpu {
                 texture: Some(texture),
+                shared: None,
                 bind_group,
                 size: required_size,
             });
@@ -867,9 +934,46 @@ impl GpuUi {
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Rgba8Unorm,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::COPY_DST
+                    | wgpu::TextureUsages::COPY_SRC,
                 view_formats: &[],
             });
+            if let Some(copy_size) = font_texture_copy_extent(
+                self.harfbuzz_font_texture
+                    .as_ref()
+                    .map(|texture| texture.size),
+                required_size,
+                delta.pos.is_some(),
+            ) && let Some(old_texture) = self
+                .harfbuzz_font_texture
+                .as_ref()
+                .and_then(|texture| texture.texture.as_ref())
+            {
+                let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("perro_ui_harfbuzz_font_grow_copy"),
+                });
+                encoder.copy_texture_to_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: old_texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    wgpu::Extent3d {
+                        width: copy_size[0],
+                        height: copy_size[1],
+                        depth_or_array_layers: 1,
+                    },
+                );
+                queue.submit(std::iter::once(encoder.finish()));
+            }
             let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
             let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("perro_ui_harfbuzz_font_bg"),
@@ -887,6 +991,7 @@ impl GpuUi {
             });
             self.harfbuzz_font_texture = Some(UiTextureGpu {
                 texture: Some(texture),
+                shared: None,
                 bind_group,
                 size: required_size,
             });
@@ -970,13 +1075,13 @@ impl GpuUi {
         let Some(cached) = self.image_textures.get(&texture) else {
             return false;
         };
-        let Some(gpu_texture) = cached.texture.as_ref() else {
+        let Some(shared) = cached.shared.as_ref() else {
             return false;
         };
         if cached.size != [width, height] {
             return false;
         }
-        write_texture_base_level(queue, gpu_texture, width, height, rgba);
+        write_texture_base_level(queue, &shared.texture, width, height, rgba);
         true
     }
 
@@ -984,6 +1089,7 @@ impl GpuUi {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        shared_textures: &mut SharedTextureStore,
         resources: &ResourceStore,
         texture_id: TextureId,
         static_texture_lookup: Option<StaticTextureLookup>,
@@ -998,53 +1104,50 @@ impl GpuUi {
         let Some(source) = resources.texture_source(texture_key) else {
             return false;
         };
-        // resident CPU copy, or re-decode from source when the idle sweep
-        // already reclaimed the bytes.
-        let redecoded;
-        let decoded = match resources.decoded_texture_data(texture_key) {
-            Some(decoded) if decoded.has_pixels() => decoded,
-            _ => {
-                let Some(restored) =
-                    crate::backend::decode_texture_source_rgba(source, static_texture_lookup)
-                else {
-                    return false;
-                };
-                redecoded = restored;
-                &redecoded
-            }
-        };
-        let width = decoded.width;
-        let height = decoded.height;
         // stream textures skip mip chains: base level updates in place each frame.
         let filter = if self.stream_texture_ids.contains(&texture_key) {
             TextureFilterMode::Linear
         } else {
             self.texture_filter
         };
-        let mips = build_rgba_levels_for_filter(&decoded.rgba, width, height, filter);
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("perro_ui_image_texture"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: mips.len() as u32,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        write_rgba_mip_chain(queue, &texture, &mips);
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let key = SharedTextureKey::from_source(source, SharedTextureColorSpace::Srgb, filter);
+        let shared = match shared_textures.get(&key) {
+            // another consumer already uploaded this source: reuse, no decode.
+            Some(shared) => shared,
+            None => {
+                // resident CPU copy, or re-decode from source when the idle
+                // sweep already reclaimed the bytes.
+                let redecoded;
+                let decoded = match resources.decoded_texture_data(texture_key) {
+                    Some(decoded) if decoded.has_pixels() => decoded,
+                    _ => {
+                        let Some(restored) = crate::backend::decode_texture_source_rgba(
+                            source,
+                            static_texture_lookup,
+                        ) else {
+                            return false;
+                        };
+                        redecoded = restored;
+                        &redecoded
+                    }
+                };
+                shared_textures.ensure_rgba(
+                    device,
+                    queue,
+                    key,
+                    &decoded.rgba,
+                    decoded.width,
+                    decoded.height,
+                )
+            }
+        };
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_ui_image_bg"),
             layout: &self.texture_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view),
+                    resource: wgpu::BindingResource::TextureView(&shared.view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
@@ -1052,12 +1155,14 @@ impl GpuUi {
                 },
             ],
         });
+        let size = [shared.width, shared.height];
         self.image_textures.insert(
             texture_key,
             UiTextureGpu {
-                texture: Some(texture),
+                texture: None,
+                shared: Some(shared),
                 bind_group,
-                size: [width, height],
+                size,
             },
         );
         true
@@ -1088,6 +1193,7 @@ impl GpuUi {
             texture_key,
             UiTextureGpu {
                 texture: None,
+                shared: None,
                 bind_group,
                 size: [size[0].max(1), size[1].max(1)],
             },
@@ -1277,10 +1383,10 @@ mod tests {
     }
 
     #[test]
-    fn hdr_survives_ui_composite() {
-        assert_eq!(UI_SUPERSAMPLE_FORMAT, wgpu::TextureFormat::Rgba16Float);
-        let pixel = premultiplied_over([4.0, 2.0, 1.0, 1.0], [0.0; 4]);
-        assert!(pixel[0] > 1.0);
+    fn supersample_target_stays_srgb_encoded_linear_input() {
+        // Composite samples this target and expects linear values back, which
+        // holds for sRGB-view formats (decode on sample) and float formats.
+        assert!(UI_SUPERSAMPLE_FORMAT.is_srgb());
     }
 
     fn primitive(texture_id: TextureId, x: f32) -> std::sync::Arc<ClippedPrimitive> {

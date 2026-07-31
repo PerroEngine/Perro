@@ -15,6 +15,7 @@ perro_scene.workspace = true
 perro_structs.workspace = true
 perro_pawdio.workspace = true
 perro_ui.workspace = true
+smallvec.workspace = true
 
 [dev-dependencies]
 criterion = "0.5"

@@ -196,4 +196,14 @@ impl PerroGraphics {
         self.texture_filter = mode;
         self
     }
+
+    /// Project virtual canvas (graphics.virtual_width/height). Drives the 2D
+    /// aspect-fit world-to-pixel rule; defaults to 1920x1080 when not set.
+    pub fn with_virtual_canvas(mut self, width: u32, height: u32) -> Self {
+        let width = width.max(1) as f32;
+        let height = height.max(1) as f32;
+        self.renderer_2d.set_virtual_viewport(width, height);
+        self.late_overlay_2d.set_virtual_viewport(width, height);
+        self
+    }
 }

@@ -17,6 +17,11 @@ impl PhysicsSystem {
             return;
         }
         let mut mutated = false;
+        // trk dynamic-body mutations only: fresh-insert / woken dynamics enter
+        // rapier's active set during step, ! at sync time, so islands-based
+        // idle cache can't see them yet. any rigid touch => force next step;
+        // post-step refresh re-derives the true idle state.
+        let mut dynamic_mutated = false;
 
         let next_epoch = self.body_sync_epoch_2d.wrapping_add(1);
         let reset_epochs = next_epoch == 0;
@@ -32,6 +37,7 @@ impl PhysicsSystem {
         for body in bodies {
             if !world.body_map.contains_key(&body.id) {
                 mutated = true;
+                dynamic_mutated |= body.kind == crate::BodyKind::Rigid;
                 let rb_handle = world.bodies.insert(build_rigid_body_2d(body));
                 let opaque = self.alloc_opaque_handle();
                 world.body_map.insert(
@@ -61,9 +67,12 @@ impl PhysicsSystem {
             state.sync_epoch = sync_epoch;
             let needs_body_sync =
                 body.sync_signature == 0 || state.sync_signature != body.sync_signature;
+            let prev_kind = state.kind;
             state.kind = body.kind;
             if needs_body_sync && let Some(rb) = world.bodies.get_mut(state.handle) {
                 mutated = true;
+                dynamic_mutated |=
+                    body.kind == crate::BodyKind::Rigid || prev_kind == crate::BodyKind::Rigid;
                 rb.set_enabled(body.enabled);
                 let target_body_type = match body.kind {
                     crate::BodyKind::Static | crate::BodyKind::Area => r2::RigidBodyType::Fixed,
@@ -130,6 +139,7 @@ impl PhysicsSystem {
 
             if state.shape_signature != body.shape_signature {
                 mutated = true;
+                dynamic_mutated |= body.kind == crate::BodyKind::Rigid;
                 for handle in state.colliders.drain(..) {
                     world.collider_owners.remove(&handle);
                     let _ =
@@ -174,6 +184,7 @@ impl PhysicsSystem {
 
         for id in stale.iter().copied() {
             if let Some(state) = world.body_map.remove(&id) {
+                dynamic_mutated |= state.kind == crate::BodyKind::Rigid;
                 for handle in &state.colliders {
                     world.collider_owners.remove(handle);
                 }
@@ -190,7 +201,12 @@ impl PhysicsSystem {
         }
         stale.clear();
         self.stale_ids_2d = stale;
-        self.world_2d_idle_cached = world_2d_idle(&world);
+        // O(1) idle upkeep: dynamic mutation => force next step (which re-derives
+        // the cache frm islands post-step); otherwise dynamic sleep state can't
+        // have chg during sync, so kp cached val.
+        if dynamic_mutated {
+            self.world_2d_idle_cached = false;
+        }
         self.world_2d = Some(world);
         if mutated {
             self.query_pipeline_dirty_2d = true;
@@ -214,6 +230,8 @@ impl PhysicsSystem {
             return;
         }
         let mut mutated = false;
+        // see sync_world_2d: rigid-touch trk 4 O(1) idle-cache upkeep.
+        let mut dynamic_mutated = false;
 
         let next_epoch = self.body_sync_epoch_3d.wrapping_add(1);
         let reset_epochs = next_epoch == 0;
@@ -229,6 +247,7 @@ impl PhysicsSystem {
         for body in bodies {
             if !world.body_map.contains_key(&body.id) {
                 mutated = true;
+                dynamic_mutated |= body.kind == crate::BodyKind::Rigid;
                 let rb_handle = world.bodies.insert(build_rigid_body_3d(body));
                 let opaque = self.alloc_opaque_handle();
                 world.body_map.insert(
@@ -258,9 +277,12 @@ impl PhysicsSystem {
             state.sync_epoch = sync_epoch;
             let needs_body_sync =
                 body.sync_signature == 0 || state.sync_signature != body.sync_signature;
+            let prev_kind = state.kind;
             state.kind = body.kind;
             if needs_body_sync && let Some(rb) = world.bodies.get_mut(state.handle) {
                 mutated = true;
+                dynamic_mutated |=
+                    body.kind == crate::BodyKind::Rigid || prev_kind == crate::BodyKind::Rigid;
                 rb.set_enabled(body.enabled);
                 let target_body_type = match body.kind {
                     crate::BodyKind::Static | crate::BodyKind::Area => r3::RigidBodyType::Fixed,
@@ -347,6 +369,7 @@ impl PhysicsSystem {
 
             if state.shape_signature != body.shape_signature {
                 mutated = true;
+                dynamic_mutated |= body.kind == crate::BodyKind::Rigid;
                 for handle in state.colliders.drain(..) {
                     world.collider_owners.remove(&handle);
                     let _ =
@@ -397,6 +420,7 @@ impl PhysicsSystem {
 
         for id in stale.iter().copied() {
             if let Some(state) = world.body_map.remove(&id) {
+                dynamic_mutated |= state.kind == crate::BodyKind::Rigid;
                 for handle in &state.colliders {
                     world.collider_owners.remove(handle);
                 }
@@ -413,7 +437,10 @@ impl PhysicsSystem {
         }
         stale.clear();
         self.stale_ids_3d = stale;
-        self.world_3d_idle_cached = world_3d_idle(&world);
+        // see sync_world_2d idle-cache note.
+        if dynamic_mutated {
+            self.world_3d_idle_cached = false;
+        }
         self.world_3d = Some(world);
         if mutated {
             self.query_pipeline_dirty_3d = true;

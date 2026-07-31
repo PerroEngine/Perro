@@ -756,7 +756,7 @@ impl BarkPlayer {
             return;
         };
         state.master_volume = volume.max(0.0);
-        Self::refresh_volumes(&mut state);
+        state.volumes_dirty = true;
     }
 
     pub fn set_bus_volume(&self, bus_id: AudioBusID, volume: f32) {
@@ -769,7 +769,7 @@ impl BarkPlayer {
             paused: false,
         });
         bus.volume = volume.max(0.0);
-        Self::refresh_volumes(&mut state);
+        state.volumes_dirty = true;
     }
 
     pub fn set_bus_speed(&self, bus_id: AudioBusID, speed: f32) {
@@ -782,7 +782,24 @@ impl BarkPlayer {
             paused: false,
         });
         bus.speed = speed.max(0.01);
-        Self::refresh_speeds(&mut state);
+        state.speeds_dirty = true;
+    }
+
+    /// Apply any deferred volume/speed refreshes. Called by the audio worker
+    /// once its command queue drains, so command bursts (e.g. a settings menu
+    /// dragging several bus sliders) walk the playback lists once.
+    pub fn flush_pending_refreshes(&self) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        if state.volumes_dirty {
+            state.volumes_dirty = false;
+            Self::refresh_volumes(&mut state);
+        }
+        if state.speeds_dirty {
+            state.speeds_dirty = false;
+            Self::refresh_speeds(&mut state);
+        }
     }
 
     pub fn pause_bus(&self, bus_id: AudioBusID) {

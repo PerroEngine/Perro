@@ -163,14 +163,14 @@ impl Runtime {
                     .cloned()
                     .unwrap_or_else(|| "__default__".to_string());
                 self.render.mark_inflight(request);
-                self.queue_render_command(RenderCommand::Resource(
+                self.queue_render_command(RenderCommand::Resource(Box::new(
                     ResourceCommand::CreateTexture {
                         request,
                         id: TextureID::nil(),
                         source,
                         reserved: false,
                     },
-                ));
+                )));
             }
             return None;
         }
@@ -278,15 +278,21 @@ impl Runtime {
         }));
         dirty_entries.retain(|(node, _)| self.node_world(*node) == Some(NodeID::nil()));
         let dirty_node_count = dirty_entries.len();
-        let mut all_ids = std::mem::take(&mut self.render_ui.all_ids_scratch);
-        all_ids.clear();
-        self.fill_world_members(NodeID::nil(), &mut all_ids);
-        let mut parent_siblings = std::mem::take(&mut self.render_ui.parent_siblings_scratch);
-        parent_siblings.clear();
+        // shared member view: refcount clone, no per-pass Vec copy.
+        let all_ids = self.world_members_arc(NodeID::nil());
+        let mut layout_parents = std::mem::take(&mut self.render_ui.layout_parent_scratch);
+        layout_parents.clear();
         // dedup the layout-children DFS per ui_parent: when a container changes,
         // all its children get DIRTY_LAYOUT_PARENT, so many dirty nodes resolve
         // to the same ui_parent + would rescan the same subtree otherwise.
-        let mut layout_children_memo: AHashMap<NodeID, Vec<NodeID>> = AHashMap::new();
+        // The memo stores ranges into one flat scratch vec (both persist in
+        // RenderUiState), so this pass allocates nothing at steady state.
+        let mut layout_children_memo =
+            std::mem::take(&mut self.render_ui.layout_children_memo_scratch);
+        layout_children_memo.clear();
+        let mut layout_children_flat =
+            std::mem::take(&mut self.render_ui.layout_children_flat_scratch);
+        layout_children_flat.clear();
         for &(node, flags) in &dirty_entries {
             let flags = if flags == 0 {
                 DirtyState::UI_LAYOUT_MASK | DirtyState::DIRTY_COMMANDS
@@ -305,12 +311,12 @@ impl Runtime {
                     .is_some()
             {
                 if !layout_children_memo.contains_key(&ui_parent) {
-                    let computed = self.ui_layout_children(ui_parent);
-                    layout_children_memo.insert(ui_parent, computed);
+                    let start = layout_children_flat.len() as u32;
+                    self.ui_layout_children_into(ui_parent, &mut layout_children_flat);
+                    layout_children_memo
+                        .insert(ui_parent, (start, layout_children_flat.len() as u32));
                 }
-                if let Some(siblings) = layout_children_memo.get(&ui_parent) {
-                    parent_siblings.insert(node, siblings.clone());
-                }
+                layout_parents.insert(node, ui_parent);
             }
         }
         let nodes = &self.nodes;
@@ -328,8 +334,14 @@ impl Runtime {
                 input_changed,
             },
             |node, out| {
-                if let Some(siblings) = parent_siblings.get(&node) {
-                    out.extend(siblings.iter().copied());
+                if let Some(ui_parent) = layout_parents.get(&node)
+                    && let Some(&(start, end)) = layout_children_memo.get(ui_parent)
+                {
+                    out.extend(
+                        layout_children_flat[start as usize..end as usize]
+                            .iter()
+                            .copied(),
+                    );
                 }
             },
             |node, out| {
@@ -346,11 +358,13 @@ impl Runtime {
             },
         );
         dirty_entries.clear();
-        all_ids.clear();
-        parent_siblings.clear();
+        layout_parents.clear();
+        layout_children_memo.clear();
+        layout_children_flat.clear();
         self.render_ui.dirty_entries_scratch = dirty_entries;
-        self.render_ui.all_ids_scratch = all_ids;
-        self.render_ui.parent_siblings_scratch = parent_siblings;
+        self.render_ui.layout_parent_scratch = layout_parents;
+        self.render_ui.layout_children_memo_scratch = layout_children_memo;
+        self.render_ui.layout_children_flat_scratch = layout_children_flat;
         let traversal_ids = plan.traversal_ids;
         let mut command_ids = plan.command_ids;
         let mut command_seen = plan.command_seen;
@@ -440,7 +454,9 @@ impl Runtime {
             self.render_ui.visible_text_edits.retain(|id| *id != node);
             self.render_ui.focusable_nodes.retain(|id| *id != node);
             if self.render_ui.retained_commands.remove(&node).is_some() {
-                self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode { node }));
+                self.queue_render_command(RenderCommand::Ui(Box::new(UiCommand::RemoveNode {
+                    node,
+                })));
             }
         }
         self.render_ui.removed_nodes = removed_nodes;
@@ -583,30 +599,27 @@ impl Runtime {
                 }
                 continue;
             }
-            let ui_stream = match &scene_node.data {
-                SceneNodeData::UiCameraStream(stream_node) => Some(stream_node.stream.clone()),
-                _ => None,
-            };
-            let ui_sub_view = match &scene_node.data {
-                SceneNodeData::UiSubView(view) => Some((**view).clone()),
-                _ => None,
-            };
+            // Clone gating: the stream/sub-view deep clones only happen inside
+            // the rebuild branch; input-only visits read the cached info from
+            // borrowed data without copying any stream state.
             let mut camera_stream_texture = None;
             let mut camera_stream_resolution = None;
-            if let Some(stream) = ui_stream {
+            if let SceneNodeData::UiCameraStream(stream_node) = &scene_node.data {
                 // dirty-world gate: rebuilding re-collects the watched world
                 // through every collector; input-refresh visits reuse the
                 // cached output texture/resolution instead.
+                let camera = stream_node.stream.camera;
                 let rebuild = bootstrap_scan
                     || self.dirty.is_node_dirty(node)
-                    || self.nodes.get(stream.camera).is_some_and(|camera_node| {
+                    || self.nodes.get(camera).is_some_and(|camera_node| {
                         matches!(camera_node.data, SceneNodeData::Webcam(_))
                     })
                     || self
-                        .node_world(stream.camera)
+                        .node_world(camera)
                         .is_some_and(|world| dirty_worlds.contains(&world))
                     || !self.ui_stream_render_info.contains_key(&node);
                 if rebuild {
+                    let stream = stream_node.stream.clone();
                     if let Some(state) = self.camera_stream_state(node, &stream) {
                         camera_stream_texture = Some(state.output_texture);
                         camera_stream_resolution = match &state.source {
@@ -621,7 +634,7 @@ impl Runtime {
                                 [0.0, 0.0],
                             ),
                         );
-                        self.queue_camera_stream_upsert(node, state);
+                        self.queue_camera_stream_upsert(node, std::sync::Arc::new(state));
                     } else {
                         self.ui_stream_render_info.remove(&node);
                         self.queue_camera_stream_remove(node);
@@ -632,7 +645,10 @@ impl Runtime {
                     camera_stream_resolution = Some(*resolution);
                 }
             }
-            if let Some(viewport) = ui_sub_view {
+            // Re-borrow: the camera-stream rebuild above may call `&mut self`.
+            if let Some(SceneNodeData::UiSubView(viewport)) =
+                self.nodes.get(node).map(|scene_node| &scene_node.data)
+            {
                 let rebuild = bootstrap_scan
                     || self.dirty.is_node_dirty(node)
                     || dirty_worlds.contains(&node)
@@ -641,18 +657,16 @@ impl Runtime {
                         .get(&node)
                         .is_none_or(|(_, _, rect_size)| *rect_size != rect_state.size);
                 if rebuild {
-                    if let Some(state) = self.sub_view_state(
-                        node,
-                        &perro_nodes::SubView::from(&viewport),
-                        Some(rect_state.size),
-                    ) {
+                    let sub_view = perro_nodes::SubView::from(viewport.as_ref());
+                    if let Some(state) = self.sub_view_state(node, &sub_view, Some(rect_state.size))
+                    {
                         camera_stream_texture = Some(state.output_texture);
                         camera_stream_resolution = Some(state.resolution);
                         self.ui_stream_render_info.insert(
                             node,
                             (state.output_texture, state.resolution, rect_state.size),
                         );
-                        self.queue_camera_stream_upsert(node, state);
+                        self.queue_camera_stream_upsert(node, std::sync::Arc::new(state));
                     } else {
                         self.ui_stream_render_info.remove(&node);
                         self.queue_camera_stream_remove(node);
@@ -689,11 +703,12 @@ impl Runtime {
                     clip_rect,
                     self.scroll_container_max(node, &computed),
                     effective_z,
+                    virtual_font_scale,
                 );
                 match command {
                     Some(command) => {
                         if self.render_ui.retained_commands.get(&node) != Some(&command) {
-                            self.queue_render_command(RenderCommand::Ui(command.clone()));
+                            self.queue_render_command(RenderCommand::Ui(Box::new(command.clone())));
                             self.render_ui.retained_commands.insert(node, command);
                             if let Some(timing) = timing.as_deref_mut() {
                                 timing.command_emitted = timing.command_emitted.saturating_add(1);
@@ -704,9 +719,9 @@ impl Runtime {
                     }
                     None => {
                         if self.render_ui.retained_commands.remove(&node).is_some() {
-                            self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode {
-                                node,
-                            }));
+                            self.queue_render_command(RenderCommand::Ui(Box::new(
+                                UiCommand::RemoveNode { node },
+                            )));
                         }
                     }
                 }
@@ -714,53 +729,33 @@ impl Runtime {
                 visible_now.insert(node);
                 continue;
             }
-            let retained_matches =
-                self.render_ui
-                    .retained_commands
-                    .get(&node)
-                    .is_some_and(|command| {
-                        let command_ctx = UiCommandCtx {
-                            node,
-                            rect: rect_state,
-                            clip_rect,
-                            scale,
-                            virtual_font_scale,
-                            modulate: self.effective_self_modulate(node),
-                            camera_stream_texture,
-                            camera_stream_resolution,
-                        };
-                        ui_command_matches_node(
-                            command,
-                            &scene_node.data,
-                            command_ctx,
-                            state,
-                            self.render_ui.focused_text_edit,
-                        )
-                    });
-            if !retained_matches {
-                let command_ctx = UiCommandCtx {
-                    node,
-                    rect: rect_state,
-                    clip_rect,
-                    scale,
-                    virtual_font_scale,
-                    modulate: self.effective_self_modulate(node),
-                    camera_stream_texture,
-                    camera_stream_resolution,
-                };
-                let Some(command) = ui_command_from_node(
-                    &scene_node.data,
-                    command_ctx,
-                    state,
-                    self.render_ui.focused_text_edit,
-                ) else {
-                    self.remove_retained_ui_node(node);
-                    if let Some(timing) = timing.as_deref_mut() {
-                        timing.removed_nodes = timing.removed_nodes.saturating_add(1);
-                    }
-                    continue;
-                };
-                self.queue_render_command(RenderCommand::Ui(command.clone()));
+            // Build once: with Arc-backed text/font fields this is allocation
+            // free (stack struct + refcount bumps), so the unchanged path costs
+            // one build + compare, and the changed path reuses the same value.
+            let command_ctx = UiCommandCtx {
+                node,
+                rect: rect_state,
+                clip_rect,
+                scale,
+                virtual_font_scale,
+                modulate: self.effective_self_modulate(node),
+                camera_stream_texture,
+                camera_stream_resolution,
+            };
+            let Some(command) = ui_command_from_node(
+                &scene_node.data,
+                command_ctx,
+                state,
+                self.render_ui.focused_text_edit,
+            ) else {
+                self.remove_retained_ui_node(node);
+                if let Some(timing) = timing.as_deref_mut() {
+                    timing.removed_nodes = timing.removed_nodes.saturating_add(1);
+                }
+                continue;
+            };
+            if self.render_ui.retained_commands.get(&node) != Some(&command) {
+                self.queue_render_command(RenderCommand::Ui(Box::new(command.clone())));
                 self.render_ui.retained_commands.insert(node, command);
                 if let Some(timing) = timing.as_deref_mut() {
                     timing.command_emitted = timing.command_emitted.saturating_add(1);
@@ -802,12 +797,20 @@ impl Runtime {
     }
 
     pub(super) fn has_active_scroll_container_animation(&self) -> bool {
-        self.nodes.iter().any(|(_, node)| {
-            matches!(
-                &node.data,
-                SceneNodeData::UiScrollContainer(scroller)
-                    if scroller.scroll_animation.is_some()
-            )
+        // node_types lane pre-filter (1B/slot): only scroll-container slots
+        // deref their SceneNode. A set/clear counter was considered instead,
+        // but `UiScrollContainer::scroll_to` is a pub field-level API scripts
+        // reach through `with_node_mut` (no runtime hook, no ui-payload dirty
+        // fingerprint), so a counter would miss script-started animations and
+        // stall them; the lane probe stays the correctness safety net.
+        let type_slots = self.nodes.node_type_slots();
+        (1..self.nodes.slot_count()).any(|index| {
+            type_slots[index] == perro_nodes::NodeType::UiScrollContainer
+                && matches!(
+                    self.nodes.slot_get(index).map(|(_, node)| &node.data),
+                    Some(SceneNodeData::UiScrollContainer(scroller))
+                        if scroller.scroll_animation.is_some()
+                )
         })
     }
 }

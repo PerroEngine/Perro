@@ -112,8 +112,8 @@ impl Gpu3D {
             lods: decoded_lods,
             has_skinning: _,
         } = decoded;
-        let base_vertex = self.mesh_vertices.len() as u32;
-        let index_start = self.mesh_indices.len() as u32;
+        let base_vertex = self.mesh_vertex_len as u32;
+        let index_start = self.mesh_index_len as u32;
         let index_count = decoded_indices.len() as u32;
 
         let (bounds_center, bounds_radius) = mesh_bounds_from_vertices(&decoded_vertices)?;
@@ -147,20 +147,19 @@ impl Gpu3D {
             added_indices.push(idx + base_vertex);
         }
 
-        let new_vertex_len = self.mesh_vertices.len() + added_vertices.len();
-        let new_index_len = self.mesh_indices.len() + added_indices.len();
+        let new_vertex_len = self.mesh_vertex_len + added_vertices.len();
+        let new_index_len = self.mesh_index_len + added_indices.len();
         self.ensure_mesh_buffer_capacity(device, queue, new_vertex_len, new_index_len);
 
         let vertex_offset =
-            self.mesh_vertices.len() as u64 * std::mem::size_of::<SkinnedMeshVertex>() as u64;
+            self.mesh_vertex_len as u64 * std::mem::size_of::<SkinnedMeshVertex>() as u64;
         let rigid_vertex_offset =
-            self.rigid_mesh_vertices.len() as u64 * std::mem::size_of::<RigidMeshVertex>() as u64;
-        let index_offset = self.mesh_indices.len() as u64 * std::mem::size_of::<u32>() as u64;
+            self.rigid_vertex_len as u64 * std::mem::size_of::<RigidMeshVertex>() as u64;
+        let index_offset = self.mesh_index_len as u64 * std::mem::size_of::<u32>() as u64;
 
-        self.mesh_vertices.extend_from_slice(&added_vertices);
-        self.rigid_mesh_vertices
-            .extend_from_slice(&added_rigid_vertices);
-        self.mesh_indices.extend_from_slice(&added_indices);
+        self.mesh_vertex_len = new_vertex_len;
+        self.rigid_vertex_len += added_rigid_vertices.len();
+        self.mesh_index_len = new_index_len;
 
         queue.write_buffer(
             &self.vertex_buffer,
@@ -178,23 +177,24 @@ impl Gpu3D {
             bytemuck::cast_slice(&added_indices),
         );
 
-        let blend_shape_delta_start = self.blend_shape_deltas.len() as u32;
+        let blend_shape_delta_start = self.blend_shape_delta_len as u32;
         let blend_shape_target_count = decoded_blend_shapes.len() as u32;
         let blend_shape_vertex_start = base_vertex;
         let blend_shape_vertex_count = decoded_vertices.len() as u32;
         if !decoded_blend_shapes.is_empty() {
             let added_delta_count = decoded_blend_shapes.len() * decoded_vertices.len();
-            let old_delta_len = self.blend_shape_deltas.len();
+            let old_delta_len = self.blend_shape_delta_len;
             self.ensure_blend_shape_delta_capacity(
                 device,
                 queue,
                 old_delta_len + added_delta_count,
             );
-            self.blend_shape_deltas.reserve(added_delta_count);
+            self.blend_shape_delta_scratch.clear();
+            self.blend_shape_delta_scratch.reserve(added_delta_count);
             for shape in &decoded_blend_shapes {
                 for vertex_index in 0..decoded_vertices.len() {
                     let vertex = shape.vertices.get(vertex_index).copied();
-                    self.blend_shape_deltas.push(BlendShapeDeltaGpu {
+                    self.blend_shape_delta_scratch.push(BlendShapeDeltaGpu {
                         position_delta: vertex
                             .map(|v| {
                                 [
@@ -214,8 +214,10 @@ impl Gpu3D {
             queue.write_buffer(
                 &self.blend_shape_delta_buffer,
                 old_delta_len as u64 * std::mem::size_of::<BlendShapeDeltaGpu>() as u64,
-                bytemuck::cast_slice(&self.blend_shape_deltas[old_delta_len..]),
+                bytemuck::cast_slice(&self.blend_shape_delta_scratch),
             );
+            self.blend_shape_delta_scratch.clear();
+            self.blend_shape_delta_len = old_delta_len + added_delta_count;
         }
 
         let full = MeshRange {
@@ -319,8 +321,8 @@ impl Gpu3D {
             let param_index = self.packed_lod_params.len() as u32;
             self.packed_lod_params.push(param);
 
-            let packed_index_start = self.packed_lod_indices.len() as u32;
-            let packed_vertex_start = self.packed_lod_vertices.len() as u32;
+            let packed_index_start = self.packed_lod_index_len as u32;
+            let packed_vertex_start = self.packed_lod_vertex_len as u32;
             let mut remap: AHashMap<u32, u32> = AHashMap::with_capacity(src_indices.len());
             let mut new_vertices = Vec::with_capacity(src_indices.len());
             let mut new_indices = Vec::with_capacity(src_indices.len());
@@ -344,15 +346,14 @@ impl Gpu3D {
             self.ensure_packed_lod_buffer_capacity(
                 device,
                 queue,
-                self.packed_lod_vertices.len() + new_vertices.len(),
-                self.packed_lod_indices.len() + new_indices.len(),
+                self.packed_lod_vertex_len + new_vertices.len(),
+                self.packed_lod_index_len + new_indices.len(),
             );
-            let vertex_offset = self.packed_lod_vertices.len() as u64
+            let vertex_offset = self.packed_lod_vertex_len as u64
                 * std::mem::size_of::<PackedRigidLodVertex>() as u64;
-            let index_offset =
-                self.packed_lod_indices.len() as u64 * std::mem::size_of::<u32>() as u64;
-            self.packed_lod_vertices.extend_from_slice(&new_vertices);
-            self.packed_lod_indices.extend_from_slice(&new_indices);
+            let index_offset = self.packed_lod_index_len as u64 * std::mem::size_of::<u32>() as u64;
+            self.packed_lod_vertex_len += new_vertices.len();
+            self.packed_lod_index_len += new_indices.len();
             queue.write_buffer(
                 &self.packed_lod_vertex_buffer,
                 vertex_offset,
@@ -424,7 +425,7 @@ impl Gpu3D {
         }
         let old_buffer = self.blend_shape_delta_buffer.clone();
         let old_size =
-            self.blend_shape_deltas.len() as u64 * std::mem::size_of::<BlendShapeDeltaGpu>() as u64;
+            self.blend_shape_delta_len as u64 * std::mem::size_of::<BlendShapeDeltaGpu>() as u64;
         self.blend_shape_delta_capacity = cap;
         self.blend_shape_delta_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_blend_shape_deltas"),
@@ -499,10 +500,10 @@ impl Gpu3D {
             let old_rigid_vertex_buffer = self.rigid_vertex_buffer.clone();
             let old_index_buffer = self.index_buffer.clone();
             let old_vertex_size =
-                self.mesh_vertices.len() as u64 * std::mem::size_of::<SkinnedMeshVertex>() as u64;
-            let old_rigid_vertex_size = self.rigid_mesh_vertices.len() as u64
-                * std::mem::size_of::<RigidMeshVertex>() as u64;
-            let old_index_size = self.mesh_indices.len() as u64 * std::mem::size_of::<u32>() as u64;
+                self.mesh_vertex_len as u64 * std::mem::size_of::<SkinnedMeshVertex>() as u64;
+            let old_rigid_vertex_size =
+                self.rigid_vertex_len as u64 * std::mem::size_of::<RigidMeshVertex>() as u64;
+            let old_index_size = self.mesh_index_len as u64 * std::mem::size_of::<u32>() as u64;
             self.vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("perro_mesh_vertices"),
                 size: (self.vertex_capacity * std::mem::size_of::<SkinnedMeshVertex>()) as u64,
@@ -560,6 +561,12 @@ impl Gpu3D {
                 }
                 queue.submit([encoder.finish()]);
             }
+            // Release the old handles as soon as the copy is submitted so the
+            // driver can reclaim them; holding them longer keeps a 3x peak
+            // (old + new arenas) alive.
+            drop(old_vertex_buffer);
+            drop(old_rigid_vertex_buffer);
+            drop(old_index_buffer);
         }
     }
 
@@ -573,7 +580,7 @@ impl Gpu3D {
     ) -> bool {
         let max_vertices = device.limits().max_buffer_size as usize
             / std::mem::size_of::<SkinnedMeshVertex>().max(std::mem::size_of::<RigidMeshVertex>());
-        if self.mesh_vertices.len() < max_vertices.saturating_mul(3) / 4 {
+        if self.mesh_vertex_len < max_vertices.saturating_mul(3) / 4 {
             return false;
         }
 
@@ -583,18 +590,13 @@ impl Gpu3D {
             .map(|range| range.index_start as usize + range.index_count as usize)
             .max()
             .unwrap_or(0);
-        let builtin_vertex_len = self.mesh_indices[..builtin_index_len]
-            .iter()
-            .copied()
-            .max()
-            .map_or(0, |index| index as usize + 1);
 
-        self.mesh_vertices.truncate(builtin_vertex_len);
-        self.rigid_mesh_vertices.truncate(builtin_vertex_len);
-        self.mesh_indices.truncate(builtin_index_len);
-        self.packed_lod_vertices.clear();
-        self.packed_lod_indices.clear();
-        self.blend_shape_deltas.clear();
+        self.mesh_vertex_len = self.builtin_vertex_len;
+        self.rigid_vertex_len = self.builtin_vertex_len;
+        self.mesh_index_len = builtin_index_len;
+        self.packed_lod_vertex_len = 0;
+        self.packed_lod_index_len = 0;
+        self.blend_shape_delta_len = 0;
         self.custom_mesh_ranges.clear();
         true
     }
@@ -625,10 +627,9 @@ impl Gpu3D {
         }
         let old_vertex_buffer = self.packed_lod_vertex_buffer.clone();
         let old_index_buffer = self.packed_lod_index_buffer.clone();
-        let old_vertex_size = self.packed_lod_vertices.len() as u64
-            * std::mem::size_of::<PackedRigidLodVertex>() as u64;
-        let old_index_size =
-            self.packed_lod_indices.len() as u64 * std::mem::size_of::<u32>() as u64;
+        let old_vertex_size =
+            self.packed_lod_vertex_len as u64 * std::mem::size_of::<PackedRigidLodVertex>() as u64;
+        let old_index_size = self.packed_lod_index_len as u64 * std::mem::size_of::<u32>() as u64;
         if vertex_grew {
             self.packed_lod_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("perro_packed_lod_vertices_rigid"),

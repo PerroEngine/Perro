@@ -341,19 +341,9 @@ impl Gpu3D {
             prepass_run.flush(&self.indirect_buffer, &mut prepass);
             draw_multimesh_depth_prepass(self, &mut prepass, multimesh_cull_active);
             drop(prepass);
-            if self.unified_depth_active {
-                // Depth32Float allows texture-to-texture copies (Depth24Plus
-                // does not); this primes depth_view so the main pass loads it.
-                encoder.copy_texture_to_texture(
-                    self.depth_prepass_texture.as_image_copy(),
-                    self.depth_texture.as_image_copy(),
-                    wgpu::Extent3d {
-                        width: self.depth_size.0,
-                        height: self.depth_size.1,
-                        depth_or_array_layers: 1,
-                    },
-                );
-            }
+            // Unified depth (sample_count == 1): depth_view aliases the
+            // prepass texture, so the main pass loads the prepass result
+            // directly; no copy is needed.
         }
         if let Some(ssao_pass) = self.ssao_pass.as_ref() {
             let view_proj = compute_view_proj_mat(camera, self.depth_size.0, self.depth_size.1);
@@ -513,6 +503,7 @@ impl Gpu3D {
             if HIZ_DEBUG_READBACK_ENABLED
                 && self.pending_hiz_debug_count == 0
                 && self.pending_hiz_debug_map_rx.is_none()
+                && let Some(readback_buffer) = self.hiz_debug_readback_buffer.as_ref()
             {
                 let count = self.draw_batches.len() as u32;
                 if count > 0 {
@@ -521,7 +512,7 @@ impl Gpu3D {
                     encoder.copy_buffer_to_buffer(
                         &self.indirect_buffer,
                         0,
-                        &self.hiz_debug_readback_buffer,
+                        readback_buffer,
                         0,
                         byte_len,
                     );
@@ -923,6 +914,67 @@ impl Gpu3D {
         &self.depth_prepass_view
     }
 
+    /// Depth attachment for the 3D water pass. Water samples scene depth (the
+    /// prepass view) while depth-testing; at sample_count == 1 the scene depth
+    /// target aliases the prepass texture, and one pass cannot both sample and
+    /// attach the same texture. Water therefore depth-tests against a lazily
+    /// allocated copy of the scene depth, refreshed here each frame it is
+    /// requested. MSAA returns the separate main depth target directly.
+    pub fn water_depth_attachment(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> wgpu::TextureView {
+        if self.sample_count > 1 {
+            return self.depth_view.clone();
+        }
+        let (width, height) = self.depth_size;
+        let (width, height) = (width.max(1), height.max(1));
+        let stale = self
+            .water_scene_depth
+            .as_ref()
+            .map(|(texture, _)| texture.width() != width || texture.height() != height)
+            .unwrap_or(true);
+        if stale {
+            let texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("perro_water_scene_depth"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: DEPTH_PREPASS_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            self.water_scene_depth = Some((texture, view));
+        }
+        let (texture, view) = self
+            .water_scene_depth
+            .as_ref()
+            .expect("water scene depth allocated above");
+        encoder.copy_texture_to_texture(
+            self.depth_prepass_texture.as_image_copy(),
+            texture.as_image_copy(),
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        view.clone()
+    }
+
+    /// Drop the lazily allocated water scene-depth copy once no 3D water
+    /// renders anymore.
+    pub fn release_water_depth(&mut self) {
+        self.water_scene_depth = None;
+    }
+
     pub fn camera_bind_group(&self) -> &wgpu::BindGroup {
         &self.camera_bind_group
     }
@@ -1085,6 +1137,7 @@ mod tests {
             mesh_blend: false,
             mesh_blend_screen: false,
             mesh_blend_params: 0,
+            mesh_blend_params_ext: 0,
             mesh_blend_depth: false,
             blend_layers: BitMask::ALL.bits(),
             blend_mask: BitMask::NONE.bits(),

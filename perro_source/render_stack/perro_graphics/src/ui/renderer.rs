@@ -6,7 +6,7 @@ use perro_render_bridge::{
     UiLinearGradientState, UiRectState, UiShapeKind, UiTextAlignState,
 };
 use perro_structs::Color;
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct UiPanelDraw {
@@ -116,8 +116,8 @@ pub(crate) struct UiNineSliceDraw {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct UiTextEditDraw {
     pub(crate) panel: UiPanelDraw,
-    pub(crate) text: Cow<'static, str>,
-    pub(crate) placeholder: Cow<'static, str>,
+    pub(crate) text: Arc<str>,
+    pub(crate) placeholder: Arc<str>,
     pub(crate) color: Color,
     pub(crate) placeholder_color: Color,
     pub(crate) selection_color: Color,

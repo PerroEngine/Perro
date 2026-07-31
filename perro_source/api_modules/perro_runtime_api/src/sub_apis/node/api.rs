@@ -132,6 +132,19 @@ pub trait NodeAPI {
     /// Returns children ids if node exists.
     fn get_node_children_ids(&mut self, node_id: NodeID) -> Option<Vec<NodeID>>;
 
+    /// Runs `f` over the node's direct children without cloning the child
+    /// list. `None` if the node does not exist. Prefer this over
+    /// [`Self::get_node_children_ids`] in per-frame paths: the default
+    /// implementation falls back to the cloning call, but runtime-backed
+    /// implementations borrow the arena child slice directly.
+    fn with_children<V, F>(&mut self, node_id: NodeID, f: F) -> Option<V>
+    where
+        F: FnOnce(&[NodeID]) -> V,
+    {
+        self.get_node_children_ids(node_id)
+            .map(|children| f(&children))
+    }
+
     /// Returns direct children ids. Invalid parent returns empty vec.
     fn get_children(&mut self, node_id: NodeID) -> Vec<NodeID> {
         self.get_node_children_ids(node_id).unwrap_or_default()

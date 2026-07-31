@@ -28,7 +28,7 @@ fn prelude_exports_input_action_macro() {
 #[test]
 fn prelude_exports_runtime_physics_move_api() {
     fn _uses_types(
-        _filter: PhysicsQueryFilter,
+        _filter: &PhysicsQueryFilter,
         _move_2d: Option<PhysicsMoveResult2D>,
         _move_3d: Option<PhysicsMoveResult3D>,
     ) {
@@ -48,5 +48,5 @@ fn prelude_exports_world_label_and_sprite_nodes() {
     }
 
     let _node_type = NodeType::Label3D;
-    let _data = SceneNodeData::Label3D(Label3D::new());
+    let _data = SceneNodeData::from(Label3D::new());
 }

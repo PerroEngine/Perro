@@ -149,6 +149,11 @@ impl Renderer2D {
     }
 
     #[inline]
+    pub fn virtual_viewport(&self) -> [f32; 2] {
+        self.virtual_size
+    }
+
+    #[inline]
     pub fn camera_uniform(&self) -> Camera2DUniform {
         let view = compute_view_matrix(&self.camera);
         let ndc_scale = ndc_scale(self.viewport, self.virtual_size, self.camera.zoom);
@@ -717,17 +722,17 @@ impl Renderer2D {
     }
 }
 
+/// Camera uniform for an offscreen 2D target (camera stream / sub view).
+/// Uses the same aspect-fit virtual-canvas rule as the main view so a target
+/// at the same resolution shows the same world framing.
 pub fn camera_2d_uniform_from_state(
     camera: &Camera2DState,
     width: u32,
     height: u32,
+    virtual_size: [f32; 2],
 ) -> Camera2DUniform {
     let view = compute_view_matrix(camera);
-    let ndc_scale = ndc_scale(
-        (width.max(1), height.max(1)),
-        [width.max(1) as f32, height.max(1) as f32],
-        camera.zoom,
-    );
+    let ndc_scale = ndc_scale((width.max(1), height.max(1)), virtual_size, camera.zoom);
     Camera2DUniform {
         view,
         ndc_scale,

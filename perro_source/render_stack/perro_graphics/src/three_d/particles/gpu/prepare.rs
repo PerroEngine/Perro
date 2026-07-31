@@ -74,6 +74,25 @@ impl GpuPointParticles3D {
             per_particle.retain(|_, entry| entry.last_seen_generation == generation);
             !per_particle.is_empty()
         });
+        // Note current usage for the shrink pass even when a family is empty,
+        // so torn-down emitters release their buffers on the GC tick.
+        self.shrink_points.note_used(self.staged.len());
+        self.shrink_billboards
+            .note_used(self.staged_billboards.len());
+        self.shrink_compute_particles
+            .note_used(self.compute_particle_count as usize);
+        self.shrink_compute_map
+            .note_used(self.compute_particle_emitter_map.len());
+        self.shrink_compute_spawn_origins
+            .note_used(self.compute_particle_spawn_origins.len());
+        self.shrink_compute_spawn_rotations
+            .note_used(self.compute_particle_spawn_rotations.len());
+        self.shrink_hybrid_map
+            .note_used(self.hybrid_particle_emitter_map.len());
+        self.shrink_hybrid_spawn_origins
+            .note_used(self.hybrid_particle_spawn_origins.len());
+        self.shrink_hybrid_spawn_rotations
+            .note_used(self.hybrid_particle_spawn_rotations.len());
         if self.staged.is_empty()
             && self.staged_billboards.is_empty()
             && self.hybrid_emitters.is_empty()

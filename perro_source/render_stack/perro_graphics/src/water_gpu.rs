@@ -1,4 +1,5 @@
 use super::water_flip_gpu::GpuWaterFlip;
+use crate::gpu_shrink::{ShrinkTracker, shrink_buffer_preserving};
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3, Vec4};
 use perro_ids::NodeID;
@@ -17,6 +18,10 @@ const WATER_FLAG_PAUSED: u32 = 1 << 1;
 const WATER_COASTLINE_INSET_METERS: f32 = 1.0;
 const WATER_CHUNK_QUADS: u32 = 128;
 const WATER_3D_MAX_RENDER_RESOLUTION: u32 = 256;
+// Frames without any 3D water before the scene-color refraction copy target
+// (half-res non-MSAA, full-res MSAA) releases back to 1x1 (2D-only water
+// never reads it).
+const WATER_SCENE_COLOR_IDLE_RELEASE_FRAMES: u32 = 120;
 // Keep silhouette tessellation dense; fragment normals alone cannot hide long
 // low-poly edges against the horizon. Far mesh stays >=57% per axis (~3x cut).
 const WATER_3D_RENDER_LOD_STRENGTH: f32 = 0.75;
@@ -99,6 +104,11 @@ pub struct GpuWater {
     scene_color_view: wgpu::TextureView,
     scene_color_format: wgpu::TextureFormat,
     scene_color_size: [u32; 2],
+    scene_color_idle_frames: u32,
+    scene_color_blit: SceneColorBlit,
+    // Last scene depth view bound alongside scene color, retained so the idle
+    // release can rebuild the depth bind group without a caller-provided view.
+    scene_depth_view: wgpu::TextureView,
     sample_count: u32,
     water_buffer: wgpu::Buffer,
     cell_buffer_a: wgpu::Buffer,
@@ -109,6 +119,11 @@ pub struct GpuWater {
     readback_buffer: wgpu::Buffer,
     water_capacity: usize,
     cell_capacity: usize,
+    // Sized from the actual coastline sample count, not the doubled cell
+    // capacity, so cell growth does not triple-allocate coastline storage.
+    coastline_capacity: usize,
+    cell_shrink: ShrinkTracker,
+    coastline_shrink: ShrinkTracker,
     active_cell_buffer_b: bool,
     render_chunk_capacity: usize,
     active_cell_count: usize,
@@ -298,8 +313,8 @@ impl GpuWater {
         camera_bgl: &wgpu::BindGroupLayout,
         camera_3d_bgl: &wgpu::BindGroupLayout,
         scene_depth_view: &wgpu::TextureView,
-        width: u32,
-        height: u32,
+        _width: u32,
+        _height: u32,
     ) -> Self {
         let flip_3d = GpuWaterFlip::new(device, color_format, sample_count, camera_3d_bgl);
         let compute_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -523,8 +538,11 @@ impl GpuWater {
             },
             "perro_water_render_bg_b",
         );
+        // Allocated lazily: only 3D water refraction reads scene color, so it
+        // starts at 1x1 and promotes via set_scene_color_size on first use.
         let (scene_color_texture, scene_color_view) =
-            create_scene_color_texture(device, color_format, width, height);
+            create_scene_color_texture(device, color_format, 1, 1);
+        let scene_color_blit = create_scene_color_blit(device, color_format);
         let depth_bind_group = make_depth_bind_group(
             device,
             &depth_bgl,
@@ -548,7 +566,10 @@ impl GpuWater {
             scene_color_texture,
             scene_color_view,
             scene_color_format: color_format,
-            scene_color_size: [width.max(1), height.max(1)],
+            scene_color_size: [1, 1],
+            scene_color_idle_frames: 0,
+            scene_color_blit,
+            scene_depth_view: scene_depth_view.clone(),
             sample_count: sample_count.max(1),
             water_buffer,
             cell_buffer_a,
@@ -559,6 +580,9 @@ impl GpuWater {
             readback_buffer,
             water_capacity: 1,
             cell_capacity: 64,
+            coastline_capacity: 64,
+            cell_shrink: ShrinkTracker::default(),
+            coastline_shrink: ShrinkTracker::default(),
             active_cell_buffer_b: false,
             render_chunk_capacity: 1,
             active_cell_count: 0,
@@ -593,6 +617,7 @@ impl GpuWater {
         device: &wgpu::Device,
         scene_depth_view: &wgpu::TextureView,
     ) {
+        self.scene_depth_view = scene_depth_view.clone();
         self.depth_bind_group = make_depth_bind_group(
             device,
             &self.depth_bgl,
@@ -609,7 +634,16 @@ impl GpuWater {
         width: u32,
         height: u32,
     ) {
-        let size = [width.max(1), height.max(1)];
+        // Non-MSAA captures fill the copy through a downsample blit, so the
+        // target lives at half the render resolution (4x less VRAM + copy
+        // bandwidth). MSAA resolve targets must match the source dimensions,
+        // so the MSAA capture keeps the copy at full resolution.
+        let size = if self.sample_count == 1 {
+            [width.max(1).div_ceil(2), height.max(1).div_ceil(2)]
+        } else {
+            [width.max(1), height.max(1)]
+        };
+        self.scene_color_idle_frames = 0;
         if self.scene_color_size == size {
             return;
         }
@@ -619,24 +653,76 @@ impl GpuWater {
         self.set_scene_depth_view(device, scene_depth_view);
     }
 
-    pub fn capture_scene_color(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        source_texture: &wgpu::Texture,
-        source_view: &wgpu::TextureView,
-    ) {
-        if self.sample_count == 1 {
-            encoder.copy_texture_to_texture(
-                source_texture.as_image_copy(),
-                self.scene_color_texture.as_image_copy(),
-                wgpu::Extent3d {
-                    width: self.scene_color_size[0],
-                    height: self.scene_color_size[1],
-                    depth_or_array_layers: 1,
-                },
-            );
+    /// Per-frame tick while no 3D water exists. Releases the scene color copy
+    /// target back to 1x1 after enough idle frames.
+    pub fn note_scene_color_idle(&mut self, device: &wgpu::Device) {
+        if self.scene_color_size == [1, 1] {
+            self.scene_color_idle_frames = 0;
             return;
         }
+        self.scene_color_idle_frames = self.scene_color_idle_frames.saturating_add(1);
+        if self.scene_color_idle_frames < WATER_SCENE_COLOR_IDLE_RELEASE_FRAMES {
+            return;
+        }
+        self.scene_color_idle_frames = 0;
+        (self.scene_color_texture, self.scene_color_view) =
+            create_scene_color_texture(device, self.scene_color_format, 1, 1);
+        self.scene_color_size = [1, 1];
+        let depth_view = self.scene_depth_view.clone();
+        self.set_scene_depth_view(device, &depth_view);
+    }
+
+    pub fn capture_scene_color(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        source_view: &wgpu::TextureView,
+    ) {
+        // Only the 3D water surface pipeline samples scene color (refraction /
+        // SSR); skip the capture when it draws nothing this frame.
+        if self.render_3d_chunk_count == 0 || self.max_3d_chunk_vertices == 0 {
+            return;
+        }
+        if self.sample_count == 1 {
+            // Downsample blit into the half-res copy target: one linear-tap
+            // fullscreen triangle instead of a full-res 1:1 texture copy.
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("perro_water_scene_color_blit_bg"),
+                layout: &self.scene_color_blit.bgl,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(source_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&self.scene_color_blit.sampler),
+                    },
+                ],
+            });
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("perro_water_scene_color_downsample"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &self.scene_color_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.scene_color_blit.pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.draw(0..3, 0..1);
+            return;
+        }
+        // MSAA: a resolve target must match the attachment dimensions, so the
+        // copy target stays full-res here and capture remains a resolve pass.
         let _resolve_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("perro_water_scene_color_resolve"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -688,6 +774,11 @@ impl GpuWater {
         ctx: WaterPrepareContext,
     ) {
         self.poll_readback(device);
+        if waters_3d.is_empty() {
+            self.note_scene_color_idle(device);
+        } else {
+            self.scene_color_idle_frames = 0;
+        }
         let all_paused = waters_2d.iter().all(|(_, water)| water.paused)
             && waters_3d.iter().all(|(_, water)| water.paused);
         let needed = waters_2d.len() + waters_3d.len();
@@ -700,6 +791,10 @@ impl GpuWater {
             self.render_3d_chunk_count = 0;
             self.readback_accum_seconds = 0.0;
             self.coastline_cache.clear();
+            // Nothing is drawn or simulated; let the GC tick reclaim the cell
+            // and coastline buffers.
+            self.cell_shrink.note_used(0);
+            self.coastline_shrink.note_used(0);
             return;
         }
         if !all_paused {
@@ -820,8 +915,13 @@ impl GpuWater {
             .unwrap_or(0);
         self.render_3d_chunk_count = self.staged_render_chunks.len().min(u32::MAX as usize) as u32;
         self.readback_interval_seconds = readback_interval_seconds(readback_rate);
-        let rebuilt =
-            self.ensure_capacity(device, needed, cell_needed, self.staged_render_chunks.len());
+        let rebuilt = self.ensure_capacity(
+            device,
+            needed,
+            cell_needed,
+            self.coastline_cells_scratch.len(),
+            self.staged_render_chunks.len(),
+        );
         if rebuilt {
             self.rebuild_cell_bind_groups(device);
         }
@@ -1156,8 +1256,11 @@ impl GpuWater {
         device: &wgpu::Device,
         needed_waters: usize,
         needed_cells: usize,
+        needed_coastline: usize,
         needed_render_chunks: usize,
     ) -> bool {
+        self.cell_shrink.note_used(needed_cells);
+        self.coastline_shrink.note_used(needed_coastline);
         let mut rebuilt = false;
         if needed_waters > self.water_capacity {
             let mut cap = self.water_capacity.max(1);
@@ -1175,9 +1278,20 @@ impl GpuWater {
             }
             self.cell_buffer_a = empty_buffer(device, "perro_water_gpu_cells_a", cap, false);
             self.cell_buffer_b = empty_buffer(device, "perro_water_gpu_cells_b", cap, false);
-            self.coastline_buffer = empty_buffer(device, "perro_water_gpu_coastline", cap, false);
             self.cell_capacity = cap;
             self.active_cell_buffer_b = false;
+            rebuilt = true;
+        }
+        // Coastline is per-water static data rewritten by every prepare; size
+        // it from the actual coastline sample count instead of riding the
+        // doubled cell capacity.
+        if needed_coastline > self.coastline_capacity {
+            let mut cap = self.coastline_capacity.max(64);
+            while cap < needed_coastline {
+                cap *= 2;
+            }
+            self.coastline_buffer = empty_buffer(device, "perro_water_gpu_coastline", cap, false);
+            self.coastline_capacity = cap;
             rebuilt = true;
         }
         if needed_waters > self.readback_capacity {
@@ -1194,6 +1308,57 @@ impl GpuWater {
             rebuilt = true;
         }
         rebuilt
+    }
+
+    /// Periodic GC tick: shrink the cell ping-pong buffers and coastline
+    /// buffer once usage stays far below capacity. Content is preserved with a
+    /// prefix copy (the sim state lives in the prefix `[0, active_cell_count)`),
+    /// so the ping-pong parity and in-flight readbacks stay valid.
+    pub fn shrink_tick(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        let elem = std::mem::size_of::<[f32; 4]>() as u64;
+        let mut rebuilt = false;
+        if let Some(new_cap) = self.cell_shrink.tick(self.cell_capacity, 64) {
+            let new_size = new_cap as u64 * elem;
+            self.cell_buffer_a = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.cell_buffer_a,
+                "perro_water_gpu_cells_a",
+                new_size,
+                wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+            );
+            self.cell_buffer_b = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.cell_buffer_b,
+                "perro_water_gpu_cells_b",
+                new_size,
+                wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+            );
+            self.cell_capacity = new_cap;
+            rebuilt = true;
+        }
+        if let Some(new_cap) = self.coastline_shrink.tick(self.coastline_capacity, 64) {
+            self.coastline_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.coastline_buffer,
+                "perro_water_gpu_coastline",
+                new_cap as u64 * elem,
+                wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+            );
+            self.coastline_capacity = new_cap;
+            rebuilt = true;
+        }
+        if rebuilt {
+            self.rebuild_cell_bind_groups(device);
+        }
     }
 
     fn compute_bind_group(&self) -> &wgpu::BindGroup {

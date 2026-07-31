@@ -102,13 +102,13 @@ fn label_set_text_accepts_static_str_string_and_cow() {
     let mut label = UiLabel::new();
 
     label.set_text("static text");
-    assert!(matches!(label.text, Cow::Borrowed("static text")));
+    assert_eq!(label.text.as_ref(), "static text");
 
     label.set_text(String::from("owned text"));
-    assert!(matches!(label.text, Cow::Owned(ref text) if text == "owned text"));
+    assert_eq!(label.text.as_ref(), "owned text");
 
     label.set_text(Cow::Borrowed("cow text"));
-    assert!(matches!(label.text, Cow::Borrowed("cow text")));
+    assert_eq!(label.text.as_ref(), "cow text");
 }
 
 #[test]

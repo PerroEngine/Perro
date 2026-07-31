@@ -9,8 +9,18 @@ pub(super) const MESH_BLEND_MASK_FORMAT: wgpu::TextureFormat = wgpu::TextureForm
 // Dynamic-offset stride for the per-batch mask id uniform.
 const MASK_ID_STRIDE: u64 = 256;
 const MESH_BLEND_ID_PARAM_COUNT: usize = 256;
+// vec4 slots per id in the seam params storage buffer: slot 0 carries
+// [distance, min_distance, noise_factor, noise_scale], slot 1 carries
+// [slope_factor, strength, reserved, reserved]. The seam shader indexes
+// id * 2 + k.
+const MESH_BLEND_ID_PARAM_SLOTS: usize = 2;
 // Ids 1..=127 are sources, 128..=255 receivers (mirrored in the seam shader).
 const RECEIVER_ID_BASE: u32 = 128;
+// Multimesh sources reserve a stride of ids: the mask pass salts each
+// instance (source_instance % 7) onto the batch's base id so same-type
+// instances seam against each other. Stride 8 leaves one spare id and keeps
+// id + salt inside the source range (base <= 120 -> base + 6 <= 126).
+const MULTIMESH_SOURCE_ID_STRIDE: u32 = 8;
 
 pub(super) fn create_mesh_blend_mask_texture(
     device: &wgpu::Device,
@@ -148,7 +158,7 @@ pub(super) fn create_mesh_blend_seam_bgl(device: &wgpu::Device) -> wgpu::BindGro
 pub(super) fn create_mesh_blend_params_buffer(device: &wgpu::Device) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("perro_mesh_blend_id_params"),
-        size: (MESH_BLEND_ID_PARAM_COUNT * 16) as u64,
+        size: (MESH_BLEND_ID_PARAM_COUNT * MESH_BLEND_ID_PARAM_SLOTS * 16) as u64,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     })
@@ -433,6 +443,23 @@ fn unpack_mesh_blend_params(packed: u32) -> [f32; 4] {
     ]
 }
 
+// Second packed lane set -> [slope_factor, strength, 0, 0]; keep in sync with
+// pack_mesh_blend_params_ext (slope is 1/16 fixed point, strength unorm8).
+fn unpack_mesh_blend_params_ext(packed: u32) -> [f32; 4] {
+    [
+        (packed & 0xff) as f32 / 16.0,
+        ((packed >> 8) & 0xff) as f32 / 255.0,
+        0.0,
+        0.0,
+    ]
+}
+
+// Bit 16 of the packed ext lanes gates the per-instance id salt for
+// multimesh sources.
+fn mesh_blend_salt_instances(packed: u32) -> bool {
+    (packed >> 16) & 1 != 0
+}
+
 impl Gpu3D {
     pub fn set_screen_blend_supported(&mut self, supported: bool) {
         self.screen_blend_supported = supported;
@@ -459,8 +486,12 @@ impl Gpu3D {
             return;
         }
         // Receivers carry no params of their own; give them the widest
-        // source's tuning so both sides of a seam agree.
+        // source's tuning as an upper-bound *estimate* only. The seam shader
+        // uses it to size the tap search ring on the receiver side, then
+        // blends with the actual touching source's params (smallest-of-pair
+        // rule), so the widest source no longer dictates every seam's width.
         let mut receiver_params = [0.0f32; 4];
+        let mut receiver_ext = [0.0f32; 4];
         for batch in &self.draw_batches {
             if !batch.mesh_blend_screen {
                 continue;
@@ -468,6 +499,7 @@ impl Gpu3D {
             let params = unpack_mesh_blend_params(batch.mesh_blend_params);
             if params[0] > receiver_params[0] {
                 receiver_params = params;
+                receiver_ext = unpack_mesh_blend_params_ext(batch.mesh_blend_params_ext);
             }
         }
         for batch in &self.multimesh_batches {
@@ -477,9 +509,15 @@ impl Gpu3D {
             let params = unpack_mesh_blend_params(batch.mesh_blend_params);
             if params[0] > receiver_params[0] {
                 receiver_params = params;
+                receiver_ext = unpack_mesh_blend_params_ext(batch.mesh_blend_params_ext);
             }
         }
-        let mut id_params = [[0.0f32; 4]; MESH_BLEND_ID_PARAM_COUNT];
+        let mut id_params = [[0.0f32; 4]; MESH_BLEND_ID_PARAM_COUNT * MESH_BLEND_ID_PARAM_SLOTS];
+        let set_id_params = |table: &mut [[f32; 4]], id: u32, params: [f32; 4], ext: [f32; 4]| {
+            let base = id as usize * MESH_BLEND_ID_PARAM_SLOTS;
+            table[base] = params;
+            table[base + 1] = ext;
+        };
         let mut next_source_id: u32 = 1;
         let mut next_receiver_id: u32 = RECEIVER_ID_BASE;
         for (index, batch) in self.draw_batches.iter().enumerate() {
@@ -490,7 +528,12 @@ impl Gpu3D {
                 } else {
                     next_source_id + 1
                 };
-                id_params[id as usize] = unpack_mesh_blend_params(batch.mesh_blend_params);
+                set_id_params(
+                    &mut id_params,
+                    id,
+                    unpack_mesh_blend_params(batch.mesh_blend_params),
+                    unpack_mesh_blend_params_ext(batch.mesh_blend_params_ext),
+                );
                 self.mesh_blend_mask_batch_entries
                     .push(MeshBlendMaskEntry::Draw {
                         batch_index: index,
@@ -507,7 +550,7 @@ impl Gpu3D {
                 } else {
                     next_receiver_id + 1
                 };
-                id_params[id as usize] = receiver_params;
+                set_id_params(&mut id_params, id, receiver_params, receiver_ext);
                 self.mesh_blend_mask_batch_entries
                     .push(MeshBlendMaskEntry::Draw {
                         batch_index: index,
@@ -517,13 +560,31 @@ impl Gpu3D {
         }
         for (index, batch) in self.multimesh_batches.iter().enumerate() {
             if batch.mesh_blend_screen {
-                let id = next_source_id;
-                next_source_id = if next_source_id + 1 >= RECEIVER_ID_BASE {
+                // Salted stride: the mask pass emits base + (instance % 7),
+                // so every id in the stride maps to this batch's params.
+                // salt_instances=false collapses the stride to one id: no
+                // instance-vs-instance seams, and many multimesh sources stop
+                // exhausting the source id range.
+                let stride = if mesh_blend_salt_instances(batch.mesh_blend_params_ext) {
+                    MULTIMESH_SOURCE_ID_STRIDE
+                } else {
+                    1
+                };
+                let id = if next_source_id + stride > RECEIVER_ID_BASE {
                     1
                 } else {
-                    next_source_id + 1
+                    next_source_id
                 };
-                id_params[id as usize] = unpack_mesh_blend_params(batch.mesh_blend_params);
+                next_source_id = if id + stride >= RECEIVER_ID_BASE {
+                    1
+                } else {
+                    id + stride
+                };
+                let params = unpack_mesh_blend_params(batch.mesh_blend_params);
+                let ext = unpack_mesh_blend_params_ext(batch.mesh_blend_params_ext);
+                for slot in 0..stride {
+                    set_id_params(&mut id_params, id + slot, params, ext);
+                }
                 self.mesh_blend_mask_batch_entries
                     .push(MeshBlendMaskEntry::MultiMesh {
                         batch_index: index,
@@ -536,7 +597,7 @@ impl Gpu3D {
                 } else {
                     next_receiver_id + 1
                 };
-                id_params[id as usize] = receiver_params;
+                set_id_params(&mut id_params, id, receiver_params, receiver_ext);
                 self.mesh_blend_mask_batch_entries
                     .push(MeshBlendMaskEntry::MultiMesh {
                         batch_index: index,
@@ -565,13 +626,22 @@ impl Gpu3D {
         }
         let mut staged = vec![0u8; (entries * MASK_ID_STRIDE) as usize];
         for (slot, entry) in self.mesh_blend_mask_batch_entries.iter().enumerate() {
-            let id = match *entry {
-                MeshBlendMaskEntry::Draw { id, .. } | MeshBlendMaskEntry::MultiMesh { id, .. } => {
-                    id
-                }
+            // x = base blend id; y = 1 when the mask shader should salt the
+            // id per instance (salting multimesh sources only; receivers and
+            // rigid / skinned draw batches keep a uniform id).
+            let (id, salted) = match *entry {
+                MeshBlendMaskEntry::Draw { id, .. } => (id, false),
+                MeshBlendMaskEntry::MultiMesh { batch_index, id } => (
+                    id,
+                    id < RECEIVER_ID_BASE
+                        && mesh_blend_salt_instances(
+                            self.multimesh_batches[batch_index].mesh_blend_params_ext,
+                        ),
+                ),
             };
             let offset = slot * MASK_ID_STRIDE as usize;
             staged[offset..offset + 4].copy_from_slice(&id.to_le_bytes());
+            staged[offset + 4..offset + 8].copy_from_slice(&u32::from(salted).to_le_bytes());
         }
         queue.write_buffer(&self.mesh_blend_mask_id_buffer, 0, &staged);
     }
@@ -829,5 +899,40 @@ impl Gpu3D {
         };
         pass.set_bind_group(0, seam_bind_group, &[]);
         pass.draw(0..3, 0..1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn blend_params_ext_defaults_roundtrip_exactly() {
+        // Stage-1 parity: the authoring defaults must survive the pack ->
+        // unpack quantization without drift (slope 2.0, strength 1.0, salt on).
+        let packed = pack_mesh_blend_params_ext(MeshBlendOptions3D::default());
+        let ext = unpack_mesh_blend_params_ext(packed);
+        assert_eq!(ext[0], 2.0);
+        assert_eq!(ext[1], 1.0);
+        assert!(mesh_blend_salt_instances(packed));
+    }
+
+    #[test]
+    fn blend_params_ext_clamps_and_gates() {
+        let mut blend = MeshBlendOptions3D::default();
+        blend.slope_factor = 100.0;
+        blend.strength = -3.0;
+        blend.salt_instances = false;
+        let packed = pack_mesh_blend_params_ext(blend);
+        let ext = unpack_mesh_blend_params_ext(packed);
+        assert_eq!(ext[0], 8.0);
+        assert_eq!(ext[1], 0.0);
+        assert!(!mesh_blend_salt_instances(packed));
+
+        blend.slope_factor = 0.0;
+        blend.strength = 0.5;
+        let ext = unpack_mesh_blend_params_ext(pack_mesh_blend_params_ext(blend));
+        assert_eq!(ext[0], 0.0);
+        assert!((ext[1] - 0.5).abs() < 1.0 / 255.0);
     }
 }

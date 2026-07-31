@@ -279,7 +279,7 @@ fn drain_mesh_material(graphics: &mut PerroGraphics) -> (MeshID, MaterialID) {
 }
 
 fn create_texture(graphics: &mut PerroGraphics) -> TextureID {
-    graphics.submit(RenderCommand::Resource(
+    graphics.submit(RenderCommand::Resource(Box::new(
         ResourceCommand::CreateRuntimeTexture {
             request: RenderRequestID::new(1),
             id: TextureID::nil(),
@@ -289,27 +289,27 @@ fn create_texture(graphics: &mut PerroGraphics) -> TextureID {
             height: 1,
             rgba: Arc::from([255, 255, 255, 255]),
         },
-    ));
+    )));
     graphics.draw_frame();
     drain_texture(graphics)
 }
 
 fn create_mesh_material(graphics: &mut PerroGraphics) -> (MeshID, MaterialID) {
     graphics.submit_many([
-        RenderCommand::Resource(ResourceCommand::CreateRuntimeMesh {
+        RenderCommand::Resource(Box::new(ResourceCommand::CreateRuntimeMesh {
             request: RenderRequestID::new(2),
             id: MeshID::nil(),
             source: "__bench_mesh__".to_string(),
             reserved: true,
             mesh: tiny_mesh(),
-        }),
-        RenderCommand::Resource(ResourceCommand::CreateMaterial {
+        })),
+        RenderCommand::Resource(Box::new(ResourceCommand::CreateMaterial {
             request: RenderRequestID::new(3),
             id: MaterialID::nil(),
-            material: Material3D::default(),
+            material: Material3D::default().into(),
             source: Some("__bench_material__".to_string()),
             reserved: true,
-        }),
+        })),
     ]);
     graphics.draw_frame();
     drain_mesh_material(graphics)
@@ -450,6 +450,9 @@ fn bench_3d_blend_prepare(c: &mut Criterion) {
                 min_distance: 0.02,
                 noise_factor: 0.35,
                 noise_scale: 8.0,
+                slope_factor: 2.0,
+                strength: 1.0,
+                salt_instances: true,
             };
             b.iter_batched(
                 || {
@@ -486,6 +489,9 @@ fn bench_3d_blend_dense_prepare(c: &mut Criterion) {
                 min_distance: 0.02,
                 noise_factor: 0.35,
                 noise_scale: 8.0,
+                slope_factor: 2.0,
+                strength: 1.0,
+                salt_instances: true,
             };
             let command = draw_3d_dense_command_with_blend(count, mesh, material, blend);
             b.iter(|| {
@@ -506,19 +512,19 @@ fn bench_resource_churn(c: &mut Criterion) {
                 (0..1_000u32)
                     .flat_map(|i| {
                         [
-                            RenderCommand::Resource(ResourceCommand::CreateTexture {
+                            RenderCommand::Resource(Box::new(ResourceCommand::CreateTexture {
                                 request: RenderRequestID::new(i as u64),
                                 id: TextureID::nil(),
                                 source: format!("__bench_texture_{i}__"),
                                 reserved: false,
-                            }),
-                            RenderCommand::Resource(ResourceCommand::CreateMaterial {
+                            })),
+                            RenderCommand::Resource(Box::new(ResourceCommand::CreateMaterial {
                                 request: RenderRequestID::new(10_000 + i as u64),
                                 id: MaterialID::nil(),
-                                material: Material3D::default(),
+                                material: Material3D::default().into(),
                                 source: Some(format!("__bench_material_{i}__")),
                                 reserved: false,
-                            }),
+                            })),
                         ]
                     })
                     .collect::<Vec<_>>()

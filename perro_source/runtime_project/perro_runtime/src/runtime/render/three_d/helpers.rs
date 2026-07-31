@@ -230,8 +230,9 @@ pub(super) fn mix_hash_f32(h: &mut u64, value: f32) {
     *h = h.rotate_left(11).wrapping_mul(0xBF58_476D_1CE4_E5B9);
 }
 
-pub(super) fn collision_shape_wire_segments(shape: Shape3D) -> Vec<(Vec3, Vec3)> {
-    let mut out = Vec::new();
+// Appends into a caller-owned buffer so the per-frame collision debug path
+// recycles one scratch Vec instead of allocating per body per frame.
+pub(super) fn collision_shape_wire_segments_into(shape: Shape3D, out: &mut Vec<(Vec3, Vec3)>) {
     match shape {
         Shape3D::Cube { size } => {
             let hx = size.x.abs().max(0.0001) * 0.5;
@@ -261,26 +262,26 @@ pub(super) fn collision_shape_wire_segments(shape: Shape3D) -> Vec<(Vec3, Vec3)>
                 (2, 6),
                 (3, 7),
             ];
-            push_indexed_edges(&mut out, &points, &edges);
+            push_indexed_edges(out, &points, &edges);
         }
         Shape3D::Sphere { radius } => {
             let r = radius.abs().max(0.0001);
             append_circle_segments(
-                &mut out,
+                out,
                 Vec3::ZERO,
                 Vec3::new(r, 0.0, 0.0),
                 Vec3::new(0.0, r, 0.0),
                 20,
             );
             append_circle_segments(
-                &mut out,
+                out,
                 Vec3::ZERO,
                 Vec3::new(r, 0.0, 0.0),
                 Vec3::new(0.0, 0.0, r),
                 20,
             );
             append_circle_segments(
-                &mut out,
+                out,
                 Vec3::ZERO,
                 Vec3::new(0.0, r, 0.0),
                 Vec3::new(0.0, 0.0, r),
@@ -295,26 +296,14 @@ pub(super) fn collision_shape_wire_segments(shape: Shape3D) -> Vec<(Vec3, Vec3)>
             let h = half_height.abs().max(0.0001);
             let top = Vec3::new(0.0, h, 0.0);
             let bot = Vec3::new(0.0, -h, 0.0);
-            append_circle_segments(
-                &mut out,
-                top,
-                Vec3::new(r, 0.0, 0.0),
-                Vec3::new(0.0, 0.0, r),
-                20,
-            );
-            append_circle_segments(
-                &mut out,
-                bot,
-                Vec3::new(r, 0.0, 0.0),
-                Vec3::new(0.0, 0.0, r),
-                20,
-            );
+            append_circle_segments(out, top, Vec3::new(r, 0.0, 0.0), Vec3::new(0.0, 0.0, r), 20);
+            append_circle_segments(out, bot, Vec3::new(r, 0.0, 0.0), Vec3::new(0.0, 0.0, r), 20);
             out.push((Vec3::new(r, -h, 0.0), Vec3::new(r, h, 0.0)));
             out.push((Vec3::new(-r, -h, 0.0), Vec3::new(-r, h, 0.0)));
             out.push((Vec3::new(0.0, -h, r), Vec3::new(0.0, h, r)));
             out.push((Vec3::new(0.0, -h, -r), Vec3::new(0.0, h, -r)));
             append_arc_segments(
-                &mut out,
+                out,
                 top,
                 Vec3::new(r, 0.0, 0.0),
                 Vec3::new(0.0, r, 0.0),
@@ -322,7 +311,7 @@ pub(super) fn collision_shape_wire_segments(shape: Shape3D) -> Vec<(Vec3, Vec3)>
                 16,
             );
             append_arc_segments(
-                &mut out,
+                out,
                 top,
                 Vec3::new(0.0, 0.0, r),
                 Vec3::new(0.0, r, 0.0),
@@ -330,7 +319,7 @@ pub(super) fn collision_shape_wire_segments(shape: Shape3D) -> Vec<(Vec3, Vec3)>
                 16,
             );
             append_arc_segments(
-                &mut out,
+                out,
                 bot,
                 Vec3::new(r, 0.0, 0.0),
                 Vec3::new(0.0, -r, 0.0),
@@ -338,7 +327,7 @@ pub(super) fn collision_shape_wire_segments(shape: Shape3D) -> Vec<(Vec3, Vec3)>
                 16,
             );
             append_arc_segments(
-                &mut out,
+                out,
                 bot,
                 Vec3::new(0.0, 0.0, r),
                 Vec3::new(0.0, -r, 0.0),
@@ -353,14 +342,14 @@ pub(super) fn collision_shape_wire_segments(shape: Shape3D) -> Vec<(Vec3, Vec3)>
             let r = radius.abs().max(0.0001);
             let h = half_height.abs().max(0.0001);
             append_circle_segments(
-                &mut out,
+                out,
                 Vec3::new(0.0, h, 0.0),
                 Vec3::new(r, 0.0, 0.0),
                 Vec3::new(0.0, 0.0, r),
                 20,
             );
             append_circle_segments(
-                &mut out,
+                out,
                 Vec3::new(0.0, -h, 0.0),
                 Vec3::new(r, 0.0, 0.0),
                 Vec3::new(0.0, 0.0, r),
@@ -378,7 +367,7 @@ pub(super) fn collision_shape_wire_segments(shape: Shape3D) -> Vec<(Vec3, Vec3)>
             let r = radius.abs().max(0.0001);
             let h = half_height.abs().max(0.0001);
             append_circle_segments(
-                &mut out,
+                out,
                 Vec3::new(0.0, -h, 0.0),
                 Vec3::new(r, 0.0, 0.0),
                 Vec3::new(0.0, 0.0, r),
@@ -413,7 +402,7 @@ pub(super) fn collision_shape_wire_segments(shape: Shape3D) -> Vec<(Vec3, Vec3)>
                 (1, 4),
                 (2, 5),
             ];
-            push_indexed_edges(&mut out, &points, &edges);
+            push_indexed_edges(out, &points, &edges);
         }
         Shape3D::TriangularPyramid { size } => {
             let hw = size.x.abs().max(0.0001) * 0.5;
@@ -426,7 +415,7 @@ pub(super) fn collision_shape_wire_segments(shape: Shape3D) -> Vec<(Vec3, Vec3)>
                 Vec3::new(0.0, hh, 0.0),
             ];
             let edges = [(0usize, 1usize), (1, 2), (2, 0), (0, 3), (1, 3), (2, 3)];
-            push_indexed_edges(&mut out, &points, &edges);
+            push_indexed_edges(out, &points, &edges);
         }
         Shape3D::SquarePyramid { size } => {
             let hw = size.x.abs().max(0.0001) * 0.5;
@@ -449,11 +438,10 @@ pub(super) fn collision_shape_wire_segments(shape: Shape3D) -> Vec<(Vec3, Vec3)>
                 (2, 4),
                 (3, 4),
             ];
-            push_indexed_edges(&mut out, &points, &edges);
+            push_indexed_edges(out, &points, &edges);
         }
         Shape3D::TriMesh { .. } => {}
     }
-    out
 }
 
 pub(super) fn push_indexed_edges(
@@ -589,7 +577,7 @@ pub(super) fn quaternion_forward(rotation: perro_structs::Quaternion) -> [f32; 3
 pub(crate) fn resolve_particle_profile(
     runtime: &mut Runtime,
     source: &ParticleProfileRef,
-) -> Option<ParticleProfile3D> {
+) -> Option<std::sync::Arc<ParticleProfile3D>> {
     let source_path = source.source().trim();
     if source_path.is_empty() {
         return None;
@@ -604,20 +592,36 @@ pub(crate) fn resolve_particle_profile(
             .pending_particle_path_loads
             .remove(&loaded_key);
         if let Some(profile) = profile {
-            cache_particle_profile(runtime, loaded_key, profile);
+            cache_particle_profile(runtime, loaded_key, std::sync::Arc::new(profile));
         }
     }
     if let Some(path) = runtime.render_3d.particle_path_cache.get(&source_key) {
         return Some(path.clone());
     }
-    let parsed = if runtime.provider_mode() == crate::runtime_project::ProviderMode::Static {
-        if let Some(inline) = source_path.strip_prefix("inline://") {
+    let parsed = std::sync::Arc::new(
+        if runtime.provider_mode() == crate::runtime_project::ProviderMode::Static {
+            if let Some(inline) = source_path.strip_prefix("inline://") {
+                parse_pparticle_source(inline)?
+            } else if let Some(lookup) = runtime
+                .project()
+                .and_then(|project| project.static_particle_lookup)
+            {
+                lookup(source_key).clone()
+            } else if runtime
+                .render_3d
+                .pending_particle_path_loads
+                .insert(source_key)
+            {
+                spawn_particle_profile_load(
+                    source_path.to_string(),
+                    runtime.render_3d.particle_path_load_tx.clone(),
+                );
+                return None;
+            } else {
+                return None;
+            }
+        } else if let Some(inline) = source_path.strip_prefix("inline://") {
             parse_pparticle_source(inline)?
-        } else if let Some(lookup) = runtime
-            .project()
-            .and_then(|project| project.static_particle_lookup)
-        {
-            lookup(source_key).clone()
         } else if runtime
             .render_3d
             .pending_particle_path_loads
@@ -630,27 +634,17 @@ pub(crate) fn resolve_particle_profile(
             return None;
         } else {
             return None;
-        }
-    } else if let Some(inline) = source_path.strip_prefix("inline://") {
-        parse_pparticle_source(inline)?
-    } else if runtime
-        .render_3d
-        .pending_particle_path_loads
-        .insert(source_key)
-    {
-        spawn_particle_profile_load(
-            source_path.to_string(),
-            runtime.render_3d.particle_path_load_tx.clone(),
-        );
-        return None;
-    } else {
-        return None;
-    };
+        },
+    );
     cache_particle_profile(runtime, source_key, parsed.clone());
     Some(parsed)
 }
 
-fn cache_particle_profile(runtime: &mut Runtime, source_key: u64, parsed: ParticleProfile3D) {
+fn cache_particle_profile(
+    runtime: &mut Runtime,
+    source_key: u64,
+    parsed: std::sync::Arc<ParticleProfile3D>,
+) {
     if !runtime
         .render_3d
         .particle_path_cache

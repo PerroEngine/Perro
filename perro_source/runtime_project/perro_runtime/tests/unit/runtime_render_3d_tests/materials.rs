@@ -6,12 +6,12 @@ mod materials {
         let mut runtime = Runtime::new();
         let first_node = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
+            .insert(SceneNode::new(SceneNodeData::from(
                 MeshInstance3D::new(),
             )));
         let second_node = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
+            .insert(SceneNode::new(SceneNodeData::from(
                 MeshInstance3D::new(),
             )));
         runtime
@@ -41,9 +41,10 @@ mod materials {
         for (request, mesh) in first
             .iter()
             .filter_map(|command| match command {
-                RenderCommand::Resource(ResourceCommand::CreateMesh { request, .. }) => {
-                    Some(*request)
-                }
+                RenderCommand::Resource(r0) => match &**r0 {
+                    ResourceCommand::CreateMesh { request, .. } => Some(*request),
+                    _ => None,
+                },
                 _ => None,
             })
             .zip([MeshID::from_parts(22, 0), MeshID::from_parts(23, 0)])
@@ -57,16 +58,18 @@ mod materials {
 
         runtime.extract_render_3d_commands();
         let second = collect_commands(&mut runtime);
-        let inline_materials: Vec<MaterialID> =
-            second
-                .iter()
-                .filter_map(|command| match command {
-                    RenderCommand::Resource(ResourceCommand::CreateMaterial {
-                        id, source, ..
-                    }) if source.is_none() => Some(*id),
+        let inline_materials: Vec<MaterialID> = second
+            .iter()
+            .filter_map(|command| match command {
+                RenderCommand::Resource(r0) => match &**r0 {
+                    ResourceCommand::CreateMaterial { id, source, .. } if source.is_none() => {
+                        Some(*id)
+                    }
                     _ => None,
-                })
-                .collect();
+                },
+                _ => None,
+            })
+            .collect();
         assert_eq!(inline_materials.len(), 1);
     }
 
@@ -80,7 +83,7 @@ mod materials {
         set_primary_material(&mut mesh, old_material);
         let node = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+            .insert(SceneNode::new(SceneNodeData::from(mesh)));
 
         runtime.extract_render_3d_commands();
         let first = collect_commands(&mut runtime);
@@ -97,16 +100,18 @@ mod materials {
         let pending_mesh = runtime
             .resource_api
             .load_mesh("res://meshes/tool_version_b.glb:mesh[0]");
-        let pending_request =
-            collect_commands(&mut runtime)
-                .into_iter()
-                .find_map(|command| match command {
-                    RenderCommand::Resource(ResourceCommand::CreateMesh {
-                        request, id, ..
-                    }) if id == pending_mesh => Some(request),
+        let pending_request = collect_commands(&mut runtime)
+            .into_iter()
+            .find_map(|command| match command {
+                RenderCommand::Resource(r0) => match *r0 {
+                    ResourceCommand::CreateMesh { request, id, .. } if id == pending_mesh => {
+                        Some(request)
+                    }
                     _ => None,
-                })
-                .expect("expected pending mesh create request");
+                },
+                _ => None,
+            })
+            .expect("expected pending mesh create request");
         if let Some(mut scene_node) = runtime.nodes.get_mut(node)
             && let SceneNodeData::MeshInstance3D(mesh) = &mut scene_node.data
         {
@@ -164,7 +169,7 @@ mod materials {
         set_primary_material(&mut mesh, old_material);
         let node = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+            .insert(SceneNode::new(SceneNodeData::from(mesh)));
 
         runtime.extract_render_3d_commands();
         let first = collect_commands(&mut runtime);
@@ -188,9 +193,14 @@ mod materials {
         let pending_request = collect_commands(&mut runtime)
             .into_iter()
             .find_map(|command| match command {
-                RenderCommand::Resource(ResourceCommand::CreateMaterial {
-                    request, id, ..
-                }) if id == pending_material => Some(request),
+                RenderCommand::Resource(r0) => match *r0 {
+                    ResourceCommand::CreateMaterial { request, id, .. }
+                        if id == pending_material =>
+                    {
+                        Some(request)
+                    }
+                    _ => None,
+                },
                 _ => None,
             })
             .expect("expected pending material create request");
@@ -255,7 +265,7 @@ mod materials {
         set_primary_material(&mut mesh, material_id);
         let node = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+            .insert(SceneNode::new(SceneNodeData::from(mesh)));
 
         runtime.extract_render_3d_commands();
         let first = collect_commands(&mut runtime);
@@ -346,7 +356,7 @@ mod materials {
             .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
         let child = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
+            .insert(SceneNode::new(SceneNodeData::from(
                 MeshInstance3D::new(),
             )));
         if let Some(mut parent_node) = runtime.nodes.get_mut(parent) {
@@ -439,7 +449,7 @@ mod materials {
         let mut runtime = Runtime::new();
         let node = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
+            .insert(SceneNode::new(SceneNodeData::from(
                 MeshInstance3D::new(),
             )));
         let mesh = MeshID::from_parts(30, 0);

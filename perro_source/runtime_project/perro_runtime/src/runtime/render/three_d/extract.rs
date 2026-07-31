@@ -185,8 +185,7 @@ impl Runtime {
                 // the index from the same pass so later frames take the fast path.
                 self.render_3d.skeleton_mesh_map.clear();
                 self.render_3d.mesh_skeleton_map.clear();
-                let mut main_members = std::mem::take(&mut self.world_member_scratch);
-                self.fill_world_members(NodeID::nil(), &mut main_members);
+                let main_members = self.world_members_arc(NodeID::nil());
                 for &id in main_members.iter() {
                     let Some(node) = self.nodes.get(id) else {
                         continue;
@@ -207,8 +206,6 @@ impl Runtime {
                         traversal_ids.push(id);
                     }
                 }
-                main_members.clear();
-                self.world_member_scratch = main_members;
                 self.render_3d.skeleton_mesh_index_built = true;
             }
         } else if !self.render_3d.skeleton_mesh_index_built {
@@ -217,8 +214,7 @@ impl Runtime {
             // animating frame can use the fast path.
             self.render_3d.skeleton_mesh_map.clear();
             self.render_3d.mesh_skeleton_map.clear();
-            let mut main_members = std::mem::take(&mut self.world_member_scratch);
-            self.fill_world_members(NodeID::nil(), &mut main_members);
+            let main_members = self.world_members_arc(NodeID::nil());
             for &id in main_members.iter() {
                 let Some(node) = self.nodes.get(id) else {
                     continue;
@@ -236,8 +232,6 @@ impl Runtime {
                         .insert(id);
                 }
             }
-            main_members.clear();
-            self.world_member_scratch = main_members;
             self.render_3d.skeleton_mesh_index_built = true;
         }
         dirty_skeletons.clear();
@@ -261,21 +255,32 @@ impl Runtime {
         let overlay_viewport = self.input.viewport_size();
         // Reuse one compact blocker list for all world overlays. Building it
         // per overlay made Label3D spawn bursts scan + allocate for the full
-        // node arena once per label.
+        // node arena once per label. Skip the member scan entirely when the
+        // traversal holds no overlay users (Sprite3D/VideoPlayer3D/Label3D) —
+        // the occluder list is only read while processing those.
         let mut overlay_occluders = std::mem::take(&mut self.render_3d.overlay_occluders_scratch);
         overlay_occluders.clear();
-        let mut main_members = std::mem::take(&mut self.world_member_scratch);
-        self.fill_world_members(NodeID::nil(), &mut main_members);
-        overlay_occluders.extend(main_members.iter().copied().filter(|candidate| {
-            self.nodes.get(*candidate).is_some_and(|scene_node| {
+        let has_overlay_users = traversal_ids.iter().any(|&id| {
+            self.nodes.get(id).is_some_and(|scene_node| {
                 matches!(
                     scene_node.data,
-                    SceneNodeData::MeshInstance3D(_) | SceneNodeData::MultiMeshInstance3D(_)
+                    SceneNodeData::Sprite3D(_)
+                        | SceneNodeData::VideoPlayer3D(_)
+                        | SceneNodeData::Label3D(_)
                 )
             })
-        }));
-        main_members.clear();
-        self.world_member_scratch = main_members;
+        });
+        if has_overlay_users {
+            let main_members = self.world_members_arc(NodeID::nil());
+            overlay_occluders.extend(main_members.iter().copied().filter(|candidate| {
+                self.nodes.get(*candidate).is_some_and(|scene_node| {
+                    matches!(
+                        scene_node.data,
+                        SceneNodeData::MeshInstance3D(_) | SceneNodeData::MultiMeshInstance3D(_)
+                    )
+                })
+            }));
+        }
 
         for node in traversal_ids.iter().copied() {
             visible_now.remove(&node);
@@ -325,7 +330,7 @@ impl Runtime {
                     .get(&node)
                     .is_some_and(|retained| sky_3d_state_matches(retained, sky));
                 if !unchanged {
-                    let sky = Sky3DState {
+                    let sky = Arc::new(Sky3DState {
                         day_colors: Arc::from(sky.palette.day_colors.as_ref()),
                         evening_colors: Arc::from(sky.palette.evening_colors.as_ref()),
                         night_colors: Arc::from(sky.palette.night_colors.as_ref()),
@@ -335,15 +340,16 @@ impl Runtime {
                             paused: sky.time.paused,
                             scale: sky.time.scale,
                         },
-                        shaders: Arc::from(
-                            sky.shaders
-                                .iter()
-                                .map(|shader| SkyShaderPass3DState {
-                                    path: shader.path.clone(),
-                                    params: Arc::from(shader.params.as_ref()),
-                                })
-                                .collect::<Vec<_>>(),
-                        ),
+                        // slice iter is TrustedLen: collects into the Arc
+                        // directly (no Vec round trip).
+                        shaders: sky
+                            .shaders
+                            .iter()
+                            .map(|shader| SkyShaderPass3DState {
+                                path: shader.path.clone(),
+                                params: Arc::from(shader.params.as_ref()),
+                            })
+                            .collect(),
                         environment: sky.environment.as_ref().map(|environment| {
                             EnvironmentMap3DState {
                                 source: environment.source.clone(),
@@ -351,10 +357,10 @@ impl Runtime {
                                 rotation_degrees: environment.rotation_degrees,
                             }
                         }),
-                    };
+                    });
                     self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::SetSky {
                         node,
-                        sky: Box::new(sky.clone()),
+                        sky: sky.clone(),
                     })));
                     self.render_3d.retained_skies.insert(node, sky);
                 }
@@ -377,6 +383,7 @@ impl Runtime {
             if let Some((visible, stream, local_transform, size, tint)) = stream_data {
                 if visible {
                     if let Some(stream_state) = self.camera_stream_state(node, &stream) {
+                        let stream_state = Arc::new(stream_state);
                         let tint =
                             Runtime::color_modulate(tint, self.effective_self_modulate(node));
                         let model = self
@@ -388,7 +395,7 @@ impl Runtime {
                         self.queue_render_command(RenderCommand::ThreeD(Box::new(
                             Command3D::UpsertCameraStream {
                                 node,
-                                stream: Box::new(stream_state),
+                                stream: stream_state,
                                 quad: CameraStream3DState { model, size, tint },
                             },
                         )));
@@ -419,6 +426,7 @@ impl Runtime {
             if let Some((visible, view, local_transform, size, tint)) = sub_view_data {
                 if visible {
                     if let Some(stream_state) = self.sub_view_state(node, &view, None) {
+                        let stream_state = Arc::new(stream_state);
                         let tint =
                             Runtime::color_modulate(tint, self.effective_self_modulate(node));
                         let model = self
@@ -430,7 +438,7 @@ impl Runtime {
                         self.queue_render_command(RenderCommand::ThreeD(Box::new(
                             Command3D::UpsertCameraStream {
                                 node,
-                                stream: Box::new(stream_state),
+                                stream: stream_state,
                                 quad: CameraStream3DState {
                                     model,
                                     size: [size.x.max(0.001), size.y.max(0.001)],
@@ -821,9 +829,9 @@ impl Runtime {
             {
                 if visible {
                     let Some(texture) = self.resolve_sprite_texture(node, texture) else {
-                        self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode {
-                            node,
-                        }));
+                        self.queue_render_command(RenderCommand::Ui(Box::new(
+                            UiCommand::RemoveNode { node },
+                        )));
                         continue;
                     };
                     let transform = self
@@ -836,31 +844,35 @@ impl Runtime {
                         &overlay_occluders,
                     );
                     if occluded {
-                        self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode {
-                            node,
-                        }));
+                        self.queue_render_command(RenderCommand::Ui(Box::new(
+                            UiCommand::RemoveNode { node },
+                        )));
                     } else if let Some(rect) =
                         world_rect_3d(transform, size, &overlay_camera, overlay_viewport)
                     {
                         let (uv_min, uv_max) = sprite_3d_uv(texture_region, flip_x, flip_y);
-                        self.queue_render_command(RenderCommand::Ui(UiCommand::UpsertImage {
-                            node,
-                            rect,
-                            clip_rect: viewport_clip_3d(overlay_viewport),
-                            texture,
-                            tint: modulate,
-                            uv_min,
-                            uv_max,
-                            scale_mode: UiImageScaleState::Stretch,
-                            h_align: UiTextAlignState::Center,
-                            v_align: UiTextAlignState::Center,
-                            aspect_ratio: 1.0,
-                            corner_radii: Default::default(),
-                        }));
+                        self.queue_render_command(RenderCommand::Ui(Box::new(
+                            UiCommand::UpsertImage {
+                                node,
+                                rect,
+                                clip_rect: viewport_clip_3d(overlay_viewport),
+                                texture,
+                                tint: modulate,
+                                uv_min,
+                                uv_max,
+                                scale_mode: UiImageScaleState::Stretch,
+                                h_align: UiTextAlignState::Center,
+                                v_align: UiTextAlignState::Center,
+                                aspect_ratio: 1.0,
+                                corner_radii: Default::default(),
+                            },
+                        )));
                         visible_now.insert(node);
                     }
                 } else {
-                    self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode { node }));
+                    self.queue_render_command(RenderCommand::Ui(Box::new(UiCommand::RemoveNode {
+                        node,
+                    })));
                 }
             }
 
@@ -917,9 +929,9 @@ impl Runtime {
                         && backface_cull
                         && !world_rect_front_facing_3d(transform, &overlay_camera)
                     {
-                        self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode {
-                            node,
-                        }));
+                        self.queue_render_command(RenderCommand::Ui(Box::new(
+                            UiCommand::RemoveNode { node },
+                        )));
                         continue;
                     }
                     {
@@ -941,40 +953,44 @@ impl Runtime {
                             &overlay_camera,
                             overlay_viewport,
                         ) else {
-                            self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode {
-                                node,
-                            }));
+                            self.queue_render_command(RenderCommand::Ui(Box::new(
+                                UiCommand::RemoveNode { node },
+                            )));
                             continue;
                         };
                         let rect = label_3d_canonical_layout_rect(size, font_size);
                         let content_size = label_3d_content_size(rect.size, padding);
-                        self.queue_render_command(RenderCommand::Ui(UiCommand::UpsertLabel {
-                            node,
-                            rect,
-                            clip_rect: viewport_clip_3d(overlay_viewport),
-                            text,
-                            color: Runtime::color_modulate(color, modulate),
-                            font_size: font_size.max(0.001).min(content_size[1]),
-                            font,
-                            wrap_width: Some(content_size[0]),
-                            h_align: text_align_state_3d(h_align),
-                            v_align: text_align_state_3d(v_align),
-                            backdrop_color: Runtime::color_modulate(backdrop_color, modulate),
-                            corner_radii: perro_render_bridge::UiCornerRadiiState {
-                                tl: corner_radii.tl,
-                                tr: corner_radii.tr,
-                                br: corner_radii.br,
-                                bl: corner_radii.bl,
+                        self.queue_render_command(RenderCommand::Ui(Box::new(
+                            UiCommand::UpsertLabel {
+                                node,
+                                rect,
+                                clip_rect: viewport_clip_3d(overlay_viewport),
+                                text,
+                                color: Runtime::color_modulate(color, modulate),
+                                font_size: font_size.max(0.001).min(content_size[1]),
+                                font,
+                                wrap_width: Some(content_size[0]),
+                                h_align: text_align_state_3d(h_align),
+                                v_align: text_align_state_3d(v_align),
+                                backdrop_color: Runtime::color_modulate(backdrop_color, modulate),
+                                corner_radii: perro_render_bridge::UiCornerRadiiState {
+                                    tl: corner_radii.tl,
+                                    tr: corner_radii.tr,
+                                    br: corner_radii.br,
+                                    bl: corner_radii.bl,
+                                },
+                                padding: [padding.left, padding.top, padding.right, padding.bottom],
+                                projected_quad: Some(projected_quad),
+                                depth_test: !visible_through_objects,
+                                fit_content: true,
                             },
-                            padding: [padding.left, padding.top, padding.right, padding.bottom],
-                            projected_quad: Some(projected_quad),
-                            depth_test: !visible_through_objects,
-                            fit_content: true,
-                        }));
+                        )));
                         visible_now.insert(node);
                     }
                 } else {
-                    self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode { node }));
+                    self.queue_render_command(RenderCommand::Ui(Box::new(UiCommand::RemoveNode {
+                        node,
+                    })));
                 }
             }
 
@@ -1023,11 +1039,20 @@ impl Runtime {
                                     min_distance: mesh.blend.min_distance,
                                     noise_factor: mesh.blend.noise_factor,
                                     noise_scale: mesh.blend.noise_scale,
+                                    slope_factor: mesh.blend.slope_factor,
+                                    strength: mesh.blend.strength,
+                                    salt_instances: mesh.blend.salt_instances,
                                 },
                                 (mesh.flip_x, mesh.flip_y, mesh.flip_z),
                                 mesh.cast_shadows,
                                 mesh.receive_shadows,
-                                Arc::<[f32]>::from(mesh.blend_shape_weights.clone()),
+                                // single alloc from the borrowed slice (no Vec
+                                // clone), shared empty when no weights.
+                                if mesh.blend_shape_weights.is_empty() {
+                                    empty_arc_slice()
+                                } else {
+                                    Arc::<[f32]>::from(mesh.blend_shape_weights.as_slice())
+                                },
                             ))
                         }
                         SceneNodeData::MultiMeshInstance3D(mesh)
@@ -1051,11 +1076,20 @@ impl Runtime {
                                     min_distance: mesh.blend.min_distance,
                                     noise_factor: mesh.blend.noise_factor,
                                     noise_scale: mesh.blend.noise_scale,
+                                    slope_factor: mesh.blend.slope_factor,
+                                    strength: mesh.blend.strength,
+                                    salt_instances: mesh.blend.salt_instances,
                                 },
                                 (mesh.flip_x, mesh.flip_y, mesh.flip_z),
                                 mesh.cast_shadows,
                                 mesh.receive_shadows,
-                                Arc::<[f32]>::from(mesh.blend_shape_weights.clone()),
+                                // single alloc from the borrowed slice (no Vec
+                                // clone), shared empty when no weights.
+                                if mesh.blend_shape_weights.is_empty() {
+                                    empty_arc_slice()
+                                } else {
+                                    Arc::<[f32]>::from(mesh.blend_shape_weights.as_slice())
+                                },
                             ))
                         }
                         _ => None,
@@ -1175,7 +1209,7 @@ impl Runtime {
                                                             .blend_shape_weights
                                                             .clone()
                                                             .map(Arc::<[f32]>::from)
-                                                            .unwrap_or_else(|| Arc::from([])),
+                                                            .unwrap_or_else(empty_arc_slice),
                                                     }
                                                 }),
                                             );

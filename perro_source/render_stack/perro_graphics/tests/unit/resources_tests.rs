@@ -1,7 +1,13 @@
 use super::{DecodedTextureRgba, ResourceStore};
 use perro_ids::{MaterialID, MeshID, TextureID};
-use perro_render_bridge::{Material3D, RuntimeMeshData, RuntimeMeshVertex, StandardMaterial3D};
+use perro_render_bridge::{
+    Material3D, RuntimeMeshData, RuntimeMeshVertex, StandardMaterial3D, StreamRgba,
+};
 use perro_structs::UnitVector4;
+
+fn stream_frame(bytes: &[u8]) -> StreamRgba {
+    StreamRgba::Owned(bytes.to_vec())
+}
 
 fn simple_runtime_mesh(scale: f32) -> std::sync::Arc<RuntimeMeshData> {
     std::sync::Arc::new(RuntimeMeshData {
@@ -238,7 +244,7 @@ fn stale_generation_drop_keeps_reused_live_resources() {
     assert!(store.set_decoded_texture_data(
         texture,
         DecodedTextureRgba {
-            rgba: vec![1, 2, 3, 4],
+            rgba: vec![1, 2, 3, 4].into(),
             width: 1,
             height: 1,
         }
@@ -530,7 +536,7 @@ fn write_stream_texture_data_reuses_buffer_and_falls_back_by_source() {
     let id = store.create_texture(source, true);
 
     // first write establishes the resident by_id buffer.
-    assert!(store.write_stream_texture_data(id, &[1, 2, 3, 4, 5, 6, 7, 8], 2, 1));
+    assert!(store.write_stream_texture_data(id, &stream_frame(&[1, 2, 3, 4, 5, 6, 7, 8]), 2, 1));
     let ptr = store
         .decoded_texture_data(id)
         .expect("decoded")
@@ -541,16 +547,26 @@ fn write_stream_texture_data_reuses_buffer_and_falls_back_by_source() {
     let by_source = store
         .decoded_texture_data_by_source(source)
         .expect("by-source fallback");
-    assert_eq!(by_source.rgba, [1, 2, 3, 4, 5, 6, 7, 8]);
+    assert_eq!(*by_source.rgba, [1, 2, 3, 4, 5, 6, 7, 8]);
 
     // same-size repeat copies in place: same allocation, updated bytes.
-    assert!(store.write_stream_texture_data(id, &[8, 7, 6, 5, 4, 3, 2, 1], 2, 1));
+    assert!(store.write_stream_texture_data(id, &stream_frame(&[8, 7, 6, 5, 4, 3, 2, 1]), 2, 1));
     let decoded = store.decoded_texture_data(id).expect("decoded");
-    assert_eq!(decoded.rgba, [8, 7, 6, 5, 4, 3, 2, 1]);
+    assert_eq!(*decoded.rgba, [8, 7, 6, 5, 4, 3, 2, 1]);
     assert_eq!(decoded.rgba.as_ptr(), ptr, "buffer reused, no realloc");
 
+    // shared frames adopt the incoming Arc by refcount (no copy).
+    let shared: std::sync::Arc<[u8]> = vec![4, 4, 4, 4, 4, 4, 4, 4].into();
+    assert!(store.write_stream_texture_data(id, &StreamRgba::Shared(shared.clone()), 2, 1));
+    let decoded = store.decoded_texture_data(id).expect("decoded");
+    assert_eq!(
+        decoded.rgba.as_ptr(),
+        shared.as_ptr(),
+        "arc adopted, no copy"
+    );
+
     // resolution change reallocates to the new size.
-    assert!(store.write_stream_texture_data(id, &[9, 9, 9, 9, 9, 9, 9, 9], 1, 2));
+    assert!(store.write_stream_texture_data(id, &stream_frame(&[9, 9, 9, 9, 9, 9, 9, 9]), 1, 2));
     let decoded = store.decoded_texture_data(id).expect("decoded");
     assert_eq!((decoded.width, decoded.height), (1, 2));
 }
@@ -562,7 +578,7 @@ fn idle_sweep_reclaims_redecodable_pixels_but_keeps_dims() {
     assert!(store.set_decoded_texture_data(
         id,
         DecodedTextureRgba {
-            rgba: vec![7; 16],
+            rgba: vec![7; 16].into(),
             width: 2,
             height: 2,
         }
@@ -584,7 +600,7 @@ fn idle_sweep_reclaims_redecodable_pixels_but_keeps_dims() {
     assert!(store.set_decoded_texture_data(
         id,
         DecodedTextureRgba {
-            rgba: vec![8; 16],
+            rgba: vec![8; 16].into(),
             width: 2,
             height: 2,
         }
@@ -598,14 +614,14 @@ fn idle_sweep_skips_pinned_and_non_redecodable_sources() {
 
     // stream writes pin: bytes exist nowhere else.
     let stream = store.create_texture("webcam://node/1", true);
-    assert!(store.write_stream_texture_data(stream, &[1, 2, 3, 4], 1, 1));
+    assert!(store.write_stream_texture_data(stream, &stream_frame(&[1, 2, 3, 4]), 1, 1));
 
     // runtime source: no decodable payload behind it.
     let runtime = store.create_texture("runtime://texture/5:0", false);
     assert!(store.set_decoded_texture_data(
         runtime,
         DecodedTextureRgba {
-            rgba: vec![9; 4],
+            rgba: vec![9; 4].into(),
             width: 1,
             height: 1,
         }
@@ -616,7 +632,7 @@ fn idle_sweep_skips_pinned_and_non_redecodable_sources() {
     assert!(store.set_decoded_texture_data(
         painted,
         DecodedTextureRgba {
-            rgba: vec![0; 4],
+            rgba: vec![0; 4].into(),
             width: 1,
             height: 1,
         }
@@ -647,13 +663,75 @@ fn idle_sweep_skips_pinned_and_non_redecodable_sources() {
 }
 
 #[test]
+fn decoded_byte_budget_evicts_lru_redecodable_entries() {
+    let mut store = ResourceStore::new();
+    let decoded = |fill: u8| DecodedTextureRgba {
+        rgba: vec![fill; 16].into(),
+        width: 2,
+        height: 2,
+    };
+
+    // oldest entry: stamped before the clock ticks below.
+    let oldest = store.create_texture("res://textures/oldest.png", false);
+    assert!(store.set_decoded_texture_data(oldest, decoded(1)));
+
+    // non-redecodable + pinned entries must survive any budget pressure.
+    let runtime = store.create_texture("runtime://texture/5:0", false);
+    assert!(store.set_decoded_texture_data(runtime, decoded(2)));
+    let pinned = store.create_texture("res://textures/pinned.png", false);
+    assert!(store.set_decoded_texture_data(pinned, decoded(3)));
+    store.pin_decoded_texture_data(pinned);
+
+    // tick the recency clock so the next insert stamps newer than the rest.
+    let _ = store.evict_idle_decoded_textures(1000);
+    let newest = store.create_texture("res://textures/newest.png", false);
+    assert!(store.set_decoded_texture_data(newest, decoded(4)));
+    assert_eq!(store.decoded_texture_bytes_for_test(), 64);
+
+    // budget forces one eviction: the oldest redecodable unpinned entry goes,
+    // TTL notwithstanding; runtime/pinned/triggering entries stay.
+    store.enforce_decoded_texture_budget_for_test(newest, 48);
+    assert!(
+        !store
+            .decoded_texture_data(oldest)
+            .expect("entry")
+            .has_pixels()
+    );
+    assert!(
+        store
+            .decoded_texture_data(runtime)
+            .expect("rt")
+            .has_pixels()
+    );
+    assert!(
+        store
+            .decoded_texture_data(pinned)
+            .expect("pin")
+            .has_pixels()
+    );
+    assert!(
+        store
+            .decoded_texture_data(newest)
+            .expect("new")
+            .has_pixels()
+    );
+    assert_eq!(store.decoded_texture_bytes_for_test(), 48);
+
+    // dropping decoded state releases its tracked bytes.
+    assert!(store.set_decoded_texture_data(oldest, decoded(5)));
+    assert_eq!(store.decoded_texture_bytes_for_test(), 64);
+    assert!(store.drop_texture(oldest));
+    assert_eq!(store.decoded_texture_bytes_for_test(), 48);
+}
+
+#[test]
 fn region_write_on_evicted_entry_fails_until_restored() {
     let mut store = ResourceStore::new();
     let id = store.create_texture("res://textures/canvas.png", false);
     assert!(store.set_decoded_texture_data(
         id,
         DecodedTextureRgba {
-            rgba: vec![0; 4],
+            rgba: vec![0; 4].into(),
             width: 1,
             height: 1,
         }
@@ -668,7 +746,7 @@ fn region_write_on_evicted_entry_fails_until_restored() {
     assert!(store.set_decoded_texture_data(
         id,
         DecodedTextureRgba {
-            rgba: vec![0; 4],
+            rgba: vec![0; 4].into(),
             width: 1,
             height: 1,
         }
@@ -688,7 +766,7 @@ fn decoded_texture_source_lookup_uses_canonical_id_buffer() {
     assert!(store.set_decoded_texture_data(
         id,
         DecodedTextureRgba {
-            rgba: vec![1, 2, 3, 4, 5, 6, 7, 8],
+            rgba: vec![1, 2, 3, 4, 5, 6, 7, 8].into(),
             width: 2,
             height: 1,
         }

@@ -7,7 +7,7 @@ impl Runtime {
         sound: &mut ActiveSpatialSound,
         physics_hit: Option<perro_runtime_api::sub_apis::PhysicsRayHit2D>,
         listener: perro_pawdio::AudioListener2D,
-        listener_options: perro_structs::AudioListenerOptions,
+        listener_options: &perro_structs::AudioListenerOptions,
     ) -> Option<PropagationResult> {
         let listener_pos = Vector2::new(listener.position[0], listener.position[1]);
         let range = sound.options.range.max(0.0001);
@@ -263,7 +263,7 @@ impl Runtime {
         sound: &mut ActiveSpatialSound,
         hit: Option<perro_runtime_api::sub_apis::PhysicsRayHit3D>,
         listener: perro_pawdio::AudioListener3D,
-        listener_options: perro_structs::AudioListenerOptions,
+        listener_options: &perro_structs::AudioListenerOptions,
     ) -> Option<PropagationResult> {
         let listener_pos = Vector3::new(
             listener.position[0],

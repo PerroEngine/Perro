@@ -284,8 +284,12 @@ fn split_gltf_skin_source(source: &str) -> Option<(&str, usize)> {
 }
 
 fn load_bones_from_gltf(bytes: &[u8], skin_index: usize) -> Result<Vec<Bone3D>, String> {
-    let (doc, buffers, _images) =
-        gltf::import_slice(bytes).map_err(|err| format!("gltf import failed: {err}"))?;
+    let gltf::Gltf {
+        document: doc,
+        blob,
+    } = gltf::Gltf::from_slice(bytes).map_err(|err| format!("gltf import failed: {err}"))?;
+    let buffers = gltf::import_buffers(&doc, None, blob)
+        .map_err(|err| format!("gltf import failed: {err}"))?;
 
     let skin = doc
         .skins()

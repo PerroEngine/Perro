@@ -266,6 +266,9 @@ pub(in super::super) fn resolve_scene_node_field_for_type(
             SceneFieldName::BlendEnabled => {
                 Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendEnabled))
             }
+            SceneFieldName::BlendScreen => {
+                Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendScreen))
+            }
             SceneFieldName::BlendNormals => {
                 Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendNormals))
             }
@@ -280,6 +283,21 @@ pub(in super::super) fn resolve_scene_node_field_for_type(
             )),
             SceneFieldName::BlendMinDistance => Some(NodeField::MeshInstance3D(
                 MeshInstance3DField::BlendMinDistance,
+            )),
+            SceneFieldName::BlendNoiseFactor => Some(NodeField::MeshInstance3D(
+                MeshInstance3DField::BlendNoiseFactor,
+            )),
+            SceneFieldName::BlendNoiseScale => Some(NodeField::MeshInstance3D(
+                MeshInstance3DField::BlendNoiseScale,
+            )),
+            SceneFieldName::BlendSlopeFactor => Some(NodeField::MeshInstance3D(
+                MeshInstance3DField::BlendSlopeFactor,
+            )),
+            SceneFieldName::BlendStrength => Some(NodeField::MeshInstance3D(
+                MeshInstance3DField::BlendStrength,
+            )),
+            SceneFieldName::BlendSaltInstances => Some(NodeField::MeshInstance3D(
+                MeshInstance3DField::BlendSaltInstances,
             )),
             _ => None,
         },

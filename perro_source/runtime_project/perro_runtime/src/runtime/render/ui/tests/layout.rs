@@ -134,12 +134,10 @@ mod layout {
 
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertButton { node: n, rect, .. })
-                if *n == node
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertButton { node: n, rect, .. } if *n == node
                     && rect.center == [6.0, -3.0]
                     && rect.size == [150.0, 48.0]
-                    && rect.rotation_radians == 0.25
-        )));
+                    && rect.rotation_radians == 0.25))));
     }
 
     #[test]
@@ -164,11 +162,9 @@ mod layout {
 
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertButton { node: id, rect, fill, .. })
-                if *id == node
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertButton { node: id, rect, fill, .. } if *id == node
                     && rect.size == [120.0, 40.0]
-                    && *fill == rgba(0.3, 0.4, 0.5, 1.0)
-        )));
+                    && *fill == rgba(0.3, 0.4, 0.5, 1.0)))));
     }
 
     #[test]
@@ -334,8 +330,7 @@ mod layout {
         runtime.drain_render_commands(&mut commands);
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == button
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::RemoveNode { node } if *node == button))));
     }
 
     #[test]
@@ -758,9 +753,7 @@ mod layout {
 
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertLabel { node, rect, font_size, .. })
-                if *node == child && rect.size == [100.0, 20.0] && *font_size == 10.0
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertLabel { node, rect, font_size, .. } if *node == child && rect.size == [100.0, 20.0] && *font_size == 10.0))));
     }
 
     #[test]
@@ -784,9 +777,7 @@ mod layout {
 
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertLabel { node: id, font_size, .. })
-                if *id == node && (*font_size - 10.0).abs() < 1.0e-3
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertLabel { node: id, font_size, .. } if *id == node && (*font_size - 10.0).abs() < 1.0e-3))));
     }
 
     #[test]
@@ -811,9 +802,7 @@ mod layout {
 
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertTextEdit { node: id, font_size, .. })
-                if *id == node && (*font_size - 30.0).abs() < 1.0e-3
-        )));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertTextEdit { node: id, font_size, .. } if *id == node && (*font_size - 30.0).abs() < 1.0e-3))));
     }
 
     #[test]
@@ -839,17 +828,16 @@ mod layout {
 
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(UiCommand::UpsertPanel {
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertPanel {
                 node,
                 rect,
                 corner_radii,
                 stroke_width,
                 ..
-            }) if *node == child
+            } if *node == child
                 && rect.size == [100.0, 20.0]
                 && corner_radii.tl == 0.4
-                && *stroke_width == 1.0
-        )));
+                && *stroke_width == 1.0))));
     }
 
     #[test]
@@ -888,14 +876,14 @@ mod layout {
         assert_eq!(
                 commands
                     .iter()
-                    .filter(|cmd| matches!(cmd, RenderCommand::Ui(UiCommand::UpsertPanel { node, .. }) if *node == child))
+                    .filter(|cmd| matches!(cmd, RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertPanel { node, .. } if *node == child)))
                     .count(),
                 1
             );
         assert!(
                 !commands
                     .iter()
-                    .any(|cmd| matches!(cmd, RenderCommand::Ui(UiCommand::UpsertPanel { node, .. }) if *node == sibling))
+                    .any(|cmd| matches!(cmd, RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertPanel { node, .. } if *node == sibling)))
             );
     }
 
@@ -1047,6 +1035,31 @@ mod layout {
     }
 
     #[test]
+    fn absolute_min_size_px_scales_with_virtual_canvas() {
+        let mut runtime = Runtime::new();
+        runtime.project = Some(std::sync::Arc::new(
+            crate::runtime_project::RuntimeProject::new("Test", "."),
+        ));
+        // Half the 1920x1080 design canvas => content scale 0.5.
+        runtime.set_viewport_size(960, 540);
+
+        let mut panel = UiPanel::new();
+        panel.layout.size = UiVector2::pixels(100.0, 50.0);
+        panel.layout.min_size = Vector2::new(300.0, 200.0);
+        let panel_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(panel)));
+
+        runtime.extract_render_ui_commands();
+        let rect = runtime
+            .render_ui
+            .computed_rects
+            .get(&panel_id)
+            .copied()
+            .expect("panel rect");
+        // Authored px clamps follow the content scale: 300x200 -> 150x100.
+        assert_eq!(rect.size, Vector2::new(150.0, 100.0));
+    }
+
+    #[test]
     fn min_size_ratio_rebases_when_size_ratio_changes() {
         let mut runtime = Runtime::new();
         runtime.set_viewport_size(1000, 1000);
@@ -1065,7 +1078,9 @@ mod layout {
             .get(&panel_id)
             .copied()
             .expect("panel rect before ratio change");
-        assert_eq!(clamped_before.size, Vector2::new(500.0, 500.0));
+        // A window resize rebases the clamp baseline, so the full-ratio panel
+        // tracks the new viewport instead of pinning to the startup size.
+        assert_eq!(clamped_before.size, Vector2::new(400.0, 400.0));
 
         if let Some(mut scene_node) = runtime.nodes.get_mut(panel_id)
             && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
@@ -1120,5 +1135,130 @@ mod layout {
                 .size,
             Vector2::new(500.0, 400.0)
         );
+    }
+
+    #[test]
+    fn root_percent_size_unchanged_at_design_resolution() {
+        let mut runtime = Runtime::new();
+        runtime.project = Some(std::sync::Arc::new(
+            crate::runtime_project::RuntimeProject::new("Test", "."),
+        ));
+        runtime.set_viewport_size(1920, 1080);
+
+        let mut panel = UiPanel::new();
+        panel.layout.anchor = perro_ui::UiAnchor::TopRight;
+        panel.layout.size = UiVector2::ratio(0.1, 0.1);
+        let panel_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(panel)));
+
+        runtime.extract_render_ui_commands();
+        let rect = runtime
+            .render_ui
+            .computed_rects
+            .get(&panel_id)
+            .copied()
+            .expect("panel rect");
+        // Window aspect == virtual canvas aspect: the size basis is the raw
+        // window, so the old formula (ratio * viewport) holds exactly.
+        assert_eq!(rect.size, Vector2::new(192.0, 108.0));
+        assert_eq!(rect.max(), Vector2::new(960.0, 540.0));
+    }
+
+    #[test]
+    fn root_percent_size_keeps_design_shape_on_ultrawide() {
+        let mut runtime = Runtime::new();
+        runtime.project = Some(std::sync::Arc::new(
+            crate::runtime_project::RuntimeProject::new("Test", "."),
+        ));
+        runtime.set_viewport_size(3440, 1440);
+
+        let mut panel = UiPanel::new();
+        panel.layout.anchor = perro_ui::UiAnchor::TopRight;
+        panel.layout.size = UiVector2::ratio(0.1, 0.1);
+        let panel_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(panel)));
+
+        runtime.extract_render_ui_commands();
+        let rect = runtime
+            .render_ui
+            .computed_rects
+            .get(&panel_id)
+            .copied()
+            .expect("panel rect");
+        // Size aspect-fits the 1920x1080 canvas: s = 1440/1080, so a 0.1
+        // ratio node is (192*s, 108*s) = (256, 144) -- not 0.1 * 3440 wide.
+        assert_eq!(rect.size, Vector2::new(256.0, 144.0));
+        // The anchor still resolves against the real window: the rect hugs
+        // the real top-right corner of the 3440x1440 viewport.
+        assert_eq!(rect.max(), Vector2::new(1720.0, 720.0));
+    }
+
+    #[test]
+    fn root_fill_size_spans_real_window_on_ultrawide() {
+        let mut runtime = Runtime::new();
+        runtime.project = Some(std::sync::Arc::new(
+            crate::runtime_project::RuntimeProject::new("Test", "."),
+        ));
+        runtime.set_viewport_size(3440, 1440);
+
+        let mut panel = UiPanel::new();
+        panel.layout.size = UiVector2::ratio(1.0, 1.0);
+        panel.layout.h_size = UiSizeMode::Fill;
+        panel.layout.v_size = UiSizeMode::Fill;
+        let panel_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(panel)));
+
+        runtime.extract_render_ui_commands();
+        let rect = runtime
+            .render_ui
+            .computed_rects
+            .get(&panel_id)
+            .copied()
+            .expect("panel rect");
+        // Fill axes keep resolving against the real window, not the
+        // aspect-fit basis: a full-ratio Fill root spans all of 3440x1440.
+        assert_eq!(rect.size, Vector2::new(3440.0, 1440.0));
+        assert_eq!(rect.center, Vector2::ZERO);
+    }
+
+    #[test]
+    fn nested_sub_view_percent_size_aspect_fits_owner_target() {
+        let mut runtime = Runtime::new();
+        runtime.project = Some(std::sync::Arc::new(
+            crate::runtime_project::RuntimeProject::new("Test", "."),
+        ));
+        runtime.set_viewport_size(1920, 1080);
+
+        let owner = NodeAPI::create::<UiSubView>(&mut runtime);
+        if let Some(mut node) = runtime.nodes.get_mut(owner)
+            && let SceneNodeData::UiSubView(data) = &mut node.data
+        {
+            data.layout.size = UiVector2::pixels(320.0, 180.0);
+            // Portrait target: virtual canvas (1920x1080) aspect-fits it to
+            // a 960x540 size basis.
+            data.resolution = perro_structs::UVector2 { x: 960, y: 1080 };
+        }
+        let nested = NodeAPI::create::<UiSubView>(&mut runtime);
+        assert!(runtime.reparent(owner, nested));
+        if let Some(mut node) = runtime.nodes.get_mut(nested)
+            && let SceneNodeData::UiSubView(data) = &mut node.data
+        {
+            data.layout.size = UiVector2::ratio(0.5, 0.5);
+        }
+
+        runtime.extract_render_ui_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        let resolution = commands
+            .iter()
+            .find_map(|command| match command {
+                RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+                    if *node == nested =>
+                {
+                    Some(state.resolution)
+                }
+                _ => None,
+            })
+            .expect("nested sub view stream state");
+        // Rect is (480, 270) -- half the 960x540 basis, not half the raw
+        // 960x1080 target -- and auto resolution doubles it.
+        assert_eq!(resolution, [960, 540]);
     }
 }

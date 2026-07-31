@@ -29,7 +29,7 @@ mod animation {
         set_primary_material(&mut mesh, MaterialID::from_parts(341, 0));
         runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+            .insert(SceneNode::new(SceneNodeData::from(mesh)));
 
         runtime.extract_render_3d_commands();
         let commands = collect_commands(&mut runtime);
@@ -66,7 +66,7 @@ mod animation {
         set_primary_material(&mut mesh, MaterialID::from_parts(351, 0));
         let mesh_id = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+            .insert(SceneNode::new(SceneNodeData::from(mesh)));
 
         runtime.extract_render_3d_commands();
         let _ = collect_commands(&mut runtime);
@@ -116,7 +116,7 @@ mod animation {
         camera.transform.rotation.w = 0.9;
         runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::Camera3D(camera)));
+            .insert(SceneNode::new(SceneNodeData::from(camera)));
 
         runtime.extract_render_3d_commands();
         let commands = collect_commands(&mut runtime);
@@ -147,7 +147,7 @@ mod animation {
         camera.transform.position.x = 12.0;
         let camera_node = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::Camera3D(camera)));
+            .insert(SceneNode::new(SceneNodeData::from(camera)));
 
         runtime.extract_render_3d_commands();
         let _ = collect_commands(&mut runtime);
@@ -207,7 +207,7 @@ mod animation {
         };
         let camera_node = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::Camera3D(camera)));
+            .insert(SceneNode::new(SceneNodeData::from(camera)));
 
         let mut mesh = MeshInstance3D::new();
         mesh.mesh = MeshID::from_parts(92, 0);
@@ -215,7 +215,7 @@ mod animation {
         set_primary_material(&mut mesh, MaterialID::from_parts(93, 0));
         let mesh_node = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+            .insert(SceneNode::new(SceneNodeData::from(mesh)));
 
         runtime.extract_render_3d_commands();
         let first = collect_commands(&mut runtime);
@@ -250,14 +250,14 @@ mod animation {
         };
         let camera_node = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::Camera3D(camera)));
+            .insert(SceneNode::new(SceneNodeData::from(camera)));
 
         let mut mesh = MeshInstance3D::new();
         mesh.mesh = MeshID::from_parts(95, 0);
         set_primary_material(&mut mesh, MaterialID::from_parts(96, 0));
         let mesh_node = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+            .insert(SceneNode::new(SceneNodeData::from(mesh)));
 
         runtime.extract_render_3d_commands();
         let _ = collect_commands(&mut runtime);
@@ -442,17 +442,35 @@ mod animation {
 
         assert!(super::super::sky_3d_state_matches(&retained, &sky));
 
-        sky.environment.as_mut().expect("test or bench setup must succeed").intensity = 2.0;
+        sky.environment
+            .as_mut()
+            .expect("test or bench setup must succeed")
+            .intensity = 2.0;
         assert!(!super::super::sky_3d_state_matches(&retained, &sky));
-        sky.environment.as_mut().expect("test or bench setup must succeed").intensity = 1.0;
+        sky.environment
+            .as_mut()
+            .expect("test or bench setup must succeed")
+            .intensity = 1.0;
 
-        sky.environment.as_mut().expect("test or bench setup must succeed").rotation_degrees = 90.0;
+        sky.environment
+            .as_mut()
+            .expect("test or bench setup must succeed")
+            .rotation_degrees = 90.0;
         assert!(!super::super::sky_3d_state_matches(&retained, &sky));
-        sky.environment.as_mut().expect("test or bench setup must succeed").rotation_degrees = 0.0;
+        sky.environment
+            .as_mut()
+            .expect("test or bench setup must succeed")
+            .rotation_degrees = 0.0;
 
-        sky.environment.as_mut().expect("test or bench setup must succeed").source = "res://other.png".into();
+        sky.environment
+            .as_mut()
+            .expect("test or bench setup must succeed")
+            .source = "res://other.png".into();
         assert!(!super::super::sky_3d_state_matches(&retained, &sky));
-        sky.environment.as_mut().expect("test or bench setup must succeed").source = "res://studio.png".into();
+        sky.environment
+            .as_mut()
+            .expect("test or bench setup must succeed")
+            .source = "res://studio.png".into();
 
         sky.time.time_of_day = 0.75;
         assert!(!super::super::sky_3d_state_matches(&retained, &sky));
@@ -479,7 +497,7 @@ mod animation {
         mesh.transform.position.x = 1.0;
         let child = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+            .insert(SceneNode::new(SceneNodeData::from(mesh)));
 
         if let Some(mut parent_node) = runtime.nodes.get_mut(parent) {
             parent_node.add_child(child);
@@ -514,7 +532,7 @@ mod animation {
         set_primary_material(&mut mesh, MaterialID::from_parts(421, 0));
         let node = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+            .insert(SceneNode::new(SceneNodeData::from(mesh)));
 
         runtime.extract_render_3d_commands();
         let commands = collect_commands(&mut runtime);
@@ -606,7 +624,9 @@ mod animation {
             .iter()
             .find_map(|command| match command {
                 RenderCommand::ThreeD(command_3d) => match command_3d.as_ref() {
-                    Command3D::DrawDebugLine3D { start, .. } => Some(start[0]),
+                    Command3D::DrawDebugLines3D { lines } => {
+                        lines.first().map(|line| line.start[0])
+                    }
                     _ => None,
                 },
                 _ => None,
@@ -626,7 +646,9 @@ mod animation {
             .iter()
             .find_map(|command| match command {
                 RenderCommand::ThreeD(command_3d) => match command_3d.as_ref() {
-                    Command3D::DrawDebugLine3D { start, .. } => Some(start[0]),
+                    Command3D::DrawDebugLines3D { lines } => {
+                        lines.first().map(|line| line.start[0])
+                    }
                     _ => None,
                 },
                 _ => None,

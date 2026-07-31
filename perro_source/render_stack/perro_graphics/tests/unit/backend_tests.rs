@@ -120,7 +120,7 @@ fn write_texture_rgba_updates_resource_texture() {
     let mut graphics = PerroGraphics::new();
     let texture = TextureID::from_parts(77, 0);
 
-    graphics.submit(RenderCommand::Resource(
+    graphics.submit(RenderCommand::Resource(Box::new(
         ResourceCommand::CreateExternalTexture {
             request: perro_render_bridge::RenderRequestID::new(1),
             id: texture,
@@ -129,13 +129,15 @@ fn write_texture_rgba_updates_resource_texture() {
             width: 2,
             height: 1,
         },
-    ));
-    graphics.submit(RenderCommand::Resource(ResourceCommand::WriteTextureRgba {
-        id: texture,
-        width: 2,
-        height: 1,
-        rgba: vec![1u8, 2, 3, 4, 5, 6, 7, 8].into(),
-    }));
+    )));
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::WriteTextureRgba {
+            id: texture,
+            width: 2,
+            height: 1,
+            rgba: vec![1u8, 2, 3, 4, 5, 6, 7, 8].into(),
+        },
+    )));
     graphics.draw_frame();
 
     let decoded = graphics
@@ -144,7 +146,7 @@ fn write_texture_rgba_updates_resource_texture() {
         .expect("decoded webcam texture");
     assert_eq!(decoded.width, 2);
     assert_eq!(decoded.height, 1);
-    assert_eq!(decoded.rgba, [1, 2, 3, 4, 5, 6, 7, 8]);
+    assert_eq!(*decoded.rgba, [1, 2, 3, 4, 5, 6, 7, 8]);
     assert!(graphics.events.iter().any(|event| {
         matches!(
             event,
@@ -157,7 +159,7 @@ fn write_texture_rgba_updates_resource_texture() {
 fn write_texture_rgba_region_updates_only_dirty_rect() {
     let mut graphics = PerroGraphics::new();
     let texture = TextureID::from_parts(78, 0);
-    graphics.submit(RenderCommand::Resource(
+    graphics.submit(RenderCommand::Resource(Box::new(
         ResourceCommand::CreateRuntimeTexture {
             request: perro_render_bridge::RenderRequestID::new(3),
             id: texture,
@@ -167,8 +169,8 @@ fn write_texture_rgba_region_updates_only_dirty_rect() {
             height: 2,
             rgba: Arc::from([0u8; 24]),
         },
-    ));
-    graphics.submit(RenderCommand::Resource(
+    )));
+    graphics.submit(RenderCommand::Resource(Box::new(
         ResourceCommand::WriteTextureRgbaRegion {
             id: texture,
             x: 1,
@@ -177,7 +179,7 @@ fn write_texture_rgba_region_updates_only_dirty_rect() {
             height: 2,
             rgba: Arc::from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]),
         },
-    ));
+    )));
     graphics.draw_frame();
 
     let decoded = graphics
@@ -185,7 +187,7 @@ fn write_texture_rgba_region_updates_only_dirty_rect() {
         .decoded_texture_data(texture)
         .expect("runtime texture");
     assert_eq!(
-        decoded.rgba,
+        *decoded.rgba,
         [
             0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 9, 10, 11, 12, 13, 14, 15, 16,
         ]
@@ -196,7 +198,7 @@ fn write_texture_rgba_region_updates_only_dirty_rect() {
 fn write_texture_rgba_region_rejects_out_of_bounds_rect() {
     let mut graphics = PerroGraphics::new();
     let texture = TextureID::from_parts(79, 0);
-    graphics.submit(RenderCommand::Resource(
+    graphics.submit(RenderCommand::Resource(Box::new(
         ResourceCommand::CreateRuntimeTexture {
             request: perro_render_bridge::RenderRequestID::new(4),
             id: texture,
@@ -206,8 +208,8 @@ fn write_texture_rgba_region_rejects_out_of_bounds_rect() {
             height: 2,
             rgba: Arc::from([0u8; 16]),
         },
-    ));
-    graphics.submit(RenderCommand::Resource(
+    )));
+    graphics.submit(RenderCommand::Resource(Box::new(
         ResourceCommand::WriteTextureRgbaRegion {
             id: texture,
             x: 1,
@@ -216,14 +218,14 @@ fn write_texture_rgba_region_rejects_out_of_bounds_rect() {
             height: 1,
             rgba: Arc::from([255u8; 8]),
         },
-    ));
+    )));
     graphics.draw_frame();
 
     let decoded = graphics
         .resources
         .decoded_texture_data(texture)
         .expect("runtime texture");
-    assert_eq!(decoded.rgba, [0u8; 16]);
+    assert_eq!(*decoded.rgba, [0u8; 16]);
 }
 
 #[test]
@@ -233,7 +235,7 @@ fn repeat_same_size_write_reuses_texture_via_texels_updated() {
     let mut graphics = PerroGraphics::new();
     let texture = TextureID::from_parts(83, 0);
 
-    graphics.submit(RenderCommand::Resource(
+    graphics.submit(RenderCommand::Resource(Box::new(
         ResourceCommand::CreateExternalTexture {
             request: perro_render_bridge::RenderRequestID::new(1),
             id: texture,
@@ -242,17 +244,19 @@ fn repeat_same_size_write_reuses_texture_via_texels_updated() {
             width: 2,
             height: 1,
         },
-    ));
+    )));
     graphics.draw_frame();
     graphics.events.clear();
 
     // first stream frame: full reload path (TextureLoaded, records dims).
-    graphics.submit(RenderCommand::Resource(ResourceCommand::WriteTextureRgba {
-        id: texture,
-        width: 2,
-        height: 1,
-        rgba: vec![1u8, 2, 3, 4, 5, 6, 7, 8].into(),
-    }));
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::WriteTextureRgba {
+            id: texture,
+            width: 2,
+            height: 1,
+            rgba: vec![1u8, 2, 3, 4, 5, 6, 7, 8].into(),
+        },
+    )));
     graphics.draw_frame();
     assert!(graphics.events.iter().any(|event| matches!(
         event,
@@ -275,12 +279,14 @@ fn repeat_same_size_write_reuses_texture_via_texels_updated() {
 
     // repeat same-size frame: in-place update (TextureTexelsUpdated, no reload,
     // resident buffer reused = same allocation, GPU texture kept).
-    graphics.submit(RenderCommand::Resource(ResourceCommand::WriteTextureRgba {
-        id: texture,
-        width: 2,
-        height: 1,
-        rgba: vec![8u8, 7, 6, 5, 4, 3, 2, 1].into(),
-    }));
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::WriteTextureRgba {
+            id: texture,
+            width: 2,
+            height: 1,
+            rgba: vec![8u8, 7, 6, 5, 4, 3, 2, 1].into(),
+        },
+    )));
     graphics.draw_frame();
     assert!(graphics.events.iter().any(|event| matches!(
         event,
@@ -296,17 +302,19 @@ fn repeat_same_size_write_reuses_texture_via_texels_updated() {
         .resources
         .decoded_texture_data(texture)
         .expect("decoded");
-    assert_eq!(decoded.rgba, [8, 7, 6, 5, 4, 3, 2, 1]);
+    assert_eq!(*decoded.rgba, [8, 7, 6, 5, 4, 3, 2, 1]);
     assert_eq!(decoded.rgba.as_ptr(), buffer_ptr, "resident buffer reused");
     graphics.events.clear();
 
     // resolution change (same byte length, different dims): reload path again.
-    graphics.submit(RenderCommand::Resource(ResourceCommand::WriteTextureRgba {
-        id: texture,
-        width: 1,
-        height: 2,
-        rgba: vec![9u8, 9, 9, 9, 9, 9, 9, 9].into(),
-    }));
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::WriteTextureRgba {
+            id: texture,
+            width: 1,
+            height: 2,
+            rgba: vec![9u8, 9, 9, 9, 9, 9, 9, 9].into(),
+        },
+    )));
     graphics.draw_frame();
     assert!(graphics.events.iter().any(|event| matches!(
         event,
@@ -322,7 +330,7 @@ fn webcam_camera_stream_does_not_overwrite_webcam_texture() {
     let node = NodeID::from_parts(92, 0);
     let rgba: Arc<[u8]> = Arc::from([9, 8, 7, 6, 5, 4, 3, 2]);
 
-    graphics.submit(RenderCommand::Resource(
+    graphics.submit(RenderCommand::Resource(Box::new(
         ResourceCommand::CreateExternalTexture {
             request: perro_render_bridge::RenderRequestID::new(2),
             id: texture,
@@ -331,17 +339,19 @@ fn webcam_camera_stream_does_not_overwrite_webcam_texture() {
             width: 2,
             height: 1,
         },
-    ));
-    graphics.submit(RenderCommand::Resource(ResourceCommand::WriteTextureRgba {
-        id: texture,
-        width: 2,
-        height: 1,
-        rgba: rgba.clone().into(),
-    }));
+    )));
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::WriteTextureRgba {
+            id: texture,
+            width: 2,
+            height: 1,
+            rgba: rgba.clone().into(),
+        },
+    )));
     graphics.submit(RenderCommand::ThreeD(Box::new(
         Command3D::UpsertCameraStream {
             node,
-            stream: Box::new(CameraStreamState {
+            stream: Arc::new(CameraStreamState {
                 tone_map_output: false,
                 source: CameraStreamSourceState::Webcam {
                     texture,
@@ -376,7 +386,7 @@ fn webcam_camera_stream_does_not_overwrite_webcam_texture() {
         .resources
         .decoded_texture_data(texture)
         .expect("decoded webcam texture");
-    assert_eq!(decoded.rgba, rgba.as_ref());
+    assert_eq!(decoded.rgba.as_ref(), rgba.as_ref());
 }
 
 #[test]
@@ -393,7 +403,7 @@ fn runtime_texture_size_limit_rejects_oversized_allocations() {
     let mut graphics = PerroGraphics::new();
     let texture = TextureID::from_parts(78, 0);
     let request = perro_render_bridge::RenderRequestID::new(2);
-    graphics.submit(RenderCommand::Resource(
+    graphics.submit(RenderCommand::Resource(Box::new(
         ResourceCommand::CreateExternalTexture {
             request,
             id: texture,
@@ -402,7 +412,7 @@ fn runtime_texture_size_limit_rejects_oversized_allocations() {
             width: 8_192,
             height: 8_192,
         },
-    ));
+    )));
     graphics.draw_frame();
 
     assert!(!graphics.resources.has_texture(texture));
@@ -610,12 +620,14 @@ fn sprite_texture_upsert_is_accepted_after_texture_creation() {
     let request = perro_render_bridge::RenderRequestID::new(99);
     let node = NodeID::from_parts(1, 0);
 
-    graphics.submit(RenderCommand::Resource(ResourceCommand::CreateTexture {
-        request,
-        id: TextureID::nil(),
-        source: "__default__".to_string(),
-        reserved: false,
-    }));
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::CreateTexture {
+            request,
+            id: TextureID::nil(),
+            source: "__default__".to_string(),
+            reserved: false,
+        },
+    )));
     graphics.draw_frame();
 
     let mut events = Vec::new();
@@ -665,7 +677,7 @@ fn runtime_texture_rgba_create_sets_decoded_data_and_loaded_event() {
     let texture = TextureID::from_parts(77, 0);
     let rgba = vec![1u8, 2, 3, 4, 5, 6, 7, 8];
 
-    graphics.submit(RenderCommand::Resource(
+    graphics.submit(RenderCommand::Resource(Box::new(
         ResourceCommand::CreateRuntimeTexture {
             request,
             id: texture,
@@ -675,7 +687,7 @@ fn runtime_texture_rgba_create_sets_decoded_data_and_loaded_event() {
             height: 1,
             rgba: Arc::from(rgba.as_slice()),
         },
-    ));
+    )));
     graphics.draw_frame();
 
     let decoded = graphics
@@ -684,7 +696,7 @@ fn runtime_texture_rgba_create_sets_decoded_data_and_loaded_event() {
         .expect("runtime texture data");
     assert_eq!(decoded.width, 2);
     assert_eq!(decoded.height, 1);
-    assert_eq!(decoded.rgba, rgba);
+    assert_eq!(*decoded.rgba, *rgba);
 
     let mut events = Vec::new();
     graphics.drain_events(&mut events);
@@ -713,7 +725,7 @@ fn runtime_texture_bytes_create_decodes_ptex() {
     bytes.extend_from_slice(&4u32.to_le_bytes());
     bytes.extend_from_slice(&[9u8, 8, 7, 6]);
 
-    graphics.submit(RenderCommand::Resource(
+    graphics.submit(RenderCommand::Resource(Box::new(
         ResourceCommand::CreateRuntimeTextureBytes {
             request,
             id: texture,
@@ -721,7 +733,7 @@ fn runtime_texture_bytes_create_decodes_ptex() {
             reserved: false,
             bytes: Arc::from(bytes.as_slice()),
         },
-    ));
+    )));
     graphics.draw_frame();
 
     let decoded = graphics
@@ -730,7 +742,7 @@ fn runtime_texture_bytes_create_decodes_ptex() {
         .expect("runtime texture data");
     assert_eq!(decoded.width, 1);
     assert_eq!(decoded.height, 1);
-    assert_eq!(decoded.rgba, vec![9, 8, 7, 6]);
+    assert_eq!(*decoded.rgba, [9, 8, 7, 6]);
 }
 
 #[test]
@@ -739,32 +751,40 @@ fn draw_3d_updates_retained_state_per_node() {
     let node_a = NodeID::from_parts(10, 0);
     let node_b = NodeID::from_parts(11, 0);
 
-    graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMesh {
-        request: perro_render_bridge::RenderRequestID::new(1001),
-        id: MeshID::nil(),
-        source: "__cube__".to_string(),
-        reserved: false,
-    }));
-    graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMaterial {
-        request: perro_render_bridge::RenderRequestID::new(1002),
-        id: MaterialID::nil(),
-        material: Material3D::default(),
-        source: None,
-        reserved: false,
-    }));
-    graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMesh {
-        request: perro_render_bridge::RenderRequestID::new(1003),
-        id: MeshID::nil(),
-        source: "__sphere__".to_string(),
-        reserved: false,
-    }));
-    graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMaterial {
-        request: perro_render_bridge::RenderRequestID::new(1004),
-        id: MaterialID::nil(),
-        material: Material3D::default(),
-        source: None,
-        reserved: false,
-    }));
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::CreateMesh {
+            request: perro_render_bridge::RenderRequestID::new(1001),
+            id: MeshID::nil(),
+            source: "__cube__".to_string(),
+            reserved: false,
+        },
+    )));
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::CreateMaterial {
+            request: perro_render_bridge::RenderRequestID::new(1002),
+            id: MaterialID::nil(),
+            material: Material3D::default().into(),
+            source: None,
+            reserved: false,
+        },
+    )));
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::CreateMesh {
+            request: perro_render_bridge::RenderRequestID::new(1003),
+            id: MeshID::nil(),
+            source: "__sphere__".to_string(),
+            reserved: false,
+        },
+    )));
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::CreateMaterial {
+            request: perro_render_bridge::RenderRequestID::new(1004),
+            id: MaterialID::nil(),
+            material: Material3D::default().into(),
+            source: None,
+            reserved: false,
+        },
+    )));
     graphics.draw_frame();
 
     let mut events = Vec::new();
@@ -876,13 +896,13 @@ fn scene_resource_refs_keep_unretained_mesh_and_material_alive_until_cleared() {
             .resources
             .create_material(Material3D::default(), Some(material_source), false);
 
-    graphics.submit(RenderCommand::Resource(
+    graphics.submit(RenderCommand::Resource(Box::new(
         ResourceCommand::SetSceneResourceRefs {
             textures: vec![(texture, vec![NodeID::from_parts(699, 0)])],
             meshes: vec![(mesh, vec![NodeID::from_parts(700, 0)])],
             materials: vec![(material, vec![NodeID::from_parts(700, 0)])],
         },
-    ));
+    )));
     graphics.draw_frame();
 
     assert!(graphics.resources.has_texture(texture));
@@ -899,13 +919,13 @@ fn scene_resource_refs_keep_unretained_mesh_and_material_alive_until_cleared() {
     assert!(graphics.resources.has_mesh(mesh));
     assert!(graphics.resources.has_material(material));
 
-    graphics.submit(RenderCommand::Resource(
+    graphics.submit(RenderCommand::Resource(Box::new(
         ResourceCommand::SetSceneResourceRefs {
             textures: Vec::new(),
             meshes: Vec::new(),
             materials: Vec::new(),
         },
-    ));
+    )));
     graphics.draw_frame();
     for _ in 0..crate::resources::ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES {
         graphics
@@ -923,19 +943,23 @@ fn draw_multi_3d_retains_all_instance_mats() {
     let mut graphics = PerroGraphics::new();
     let node = NodeID::from_parts(12, 0);
 
-    graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMesh {
-        request: perro_render_bridge::RenderRequestID::new(1201),
-        id: MeshID::nil(),
-        source: "__cube__".to_string(),
-        reserved: false,
-    }));
-    graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMaterial {
-        request: perro_render_bridge::RenderRequestID::new(1202),
-        id: MaterialID::nil(),
-        material: Material3D::default(),
-        source: None,
-        reserved: false,
-    }));
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::CreateMesh {
+            request: perro_render_bridge::RenderRequestID::new(1201),
+            id: MeshID::nil(),
+            source: "__cube__".to_string(),
+            reserved: false,
+        },
+    )));
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::CreateMaterial {
+            request: perro_render_bridge::RenderRequestID::new(1202),
+            id: MaterialID::nil(),
+            material: Material3D::default().into(),
+            source: None,
+            reserved: false,
+        },
+    )));
     graphics.draw_frame();
 
     let mut events = Vec::new();
@@ -1015,19 +1039,23 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
     let mut graphics = PerroGraphics::new();
     let node = NodeID::from_parts(20, 0);
 
-    graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMesh {
-        request: perro_render_bridge::RenderRequestID::new(2001),
-        id: MeshID::nil(),
-        source: "__cube__".to_string(),
-        reserved: false,
-    }));
-    graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMaterial {
-        request: perro_render_bridge::RenderRequestID::new(2002),
-        id: MaterialID::nil(),
-        material: Material3D::default(),
-        source: None,
-        reserved: false,
-    }));
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::CreateMesh {
+            request: perro_render_bridge::RenderRequestID::new(2001),
+            id: MeshID::nil(),
+            source: "__cube__".to_string(),
+            reserved: false,
+        },
+    )));
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::CreateMaterial {
+            request: perro_render_bridge::RenderRequestID::new(2002),
+            id: MaterialID::nil(),
+            material: Material3D::default().into(),
+            source: None,
+            reserved: false,
+        },
+    )));
     graphics.draw_frame();
 
     let mut events = Vec::new();
@@ -1130,19 +1158,23 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
     let mut graphics = PerroGraphics::new();
     let node = NodeID::from_parts(21, 0);
 
-    graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMesh {
-        request: perro_render_bridge::RenderRequestID::new(2101),
-        id: MeshID::nil(),
-        source: "__cube__".to_string(),
-        reserved: false,
-    }));
-    graphics.submit(RenderCommand::Resource(ResourceCommand::CreateMaterial {
-        request: perro_render_bridge::RenderRequestID::new(2102),
-        id: MaterialID::nil(),
-        material: Material3D::default(),
-        source: None,
-        reserved: false,
-    }));
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::CreateMesh {
+            request: perro_render_bridge::RenderRequestID::new(2101),
+            id: MeshID::nil(),
+            source: "__cube__".to_string(),
+            reserved: false,
+        },
+    )));
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::CreateMaterial {
+            request: perro_render_bridge::RenderRequestID::new(2102),
+            id: MaterialID::nil(),
+            material: Material3D::default().into(),
+            source: None,
+            reserved: false,
+        },
+    )));
     graphics.draw_frame();
 
     let mut events = Vec::new();
@@ -1288,12 +1320,14 @@ fn rejected_sprite_texture_swap_keeps_previous_texture_binding() {
     let request = perro_render_bridge::RenderRequestID::new(3001);
     let node = NodeID::from_parts(3, 0);
 
-    graphics.submit(RenderCommand::Resource(ResourceCommand::CreateTexture {
-        request,
-        id: TextureID::nil(),
-        source: "__default__".to_string(),
-        reserved: false,
-    }));
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::CreateTexture {
+            request,
+            id: TextureID::nil(),
+            source: "__default__".to_string(),
+            reserved: false,
+        },
+    )));
     graphics.draw_frame();
 
     let mut events = Vec::new();
@@ -1438,7 +1472,7 @@ fn stale_async_texture_result_after_drop_does_not_emit_loaded() {
         .send(super::AsyncTextureLoadResult {
             id,
             texture: Ok(super::DecodedTextureRgba {
-                rgba: vec![255, 255, 255, 255],
+                rgba: vec![255, 255, 255, 255].into(),
                 width: 1,
                 height: 1,
             }),

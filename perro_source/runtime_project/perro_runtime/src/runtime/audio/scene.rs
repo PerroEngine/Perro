@@ -87,21 +87,27 @@ impl Runtime {
 
     pub(crate) fn remove_attached_audio_for_node(&mut self, node: NodeID) {
         let mut removed = false;
-        let mut i = 0usize;
-        while i < self.audio.sounds.len() {
-            let attached =
-                matches!(self.audio.sounds[i].pos, SpatialSoundPos::Attached(id) if id == node);
-            if attached {
-                if let Some(id) = self.audio.sounds[i].playback_id
-                    && let Ok(guard) = self.resource_api.bark.lock()
-                    && let Some(player) = guard.as_ref()
-                {
-                    let _ = player.stop_playback(id);
+        {
+            // Lock bark once for the whole sweep instead of per matching sound.
+            let bark = self.resource_api.bark.lock().ok();
+            let player = bark.as_deref().and_then(|guard| guard.as_ref());
+            let mut i = 0usize;
+            while i < self.audio.sounds.len() {
+                let attached =
+                    matches!(self.audio.sounds[i].pos, SpatialSoundPos::Attached(id) if id == node);
+                if attached {
+                    if let Some(id) = self.audio.sounds[i].playback_id
+                        && let Some(player) = player
+                    {
+                        let _ = player.stop_playback(id);
+                    }
+                    // Sound ordering carries no audible meaning; swap_remove
+                    // skips the tail memmove.
+                    self.audio.sounds.swap_remove(i);
+                    removed = true;
+                } else {
+                    i += 1;
                 }
-                self.audio.sounds.remove(i);
-                removed = true;
-            } else {
-                i += 1;
             }
         }
         if removed && self.audio.config.debug_rays {
@@ -201,6 +207,10 @@ impl Runtime {
             .raycasts
             .saturating_add(ray_inputs.len() as u32);
 
+        // Bark locked once for the whole per-sound loop (see apply_spatial_result).
+        let resource_api = std::sync::Arc::clone(&self.resource_api);
+        let bark = resource_api.bark.lock().ok();
+        let player = bark.as_deref().and_then(|guard| guard.as_ref());
         for sound in sounds {
             sound.elapsed_since_prop += dt;
             if sound.elapsed_since_prop < tick {
@@ -221,11 +231,11 @@ impl Runtime {
                 AudioRaycastResult::TwoD(Some(hit)) if hit.distance <= distance + 0.25 => Some(hit),
                 _ => None,
             };
-            if let Some(result) = self.solve_2d(pos, sound, hit, listener, listener_options.clone())
-            {
-                self.apply_spatial_result(sound, result);
+            if let Some(result) = self.solve_2d(pos, sound, hit, listener, &listener_options) {
+                self.apply_spatial_result(player, sound, result);
             }
         }
+        drop(bark);
 
         ray_inputs.clear();
         ray_outputs.clear();
@@ -282,6 +292,10 @@ impl Runtime {
             .raycasts
             .saturating_add(ray_inputs.len() as u32);
 
+        // Bark locked once for the whole per-sound loop (see apply_spatial_result).
+        let resource_api = std::sync::Arc::clone(&self.resource_api);
+        let bark = resource_api.bark.lock().ok();
+        let player = bark.as_deref().and_then(|guard| guard.as_ref());
         for sound in sounds {
             sound.elapsed_since_prop += dt;
             if sound.elapsed_since_prop < tick {
@@ -315,11 +329,11 @@ impl Runtime {
                 }
                 _ => None,
             };
-            if let Some(result) = self.solve_3d(pos, sound, hit, listener, listener_options.clone())
-            {
-                self.apply_spatial_result(sound, result);
+            if let Some(result) = self.solve_3d(pos, sound, hit, listener, &listener_options) {
+                self.apply_spatial_result(player, sound, result);
             }
         }
+        drop(bark);
 
         ray_inputs.clear();
         ray_outputs.clear();
@@ -329,8 +343,12 @@ impl Runtime {
         self.audio.scratch_field_dirs_3d = ray_dirs;
     }
 
+    // `player` is the bark controller locked once by the caller for the whole
+    // per-sound loop; locking here per sound doubled the mutex traffic of a
+    // propagation tick.
     pub(super) fn apply_spatial_result(
         &mut self,
+        player: Option<&perro_pawdio::AudioController>,
         sound: &mut ActiveSpatialSound,
         result: PropagationResult,
     ) {
@@ -346,8 +364,7 @@ impl Runtime {
         sound.last_result = Some(result);
         let bark_start = Instant::now();
         if let Some(id) = sound.playback_id
-            && let Ok(guard) = self.resource_api.bark.lock()
-            && let Some(player) = guard.as_ref()
+            && let Some(player) = player
         {
             let _ = player.update_spatial(
                 id,
@@ -386,7 +403,7 @@ impl Runtime {
             .unwrap_or_default();
         for request in queued {
             let audio = RuntimeAudio {
-                source: request.source.as_str(),
+                source: request.source.as_ref(),
                 looped: request.looped,
                 volume: request.volume,
                 effects: AudioEffects {

@@ -380,6 +380,11 @@ pub enum MeshInstance3DField {
     BlendMask,
     BlendDistance,
     BlendMinDistance,
+    BlendNoiseFactor,
+    BlendNoiseScale,
+    BlendSlopeFactor,
+    BlendStrength,
+    BlendSaltInstances,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

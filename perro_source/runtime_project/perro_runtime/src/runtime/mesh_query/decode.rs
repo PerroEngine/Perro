@@ -52,7 +52,11 @@ pub(super) fn build_query_mesh_from_runtime_mesh(mesh: &Mesh3D) -> Option<QueryM
 }
 
 pub(super) fn decode_gltf_query_mesh(bytes: &[u8], mesh_index: usize) -> Option<QueryMeshData> {
-    let (doc, buffers, _images) = gltf::import_slice(bytes).ok()?;
+    let gltf::Gltf {
+        document: doc,
+        blob,
+    } = gltf::Gltf::from_slice(bytes).ok()?;
+    let buffers = gltf::import_buffers(&doc, None, blob).ok()?;
     let mesh = doc.meshes().nth(mesh_index)?;
 
     let mut vertices = Vec::new();
