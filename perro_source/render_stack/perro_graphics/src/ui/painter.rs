@@ -26,6 +26,10 @@ use std::sync::Arc;
 const UI_RASTER_SCALE: f32 = 3.0;
 const UI_FONT_ATLAS_SIZE: usize = 4096;
 const UI_HARFBUZZ_ATLAS_SIZE: usize = 4096;
+/// Harfbuzz atlases start one row tall and double as glyphs land, like
+/// epaint's own font atlas: a full-size image up front costs every app 64 MiB
+/// of pixels plus a same-size GPU texture for text most of them never draw.
+const UI_HARFBUZZ_ATLAS_INITIAL_HEIGHT: usize = 32;
 const UI_HARFBUZZ_TEXTURE_ID: TextureId = TextureId::Managed(1);
 const UI_SYSTEM_FONT_PREFIX: &str = "perro-system";
 const UI_CYRILLIC_FONT_FAMILY: &str = "perro-cyrillic";
@@ -286,6 +290,9 @@ pub(crate) struct EpaintUiPainter {
     // (growth or epaint's fill-triggered recreation) invalidates every cached
     // primitive's glyph UVs.
     node_cache_atlas_size: [usize; 2],
+    // Same rule for the harfbuzz atlas: its glyph UVs are baked into cached
+    // meshes, so a rebuild (fill threshold) or a growth step invalidates them.
+    node_cache_harfbuzz_epoch: (u64, [usize; 2]),
     textures_delta: TexturesDelta,
     last_viewport: [f32; 2],
     paint_revision: u64,
@@ -317,6 +324,7 @@ impl EpaintUiPainter {
             ordered_nodes: Vec::new(),
             order_signature: Vec::new(),
             node_cache_atlas_size: [0, 0],
+            node_cache_harfbuzz_epoch: (0, [0, 0]),
             textures_delta: TexturesDelta::default(),
             last_viewport: [0.0, 0.0],
             paint_revision: u64::MAX,
@@ -434,6 +442,7 @@ impl EpaintUiPainter {
     ) {
         self.fonts
             .begin_pass(UI_FONT_ATLAS_SIZE, AlphaFromCoverage::default());
+        self.harfbuzz_atlas.begin_pass();
         self.shapes.clear();
         self.shape_rotations.clear();
         // Hold the previous generation's Arcs alive through this rebuild: the
@@ -475,10 +484,13 @@ impl EpaintUiPainter {
         // wrong texels for a frame.
         let ordered_nodes = std::mem::take(&mut self.ordered_nodes);
         let atlas_size_before = self.fonts.font_image_size();
-        // begin_pass may have recreated the atlas (fill > threshold), and past
-        // rebuilds may have grown it: cached glyph UVs are only valid against
-        // the exact size they were tessellated for.
-        if atlas_size_before != self.node_cache_atlas_size {
+        let harfbuzz_epoch_before = self.harfbuzz_atlas.epoch();
+        // begin_pass may have recreated either atlas (fill > threshold), and
+        // past rebuilds may have grown them: cached glyph UVs are only valid
+        // against the exact placement they were tessellated for.
+        if atlas_size_before != self.node_cache_atlas_size
+            || harfbuzz_epoch_before != self.node_cache_harfbuzz_epoch
+        {
             self.node_cache.clear();
         }
         let mut staged: Vec<(NodeID, NodeTess)> = Vec::with_capacity(ordered_nodes.len());
@@ -510,9 +522,13 @@ impl EpaintUiPainter {
                 },
             ));
         }
-        // Atlas resized during layout: cached primitives were tessellated
+        // An atlas resized during layout: cached primitives were tessellated
         // against the old size, so their UVs are stale. Re-stage everything.
-        if self.fonts.font_image_size() != atlas_size_before {
+        // Re-staging cannot grow either atlas again — every glyph it touches
+        // was allocated by the pass above and is still cached.
+        if self.fonts.font_image_size() != atlas_size_before
+            || self.harfbuzz_atlas.epoch() != harfbuzz_epoch_before
+        {
             self.node_cache.clear();
             for (node, entry) in &mut staged {
                 if matches!(entry, NodeTess::Staged { .. }) {
@@ -627,6 +643,7 @@ impl EpaintUiPainter {
         }
         self.ordered_nodes = ordered_nodes;
         self.node_cache_atlas_size = self.fonts.font_image_size();
+        self.node_cache_harfbuzz_epoch = self.harfbuzz_atlas.epoch();
         // Evict cache entries for nodes no longer present.
         if self.node_cache.len() > nodes.len() {
             self.node_cache.retain(|node, _| nodes.contains_key(node));
@@ -1061,6 +1078,145 @@ mod tests {
         assert_eq!(mesh.texture_id, UI_HARFBUZZ_TEXTURE_ID);
         assert!(!mesh.vertices.is_empty());
         assert!(atlas.take_delta().is_some());
+    }
+
+    /// A font plus one of its outlined glyph ids (id 0/1 are not drawable).
+    fn test_font_glyph() -> (UiFontSource, u32) {
+        let font = font_sources_for_family(&FontDefinitions::default(), FontFamily::Proportional)
+            .into_iter()
+            .next()
+            .expect("required value must be present");
+        let run = shape_text_with_harfbuzz(&font, "Perro").expect("required value must be present");
+        let glyph_id = run.glyphs[0].glyph_id;
+        (font, glyph_id)
+    }
+
+    #[test]
+    fn harfbuzz_atlas_starts_empty_and_grows_from_one_row() {
+        let mut atlas = HarfBuzzAtlas::new();
+
+        assert_eq!(atlas.size(), [0, 0]);
+        assert!(atlas.take_delta().is_none());
+        assert_eq!(atlas.glyph_count(), 0);
+
+        let (font, glyph_id) = test_font_glyph();
+        atlas
+            .glyph(&font, glyph_id, 12.0)
+            .expect("required value must be present");
+
+        let size = atlas.size();
+        assert_eq!(size[0], UI_HARFBUZZ_ATLAS_SIZE);
+        assert!(
+            size[1] < UI_HARFBUZZ_ATLAS_SIZE,
+            "atlas allocated full size"
+        );
+    }
+
+    #[test]
+    fn harfbuzz_glyph_sizes_quantize_onto_a_grid() {
+        assert_eq!(quantize_raster_size(12.0), 12.0);
+        assert_eq!(quantize_raster_size(12.2), 12.0);
+        assert_eq!(quantize_raster_size(12.3), 12.5);
+        assert_eq!(quantize_raster_size(40.4), 40.0);
+        assert_eq!(quantize_raster_size(-3.0), 1.0);
+
+        let mut atlas = HarfBuzzAtlas::new();
+        let (font, glyph_id) = test_font_glyph();
+        // An animated / fit_content size sweep: one raster per grid step, not
+        // one per distinct float.
+        for step in 0..64 {
+            atlas.glyph(&font, glyph_id, 12.0 + step as f32 * 0.01);
+        }
+        assert_eq!(atlas.glyph_count(), 2);
+    }
+
+    #[test]
+    fn harfbuzz_glyph_quads_keep_true_size_geometry() {
+        let mut atlas = HarfBuzzAtlas::new();
+        let (font, glyph_id) = test_font_glyph();
+
+        let exact = atlas
+            .glyph(&font, glyph_id, 12.0)
+            .expect("required value must be present");
+        let nudged = atlas
+            .glyph(&font, glyph_id, 12.24)
+            .expect("required value must be present");
+
+        // Same bitmap (one atlas entry), quad scaled to the true size.
+        assert_eq!(atlas.glyph_count(), 1);
+        assert_eq!(nudged.uv_min, exact.uv_min);
+        assert_eq!(nudged.uv_max, exact.uv_max);
+        assert!(nudged.size.x > exact.size.x);
+        assert!((nudged.size.x / exact.size.x - 12.24 / 12.0).abs() < 1.0e-4);
+    }
+
+    #[test]
+    fn harfbuzz_glyph_uvs_track_atlas_growth() {
+        let mut atlas = HarfBuzzAtlas::new();
+        let (font, glyph_id) = test_font_glyph();
+
+        let before = atlas
+            .glyph(&font, glyph_id, 12.0)
+            .expect("required value must be present");
+        let height_before = atlas.size()[1];
+        for step in 0..64 {
+            atlas.glyph(&font, glyph_id, 16.0 + step as f32);
+        }
+        let height_after = atlas.size()[1];
+        assert!(height_after > height_before, "atlas never grew");
+
+        let after = atlas
+            .glyph(&font, glyph_id, 12.0)
+            .expect("required value must be present");
+        // Growth reinterprets every UV: the same texel row must come back with
+        // a smaller v, so the cached glyph cannot be handed out with a stale UV.
+        assert!(after.uv_max.y < before.uv_max.y);
+        let row_before = before.uv_max.y * height_before as f32;
+        let row_after = after.uv_max.y * height_after as f32;
+        assert!((row_before - row_after).abs() < 0.5);
+    }
+
+    #[test]
+    fn harfbuzz_atlas_rebuilds_instead_of_overwriting_live_glyphs() {
+        let mut atlas = HarfBuzzAtlas::new();
+        let (font, glyph_id) = test_font_glyph();
+        atlas
+            .glyph(&font, glyph_id, 12.0)
+            .expect("required value must be present");
+        atlas.shape_cached(
+            &default_ui_font_definitions(),
+            FontFamily::Proportional,
+            "hi",
+        );
+        let epoch = atlas.epoch();
+
+        atlas.fill_atlas_for_test();
+        atlas.begin_pass();
+
+        assert_eq!(atlas.glyph_count(), 0);
+        assert_eq!(atlas.family_count(), 0);
+        assert_eq!(atlas.size(), [0, 0]);
+        assert_ne!(atlas.epoch(), epoch);
+
+        // Live glyphs re-raster into the fresh atlas with in-range UVs.
+        let alloc = atlas
+            .glyph(&font, glyph_id, 12.0)
+            .expect("required value must be present");
+        assert!(alloc.uv_max.y <= 1.0 && alloc.uv_max.x <= 1.0);
+        assert!(atlas.size()[1] < UI_HARFBUZZ_ATLAS_SIZE);
+    }
+
+    #[test]
+    fn harfbuzz_run_cache_caps_families() {
+        let definitions = default_ui_font_definitions();
+        let mut atlas = HarfBuzzAtlas::new();
+
+        for index in 0..HARFBUZZ_FAMILY_CACHE_LIMIT * 2 {
+            let family = FontFamily::Name(Arc::from(format!("perro-test-family-{index}")));
+            atlas.shape_cached(&definitions, family, "text");
+        }
+
+        assert_eq!(atlas.family_count(), HARFBUZZ_FAMILY_CACHE_LIMIT);
     }
 
     #[test]

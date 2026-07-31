@@ -242,6 +242,13 @@ impl GpuWaterFlip {
             particle_offset = particle_offset.saturating_add(particles);
             grid_offset = grid_offset.saturating_add(cells);
         }
+        // Drop impact state for waters that are gone. The key set never exceeds
+        // the water list, so only scan once a removal makes a map larger.
+        if self.impact_active.len() > waters.len() || self.impact_epoch.len() > waters.len() {
+            let live = |node: &NodeID| waters.iter().any(|(id, _)| id == node);
+            self.impact_active.retain(|node, _| live(node));
+            self.impact_epoch.retain(|node, _| live(node));
+        }
         self.water_count = self.staged.len().min(u32::MAX as usize) as u32;
         self.particle_count = particle_offset;
         self.grid_count = grid_offset;
@@ -284,6 +291,8 @@ impl GpuWaterFlip {
         self.grid_count = 0;
         self.max_particles_per_water = 0;
         self.max_grid_cells_per_water = 0;
+        self.impact_active.clear();
+        self.impact_epoch.clear();
     }
 
     pub fn encode(&self, encoder: &mut wgpu::CommandEncoder) {

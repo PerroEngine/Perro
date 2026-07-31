@@ -37,7 +37,7 @@ impl PerroGraphics {
                             .find_map(|(id, stream)| (*id == node).then_some(stream.output_texture))
                             .unwrap_or_else(|| camera_stream_texture_id(node));
                         if let Some(gpu) = self.gpu.as_mut() {
-                            gpu.remove_camera_stream(node);
+                            gpu.remove_camera_stream(node, output_texture);
                         }
                         self.camera_stream_targets.remove(&node);
                         self.retained_camera_streams.retain(|(id, _)| *id != node);
@@ -564,12 +564,19 @@ impl PerroGraphics {
                         }
                     }
                     ResourceCommand::DropTexture { id } => {
+                        // source must be read b4 the drop; the store forgets it.
+                        let source = self.resources.texture_source(id).map(str::to_owned);
                         if self.stream_texture_dims.remove(&id).is_some()
                             && let Some(gpu) = self.gpu.as_mut()
                         {
                             gpu.set_stream_texture(id, false);
                         }
                         if self.resources.drop_texture(id) {
+                            // GPU caches key on the id; once it is gone nothing
+                            // can invalidate them, so the uploads leak.
+                            if let Some(gpu) = self.gpu.as_mut() {
+                                gpu.invalidate_texture(id, source.as_deref());
+                            }
                             self.events.push(RenderEvent::TextureDropped { id });
                         }
                     }

@@ -894,7 +894,13 @@ impl Gpu2D {
     }
 
     pub fn invalidate_texture(&mut self, texture: TextureID) {
-        self.sprite_textures.remove(&texture);
+        if self.sprite_textures.remove(&texture).is_none() {
+            return;
+        }
+        // staged batches clone the bind group, so the removed entry's view +
+        // sampler only release once batching reruns.
+        self.last_sprite_stage = None;
+        self.last_sprite_prepare = None;
     }
 
     pub fn set_stream_texture(&mut self, texture: TextureID, is_stream: bool) {

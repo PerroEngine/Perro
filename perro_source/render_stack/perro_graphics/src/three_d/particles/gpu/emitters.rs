@@ -352,62 +352,24 @@ impl GpuPointParticles3D {
             emit_count,
             &mut self.hybrid_map_fingerprint,
         );
-        let spawn_origin_capacity = max_alive_budget.max(1);
-        let mut spawn_origin_updates = Vec::<(u32, [f32; 3], [f32; 4])>::new();
-        let spawn_origin_base = {
-            let entry = self.hybrid_spawn_rings.entry(node).or_insert_with(|| {
-                let base = self.hybrid_particle_spawn_origins.len() as u32;
-                self.hybrid_particle_spawn_origins
-                    .resize((base + spawn_origin_capacity) as usize, [0.0; 4]);
-                self.hybrid_particle_spawn_rotations.resize(
-                    (base + spawn_origin_capacity) as usize,
-                    [0.0, 0.0, 0.0, 1.0],
-                );
-                SpawnRingState {
-                    base,
-                    capacity: spawn_origin_capacity,
-                    slot_spawn_keys: vec![u32::MAX; spawn_origin_capacity as usize],
-                }
-            });
-            if entry.capacity != spawn_origin_capacity {
-                let base = self.hybrid_particle_spawn_origins.len() as u32;
-                self.hybrid_particle_spawn_origins
-                    .resize((base + spawn_origin_capacity) as usize, [0.0; 4]);
-                self.hybrid_particle_spawn_rotations.resize(
-                    (base + spawn_origin_capacity) as usize,
-                    [0.0, 0.0, 0.0, 1.0],
-                );
-                entry.base = base;
-                entry.capacity = spawn_origin_capacity;
-                entry.slot_spawn_keys = vec![u32::MAX; spawn_origin_capacity as usize];
-            }
-            for i in 0..emit_count {
-                let spawn_index = if emitter.looping {
-                    let back = emit_count.saturating_sub(1).saturating_sub(i);
-                    total_spawned.saturating_sub(back)
-                } else {
-                    i
-                };
-                let slot = spawn_index % entry.capacity;
-                let slot_idx = slot as usize;
-                if entry.slot_spawn_keys[slot_idx] != spawn_index {
-                    entry.slot_spawn_keys[slot_idx] = spawn_index;
-                    spawn_origin_updates.push((
-                        entry.base + slot,
-                        [current_origin.x, current_origin.y, current_origin.z],
-                        spawn_rot_arr,
-                    ));
-                }
-            }
-            entry.base
-        };
-        for (slot, origin, rotation) in spawn_origin_updates {
-            self.hybrid_particle_spawn_origins[slot as usize] =
-                [origin[0], origin[1], origin[2], 0.0];
-            self.hybrid_particle_spawn_rotations[slot as usize] = rotation;
-            self.hybrid_spawn_origin_dirty_slots.push(slot);
-            self.hybrid_spawn_rotation_dirty_slots.push(slot);
-        }
+        let spawn_origin_base = update_spawn_ring(
+            &mut self.hybrid_spawn_rings,
+            &mut self.hybrid_spawn_arena,
+            &mut self.hybrid_particle_spawn_origins,
+            &mut self.hybrid_particle_spawn_rotations,
+            &mut self.hybrid_spawn_origin_dirty_slots,
+            &mut self.hybrid_spawn_rotation_dirty_slots,
+            node,
+            self.spawn_origin_generation,
+            max_alive_budget,
+            SpawnRingUpdate {
+                emit_count,
+                total_spawned,
+                looping: emitter.looping,
+                origin: [current_origin.x, current_origin.y, current_origin.z],
+                rotation: spawn_rot_arr,
+            },
+        );
         self.hybrid_emitters.push(GpuEmitterParticle {
             model_0: emitter.model[0],
             model_1: emitter.model[1],
@@ -646,62 +608,24 @@ impl GpuPointParticles3D {
             emit_count,
             &mut self.compute_map_fingerprint,
         );
-        let spawn_origin_capacity = max_alive_budget.max(1);
-        let mut spawn_origin_updates = Vec::<(u32, [f32; 3], [f32; 4])>::new();
-        let spawn_origin_base = {
-            let entry = self.compute_spawn_rings.entry(node).or_insert_with(|| {
-                let base = self.compute_particle_spawn_origins.len() as u32;
-                self.compute_particle_spawn_origins
-                    .resize((base + spawn_origin_capacity) as usize, [0.0; 4]);
-                self.compute_particle_spawn_rotations.resize(
-                    (base + spawn_origin_capacity) as usize,
-                    [0.0, 0.0, 0.0, 1.0],
-                );
-                SpawnRingState {
-                    base,
-                    capacity: spawn_origin_capacity,
-                    slot_spawn_keys: vec![u32::MAX; spawn_origin_capacity as usize],
-                }
-            });
-            if entry.capacity != spawn_origin_capacity {
-                let base = self.compute_particle_spawn_origins.len() as u32;
-                self.compute_particle_spawn_origins
-                    .resize((base + spawn_origin_capacity) as usize, [0.0; 4]);
-                self.compute_particle_spawn_rotations.resize(
-                    (base + spawn_origin_capacity) as usize,
-                    [0.0, 0.0, 0.0, 1.0],
-                );
-                entry.base = base;
-                entry.capacity = spawn_origin_capacity;
-                entry.slot_spawn_keys = vec![u32::MAX; spawn_origin_capacity as usize];
-            }
-            for i in 0..emit_count {
-                let spawn_index = if emitter.looping {
-                    let back = emit_count.saturating_sub(1).saturating_sub(i);
-                    total_spawned.saturating_sub(back)
-                } else {
-                    i
-                };
-                let slot = spawn_index % entry.capacity;
-                let slot_idx = slot as usize;
-                if entry.slot_spawn_keys[slot_idx] != spawn_index {
-                    entry.slot_spawn_keys[slot_idx] = spawn_index;
-                    spawn_origin_updates.push((
-                        entry.base + slot,
-                        [current_origin.x, current_origin.y, current_origin.z],
-                        spawn_rot_arr,
-                    ));
-                }
-            }
-            entry.base
-        };
-        for (slot, origin, rotation) in spawn_origin_updates {
-            self.compute_particle_spawn_origins[slot as usize] =
-                [origin[0], origin[1], origin[2], 0.0];
-            self.compute_particle_spawn_rotations[slot as usize] = rotation;
-            self.compute_spawn_origin_dirty_slots.push(slot);
-            self.compute_spawn_rotation_dirty_slots.push(slot);
-        }
+        let spawn_origin_base = update_spawn_ring(
+            &mut self.compute_spawn_rings,
+            &mut self.compute_spawn_arena,
+            &mut self.compute_particle_spawn_origins,
+            &mut self.compute_particle_spawn_rotations,
+            &mut self.compute_spawn_origin_dirty_slots,
+            &mut self.compute_spawn_rotation_dirty_slots,
+            node,
+            self.spawn_origin_generation,
+            max_alive_budget,
+            SpawnRingUpdate {
+                emit_count,
+                total_spawned,
+                looping: emitter.looping,
+                origin: [current_origin.x, current_origin.y, current_origin.z],
+                rotation: spawn_rot_arr,
+            },
+        );
         self.compute_emitters.push(GpuEmitterParticle {
             model_0: emitter.model[0],
             model_1: emitter.model[1],

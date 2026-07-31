@@ -477,6 +477,11 @@ impl GpuUi {
                 self.apply_harfbuzz_font_delta(device, queue, delta);
             }
         }
+        // frees land after the sets, matching the epaint contract (an id is
+        // never set + freed in one delta).
+        for texture_id in &textures_delta.free {
+            self.free_managed_texture(*texture_id);
+        }
         let (mesh_signature, mesh_totals) = self.mesh_signature(
             device,
             queue,
@@ -1044,6 +1049,22 @@ impl GpuUi {
         self.image_textures
             .get(&TextureID::from_u64(raw))
             .map(|texture| &texture.bind_group)
+    }
+
+    /// Release a texture the painter says it will never reference again
+    /// (`textures_delta.free`): atlas rebuilds and evicted user images.
+    fn free_managed_texture(&mut self, texture_id: TextureId) {
+        if texture_id == TextureId::default() {
+            self.font_texture = None;
+        } else if texture_id == UI_HARFBUZZ_TEXTURE_ID {
+            self.harfbuzz_font_texture = None;
+        } else if let TextureId::User(raw) = texture_id {
+            self.image_textures.remove(&TextureID::from_u64(raw));
+        } else {
+            return;
+        }
+        self.prepared_mesh_signature = None;
+        self.prepared_revision = u64::MAX;
     }
 
     pub fn invalidate_image_texture(&mut self, texture: TextureID) {

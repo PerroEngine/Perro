@@ -454,6 +454,18 @@ impl PerroGraphics {
                 GC_INTERVAL_FRAMES,
                 GC_MAX_DROPS_PER_KIND,
             );
+            // Auto-dropped ids can never be invalidated later, so their GPU
+            // uploads (3D material slots, UI images, decal layers, 2D sprites)
+            // would pin the shared store forever. Sources are already gone from
+            // the store; the id-keyed handles are what retain the upload, and
+            // the shared store sweeps once its refcount falls back to 1.
+            if !drops.textures.is_empty()
+                && let Some(gpu) = self.gpu.as_mut()
+            {
+                for id in &drops.textures {
+                    gpu.invalidate_texture(*id, None);
+                }
+            }
             self.events.extend(
                 drops
                     .textures

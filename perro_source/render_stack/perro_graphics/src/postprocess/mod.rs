@@ -43,6 +43,19 @@ const EFFECT_PIXEL_ART: u32 = 17;
 // allocated scratch targets (blur/bloom) release back to 1x1/None.
 const POST_IDLE_RELEASE_FRAMES: u32 = 120;
 
+// Per-processor caps for the pay-4-use caches. One processor exists per camera
+// stream, so an unbounded map multiplies. Both caps sit far above real chains,
+// and entries touched this frame never evict, so a wide chain still draws.
+const POST_LUT_CACHE_CAP: usize = 8;
+const POST_CUSTOM_PIPELINE_CAP: usize = 8;
+
+// Live input/depth view-key pairs tracked per processor. The main chain runs two
+// inside one frame (camera chain then global chain, ping-ponging scene and
+// intermediate), plus one spare so a key-generation flip never evicts a pair the
+// current frame still binds. Insertion is round-robin over distinct pairs, so
+// eviction is FIFO and stale pairs outlive their generation by one at most.
+const POST_VIEW_KEY_SLOTS: usize = 3;
+
 // LDR intermediate target format. sRGB-encoded so 8-bit storage keeps
 // perceptual precision for the linear-light values the passes exchange
 // (plain Rgba8Unorm would band in the darks); half the VRAM of Rgba16Float.
@@ -217,10 +230,90 @@ struct PostBindGroupKey {
     lut_3d_key: u64,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct PostViewKeys {
     external_input: u64,
     depth: u64,
+}
+
+struct PostLruEntry<V> {
+    value: V,
+    last_used: u64,
+}
+
+/// Keyed cache with a use clock. On overflow the least recently used entry
+/// drops, never one already touched this frame: a chain wider than the cap
+/// still holds every resource it draws with, it just refills next frame.
+struct PostLruCache<V> {
+    entries: HashMap<u64, PostLruEntry<V>>,
+}
+
+impl<V> PostLruCache<V> {
+    fn new() -> Self {
+        Self {
+            entries: HashMap::new(),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    fn clear(&mut self) {
+        self.entries.clear();
+    }
+
+    /// Mark a live entry used at `now`. Ret false when absent.
+    fn touch(&mut self, key: u64, now: u64) -> bool {
+        match self.entries.get_mut(&key) {
+            Some(entry) => {
+                entry.last_used = now;
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn peek(&self, key: u64) -> Option<&V> {
+        self.entries.get(&key).map(|entry| &entry.value)
+    }
+
+    fn insert_capped(&mut self, key: u64, value: V, now: u64, cap: usize) {
+        if self.entries.len() >= cap && !self.entries.contains_key(&key) {
+            let victim = self
+                .entries
+                .iter()
+                .filter(|(_, entry)| entry.last_used != now)
+                .min_by_key(|(_, entry)| entry.last_used)
+                .map(|(key, _)| *key);
+            if let Some(victim) = victim {
+                self.entries.remove(&victim);
+            }
+        }
+        self.entries.insert(
+            key,
+            PostLruEntry {
+                value,
+                last_used: now,
+            },
+        );
+    }
+}
+
+/// Rotate `keys` into the live view-key ring. Ret the pair it retires, if any;
+/// the all-zero pair means the slot never held one.
+fn rotate_view_key_slot(
+    slots: &mut [PostViewKeys; POST_VIEW_KEY_SLOTS],
+    next: &mut usize,
+    keys: PostViewKeys,
+) -> Option<PostViewKeys> {
+    if slots.contains(&keys) {
+        return None;
+    }
+    let slot = *next % POST_VIEW_KEY_SLOTS;
+    *next = (slot + 1) % POST_VIEW_KEY_SLOTS;
+    let retired = std::mem::replace(&mut slots[slot], keys);
+    (retired != PostViewKeys::default()).then_some(retired)
 }
 
 #[derive(Clone, Copy, Default)]
@@ -277,8 +370,10 @@ pub struct PostProcessor {
     default_lut_2d_view: wgpu::TextureView,
     _default_lut_3d_texture: wgpu::Texture,
     default_lut_3d_view: wgpu::TextureView,
-    lut_2d_textures: HashMap<u64, CachedPostTexture>,
-    lut_3d_textures: HashMap<u64, CachedPostTexture>,
+    // LUT textures and custom pipelines rebuild from disk/source on next use,
+    // so both stay capped and drop wholesale once the processor goes idle.
+    lut_2d_textures: PostLruCache<CachedPostTexture>,
+    lut_3d_textures: PostLruCache<CachedPostTexture>,
     bgl: wgpu::BindGroupLayout,
     pipeline_layout: wgpu::PipelineLayout,
     builtin_shader: wgpu::ShaderModule,
@@ -286,8 +381,13 @@ pub struct PostProcessor {
     // Lazily built variant of builtin_pipeline baked for
     // LDR_INTERMEDIATE_FORMAT targets (pipelines are format-baked).
     builtin_pipeline_ldr: Option<wgpu::RenderPipeline>,
-    custom_pipelines: HashMap<u64, wgpu::RenderPipeline>,
+    custom_pipelines: PostLruCache<wgpu::RenderPipeline>,
     post_bind_groups: HashMap<PostBindGroupKey, wgpu::BindGroup>,
+    // Input/depth view keys still in use. A stream target recreated for a flag
+    // change keeps its resolution, so `resize` no-ops while the target's views
+    // die; entries on a retired pair would pin destroyed textures forever.
+    view_key_slots: [PostViewKeys; POST_VIEW_KEY_SLOTS],
+    view_key_slot_next: usize,
     uniform_buffer: wgpu::Buffer,
     uniform_stride: u64,
     uniform_capacity: usize,
@@ -298,6 +398,7 @@ pub struct PostProcessor {
     lut_generation: u32,
     frame_counter: u64,
     idle_frames: u32,
+    chain_ran_this_frame: bool,
     // Bloom downsample divisor: 2 normally, 4 on memory-constrained adapters.
     bloom_divisor: u32,
     perf_counters: PostPerfCounters,
@@ -513,15 +614,17 @@ impl PostProcessor {
             default_lut_2d_view,
             _default_lut_3d_texture: default_lut_3d_texture,
             default_lut_3d_view,
-            lut_2d_textures: HashMap::new(),
-            lut_3d_textures: HashMap::new(),
+            lut_2d_textures: PostLruCache::new(),
+            lut_3d_textures: PostLruCache::new(),
             bgl,
             pipeline_layout,
             builtin_shader: shader,
             builtin_pipeline,
             builtin_pipeline_ldr: None,
-            custom_pipelines: HashMap::new(),
+            custom_pipelines: PostLruCache::new(),
             post_bind_groups: HashMap::new(),
+            view_key_slots: [PostViewKeys::default(); POST_VIEW_KEY_SLOTS],
+            view_key_slot_next: 0,
             uniform_buffer,
             uniform_stride,
             uniform_capacity,
@@ -532,6 +635,7 @@ impl PostProcessor {
             lut_generation: 1,
             frame_counter: 0,
             idle_frames: 0,
+            chain_ran_this_frame: false,
             bloom_divisor: 2,
             perf_counters: PostPerfCounters::default(),
             chain_steps_scratch: Vec::new(),
@@ -551,13 +655,17 @@ impl PostProcessor {
 
     /// Per-frame tick while no effect chain runs. Promoted ping targets and the
     /// blur/bloom scratch targets otherwise latch full/half-res forever after
-    /// the last effect is removed.
+    /// the last effect is removed, and the LUT/pipeline caches keep whatever the
+    /// last chain loaded.
     pub fn note_idle_frame(&mut self, device: &wgpu::Device) {
         let holds_scratch = self.ping_targets_full_size
             || self.blur_scratch.is_some()
             || self.bloom_half_a.is_some()
             || self.bloom_half_b.is_some();
-        if !holds_scratch {
+        let holds_caches = !self.lut_2d_textures.is_empty()
+            || !self.lut_3d_textures.is_empty()
+            || !self.custom_pipelines.is_empty();
+        if !holds_scratch && !holds_caches {
             self.idle_frames = 0;
             return;
         }
@@ -566,19 +674,55 @@ impl PostProcessor {
             return;
         }
         self.idle_frames = 0;
-        let (ping_a, ping_a_view) =
-            create_color_target(device, self.intermediate_format, 1, 1, "perro_post_ping_a");
-        let (ping_b, ping_b_view) =
-            create_color_target(device, self.intermediate_format, 1, 1, "perro_post_ping_b");
-        self.ping_a = ping_a;
-        self.ping_a_view = ping_a_view;
-        self.ping_b = ping_b;
-        self.ping_b_view = ping_b_view;
-        self.ping_targets_full_size = false;
-        self.blur_scratch = None;
-        self.bloom_half_a = None;
-        self.bloom_half_b = None;
+        if holds_scratch {
+            let (ping_a, ping_a_view) =
+                create_color_target(device, self.intermediate_format, 1, 1, "perro_post_ping_a");
+            let (ping_b, ping_b_view) =
+                create_color_target(device, self.intermediate_format, 1, 1, "perro_post_ping_b");
+            self.ping_a = ping_a;
+            self.ping_a_view = ping_a_view;
+            self.ping_b = ping_b;
+            self.ping_b_view = ping_b_view;
+            self.ping_targets_full_size = false;
+            self.blur_scratch = None;
+            self.bloom_half_a = None;
+            self.bloom_half_b = None;
+        }
+        // LUTs reload and custom pipelines recompile on next use.
+        self.lut_2d_textures.clear();
+        self.lut_3d_textures.clear();
+        self.custom_pipelines.clear();
         self.post_bind_groups.clear();
+    }
+
+    /// Per-frame tick for a processor whose chain sits behind early-outs: the
+    /// per-stream ones skip on idle streams, missing targets and missing depth
+    /// views, so an explicit idle call at each skip site drifts. A frame with no
+    /// `apply_chain` run counts as idle.
+    pub fn note_frame(&mut self, device: &wgpu::Device) {
+        if std::mem::take(&mut self.chain_ran_this_frame) {
+            return;
+        }
+        self.note_idle_frame(device);
+    }
+
+    /// Track the input/depth views still bound. Bind groups on a pair that
+    /// rotates out hold views on textures the target owner already destroyed
+    /// (flag toggle at unchanged resolution leaves `resize` a no-op), so drop
+    /// them; they rebuild on the next pass that needs one. Ping-input entries
+    /// carry external key 0 and match on the depth key instead.
+    fn note_view_keys(&mut self, keys: PostViewKeys) {
+        let Some(retired) = rotate_view_key_slot(
+            &mut self.view_key_slots,
+            &mut self.view_key_slot_next,
+            keys,
+        ) else {
+            return;
+        };
+        self.post_bind_groups.retain(|key, _| {
+            key.external_input_view_key != retired.external_input
+                && key.depth_view_key != retired.depth
+        });
     }
 
     pub fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
@@ -753,6 +897,8 @@ impl PostProcessor {
             return;
         }
         self.idle_frames = 0;
+        self.chain_ran_this_frame = true;
+        self.note_view_keys(view_keys);
         let chain_needs_hdr = *hdr_output || effects.iter().any(effect_needs_hdr_intermediates);
         self.update_intermediate_format(device, chain_needs_hdr);
         self.ensure_ldr_pipeline(device);
@@ -1024,7 +1170,7 @@ impl PostProcessor {
                 // scene format the custom pipelines were baked for.
                 PostProcessEffect::Custom { shader_path, .. } => self
                     .custom_pipelines
-                    .get(&post_shader_key(shader_path.as_ref()))
+                    .peek(post_shader_key(shader_path.as_ref()))
                     .unwrap_or(&self.builtin_pipeline),
                 _ => self.builtin_pipeline_for_target(!last),
             };
@@ -1345,8 +1491,8 @@ impl PostProcessor {
         static_shader_lookup: Option<StaticShaderLookup>,
     ) -> Option<&wgpu::RenderPipeline> {
         let shader_key = post_shader_key(shader_path);
-        if self.custom_pipelines.contains_key(&shader_key) {
-            return self.custom_pipelines.get(&shader_key);
+        if self.custom_pipelines.touch(shader_key, self.frame_counter) {
+            return self.custom_pipelines.peek(shader_key);
         }
         let src = if let Some(lookup) = static_shader_lookup {
             let shader_hash = perro_ids::parse_hashed_source_uri(shader_path)
@@ -1367,8 +1513,13 @@ impl PostProcessor {
             source: wgpu::ShaderSource::Wgsl(wgsl.into()),
         });
         let pipeline = create_pipeline(device, &self.pipeline_layout, &shader, self.format);
-        self.custom_pipelines.insert(shader_key, pipeline);
-        self.custom_pipelines.get(&shader_key)
+        self.custom_pipelines.insert_capped(
+            shader_key,
+            pipeline,
+            self.frame_counter,
+            POST_CUSTOM_PIPELINE_CAP,
+        );
+        self.custom_pipelines.peek(shader_key)
     }
 
     fn ensure_lut_texture(
@@ -1383,7 +1534,7 @@ impl PostProcessor {
                 texture_path, size, ..
             } => {
                 let key = lut_key(texture_path.as_ref(), *size);
-                if self.lut_2d_textures.contains_key(&key) {
+                if self.lut_2d_textures.touch(key, self.frame_counter) {
                     return;
                 }
                 let Some((rgba, width, height)) =
@@ -1392,14 +1543,19 @@ impl PostProcessor {
                     return;
                 };
                 let texture = create_post_lut_2d(device, queue, rgba, width, height);
-                self.lut_2d_textures.insert(key, texture);
+                self.lut_2d_textures.insert_capped(
+                    key,
+                    texture,
+                    self.frame_counter,
+                    POST_LUT_CACHE_CAP,
+                );
                 self.bump_lut_generation();
             }
             PostProcessEffect::Lut3D {
                 texture_path, size, ..
             } => {
                 let key = lut_key(texture_path.as_ref(), *size);
-                if self.lut_3d_textures.contains_key(&key) {
+                if self.lut_3d_textures.touch(key, self.frame_counter) {
                     return;
                 }
                 let Some((rgba, width, height)) =
@@ -1411,7 +1567,12 @@ impl PostProcessor {
                     return;
                 };
                 let texture = create_post_lut_3d(device, queue, rgba_3d, size);
-                self.lut_3d_textures.insert(key, texture);
+                self.lut_3d_textures.insert_capped(
+                    key,
+                    texture,
+                    self.frame_counter,
+                    POST_LUT_CACHE_CAP,
+                );
                 self.bump_lut_generation();
             }
             _ => {}
@@ -1426,7 +1587,7 @@ impl PostProcessor {
                 let key = lut_key(texture_path.as_ref(), *size);
                 let view = self
                     .lut_2d_textures
-                    .get(&key)
+                    .peek(key)
                     .map(|texture| &texture.view)
                     .unwrap_or(&self.default_lut_2d_view);
                 (view, &self.default_lut_3d_view)
@@ -1437,7 +1598,7 @@ impl PostProcessor {
                 let key = lut_key(texture_path.as_ref(), *size);
                 let view = self
                     .lut_3d_textures
-                    .get(&key)
+                    .peek(key)
                     .map(|texture| &texture.view)
                     .unwrap_or(&self.default_lut_3d_view);
                 (&self.default_lut_2d_view, view)

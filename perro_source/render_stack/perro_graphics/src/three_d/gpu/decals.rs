@@ -19,6 +19,25 @@ pub(super) const DECAL_MAX_LAYERS: u32 = 64;
 pub(super) const DECAL_INITIAL_LAYERS: u32 = 1;
 pub(super) const DECAL_MAX_DECALS: usize = 64;
 
+// One warn per process when every layer is genuinely live; without it new
+// decals just vanish with no diagnostic.
+static DECAL_LAYERS_EXHAUSTED_WARN: std::sync::Once = std::sync::Once::new();
+
+// Lowest array layer no live texture holds. Layers freed by
+// `invalidate_decal_texture` get reused before the array grows, so the index is
+// no longer monotonic in map length. One u64 mask covers the whole array.
+const _: () = assert!(DECAL_MAX_LAYERS <= 64);
+fn next_free_decal_layer(used: impl Iterator<Item = u32>) -> Option<u32> {
+    let mut mask: u64 = 0;
+    for layer in used {
+        if layer < DECAL_MAX_LAYERS {
+            mask |= 1u64 << layer;
+        }
+    }
+    let layer = mask.trailing_ones();
+    (layer < DECAL_MAX_LAYERS).then_some(layer)
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 pub(super) struct DecalGpu {
@@ -251,6 +270,16 @@ impl Gpu3D {
         self.decal_count = records.len() as u32;
     }
 
+    /// Release the array layer bound to a texture id. Layer slots are recycled,
+    /// so a scene that cycles decal textures never exhausts the array. Live
+    /// decals re-resolve (and re-upload) their layer on the next prepare.
+    pub fn invalidate_decal_texture(&mut self, id: TextureID) {
+        if self.decal_layer_by_texture.remove(&id).is_some() {
+            // records cache layer indices; re-resolve b4 the slot is reused.
+            self.decal_sources_pending = true;
+        }
+    }
+
     // TextureID -> array layer; decodes + uploads on first sight. None = nil
     // id, not yet decodable (pending resource), or out of layers.
     fn decal_layer_for_texture(
@@ -271,10 +300,15 @@ impl Gpu3D {
             self.decal_sources_pending = true;
             return None;
         };
-        let layer = self.decal_layer_by_texture.len() as u32;
-        if layer >= DECAL_MAX_LAYERS {
+        let Some(layer) = next_free_decal_layer(self.decal_layer_by_texture.values().copied())
+        else {
+            DECAL_LAYERS_EXHAUSTED_WARN.call_once(|| {
+                eprintln!(
+                    "[perro] decal texture layers exhausted (max {DECAL_MAX_LAYERS}); extra decal textures skip"
+                );
+            });
             return None;
-        }
+        };
         if layer >= self.decal_texture_layers {
             self.grow_decal_texture(device, queue, resources);
         }
@@ -344,4 +378,35 @@ fn decal_layer_levels(rgba: &[u8], width: u32, height: u32) -> Vec<RgbaMipLevel>
         DECAL_LAYER_SIZE,
         TextureFilterMode::LinearMipmap,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DECAL_MAX_LAYERS, next_free_decal_layer};
+
+    #[test]
+    fn empty_array_starts_at_layer_zero() {
+        assert_eq!(next_free_decal_layer(std::iter::empty()), Some(0));
+    }
+
+    #[test]
+    fn packed_layers_append_at_the_end() {
+        assert_eq!(next_free_decal_layer([0, 1, 2].into_iter()), Some(3));
+    }
+
+    #[test]
+    fn freed_layer_gets_reused_b4_growth() {
+        // layer 1 released: the next texture takes it instead of layer 3.
+        assert_eq!(next_free_decal_layer([0, 2].into_iter()), Some(1));
+    }
+
+    #[test]
+    fn full_array_reports_no_layer() {
+        assert_eq!(next_free_decal_layer(0..DECAL_MAX_LAYERS), None);
+        // one hole anywhere is still usable.
+        assert_eq!(
+            next_free_decal_layer((0..DECAL_MAX_LAYERS).filter(|layer| *layer != 40)),
+            Some(40)
+        );
+    }
 }

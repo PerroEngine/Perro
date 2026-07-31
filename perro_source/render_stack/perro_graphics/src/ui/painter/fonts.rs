@@ -29,6 +29,17 @@ pub(super) struct HarfBuzzGlyphAlloc {
     pub(super) uv_max: epaint::Pos2,
 }
 
+/// Cached placement in atlas pixels. UVs stay out of the cache on purpose:
+/// the atlas grows by doubling its height, which reinterprets every UV baked
+/// against an older size. Pixels survive growth; UVs get derived per lookup.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct HarfBuzzGlyphPixels {
+    offset: epaint::Vec2,
+    size: epaint::Vec2,
+    pos: (usize, usize),
+    extent: (usize, usize),
+}
+
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub(super) struct HarfBuzzGlyphKey {
     font_key: Arc<str>,
@@ -42,34 +53,88 @@ pub(super) struct HarfBuzzGlyphKey {
 /// too, so unshapeable labels don't retry the whole fallback list per frame.
 pub(super) const HARFBUZZ_RUN_CACHE_LIMIT: usize = 1024;
 
+/// Outer (per-family) run cache bound. Script fallback plus the selectable
+/// system fonts give ~20 reachable families; keep the few in active use and
+/// drop the coldest instead of holding `families * 1024` strings forever.
+pub(super) const HARFBUZZ_FAMILY_CACHE_LIMIT: usize = 16;
+
+/// Rebuild the atlas once it is this full, same threshold epaint's `Fonts`
+/// uses. Past it `TextureAtlas` wraps its cursor and overwrites live glyphs.
+pub(super) const HARFBUZZ_ATLAS_REBUILD_FILL: f32 = 0.8;
+
+/// Raster sizes below this snap to a half-point grid, above it to whole
+/// points. Animated / fit_content sizes otherwise mint one bitmap per pixel
+/// of size change.
+pub(super) const HARFBUZZ_RASTER_GRID_LIMIT: f32 = 24.0;
+
 pub(super) type HarfBuzzShapedRun = Option<(UiFontSource, Arc<HarfBuzzGlyphRun>)>;
 
 pub(super) struct HarfBuzzAtlas {
-    atlas: TextureAtlas,
-    glyphs: AHashMap<HarfBuzzGlyphKey, HarfBuzzGlyphAlloc>,
+    /// Built on the first shaped glyph: pure-Latin apps never reach
+    /// rustybuzz, and an eager atlas costs them the full CPU image, a
+    /// same-size clone through the first delta, and a GPU texture.
+    atlas: Option<TextureAtlas>,
+    glyphs: AHashMap<HarfBuzzGlyphKey, HarfBuzzGlyphPixels>,
     runs: AHashMap<FontFamily, AHashMap<String, HarfBuzzShapedRun>>,
+    /// Least-recently-used first; caps `runs`.
+    family_order: Vec<FontFamily>,
+    /// Bumped on every rebuild so callers holding baked UVs can tell that
+    /// their glyph pixels moved.
+    generation: u64,
 }
 
 impl HarfBuzzAtlas {
     pub(super) fn new() -> Self {
         Self {
-            atlas: TextureAtlas::new(
-                [UI_HARFBUZZ_ATLAS_SIZE, UI_HARFBUZZ_ATLAS_SIZE],
-                AlphaFromCoverage::default(),
-            ),
+            atlas: None,
             glyphs: AHashMap::new(),
             runs: AHashMap::new(),
+            family_order: Vec::new(),
+            generation: 0,
         }
     }
 
+    /// Identity of the current glyph placement. Any change (rebuild or growth)
+    /// invalidates UVs already tessellated into cached meshes.
+    pub(super) fn epoch(&self) -> (u64, [usize; 2]) {
+        (self.generation, self.size())
+    }
+
+    pub(super) fn size(&self) -> [usize; 2] {
+        self.atlas
+            .as_ref()
+            .map(|atlas| atlas.size())
+            .unwrap_or([0, 0])
+    }
+
+    /// Mirror of `Fonts::begin_pass`: recreate the atlas once it is nearly
+    /// full instead of letting `TextureAtlas` wrap its cursor over live
+    /// glyphs, which leaves the cached UVs pointing at other glyphs' pixels
+    /// for good. Dropping the glyph map here is also what bounds it — the
+    /// live glyphs re-raster on the next pass, the dead ones don't.
+    pub(super) fn begin_pass(&mut self) {
+        let full = self
+            .atlas
+            .as_ref()
+            .is_some_and(|atlas| atlas.fill_ratio() > HARFBUZZ_ATLAS_REBUILD_FILL);
+        if !full {
+            return;
+        }
+        self.atlas = None;
+        self.glyphs.clear();
+        self.invalidate_runs();
+        self.generation = self.generation.wrapping_add(1);
+    }
+
     pub(super) fn take_delta(&mut self) -> Option<epaint::ImageDelta> {
-        self.atlas.take_delta()
+        self.atlas.as_mut()?.take_delta()
     }
 
     /// Font set changed (resource font registered): cached runs may resolve
     /// to a different face now.
     pub(super) fn invalidate_runs(&mut self) {
         self.runs.clear();
+        self.family_order.clear();
     }
 
     pub(super) fn shape_cached(
@@ -78,6 +143,7 @@ impl HarfBuzzAtlas {
         family: FontFamily,
         text: &str,
     ) -> HarfBuzzShapedRun {
+        self.touch_family(&family);
         let by_text = self.runs.entry(family.clone()).or_default();
         if let Some(cached) = by_text.get(text) {
             return cached.clone();
@@ -91,23 +157,104 @@ impl HarfBuzzAtlas {
         shaped
     }
 
+    /// Move `family` to the hot end of the LRU, evicting the coldest family's
+    /// whole run map when a new family pushes past the cap.
+    fn touch_family(&mut self, family: &FontFamily) {
+        if let Some(index) = self.family_order.iter().position(|held| held == family) {
+            let held = self.family_order.remove(index);
+            self.family_order.push(held);
+            return;
+        }
+        if self.family_order.len() >= HARFBUZZ_FAMILY_CACHE_LIMIT {
+            let evicted = self.family_order.remove(0);
+            self.runs.remove(&evicted);
+        }
+        self.family_order.push(family.clone());
+    }
+
     pub(super) fn glyph(
         &mut self,
         font: &UiFontSource,
         glyph_id: u32,
         font_size: f32,
     ) -> Option<HarfBuzzGlyphAlloc> {
+        let raster_size = quantize_raster_size(font_size);
         let key = HarfBuzzGlyphKey {
             font_key: font.key.clone(),
             glyph_id,
-            font_size_bits: font_size.to_bits(),
+            font_size_bits: raster_size.to_bits(),
         };
-        if let Some(alloc) = self.glyphs.get(&key).copied() {
-            return Some(alloc);
+        let pixels = match self.glyphs.get(&key).copied() {
+            Some(pixels) => pixels,
+            None => {
+                let atlas = self.atlas.get_or_insert_with(|| {
+                    TextureAtlas::new(
+                        [UI_HARFBUZZ_ATLAS_SIZE, UI_HARFBUZZ_ATLAS_INITIAL_HEIGHT],
+                        AlphaFromCoverage::default(),
+                    )
+                });
+                let pixels = raster_harfbuzz_glyph(font, glyph_id, raster_size, atlas)?;
+                self.glyphs.insert(key, pixels);
+                pixels
+            }
+        };
+        // Quad geometry stays in the true size: only the bitmap resolution
+        // quantizes, so a glyph mid-animation samples a slightly coarser or
+        // finer bitmap but lands on the exact same pixels on screen.
+        let scale = font_size / raster_size;
+        Some(HarfBuzzGlyphAlloc {
+            offset: pixels.offset * scale,
+            size: pixels.size * scale,
+            uv_min: self.uv(pixels.pos),
+            uv_max: self.uv((
+                pixels.pos.0 + pixels.extent.0,
+                pixels.pos.1 + pixels.extent.1,
+            )),
+        })
+    }
+
+    fn uv(&self, pos: (usize, usize)) -> epaint::Pos2 {
+        let size = self.size();
+        if size[0] == 0 || size[1] == 0 {
+            return pos2(0.0, 0.0);
         }
-        let alloc = raster_harfbuzz_glyph(font, glyph_id, font_size, &mut self.atlas)?;
-        self.glyphs.insert(key, alloc);
-        Some(alloc)
+        pos2(pos.0 as f32 / size[0] as f32, pos.1 as f32 / size[1] as f32)
+    }
+
+    #[cfg(test)]
+    pub(super) fn glyph_count(&self) -> usize {
+        self.glyphs.len()
+    }
+
+    #[cfg(test)]
+    pub(super) fn family_count(&self) -> usize {
+        self.runs.len()
+    }
+
+    /// Swap in a filled stand-in atlas. Reaching the threshold on the real
+    /// 4096-wide atlas would materialize a 64 MiB image just to trip a check.
+    #[cfg(test)]
+    pub(super) fn fill_atlas_for_test(&mut self) {
+        let mut atlas = TextureAtlas::new([1024, 32], AlphaFromCoverage::default());
+        while atlas.fill_ratio() <= HARFBUZZ_ATLAS_REBUILD_FILL {
+            atlas.allocate((512, 64));
+        }
+        self.atlas = Some(atlas);
+    }
+}
+
+/// Snap a raster size onto a coarse grid so a size sweep (animation,
+/// `fit_content` deriving size from rect dimensions) reuses bitmaps instead of
+/// rasterizing and allocating a fresh atlas entry per pixel of change. Same
+/// trade epaint makes when it rounds glyph scale to whole pixels.
+pub(super) fn quantize_raster_size(font_size: f32) -> f32 {
+    if !font_size.is_finite() || font_size <= 0.0 {
+        return 1.0;
+    }
+    if font_size < HARFBUZZ_RASTER_GRID_LIMIT {
+        ((font_size * 2.0).round() / 2.0).max(0.5)
+    } else {
+        font_size.round()
     }
 }
 
@@ -589,7 +736,7 @@ pub(super) fn raster_harfbuzz_glyph(
     glyph_id: u32,
     font_size: f32,
     atlas: &mut TextureAtlas,
-) -> Option<HarfBuzzGlyphAlloc> {
+) -> Option<HarfBuzzGlyphPixels> {
     let font_ref = ab_glyph::FontRef::try_from_slice(font.data.font.as_ref()).ok()?;
     let glyph_id = ab_glyph::GlyphId(glyph_id.min(u16::MAX as u32) as u16);
     let glyph =
@@ -599,11 +746,11 @@ pub(super) fn raster_harfbuzz_glyph(
     let width = bounds.width().ceil().max(0.0) as usize;
     let height = bounds.height().ceil().max(0.0) as usize;
     if width == 0 || height == 0 {
-        return Some(HarfBuzzGlyphAlloc {
+        return Some(HarfBuzzGlyphPixels {
             offset: vec2(0.0, 0.0),
             size: vec2(0.0, 0.0),
-            uv_min: pos2(0.0, 0.0),
-            uv_max: pos2(0.0, 0.0),
+            pos: (0, 0),
+            extent: (0, 0),
         });
     }
     let (glyph_pos, image) = atlas.allocate((width, height));
@@ -613,18 +760,11 @@ pub(super) fn raster_harfbuzz_glyph(
                 Color32::from_white_alpha((coverage * 255.0).round().clamp(0.0, 255.0) as u8);
         }
     });
-    let atlas_size = atlas.size();
-    Some(HarfBuzzGlyphAlloc {
+    Some(HarfBuzzGlyphPixels {
         offset: vec2(bounds.min.x, bounds.min.y) / UI_RASTER_SCALE,
         size: vec2(width as f32, height as f32) / UI_RASTER_SCALE,
-        uv_min: pos2(
-            glyph_pos.0 as f32 / atlas_size[0] as f32,
-            glyph_pos.1 as f32 / atlas_size[1] as f32,
-        ),
-        uv_max: pos2(
-            (glyph_pos.0 + width) as f32 / atlas_size[0] as f32,
-            (glyph_pos.1 + height) as f32 / atlas_size[1] as f32,
-        ),
+        pos: glyph_pos,
+        extent: (width, height),
     })
 }
 

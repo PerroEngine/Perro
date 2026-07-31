@@ -798,6 +798,8 @@ impl GpuWater {
             self.render_3d_chunk_count = 0;
             self.readback_accum_seconds = 0.0;
             self.coastline_cache.clear();
+            self.readback_water_interval.clear();
+            self.readback_water_accum.clear();
             // Nothing is drawn or simulated; let the GC tick reclaim the cell
             // and coastline buffers.
             self.cell_shrink.note_used(0);
@@ -880,13 +882,19 @@ impl GpuWater {
             }
             cell_needed = cell_needed.saturating_add(cells);
         }
-        // Drop cached coastlines for waters no longer present this frame.
-        // Same node set keeps cache size equal to active water count. Only scan
-        // for stale entries after a removal/replacement makes it larger.
-        if self.coastline_cache.len() > needed {
-            self.coastline_cache.retain(|node, _| {
+        // Drop per-node caches for waters no longer present this frame. Same
+        // node set keeps every map's size equal to the active water count. Only
+        // scan for stale entries after a removal/replacement makes one larger.
+        if self.coastline_cache.len() > needed
+            || self.readback_water_interval.len() > needed
+            || self.readback_water_accum.len() > needed
+        {
+            let live = |node: &NodeID| {
                 waters_2d.iter().any(|(n, _)| n == node) || waters_3d.iter().any(|(n, _)| n == node)
-            });
+            };
+            self.coastline_cache.retain(|node, _| live(node));
+            self.readback_water_interval.retain(|node, _| live(node));
+            self.readback_water_accum.retain(|node, _| live(node));
         }
         self.staged_render_chunks.sort_by(|a, b| {
             let da = water_render_chunk_distance_sq(
@@ -1073,6 +1081,8 @@ impl GpuWater {
         self.readback_copy_encoded = false;
         self.staged_render_chunks.clear();
         self.coastline_cache.clear();
+        self.readback_water_interval.clear();
+        self.readback_water_accum.clear();
     }
 
     pub fn encode(&self, encoder: &mut wgpu::CommandEncoder) {

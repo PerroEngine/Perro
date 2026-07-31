@@ -1300,6 +1300,14 @@ impl Gpu {
                 }
             }
         }
+        // Per-stream processors idle-release like the main post. Their chains
+        // sit behind the stream idle skip and several early-outs, so tick every
+        // live entry once per frame instead of at each skip site; ping targets
+        // and blur/bloom scratch otherwise latch at stream resolution forever
+        // after a stream's effects are removed.
+        for post in self.camera_stream_post.values_mut() {
+            post.note_frame(&self.device);
+        }
         if let Some(water) = self.water.as_ref() {
             if gpu_timer_active && let Some(timer) = self.gpu_timer.as_ref() {
                 timer.write_water_start(&mut encoder);

@@ -26,8 +26,11 @@ mod init;
 mod prepare;
 #[path = "gpu/render_pass.rs"]
 mod render_pass;
+#[path = "gpu/spawn_arena.rs"]
+mod spawn_arena;
 
 use helpers::*;
+use spawn_arena::*;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -164,9 +167,9 @@ struct SpawnOriginEntry {
 }
 
 struct SpawnRingState {
-    base: u32,
-    capacity: u32,
+    region: SpawnRegion,
     slot_spawn_keys: Vec<u32>,
+    last_seen_generation: u64,
 }
 
 pub struct PreparePointParticles3D<'a> {
@@ -247,11 +250,18 @@ pub struct GpuPointParticles3D {
     eval_stack: Vec<f32>,
     emitter_order: Vec<usize>,
     hybrid_spawn_rings: AHashMap<NodeID, SpawnRingState>,
+    hybrid_spawn_arena: SpawnArena,
+    hybrid_spawn_full_upload: bool,
     hybrid_spawn_origin_dirty_slots: Vec<u32>,
     hybrid_spawn_rotation_dirty_slots: Vec<u32>,
     compute_spawn_rings: AHashMap<NodeID, SpawnRingState>,
+    compute_spawn_arena: SpawnArena,
+    compute_spawn_full_upload: bool,
     compute_spawn_origin_dirty_slots: Vec<u32>,
     compute_spawn_rotation_dirty_slots: Vec<u32>,
+    // Scratch reused by the spawn-arena compaction pass.
+    spawn_compact_live: Vec<(NodeID, SpawnRegion)>,
+    spawn_compact_moves: Vec<SpawnMove>,
     spawn_origin_cache: AHashMap<NodeID, AHashMap<u32, SpawnOriginEntry>>,
     spawn_origin_generation: u64,
     hybrid_map_fingerprint: u64,

@@ -40,6 +40,28 @@ impl GpuPointParticles3D {
         self.compute_custom_params.clear();
         self.hybrid_map_fingerprint = 0xcbf2_9ce4_8422_2325;
         self.compute_map_fingerprint = 0xcbf2_9ce4_8422_2325;
+        // Reclaim the spawn regions of emitters that stopped reporting in, and
+        // repack the arena once holes take over. Runs before this frame's
+        // emitter records are built so rebased regions reach the GPU.
+        let live_generation = self.spawn_origin_generation;
+        self.hybrid_spawn_full_upload |= sweep_spawn_rings(
+            &mut self.hybrid_spawn_rings,
+            &mut self.hybrid_spawn_arena,
+            &mut self.hybrid_particle_spawn_origins,
+            &mut self.hybrid_particle_spawn_rotations,
+            &mut self.spawn_compact_live,
+            &mut self.spawn_compact_moves,
+            live_generation,
+        );
+        self.compute_spawn_full_upload |= sweep_spawn_rings(
+            &mut self.compute_spawn_rings,
+            &mut self.compute_spawn_arena,
+            &mut self.compute_particle_spawn_origins,
+            &mut self.compute_particle_spawn_rotations,
+            &mut self.spawn_compact_live,
+            &mut self.spawn_compact_moves,
+            live_generation,
+        );
         self.spawn_origin_generation = self.spawn_origin_generation.wrapping_add(1);
         if self.spawn_origin_generation == 0 {
             self.spawn_origin_generation = 1;
@@ -119,6 +141,10 @@ impl GpuPointParticles3D {
                 self.hybrid_particle_count as usize,
                 self.hybrid_particle_spawn_origins.len(),
             );
+            // A compaction moved slots under the GPU's feet: re-upload the
+            // whole spawn range, not just this frame's dirty slots.
+            let hybrid_spawn_full_upload =
+                std::mem::take(&mut self.hybrid_spawn_full_upload) || hybrid_spawn_origin_recreated;
             queue.write_buffer(
                 &self.hybrid_emitter_buffer,
                 0,
@@ -137,7 +163,7 @@ impl GpuPointParticles3D {
                 self.hybrid_map_uploaded_count = hybrid_map_count;
                 self.hybrid_map_uploaded_fingerprint = self.hybrid_map_fingerprint;
             }
-            if hybrid_spawn_origin_recreated {
+            if hybrid_spawn_full_upload {
                 queue.write_buffer(
                     &self.hybrid_particle_spawn_origin_buffer,
                     0,
@@ -178,6 +204,8 @@ impl GpuPointParticles3D {
                 self.compute_expr_ops.len(),
                 self.compute_custom_params.len(),
             );
+            let compute_spawn_full_upload = std::mem::take(&mut self.compute_spawn_full_upload)
+                || compute_spawn_origin_recreated;
             queue.write_buffer(
                 &self.compute_emitter_buffer,
                 0,
@@ -196,7 +224,7 @@ impl GpuPointParticles3D {
                 self.compute_map_uploaded_count = compute_map_count;
                 self.compute_map_uploaded_fingerprint = self.compute_map_fingerprint;
             }
-            if compute_spawn_origin_recreated {
+            if compute_spawn_full_upload {
                 queue.write_buffer(
                     &self.compute_particle_spawn_origin_buffer,
                     0,

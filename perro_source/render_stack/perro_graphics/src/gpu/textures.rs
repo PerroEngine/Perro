@@ -1,8 +1,16 @@
 use super::*;
 
+// Source string the 3D external material slot binds a stream target under;
+// must match the one `frame.rs` upserts with.
+pub(crate) fn camera_stream_texture_source(node: NodeID) -> String {
+    format!("__camera_stream__:{}", node.as_u64())
+}
+
 impl Gpu {
-    pub fn remove_camera_stream(&mut self, node: NodeID) {
-        self.camera_stream_targets.remove(&node);
+    pub fn remove_camera_stream(&mut self, node: NodeID, output_texture: perro_ids::TextureID) {
+        // no target => the stream rendered straight into a source texture
+        // (webcam passthrough) that no consumer bound externally.
+        let had_target = self.camera_stream_targets.remove(&node).is_some();
         self.camera_stream_content_revisions.remove(&node);
         self.camera_stream_external_bindings.remove(&node);
         self.camera_stream_3d_bindings.remove(&node);
@@ -11,6 +19,16 @@ impl Gpu {
         self.camera_stream_particles_3d.remove(&node);
         self.camera_stream_water.remove(&node);
         self.camera_stream_post.remove(&node);
+        // Consumer caches (2D sprite, UI image, 3D material slot) retain views
+        // + bind groups built from the removed target. Without this unbind the
+        // whole GpuCameraStreamTarget (color + post_input + tonemap_input +
+        // depth) stays alive for the rest of the session.
+        if had_target {
+            self.invalidate_texture(
+                output_texture,
+                Some(camera_stream_texture_source(node).as_str()),
+            );
+        }
     }
 
     // Drain queued material warms into the main 3D pipeline caches. Leaves the
@@ -62,10 +80,12 @@ impl Gpu {
         if let Some(three_d) = self.three_d.as_mut() {
             three_d.invalidate_material_texture(texture.index());
             three_d.invalidate_material_texture_source(source);
+            three_d.invalidate_decal_texture(texture);
         }
         for camera_stream_3d in self.camera_stream_3d.values_mut() {
             camera_stream_3d.invalidate_material_texture(texture.index());
             camera_stream_3d.invalidate_material_texture_source(source);
+            camera_stream_3d.invalidate_decal_texture(texture);
         }
     }
 

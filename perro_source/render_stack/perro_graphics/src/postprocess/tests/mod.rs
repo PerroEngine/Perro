@@ -352,3 +352,141 @@ fn exposure_cfg_stays_out_of_scene_referred_passes() {
     assert!(!PostProcessor::has_effects(&effects[..1]));
     assert!(PostProcessor::has_effects(&effects));
 }
+
+#[test]
+fn lru_cache_evicts_least_recently_used_on_overflow() {
+    let mut cache: PostLruCache<u32> = PostLruCache::new();
+    for key in 0..4u64 {
+        cache.insert_capped(key, key as u32, key, 4);
+    }
+    // Key 0 is oldest; touching it at a later clock makes key 1 the victim.
+    assert!(cache.touch(0, 10));
+
+    cache.insert_capped(9, 9, 11, 4);
+
+    assert_eq!(cache.peek(9), Some(&9));
+    assert_eq!(cache.peek(0), Some(&0));
+    assert_eq!(cache.peek(1), None);
+    assert_eq!(cache.peek(2), Some(&2));
+    assert_eq!(cache.peek(3), Some(&3));
+}
+
+#[test]
+fn lru_cache_keeps_entries_used_this_frame() {
+    let mut cache: PostLruCache<u32> = PostLruCache::new();
+    // A chain wider than the cap: every entry lands on the same frame, so
+    // nothing it still draws with may drop.
+    for key in 0..6u64 {
+        cache.insert_capped(key, key as u32, 7, 4);
+    }
+
+    for key in 0..6u64 {
+        assert_eq!(cache.peek(key), Some(&(key as u32)));
+    }
+
+    // Next frame the overflow drains, one entry per insert. Key 0 goes
+    // untouched, so it is the only eviction candidate.
+    for key in 1..6u64 {
+        assert!(cache.touch(key, 8));
+    }
+    cache.insert_capped(6, 6, 8, 4);
+
+    assert_eq!(cache.peek(0), None);
+    assert_eq!(cache.peek(6), Some(&6));
+    for key in 1..6u64 {
+        assert_eq!(cache.peek(key), Some(&(key as u32)));
+    }
+}
+
+#[test]
+fn lru_cache_reinsert_of_live_key_evicts_nothing() {
+    let mut cache: PostLruCache<u32> = PostLruCache::new();
+    for key in 0..4u64 {
+        cache.insert_capped(key, key as u32, key, 4);
+    }
+
+    cache.insert_capped(0, 100, 9, 4);
+
+    assert_eq!(cache.peek(0), Some(&100));
+    for key in 1..4u64 {
+        assert_eq!(cache.peek(key), Some(&(key as u32)));
+    }
+}
+
+#[test]
+fn lru_cache_clear_drops_everything() {
+    let mut cache: PostLruCache<u32> = PostLruCache::new();
+    cache.insert_capped(1, 1, 0, 4);
+    assert!(!cache.is_empty());
+
+    cache.clear();
+
+    assert!(cache.is_empty());
+    assert_eq!(cache.peek(1), None);
+    assert!(!cache.touch(1, 0));
+}
+
+#[test]
+fn view_key_ring_retires_oldest_pair() {
+    let mut slots = [PostViewKeys::default(); POST_VIEW_KEY_SLOTS];
+    let mut next = 0usize;
+    let pair = |n: u64| PostViewKeys {
+        external_input: n,
+        depth: n + 100,
+    };
+
+    // Empty slots retire nothing.
+    for key in 1..=POST_VIEW_KEY_SLOTS as u64 {
+        assert_eq!(rotate_view_key_slot(&mut slots, &mut next, pair(key)), None);
+    }
+    // Live pairs never rotate: the main chain runs two per frame.
+    assert_eq!(rotate_view_key_slot(&mut slots, &mut next, pair(2)), None);
+    assert_eq!(rotate_view_key_slot(&mut slots, &mut next, pair(1)), None);
+
+    let retired = rotate_view_key_slot(&mut slots, &mut next, pair(99));
+
+    assert_eq!(retired, Some(pair(1)));
+    assert!(slots.contains(&pair(99)));
+    assert!(!slots.contains(&pair(1)));
+}
+
+#[test]
+fn view_key_ring_holds_a_full_frames_worth_of_pairs() {
+    let mut slots = [PostViewKeys::default(); POST_VIEW_KEY_SLOTS];
+    let mut next = 0usize;
+    let pair = |n: u64| PostViewKeys {
+        external_input: n,
+        depth: n + 100,
+    };
+    // Two chains per frame, one key generation: the frame's own pairs must
+    // survive the flip that follows, or bind groups die mid-frame.
+    rotate_view_key_slot(&mut slots, &mut next, pair(1));
+    rotate_view_key_slot(&mut slots, &mut next, pair(2));
+
+    assert_eq!(rotate_view_key_slot(&mut slots, &mut next, pair(9)), None);
+    assert_eq!(
+        rotate_view_key_slot(&mut slots, &mut next, pair(10)),
+        Some(pair(1))
+    );
+
+    assert!(slots.contains(&pair(9)));
+    assert!(slots.contains(&pair(10)));
+    assert!(slots.contains(&pair(2)));
+}
+
+#[test]
+fn view_key_ring_ignores_a_pair_it_already_holds() {
+    let mut slots = [PostViewKeys::default(); POST_VIEW_KEY_SLOTS];
+    let mut next = 0usize;
+    let keys = PostViewKeys {
+        external_input: 4,
+        depth: 5,
+    };
+
+    rotate_view_key_slot(&mut slots, &mut next, keys);
+
+    for _ in 0..8 {
+        assert_eq!(rotate_view_key_slot(&mut slots, &mut next, keys), None);
+    }
+    assert_eq!(next, 1);
+}
