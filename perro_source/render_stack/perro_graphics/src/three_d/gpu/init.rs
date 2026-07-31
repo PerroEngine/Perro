@@ -10,41 +10,6 @@ fn frustum_cull_default(_: bool) -> bool {
     false
 }
 
-fn decal_buffer_layout_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
-    wgpu::BindGroupLayoutEntry {
-        binding,
-        visibility: wgpu::ShaderStages::FRAGMENT,
-        ty: wgpu::BindingType::Buffer {
-            ty: wgpu::BufferBindingType::Storage { read_only: true },
-            has_dynamic_offset: false,
-            min_binding_size: None,
-        },
-        count: None,
-    }
-}
-
-fn decal_texture_layout_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
-    wgpu::BindGroupLayoutEntry {
-        binding,
-        visibility: wgpu::ShaderStages::FRAGMENT,
-        ty: wgpu::BindingType::Texture {
-            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-            view_dimension: wgpu::TextureViewDimension::D2Array,
-            multisampled: false,
-        },
-        count: None,
-    }
-}
-
-fn decal_sampler_layout_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
-    wgpu::BindGroupLayoutEntry {
-        binding,
-        visibility: wgpu::ShaderStages::FRAGMENT,
-        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-        count: None,
-    }
-}
-
 fn multimesh_cull_bgl_entries() -> [wgpu::BindGroupLayoutEntry; 11] {
     let uniform = |binding: u32| wgpu::BindGroupLayoutEntry {
         binding,
@@ -164,7 +129,10 @@ impl Gpu3D {
         queue: &wgpu::Queue,
         color_format: wgpu::TextureFormat,
         config: Gpu3DConfig,
+        pipelines: Arc<PipelineRegistry>,
     ) -> Self {
+        debug_assert_eq!(pipelines.color_format(), color_format);
+        debug_assert_eq!(pipelines.sample_count(), config.sample_count.max(1));
         let Gpu3DConfig {
             sample_count,
             width,
@@ -187,431 +155,18 @@ impl Gpu3D {
             || std::env::var_os("PERRO_SHADOW_DEBUG_CASTERS").is_some()
             || std::env::var_os("PERRO_SHADOW_DEBUG_CASCADES").is_some();
         let disable_meshlet_shadows = std::env::var_os("PERRO_DISABLE_MESHLET_SHADOWS").is_some();
-        let shader = create_mesh_shader_module_skinned(device);
-        let shader_unlit = create_unlit_shader_module_skinned(device);
-        let shader_toon = create_toon_shader_module_skinned(device);
-        let shader_rigid = create_mesh_shader_module_rigid(device);
-        let shader_rigid_packed_lod = create_mesh_shader_module_rigid_packed_lod(device);
-        let shader_rigid_unlit = create_unlit_shader_module_rigid(device);
-        let shader_rigid_toon = create_toon_shader_module_rigid(device);
-        let shader_multimesh = create_multimesh_shader_module(device);
-        let sky_shader = create_sky_shader_module(device);
-        let ibl_bgl = environment::create_environment_bgl(device);
+        let bgls = pipelines.bgls();
+        let camera_bgl = bgls.camera.clone();
+        let water_camera_bgl = bgls.water_camera.clone();
+        let rigid_camera_bgl = bgls.rigid_camera.clone();
+        let multimesh_bgl = bgls.multimesh.clone();
+        let material_texture_bgl = bgls.material_texture.clone();
+        let ibl_bgl = bgls.ibl.clone();
+        let shadow_bgl = bgls.shadow.clone();
+        let sky_bgl = bgls.sky.clone();
+        let mesh_blend_mask_id_bgl = bgls.mesh_blend_mask_id.clone();
+        let mesh_blend_seam_bgl = bgls.mesh_blend_seam.clone();
         let ibl_maps = environment::create_environment_gpu_maps(device, queue);
-        let camera_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("perro_camera3d_bgl"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(
-                            std::num::NonZeroU64::new(std::mem::size_of::<Scene3DUniform>() as u64)
-                                .expect("camera uniform size must be non-zero"),
-                        ),
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 5,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 6,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                decal_buffer_layout_entry(7),
-                decal_texture_layout_entry(8),
-                decal_sampler_layout_entry(9),
-            ],
-        });
-        let water_camera_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("perro_water_camera3d_bgl"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: Some(
-                        std::num::NonZeroU64::new(std::mem::size_of::<Scene3DUniform>() as u64)
-                            .expect("camera uniform size must be non-zero"),
-                    ),
-                },
-                count: None,
-            }],
-        });
-        let rigid_camera_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("perro_camera3d_rigid_bgl"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(
-                            std::num::NonZeroU64::new(std::mem::size_of::<Scene3DUniform>() as u64)
-                                .expect("camera uniform size must be non-zero"),
-                        ),
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 5,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 6,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                decal_buffer_layout_entry(7),
-                decal_texture_layout_entry(8),
-                decal_sampler_layout_entry(9),
-            ],
-        });
-        let multimesh_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("perro_multimesh_bgl"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(
-                            std::num::NonZeroU64::new(std::mem::size_of::<Scene3DUniform>() as u64)
-                                .expect("scene size"),
-                        ),
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Depth,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 5,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 6,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 7,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // 8: visible-instance indices (identity or cull-compacted).
-                wgpu::BindGroupLayoutEntry {
-                    binding: 8,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // 9: multimesh instance payloads (fetched by the vertex shader).
-                wgpu::BindGroupLayoutEntry {
-                    binding: 9,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                decal_buffer_layout_entry(10),
-                decal_texture_layout_entry(11),
-                decal_sampler_layout_entry(12),
-                wgpu::BindGroupLayoutEntry {
-                    binding: 13,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-            ],
-        });
-        let material_texture_bgl = {
-            let mut entries = Vec::with_capacity(MATERIAL_TEXTURE_SET_SIZE + 1);
-            entries.push(wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                count: None,
-            });
-            for binding in 1..=(MATERIAL_TEXTURE_SET_SIZE as u32) {
-                entries.push(wgpu::BindGroupLayoutEntry {
-                    binding,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                });
-            }
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("perro_material_texture_bgl"),
-                entries: &entries,
-            })
-        };
-        let shadow_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("perro_shadow3d_bgl"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(
-                            std::num::NonZeroU64::new(std::mem::size_of::<ShadowUniform>() as u64)
-                                .expect("shadow uniform size must be non-zero"),
-                        ),
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Depth,
-                        view_dimension: wgpu::TextureViewDimension::D2Array,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Depth,
-                        view_dimension: wgpu::TextureViewDimension::D2Array,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Depth,
-                        view_dimension: wgpu::TextureViewDimension::D2Array,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-            ],
-        });
-        let sky_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("perro_sky3d_bgl"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(
-                            std::num::NonZeroU64::new(std::mem::size_of::<SkyUniform>() as u64)
-                                .expect("sky uniform size must be non-zero"),
-                        ),
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
         let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_camera3d_buffer"),
             size: std::mem::size_of::<Scene3DUniform>() as u64,
@@ -679,14 +234,18 @@ impl Gpu3D {
         let custom_params_meta_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_custom_material_params_meta"),
             size: (custom_params_meta_capacity * std::mem::size_of::<u32>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let custom_params_values_capacity = 1usize;
         let custom_params_values_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_custom_material_params_values"),
             size: (custom_params_values_capacity * std::mem::size_of::<f32>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let blend_shape_delta_capacity = 1usize;
@@ -700,21 +259,27 @@ impl Gpu3D {
         let blend_shape_weight_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_blend_shape_weights"),
             size: std::mem::size_of::<f32>() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let blend_shape_instance_meta_capacity = 1usize;
         let blend_shape_instance_meta_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_blend_shape_instance_meta"),
             size: std::mem::size_of::<BlendShapeInstanceMetaGpu>() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let packed_lod_param_capacity = 1usize;
         let packed_lod_param_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_packed_lod_params"),
             size: std::mem::size_of::<PackedLodParamGpu>() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let decal_buffer_capacity = 8usize;
@@ -989,482 +554,6 @@ impl Gpu3D {
             ],
         });
 
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("perro_mesh_pipeline_layout"),
-            bind_group_layouts: &[
-                Some(&camera_bgl),
-                Some(&material_texture_bgl),
-                Some(&shadow_bgl),
-                Some(&ibl_bgl),
-            ],
-            immediate_size: 0,
-        });
-        let rigid_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("perro_mesh_pipeline_layout_rigid"),
-                bind_group_layouts: &[
-                    Some(&rigid_camera_bgl),
-                    Some(&material_texture_bgl),
-                    Some(&shadow_bgl),
-                    Some(&ibl_bgl),
-                ],
-                immediate_size: 0,
-            });
-        let multimesh_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("perro_multimesh_pipeline_layout"),
-                bind_group_layouts: &[
-                    Some(&multimesh_bgl),
-                    Some(&material_texture_bgl),
-                    None,
-                    Some(&ibl_bgl),
-                ],
-                immediate_size: 0,
-            });
-        let multimesh_depth_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("perro_multimesh_depth_pipeline_layout"),
-                bind_group_layouts: &[Some(&multimesh_bgl)],
-                immediate_size: 0,
-            });
-        let depth_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("perro_depth_pipeline_layout"),
-                bind_group_layouts: &[Some(&camera_bgl)],
-                immediate_size: 0,
-            });
-        let rigid_depth_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("perro_depth_pipeline_layout_rigid"),
-                bind_group_layouts: &[Some(&rigid_camera_bgl)],
-                immediate_size: 0,
-            });
-        let sky_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("perro_sky3d_pipeline_layout"),
-            bind_group_layouts: &[Some(&sky_bgl)],
-            immediate_size: 0,
-        });
-        let sky_pipeline = create_sky_pipeline(
-            device,
-            &sky_pipeline_layout,
-            &sky_shader,
-            color_format,
-            sample_count,
-        );
-        let pipeline_culled = create_pipeline_skinned(
-            device,
-            &pipeline_layout,
-            &shader,
-            color_format,
-            sample_count,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_double_sided = create_pipeline_skinned(
-            device,
-            &pipeline_layout,
-            &shader,
-            color_format,
-            sample_count,
-            None,
-        );
-        let pipeline_blend_culled = create_pipeline_skinned_blend(
-            device,
-            &pipeline_layout,
-            &shader,
-            color_format,
-            sample_count,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_blend_double_sided = create_pipeline_skinned_blend(
-            device,
-            &pipeline_layout,
-            &shader,
-            color_format,
-            sample_count,
-            None,
-        );
-        let pipeline_unlit_culled = create_pipeline_skinned(
-            device,
-            &pipeline_layout,
-            &shader_unlit,
-            color_format,
-            sample_count,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_unlit_double_sided = create_pipeline_skinned(
-            device,
-            &pipeline_layout,
-            &shader_unlit,
-            color_format,
-            sample_count,
-            None,
-        );
-        let pipeline_unlit_blend_culled = create_pipeline_skinned_blend(
-            device,
-            &pipeline_layout,
-            &shader_unlit,
-            color_format,
-            sample_count,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_unlit_blend_double_sided = create_pipeline_skinned_blend(
-            device,
-            &pipeline_layout,
-            &shader_unlit,
-            color_format,
-            sample_count,
-            None,
-        );
-        let pipeline_toon_culled = create_pipeline_skinned(
-            device,
-            &pipeline_layout,
-            &shader_toon,
-            color_format,
-            sample_count,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_toon_double_sided = create_pipeline_skinned(
-            device,
-            &pipeline_layout,
-            &shader_toon,
-            color_format,
-            sample_count,
-            None,
-        );
-        let pipeline_toon_blend_culled = create_pipeline_skinned_blend(
-            device,
-            &pipeline_layout,
-            &shader_toon,
-            color_format,
-            sample_count,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_toon_blend_double_sided = create_pipeline_skinned_blend(
-            device,
-            &pipeline_layout,
-            &shader_toon,
-            color_format,
-            sample_count,
-            None,
-        );
-        let pipeline_overlay_culled = create_pipeline_overlay_skinned(
-            device,
-            &pipeline_layout,
-            &shader,
-            color_format,
-            sample_count,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_overlay_double_sided = create_pipeline_overlay_skinned(
-            device,
-            &pipeline_layout,
-            &shader,
-            color_format,
-            sample_count,
-            None,
-        );
-        let pipeline_rigid_culled = create_pipeline_rigid(
-            device,
-            &rigid_pipeline_layout,
-            &shader_rigid,
-            color_format,
-            sample_count,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_rigid_double_sided = create_pipeline_rigid(
-            device,
-            &rigid_pipeline_layout,
-            &shader_rigid,
-            color_format,
-            sample_count,
-            None,
-        );
-        let pipeline_rigid_blend_culled = create_pipeline_rigid_blend(
-            device,
-            &rigid_pipeline_layout,
-            &shader_rigid,
-            color_format,
-            sample_count,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_rigid_blend_double_sided = create_pipeline_rigid_blend(
-            device,
-            &rigid_pipeline_layout,
-            &shader_rigid,
-            color_format,
-            sample_count,
-            None,
-        );
-        let pipeline_rigid_packed_lod_culled = create_pipeline_rigid_packed_lod(
-            device,
-            &rigid_pipeline_layout,
-            &shader_rigid_packed_lod,
-            color_format,
-            sample_count,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_rigid_packed_lod_double_sided = create_pipeline_rigid_packed_lod(
-            device,
-            &rigid_pipeline_layout,
-            &shader_rigid_packed_lod,
-            color_format,
-            sample_count,
-            None,
-        );
-        let pipeline_rigid_packed_lod_blend_culled = create_pipeline_rigid_packed_lod_blend(
-            device,
-            &rigid_pipeline_layout,
-            &shader_rigid_packed_lod,
-            color_format,
-            sample_count,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_rigid_packed_lod_blend_double_sided = create_pipeline_rigid_packed_lod_blend(
-            device,
-            &rigid_pipeline_layout,
-            &shader_rigid_packed_lod,
-            color_format,
-            sample_count,
-            None,
-        );
-        let pipeline_rigid_unlit_culled = create_pipeline_rigid(
-            device,
-            &rigid_pipeline_layout,
-            &shader_rigid_unlit,
-            color_format,
-            sample_count,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_rigid_unlit_double_sided = create_pipeline_rigid(
-            device,
-            &rigid_pipeline_layout,
-            &shader_rigid_unlit,
-            color_format,
-            sample_count,
-            None,
-        );
-        let pipeline_rigid_unlit_blend_culled = create_pipeline_rigid_blend(
-            device,
-            &rigid_pipeline_layout,
-            &shader_rigid_unlit,
-            color_format,
-            sample_count,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_rigid_unlit_blend_double_sided = create_pipeline_rigid_blend(
-            device,
-            &rigid_pipeline_layout,
-            &shader_rigid_unlit,
-            color_format,
-            sample_count,
-            None,
-        );
-        let pipeline_rigid_toon_culled = create_pipeline_rigid(
-            device,
-            &rigid_pipeline_layout,
-            &shader_rigid_toon,
-            color_format,
-            sample_count,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_rigid_toon_double_sided = create_pipeline_rigid(
-            device,
-            &rigid_pipeline_layout,
-            &shader_rigid_toon,
-            color_format,
-            sample_count,
-            None,
-        );
-        let pipeline_rigid_toon_blend_culled = create_pipeline_rigid_blend(
-            device,
-            &rigid_pipeline_layout,
-            &shader_rigid_toon,
-            color_format,
-            sample_count,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_rigid_toon_blend_double_sided = create_pipeline_rigid_blend(
-            device,
-            &rigid_pipeline_layout,
-            &shader_rigid_toon,
-            color_format,
-            sample_count,
-            None,
-        );
-        let pipeline_rigid_overlay_culled = create_pipeline_overlay_rigid(
-            device,
-            &rigid_pipeline_layout,
-            &shader_rigid,
-            color_format,
-            sample_count,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_rigid_overlay_double_sided = create_pipeline_overlay_rigid(
-            device,
-            &rigid_pipeline_layout,
-            &shader_rigid,
-            color_format,
-            sample_count,
-            None,
-        );
-        let pipeline_multimesh_culled = create_multimesh_pipeline(
-            device,
-            &multimesh_pipeline_layout,
-            &shader_multimesh,
-            color_format,
-            sample_count,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_multimesh_double_sided = create_multimesh_pipeline(
-            device,
-            &multimesh_pipeline_layout,
-            &shader_multimesh,
-            color_format,
-            sample_count,
-            None,
-        );
-        let pipeline_multimesh_blend_culled = create_multimesh_blend_pipeline(
-            device,
-            &multimesh_pipeline_layout,
-            &shader_multimesh,
-            color_format,
-            sample_count,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_multimesh_blend_double_sided = create_multimesh_blend_pipeline(
-            device,
-            &multimesh_pipeline_layout,
-            &shader_multimesh,
-            color_format,
-            sample_count,
-            None,
-        );
-        let pipeline_multimesh_covered = create_multimesh_covered_pipeline(
-            device,
-            &multimesh_pipeline_layout,
-            &shader_multimesh,
-            color_format,
-            sample_count,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_multimesh_covered_double_sided = create_multimesh_covered_pipeline(
-            device,
-            &multimesh_pipeline_layout,
-            &shader_multimesh,
-            color_format,
-            sample_count,
-            None,
-        );
-        let pipeline_multimesh_depth_prepass_culled = create_multimesh_depth_prepass_pipeline(
-            device,
-            &multimesh_depth_pipeline_layout,
-            &shader_multimesh,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_multimesh_depth_prepass_double_sided = create_multimesh_depth_prepass_pipeline(
-            device,
-            &multimesh_depth_pipeline_layout,
-            &shader_multimesh,
-            None,
-        );
-        let pipeline_multimesh_shadow_depth_culled = create_multimesh_shadow_depth_pipeline(
-            device,
-            &multimesh_depth_pipeline_layout,
-            &shader_multimesh,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_multimesh_shadow_depth_double_sided = create_multimesh_shadow_depth_pipeline(
-            device,
-            &multimesh_depth_pipeline_layout,
-            &shader_multimesh,
-            None,
-        );
-        let mesh_blend_mask_id_bgl = mesh_blend_screen::create_mesh_blend_mask_id_bgl(device);
-        let mask_pipeline_layout_multimesh =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("perro_mesh_blend_mask_layout_multimesh"),
-                bind_group_layouts: &[
-                    Some(&multimesh_bgl),
-                    Some(&material_texture_bgl),
-                    Some(&mesh_blend_mask_id_bgl),
-                ],
-                immediate_size: 0,
-            });
-        let mask_pipeline_layout_rigid =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("perro_mesh_blend_mask_layout_rigid"),
-                bind_group_layouts: &[Some(&rigid_camera_bgl), Some(&mesh_blend_mask_id_bgl)],
-                immediate_size: 0,
-            });
-        let mask_pipeline_layout_skinned =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("perro_mesh_blend_mask_layout_skinned"),
-                bind_group_layouts: &[Some(&camera_bgl), Some(&mesh_blend_mask_id_bgl)],
-                immediate_size: 0,
-            });
-        let mask_shader_rigid = create_mesh_blend_mask_shader_module_rigid(device);
-        let mask_shader_rigid_packed_lod =
-            create_mesh_blend_mask_shader_module_rigid_packed_lod(device);
-        let mask_shader_skinned = create_mesh_blend_mask_shader_module_skinned(device);
-        let pipeline_multimesh_mask_culled = create_multimesh_mask_pipeline(
-            device,
-            &mask_pipeline_layout_multimesh,
-            &shader_multimesh,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_multimesh_mask_double_sided = create_multimesh_mask_pipeline(
-            device,
-            &mask_pipeline_layout_multimesh,
-            &shader_multimesh,
-            None,
-        );
-        let pipeline_mask_rigid_culled = mesh_blend_screen::create_mesh_blend_mask_pipeline_rigid(
-            device,
-            &mask_pipeline_layout_rigid,
-            &mask_shader_rigid,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_mask_rigid_double_sided =
-            mesh_blend_screen::create_mesh_blend_mask_pipeline_rigid(
-                device,
-                &mask_pipeline_layout_rigid,
-                &mask_shader_rigid,
-                None,
-            );
-        let pipeline_mask_rigid_packed_lod_culled =
-            mesh_blend_screen::create_mesh_blend_mask_pipeline_rigid_packed_lod(
-                device,
-                &mask_pipeline_layout_rigid,
-                &mask_shader_rigid_packed_lod,
-                Some(wgpu::Face::Back),
-            );
-        let pipeline_mask_rigid_packed_lod_double_sided =
-            mesh_blend_screen::create_mesh_blend_mask_pipeline_rigid_packed_lod(
-                device,
-                &mask_pipeline_layout_rigid,
-                &mask_shader_rigid_packed_lod,
-                None,
-            );
-        let pipeline_mask_skinned_culled =
-            mesh_blend_screen::create_mesh_blend_mask_pipeline_skinned(
-                device,
-                &mask_pipeline_layout_skinned,
-                &mask_shader_skinned,
-                Some(wgpu::Face::Back),
-            );
-        let pipeline_mask_skinned_double_sided =
-            mesh_blend_screen::create_mesh_blend_mask_pipeline_skinned(
-                device,
-                &mask_pipeline_layout_skinned,
-                &mask_shader_skinned,
-                None,
-            );
-        let mesh_blend_seam_bgl = mesh_blend_screen::create_mesh_blend_seam_bgl(device);
-        let mesh_blend_seam_pipeline = mesh_blend_screen::create_mesh_blend_seam_pipeline(
-            device,
-            &mesh_blend_seam_bgl,
-            color_format,
-        );
         let mesh_blend_params_buffer = mesh_blend_screen::create_mesh_blend_params_buffer(device);
         let mesh_blend_mask_id_buffer =
             mesh_blend_screen::create_mesh_blend_mask_id_buffer(device, 16);
@@ -1477,87 +566,6 @@ impl Gpu3D {
         // resolution the first prepare that actually stages a mesh blend.
         let (mesh_blend_mask_texture, mesh_blend_mask_view) =
             mesh_blend_screen::create_mesh_blend_mask_texture(device, 1, 1);
-        let depth_prepass_shader_rigid = create_depth_prepass_shader_module_rigid(device);
-        let depth_prepass_shader_rigid_packed_lod =
-            create_depth_prepass_shader_module_rigid_packed_lod(device);
-        let depth_prepass_shader_skinned = create_depth_prepass_shader_module_skinned(device);
-        let pipeline_depth_prepass_culled = create_depth_prepass_pipeline_skinned(
-            device,
-            &depth_pipeline_layout,
-            &depth_prepass_shader_skinned,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_depth_prepass_double_sided = create_depth_prepass_pipeline_skinned(
-            device,
-            &depth_pipeline_layout,
-            &depth_prepass_shader_skinned,
-            None,
-        );
-        let pipeline_depth_prepass_rigid_culled = create_depth_prepass_pipeline_rigid(
-            device,
-            &rigid_depth_pipeline_layout,
-            &depth_prepass_shader_rigid,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_depth_prepass_rigid_double_sided = create_depth_prepass_pipeline_rigid(
-            device,
-            &rigid_depth_pipeline_layout,
-            &depth_prepass_shader_rigid,
-            None,
-        );
-        let pipeline_depth_prepass_rigid_packed_lod_culled =
-            create_depth_prepass_pipeline_rigid_packed_lod(
-                device,
-                &rigid_depth_pipeline_layout,
-                &depth_prepass_shader_rigid_packed_lod,
-                Some(wgpu::Face::Back),
-            );
-        let pipeline_depth_prepass_rigid_packed_lod_double_sided =
-            create_depth_prepass_pipeline_rigid_packed_lod(
-                device,
-                &rigid_depth_pipeline_layout,
-                &depth_prepass_shader_rigid_packed_lod,
-                None,
-            );
-        let pipeline_shadow_depth_culled = create_shadow_depth_pipeline_skinned(
-            device,
-            &depth_pipeline_layout,
-            &depth_prepass_shader_skinned,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_shadow_depth_double_sided = create_shadow_depth_pipeline_skinned(
-            device,
-            &depth_pipeline_layout,
-            &depth_prepass_shader_skinned,
-            None,
-        );
-        let pipeline_shadow_depth_rigid_culled = create_shadow_depth_pipeline_rigid(
-            device,
-            &rigid_depth_pipeline_layout,
-            &depth_prepass_shader_rigid,
-            Some(wgpu::Face::Back),
-        );
-        let pipeline_shadow_depth_rigid_double_sided = create_shadow_depth_pipeline_rigid(
-            device,
-            &rigid_depth_pipeline_layout,
-            &depth_prepass_shader_rigid,
-            None,
-        );
-        let pipeline_shadow_depth_rigid_packed_lod_culled =
-            create_shadow_depth_pipeline_rigid_packed_lod(
-                device,
-                &rigid_depth_pipeline_layout,
-                &depth_prepass_shader_rigid_packed_lod,
-                Some(wgpu::Face::Back),
-            );
-        let pipeline_shadow_depth_rigid_packed_lod_double_sided =
-            create_shadow_depth_pipeline_rigid_packed_lod(
-                device,
-                &rigid_depth_pipeline_layout,
-                &depth_prepass_shader_rigid_packed_lod,
-                None,
-            );
-
         let (vertices, indices, builtin_mesh_ranges, builtin_meshlets) =
             build_builtin_mesh_buffer();
         let builtin_mesh_bounds =
@@ -1729,14 +737,18 @@ impl Gpu3D {
             label: Some("perro_frustum_cull_static"),
             size: (frustum_cull_items_capacity * std::mem::size_of::<FrustumCullStaticGpu>())
                 as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let frustum_cull_dynamic_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_frustum_cull_dynamic"),
             size: (frustum_cull_items_capacity * std::mem::size_of::<FrustumCullDynamicGpu>())
                 as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let indirect_capacity = 256usize;
@@ -2285,76 +1297,9 @@ impl Gpu3D {
             material_texture_bgl,
             ibl_bgl,
             shadow_bgl,
-            sky_bgl,
-            material_pipeline_layout: pipeline_layout,
-            rigid_material_pipeline_layout: rigid_pipeline_layout,
-            multimesh_pipeline_layout,
-            sky_pipeline_layout,
-            sky_pipeline,
+            pipelines,
             custom_sky_pipelines: AHashMap::new(),
             active_sky_pipeline_key: None,
-            pipeline_rigid_culled,
-            pipeline_rigid_double_sided,
-            pipeline_rigid_blend_culled,
-            pipeline_rigid_blend_double_sided,
-            pipeline_rigid_packed_lod_culled,
-            pipeline_rigid_packed_lod_double_sided,
-            pipeline_rigid_packed_lod_blend_culled,
-            pipeline_rigid_packed_lod_blend_double_sided,
-            pipeline_rigid_unlit_culled,
-            pipeline_rigid_unlit_double_sided,
-            pipeline_rigid_unlit_blend_culled,
-            pipeline_rigid_unlit_blend_double_sided,
-            pipeline_rigid_toon_culled,
-            pipeline_rigid_toon_double_sided,
-            pipeline_rigid_toon_blend_culled,
-            pipeline_rigid_toon_blend_double_sided,
-            pipeline_rigid_overlay_culled,
-            pipeline_rigid_overlay_double_sided,
-            pipeline_culled,
-            pipeline_double_sided,
-            pipeline_blend_culled,
-            pipeline_blend_double_sided,
-            pipeline_unlit_culled,
-            pipeline_unlit_double_sided,
-            pipeline_unlit_blend_culled,
-            pipeline_unlit_blend_double_sided,
-            pipeline_toon_culled,
-            pipeline_toon_double_sided,
-            pipeline_toon_blend_culled,
-            pipeline_toon_blend_double_sided,
-            pipeline_overlay_culled,
-            pipeline_overlay_double_sided,
-            pipeline_depth_prepass_culled,
-            pipeline_depth_prepass_double_sided,
-            pipeline_depth_prepass_rigid_culled,
-            pipeline_depth_prepass_rigid_double_sided,
-            pipeline_depth_prepass_rigid_packed_lod_culled,
-            pipeline_depth_prepass_rigid_packed_lod_double_sided,
-            pipeline_shadow_depth_culled,
-            pipeline_shadow_depth_double_sided,
-            pipeline_shadow_depth_rigid_culled,
-            pipeline_shadow_depth_rigid_double_sided,
-            pipeline_shadow_depth_rigid_packed_lod_culled,
-            pipeline_shadow_depth_rigid_packed_lod_double_sided,
-            pipeline_multimesh_culled,
-            pipeline_multimesh_double_sided,
-            pipeline_multimesh_blend_culled,
-            pipeline_multimesh_blend_double_sided,
-            pipeline_multimesh_mask_culled,
-            pipeline_multimesh_mask_double_sided,
-            pipeline_multimesh_covered,
-            pipeline_multimesh_covered_double_sided,
-            pipeline_multimesh_depth_prepass_culled,
-            pipeline_multimesh_depth_prepass_double_sided,
-            pipeline_multimesh_shadow_depth_culled,
-            pipeline_multimesh_shadow_depth_double_sided,
-            pipeline_mask_rigid_culled,
-            pipeline_mask_rigid_double_sided,
-            pipeline_mask_rigid_packed_lod_culled,
-            pipeline_mask_rigid_packed_lod_double_sided,
-            pipeline_mask_skinned_culled,
-            pipeline_mask_skinned_double_sided,
             screen_blend_supported: true,
             mesh_blend_screen_active: false,
             mesh_blend_mask_batch_entries: Vec::new(),
@@ -2366,7 +1311,6 @@ impl Gpu3D {
             mesh_blend_mask_id_capacity: 16,
             mesh_blend_params_buffer,
             mesh_blend_seam_bgl,
-            mesh_blend_seam_pipeline,
             mesh_blend_seam_bind_group: None,
             mesh_blend_scene_copy: None,
             camera_buffer,
@@ -2663,6 +1607,7 @@ impl Gpu3D {
             custom_pipelines_rigid: AHashMap::new(),
             custom_pipelines_multimesh: AHashMap::new(),
             builtin_variant_pipelines: AHashMap::new(),
+            pipeline_gc_tick: 0,
             shader_variant_mode,
             custom_pipeline_tokens: AHashMap::new(),
             custom_shader_sources: AHashMap::new(),

@@ -83,15 +83,15 @@ pub(super) fn draw_shadow_batches<'a>(
                     },
                     if batch.double_sided {
                         if batch.packed_lod {
-                            &gpu.pipeline_shadow_depth_rigid_packed_lod_double_sided
+                            &gpu.pipelines.shadow_depth_rigid_packed_lod().double_sided
                         } else {
-                            &gpu.pipeline_shadow_depth_rigid_double_sided
+                            &gpu.pipelines.shadow_depth_rigid().double_sided
                         }
                     } else {
                         if batch.packed_lod {
-                            &gpu.pipeline_shadow_depth_rigid_packed_lod_culled
+                            &gpu.pipelines.shadow_depth_rigid_packed_lod().culled
                         } else {
-                            &gpu.pipeline_shadow_depth_rigid_culled
+                            &gpu.pipelines.shadow_depth_rigid().culled
                         }
                     },
                 )
@@ -100,9 +100,9 @@ pub(super) fn draw_shadow_batches<'a>(
                     shadow_camera_bg,
                     &gpu.vertex_buffer,
                     if batch.double_sided {
-                        &gpu.pipeline_shadow_depth_double_sided
+                        &gpu.pipelines.shadow_depth_skinned().double_sided
                     } else {
-                        &gpu.pipeline_shadow_depth_culled
+                        &gpu.pipelines.shadow_depth_skinned().culled
                     },
                 )
             };
@@ -192,9 +192,9 @@ pub(super) fn draw_multimesh_shadow_casters<'a>(
         }
         if current_double_sided != Some(batch.double_sided) {
             let pipeline = if batch.double_sided {
-                &gpu.pipeline_multimesh_shadow_depth_double_sided
+                &gpu.pipelines.multimesh_shadow_depth().double_sided
             } else {
-                &gpu.pipeline_multimesh_shadow_depth_culled
+                &gpu.pipelines.multimesh_shadow_depth().culled
             };
             pass.set_pipeline(pipeline);
             current_double_sided = Some(batch.double_sided);
@@ -239,7 +239,8 @@ pub(super) fn draw_multimesh_batches<'a>(gpu: &'a Gpu3D, pass: &mut wgpu::Render
         if state_change {
             let pipeline = match &batch.material_kind {
                 MaterialPipelineKind::Custom(token) => {
-                    gpu.custom_pipelines_multimesh.get(token).map(|pipeline| {
+                    gpu.custom_pipelines_multimesh.get(token).map(|entry| {
+                        let pipeline = &entry.pipelines;
                         if batch.mesh_blend && batch.double_sided {
                             &pipeline.pipeline_blend_double_sided
                         } else if batch.mesh_blend {
@@ -255,17 +256,17 @@ pub(super) fn draw_multimesh_batches<'a>(gpu: &'a Gpu3D, pass: &mut wgpu::Render
             }
             .unwrap_or({
                 if batch.mesh_blend && batch.double_sided {
-                    &gpu.pipeline_multimesh_blend_double_sided
+                    &gpu.pipelines.multimesh_blend().double_sided
                 } else if batch.mesh_blend {
-                    &gpu.pipeline_multimesh_blend_culled
+                    &gpu.pipelines.multimesh_blend().culled
                 } else if covered && batch.double_sided {
-                    &gpu.pipeline_multimesh_covered_double_sided
+                    &gpu.pipelines.multimesh_covered().double_sided
                 } else if covered {
-                    &gpu.pipeline_multimesh_covered
+                    &gpu.pipelines.multimesh_covered().culled
                 } else if batch.double_sided {
-                    &gpu.pipeline_multimesh_double_sided
+                    &gpu.pipelines.multimesh().double_sided
                 } else {
-                    &gpu.pipeline_multimesh_culled
+                    &gpu.pipelines.multimesh().culled
                 }
             });
             pass.set_pipeline(pipeline);
@@ -322,9 +323,9 @@ pub(super) fn draw_multimesh_depth_prepass<'a>(
         }
         if current_double_sided != Some(batch.double_sided) {
             let pipeline = if batch.double_sided {
-                &gpu.pipeline_multimesh_depth_prepass_double_sided
+                &gpu.pipelines.multimesh_depth_prepass().double_sided
             } else {
-                &gpu.pipeline_multimesh_depth_prepass_culled
+                &gpu.pipelines.multimesh_depth_prepass().culled
             };
             pass.set_pipeline(pipeline);
             current_double_sided = Some(batch.double_sided);

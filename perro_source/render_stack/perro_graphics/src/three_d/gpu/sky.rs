@@ -81,7 +81,7 @@ impl Gpu3D {
         let shader = create_sky_shader_module_from_source(device, wgsl);
         let pipeline = create_sky_pipeline(
             device,
-            &self.sky_pipeline_layout,
+            self.pipelines.sky_layout(),
             &shader,
             self.color_format,
             self.sample_count,

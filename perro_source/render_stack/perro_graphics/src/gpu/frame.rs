@@ -264,6 +264,11 @@ impl Gpu {
                         shader_variant_mode: self.shader_variant_mode,
                         shadow_pcf_high: self.shadow_pcf_high,
                     },
+                    self.pipeline_registries.get_or_create(
+                        &self.device,
+                        self.render_format,
+                        self.sample_count,
+                    ),
                 ));
             }
             if self.water.is_none() {
@@ -349,6 +354,11 @@ impl Gpu {
                         shader_variant_mode: self.shader_variant_mode,
                         shadow_pcf_high: self.shadow_pcf_high,
                     },
+                    self.pipeline_registries.get_or_create(
+                        &self.device,
+                        self.render_format,
+                        self.sample_count,
+                    ),
                 ));
             }
             if needs_3d_particles_path && self.point_particles_3d.is_none() {
@@ -885,6 +895,11 @@ impl Gpu {
                                         shader_variant_mode: self.shader_variant_mode,
                                         shadow_pcf_high: self.shadow_pcf_high,
                                     },
+                                    self.pipeline_registries.get_or_create(
+                                        &self.device,
+                                        self.render_format,
+                                        1,
+                                    ),
                                 );
                                 // Camera streams render into their own targets;
                                 // the seam pass only wires up the main scene.
@@ -954,6 +969,11 @@ impl Gpu {
                                     shader_variant_mode: self.shader_variant_mode,
                                     shadow_pcf_high: self.shadow_pcf_high,
                                 },
+                                self.pipeline_registries.get_or_create(
+                                    &self.device,
+                                    self.render_format,
+                                    1,
+                                ),
                             );
                             // Camera streams render into their own targets; the seam
                             // pass only wires up the main scene.

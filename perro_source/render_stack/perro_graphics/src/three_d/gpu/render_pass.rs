@@ -279,15 +279,15 @@ impl Gpu3D {
                     let (camera_bg, vertex_buf, pipeline) = if batch.path == RenderPath3D::Rigid {
                         let p = if batch.double_sided {
                             if batch.packed_lod {
-                                &self.pipeline_depth_prepass_rigid_packed_lod_double_sided
+                                &self.pipelines.depth_prepass_rigid_packed_lod().double_sided
                             } else {
-                                &self.pipeline_depth_prepass_rigid_double_sided
+                                &self.pipelines.depth_prepass_rigid().double_sided
                             }
                         } else {
                             if batch.packed_lod {
-                                &self.pipeline_depth_prepass_rigid_packed_lod_culled
+                                &self.pipelines.depth_prepass_rigid_packed_lod().culled
                             } else {
-                                &self.pipeline_depth_prepass_rigid_culled
+                                &self.pipelines.depth_prepass_rigid().culled
                             }
                         };
                         let v = if batch.packed_lod {
@@ -298,9 +298,9 @@ impl Gpu3D {
                         (&self.rigid_camera_bind_group, v, p)
                     } else {
                         let p = if batch.double_sided {
-                            &self.pipeline_depth_prepass_double_sided
+                            &self.pipelines.depth_prepass_skinned().double_sided
                         } else {
-                            &self.pipeline_depth_prepass_culled
+                            &self.pipelines.depth_prepass_skinned().culled
                         };
                         (&self.camera_bind_group, &self.vertex_buffer, p)
                     };
@@ -400,15 +400,15 @@ impl Gpu3D {
                     let (camera_bg, vertex_buf, pipeline) = if batch.path == RenderPath3D::Rigid {
                         let p = if batch.double_sided {
                             if batch.packed_lod {
-                                &self.pipeline_depth_prepass_rigid_packed_lod_double_sided
+                                &self.pipelines.depth_prepass_rigid_packed_lod().double_sided
                             } else {
-                                &self.pipeline_depth_prepass_rigid_double_sided
+                                &self.pipelines.depth_prepass_rigid().double_sided
                             }
                         } else {
                             if batch.packed_lod {
-                                &self.pipeline_depth_prepass_rigid_packed_lod_culled
+                                &self.pipelines.depth_prepass_rigid_packed_lod().culled
                             } else {
-                                &self.pipeline_depth_prepass_rigid_culled
+                                &self.pipelines.depth_prepass_rigid().culled
                             }
                         };
                         let v = if batch.packed_lod {
@@ -419,9 +419,9 @@ impl Gpu3D {
                         (&self.rigid_camera_bind_group, v, p)
                     } else {
                         let p = if batch.double_sided {
-                            &self.pipeline_depth_prepass_double_sided
+                            &self.pipelines.depth_prepass_skinned().double_sided
                         } else {
-                            &self.pipeline_depth_prepass_culled
+                            &self.pipelines.depth_prepass_skinned().culled
                         };
                         (&self.camera_bind_group, &self.vertex_buffer, p)
                     };
@@ -542,7 +542,7 @@ impl Gpu3D {
                 .active_sky_pipeline_key
                 .as_ref()
                 .and_then(|key| self.custom_sky_pipelines.get(key))
-                .unwrap_or(&self.sky_pipeline);
+                .unwrap_or_else(|| self.pipelines.sky());
             sky_pass.set_pipeline(sky_pipeline);
             sky_pass.set_bind_group(0, &self.sky_bind_group, &[]);
             sky_pass.draw(0..3, 0..1);
@@ -757,15 +757,15 @@ impl Gpu3D {
                         if target_batch.path == RenderPath3D::Rigid {
                             let p = if target_batch.double_sided {
                                 if target_batch.packed_lod {
-                                    &self.pipeline_depth_prepass_rigid_packed_lod_double_sided
+                                    &self.pipelines.depth_prepass_rigid_packed_lod().double_sided
                                 } else {
-                                    &self.pipeline_depth_prepass_rigid_double_sided
+                                    &self.pipelines.depth_prepass_rigid().double_sided
                                 }
                             } else {
                                 if target_batch.packed_lod {
-                                    &self.pipeline_depth_prepass_rigid_packed_lod_culled
+                                    &self.pipelines.depth_prepass_rigid_packed_lod().culled
                                 } else {
-                                    &self.pipeline_depth_prepass_rigid_culled
+                                    &self.pipelines.depth_prepass_rigid().culled
                                 }
                             };
                             let v = if target_batch.packed_lod {
@@ -776,9 +776,9 @@ impl Gpu3D {
                             (&self.rigid_camera_bind_group, v, p)
                         } else {
                             let p = if target_batch.double_sided {
-                                &self.pipeline_depth_prepass_double_sided
+                                &self.pipelines.depth_prepass_skinned().double_sided
                             } else {
-                                &self.pipeline_depth_prepass_culled
+                                &self.pipelines.depth_prepass_skinned().culled
                             };
                             (&self.camera_bind_group, &self.vertex_buffer, p)
                         };

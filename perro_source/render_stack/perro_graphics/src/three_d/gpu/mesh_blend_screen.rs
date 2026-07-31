@@ -690,15 +690,15 @@ impl Gpu3D {
                 let (camera_bg, vertex_buf, pipeline) = if batch.path == RenderPath3D::Rigid {
                     let pipeline = if batch.double_sided {
                         if batch.packed_lod {
-                            &self.pipeline_mask_rigid_packed_lod_double_sided
+                            &self.pipelines.mask_rigid_packed_lod().double_sided
                         } else {
-                            &self.pipeline_mask_rigid_double_sided
+                            &self.pipelines.mask_rigid().double_sided
                         }
                     } else {
                         if batch.packed_lod {
-                            &self.pipeline_mask_rigid_packed_lod_culled
+                            &self.pipelines.mask_rigid_packed_lod().culled
                         } else {
-                            &self.pipeline_mask_rigid_culled
+                            &self.pipelines.mask_rigid().culled
                         }
                     };
                     let vertex_buf = if batch.packed_lod {
@@ -709,9 +709,9 @@ impl Gpu3D {
                     (&self.rigid_camera_bind_group, vertex_buf, pipeline)
                 } else {
                     let pipeline = if batch.double_sided {
-                        &self.pipeline_mask_skinned_double_sided
+                        &self.pipelines.mask_skinned().double_sided
                     } else {
-                        &self.pipeline_mask_skinned_culled
+                        &self.pipelines.mask_skinned().culled
                     };
                     (&self.camera_bind_group, &self.vertex_buffer, pipeline)
                 };
@@ -766,9 +766,9 @@ impl Gpu3D {
             }
             if current_multimesh_double_sided != Some(batch.double_sided) {
                 let pipeline = if batch.double_sided {
-                    &self.pipeline_multimesh_mask_double_sided
+                    &self.pipelines.multimesh_mask().double_sided
                 } else {
-                    &self.pipeline_multimesh_mask_culled
+                    &self.pipelines.multimesh_mask().culled
                 };
                 pass.set_pipeline(pipeline);
                 current_multimesh_double_sided = Some(batch.double_sided);
@@ -893,7 +893,7 @@ impl Gpu3D {
             occlusion_query_set: None,
             multiview_mask: None,
         });
-        pass.set_pipeline(&self.mesh_blend_seam_pipeline);
+        pass.set_pipeline(self.pipelines.mesh_blend_seam());
         let Some(seam_bind_group) = self.mesh_blend_seam_bind_group.as_ref() else {
             return;
         };

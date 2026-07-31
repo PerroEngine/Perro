@@ -196,6 +196,8 @@ mod environment;
 mod init;
 #[path = "gpu/mesh_blend_screen.rs"]
 mod mesh_blend_screen;
+#[path = "gpu/pipeline_registry.rs"]
+mod pipeline_registry;
 #[path = "gpu/pipelines.rs"]
 mod pipelines;
 #[path = "gpu/prepare.rs"]
@@ -216,6 +218,7 @@ mod targets;
 use asset_bridge::*;
 pub(crate) use asset_bridge::{load_mesh3d_from_source, validate_mesh_source};
 use camera::*;
+pub(crate) use pipeline_registry::{PipelineRegistry, PipelineRegistryCache};
 use decals::{create_decal_buffer, create_decal_texture_array};
 use draw::*;
 use sky::*;
@@ -730,6 +733,24 @@ struct Gpu3DShrink {
     multimesh_instances: ShrinkTracker,
     multimesh_draw_params: ShrinkTracker,
     multimesh_cull_instances: ShrinkTracker,
+    custom_params_meta: ShrinkTracker,
+    custom_params_values: ShrinkTracker,
+    blend_shape_weights: ShrinkTracker,
+    blend_shape_instance_meta: ShrinkTracker,
+    packed_lod_params: ShrinkTracker,
+    decals: ShrinkTracker,
+    // One tracker for the frustum-cull item triple (static + dynamic +
+    // indirect); ensure_frustum_cull_capacity grows them in lockstep.
+    frustum_cull_items: ShrinkTracker,
+    // CPU-side staging vec trackers (shrink_to instead of buffer realloc).
+    staged_instance_transforms_vec: ShrinkTracker,
+    staged_multimesh_instances_vec: ShrinkTracker,
+    staged_multimesh_draw_params_vec: ShrinkTracker,
+    compact_instance_owner_vec: ShrinkTracker,
+    compact_dst_transforms_vec: ShrinkTracker,
+    compact_dst_rigid_meta_vec: ShrinkTracker,
+    compact_dst_skinned_meta_vec: ShrinkTracker,
+    compact_multimesh_dst_instances_vec: ShrinkTracker,
 }
 
 pub struct Gpu3D {
@@ -741,84 +762,19 @@ pub struct Gpu3D {
     material_texture_bgl: wgpu::BindGroupLayout,
     ibl_bgl: wgpu::BindGroupLayout,
     shadow_bgl: wgpu::BindGroupLayout,
-    sky_bgl: wgpu::BindGroupLayout,
-    material_pipeline_layout: wgpu::PipelineLayout,
-    rigid_material_pipeline_layout: wgpu::PipelineLayout,
-    multimesh_pipeline_layout: wgpu::PipelineLayout,
-    sky_pipeline_layout: wgpu::PipelineLayout,
-    sky_pipeline: wgpu::RenderPipeline,
+    // Lazy shared pipeline storage (see pipeline_registry.rs). All static
+    // material/depth/shadow/mask/sky pipelines and the shared BGLs live here;
+    // camera-stream Gpu3Ds with matching (format, sample count) share this Arc.
+    pipelines: Arc<PipelineRegistry>,
     custom_sky_pipelines: AHashMap<u64, wgpu::RenderPipeline>,
     active_sky_pipeline_key: Option<u64>,
-    pipeline_rigid_culled: wgpu::RenderPipeline,
-    pipeline_rigid_double_sided: wgpu::RenderPipeline,
-    pipeline_rigid_blend_culled: wgpu::RenderPipeline,
-    pipeline_rigid_blend_double_sided: wgpu::RenderPipeline,
-    pipeline_rigid_packed_lod_culled: wgpu::RenderPipeline,
-    pipeline_rigid_packed_lod_double_sided: wgpu::RenderPipeline,
-    pipeline_rigid_packed_lod_blend_culled: wgpu::RenderPipeline,
-    pipeline_rigid_packed_lod_blend_double_sided: wgpu::RenderPipeline,
-    pipeline_rigid_unlit_culled: wgpu::RenderPipeline,
-    pipeline_rigid_unlit_double_sided: wgpu::RenderPipeline,
-    pipeline_rigid_unlit_blend_culled: wgpu::RenderPipeline,
-    pipeline_rigid_unlit_blend_double_sided: wgpu::RenderPipeline,
-    pipeline_rigid_toon_culled: wgpu::RenderPipeline,
-    pipeline_rigid_toon_double_sided: wgpu::RenderPipeline,
-    pipeline_rigid_toon_blend_culled: wgpu::RenderPipeline,
-    pipeline_rigid_toon_blend_double_sided: wgpu::RenderPipeline,
-    pipeline_rigid_overlay_culled: wgpu::RenderPipeline,
-    pipeline_rigid_overlay_double_sided: wgpu::RenderPipeline,
-    pipeline_culled: wgpu::RenderPipeline,
-    pipeline_double_sided: wgpu::RenderPipeline,
-    pipeline_blend_culled: wgpu::RenderPipeline,
-    pipeline_blend_double_sided: wgpu::RenderPipeline,
-    pipeline_unlit_culled: wgpu::RenderPipeline,
-    pipeline_unlit_double_sided: wgpu::RenderPipeline,
-    pipeline_unlit_blend_culled: wgpu::RenderPipeline,
-    pipeline_unlit_blend_double_sided: wgpu::RenderPipeline,
-    pipeline_toon_culled: wgpu::RenderPipeline,
-    pipeline_toon_double_sided: wgpu::RenderPipeline,
-    pipeline_toon_blend_culled: wgpu::RenderPipeline,
-    pipeline_toon_blend_double_sided: wgpu::RenderPipeline,
-    pipeline_overlay_culled: wgpu::RenderPipeline,
-    pipeline_overlay_double_sided: wgpu::RenderPipeline,
-    pipeline_depth_prepass_culled: wgpu::RenderPipeline,
-    pipeline_depth_prepass_double_sided: wgpu::RenderPipeline,
-    pipeline_depth_prepass_rigid_culled: wgpu::RenderPipeline,
-    pipeline_depth_prepass_rigid_double_sided: wgpu::RenderPipeline,
-    pipeline_depth_prepass_rigid_packed_lod_culled: wgpu::RenderPipeline,
-    pipeline_depth_prepass_rigid_packed_lod_double_sided: wgpu::RenderPipeline,
-    pipeline_shadow_depth_culled: wgpu::RenderPipeline,
-    pipeline_shadow_depth_double_sided: wgpu::RenderPipeline,
-    pipeline_shadow_depth_rigid_culled: wgpu::RenderPipeline,
-    pipeline_shadow_depth_rigid_double_sided: wgpu::RenderPipeline,
-    pipeline_shadow_depth_rigid_packed_lod_culled: wgpu::RenderPipeline,
-    pipeline_shadow_depth_rigid_packed_lod_double_sided: wgpu::RenderPipeline,
-    pipeline_multimesh_culled: wgpu::RenderPipeline,
-    pipeline_multimesh_double_sided: wgpu::RenderPipeline,
-    pipeline_multimesh_blend_culled: wgpu::RenderPipeline,
-    pipeline_multimesh_blend_double_sided: wgpu::RenderPipeline,
-    pipeline_multimesh_mask_culled: wgpu::RenderPipeline,
-    pipeline_multimesh_mask_double_sided: wgpu::RenderPipeline,
-    // Prepass-covered variants (depth write off, LessEqual) used when unified
-    // depth is active and the batch was primed in the depth prepass.
-    pipeline_multimesh_covered: wgpu::RenderPipeline,
-    pipeline_multimesh_covered_double_sided: wgpu::RenderPipeline,
-    // Depth-only prepass pipelines for multimesh (Depth32Float, vertex only).
-    pipeline_multimesh_depth_prepass_culled: wgpu::RenderPipeline,
-    pipeline_multimesh_depth_prepass_double_sided: wgpu::RenderPipeline,
-    // Shadow-depth pipelines for multimesh (biased, into a shadow layer).
-    pipeline_multimesh_shadow_depth_culled: wgpu::RenderPipeline,
-    pipeline_multimesh_shadow_depth_double_sided: wgpu::RenderPipeline,
-    pipeline_mask_rigid_culled: wgpu::RenderPipeline,
-    pipeline_mask_rigid_double_sided: wgpu::RenderPipeline,
-    pipeline_mask_rigid_packed_lod_culled: wgpu::RenderPipeline,
-    pipeline_mask_rigid_packed_lod_double_sided: wgpu::RenderPipeline,
-    pipeline_mask_skinned_culled: wgpu::RenderPipeline,
-    pipeline_mask_skinned_double_sided: wgpu::RenderPipeline,
-    custom_pipelines: AHashMap<u32, CustomPipeline>,
-    custom_pipelines_rigid: AHashMap<u32, CustomPipeline>,
-    custom_pipelines_multimesh: AHashMap<u32, CustomPipeline>,
-    builtin_variant_pipelines: AHashMap<BuiltinPipelineKey, CustomPipeline>,
+    custom_pipelines: AHashMap<u32, TrackedPipelines>,
+    custom_pipelines_rigid: AHashMap<u32, TrackedPipelines>,
+    custom_pipelines_multimesh: AHashMap<u32, TrackedPipelines>,
+    builtin_variant_pipelines: AHashMap<BuiltinPipelineKey, TrackedPipelines>,
+    // Monotonic GC-tick counter for the pipeline LRU (bumped once per
+    // shrink_tick; see evict_stale_pipelines).
+    pipeline_gc_tick: u64,
     shader_variant_mode: crate::ShaderVariantMode,
     custom_pipeline_tokens: AHashMap<CustomPipelineKey, u32>,
     custom_shader_sources: AHashMap<Arc<str>, Arc<str>>,
@@ -875,7 +831,6 @@ pub struct Gpu3D {
     mesh_blend_mask_id_capacity: u64,
     mesh_blend_params_buffer: wgpu::Buffer,
     mesh_blend_seam_bgl: wgpu::BindGroupLayout,
-    mesh_blend_seam_pipeline: wgpu::RenderPipeline,
     mesh_blend_seam_bind_group: Option<wgpu::BindGroup>,
     mesh_blend_scene_copy: Option<(wgpu::Texture, wgpu::TextureView)>,
     sky_buffer: wgpu::Buffer,
@@ -1471,6 +1426,15 @@ struct CustomPipeline {
     pipeline_blend_double_sided: wgpu::RenderPipeline,
 }
 
+/// Custom/variant pipeline map entry with LRU bookkeeping. `last_used_tick`
+/// is the pipeline GC tick (see `evict_stale_pipelines`) at which a retained
+/// batch last referenced the entry; entries stale for
+/// `PIPELINE_EVICT_GC_TICKS` ticks are dropped and rebuilt on demand.
+struct TrackedPipelines {
+    pipelines: CustomPipeline,
+    last_used_tick: u64,
+}
+
 #[derive(Clone, Copy)]
 struct OcclusionState {
     visible_last_frame: bool,
@@ -1495,6 +1459,17 @@ const DEPTH_PREPASS_MIN_INSTANCES: usize = 512;
 const HIZ_DEBUG_READBACK_ENABLED: bool = false;
 // Re-test occluded batches every frame so visibility recovers immediately when camera/object moves.
 const OCCLUSION_PROBE_INTERVAL: u64 = 1;
+/// Pipeline-LRU eviction window in GC ticks. The GC tick fires every
+/// `GC_INTERVAL_FRAMES` (60) frames, so 10 ticks ~= 600 frames ~= 10s at
+/// 60fps: a builtin-variant/custom pipeline no retained batch referenced for
+/// that long is dropped (and lazily rebuilt on the next batch rebuild that
+/// needs it).
+const PIPELINE_EVICT_GC_TICKS: u64 = 10;
+/// Soft cap on cached builtin shader-variant pipeline entries (each entry =
+/// 1 shader module compile + 4 pipelines). When exceeded, the stalest
+/// unreferenced entries are evicted immediately instead of waiting out the
+/// eviction window. Entries referenced by a retained batch are never evicted.
+const BUILTIN_VARIANT_PIPELINE_CAP: usize = 128;
 
 #[cfg(test)]
 mod tests {

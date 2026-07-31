@@ -88,7 +88,9 @@ impl Gpu3D {
         self.blend_shape_weight_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_blend_shape_weights"),
             size: (new_capacity * std::mem::size_of::<f32>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         self.blend_shape_weight_capacity = new_capacity;
@@ -110,7 +112,9 @@ impl Gpu3D {
         self.blend_shape_instance_meta_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_blend_shape_instance_meta"),
             size: (new_capacity * std::mem::size_of::<BlendShapeInstanceMetaGpu>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         self.blend_shape_instance_meta_capacity = new_capacity;
@@ -133,7 +137,9 @@ impl Gpu3D {
         self.packed_lod_param_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_packed_lod_params"),
             size: (new_capacity * std::mem::size_of::<PackedLodParamGpu>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         if !self.packed_lod_params.is_empty() {
@@ -742,7 +748,9 @@ impl Gpu3D {
             self.custom_params_meta_buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("perro_custom_material_params_meta"),
                 size: (new_capacity * std::mem::size_of::<u32>()) as u64,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
                 mapped_at_creation: false,
             });
             self.custom_params_meta_capacity = new_capacity;
@@ -757,7 +765,9 @@ impl Gpu3D {
             self.custom_params_values_buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("perro_custom_material_params_values"),
                 size: (new_capacity * std::mem::size_of::<f32>()) as u64,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
                 mapped_at_creation: false,
             });
             self.custom_params_values_capacity = new_capacity;
@@ -790,6 +800,29 @@ impl Gpu3D {
         self.shrink
             .blend_shape_deltas
             .note_used(self.blend_shape_delta_len);
+        // Retained CPU mirrors are the authoritative live lengths for the
+        // bind-group-facing storage buffers below.
+        self.shrink
+            .custom_params_meta
+            .note_used(self.staged_custom_params_meta.len());
+        self.shrink
+            .custom_params_values
+            .note_used(self.staged_custom_params_values.len());
+        self.shrink
+            .blend_shape_weights
+            .note_used(self.staged_blend_shape_weights.len());
+        self.shrink
+            .blend_shape_instance_meta
+            .note_used(self.staged_blend_shape_instance_meta.len());
+        self.shrink
+            .packed_lod_params
+            .note_used(self.packed_lod_params.len());
+        self.shrink.decals.note_used(self.decal_count as usize);
+        self.shrink.frustum_cull_items.note_used(
+            self.frustum_cull_static_staging
+                .len()
+                .max(self.indirect_staging.len()),
+        );
 
         let vertex_usage = wgpu::BufferUsages::VERTEX
             | wgpu::BufferUsages::COPY_DST
@@ -996,10 +1029,202 @@ impl Gpu3D {
             self.multimesh_cull_instance_capacity = new_cap;
             rebuild_camera = true;
         }
+        if let Some(new_cap) = self
+            .shrink
+            .custom_params_meta
+            .tick(self.custom_params_meta_capacity, 256)
+        {
+            self.custom_params_meta_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.custom_params_meta_buffer,
+                "perro_custom_material_params_meta",
+                (new_cap * std::mem::size_of::<u32>()) as u64,
+                storage_usage,
+            );
+            self.custom_params_meta_capacity = new_cap;
+            rebuild_camera = true;
+        }
+        if let Some(new_cap) = self
+            .shrink
+            .custom_params_values
+            .tick(self.custom_params_values_capacity, 256)
+        {
+            self.custom_params_values_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.custom_params_values_buffer,
+                "perro_custom_material_params_values",
+                (new_cap * std::mem::size_of::<f32>()) as u64,
+                storage_usage,
+            );
+            self.custom_params_values_capacity = new_cap;
+            rebuild_camera = true;
+        }
+        if let Some(new_cap) = self
+            .shrink
+            .blend_shape_weights
+            .tick(self.blend_shape_weight_capacity, 64)
+        {
+            self.blend_shape_weight_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.blend_shape_weight_buffer,
+                "perro_blend_shape_weights",
+                (new_cap * std::mem::size_of::<f32>()) as u64,
+                storage_usage,
+            );
+            self.blend_shape_weight_capacity = new_cap;
+            rebuild_camera = true;
+        }
+        if let Some(new_cap) = self
+            .shrink
+            .blend_shape_instance_meta
+            .tick(self.blend_shape_instance_meta_capacity, 64)
+        {
+            self.blend_shape_instance_meta_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.blend_shape_instance_meta_buffer,
+                "perro_blend_shape_instance_meta",
+                (new_cap * std::mem::size_of::<BlendShapeInstanceMetaGpu>()) as u64,
+                storage_usage,
+            );
+            self.blend_shape_instance_meta_capacity = new_cap;
+            rebuild_camera = true;
+        }
+        if let Some(new_cap) = self
+            .shrink
+            .packed_lod_params
+            .tick(self.packed_lod_param_capacity, 64)
+        {
+            self.packed_lod_param_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.packed_lod_param_buffer,
+                "perro_packed_lod_params",
+                (new_cap * std::mem::size_of::<PackedLodParamGpu>()) as u64,
+                storage_usage,
+            );
+            self.packed_lod_param_capacity = new_cap;
+            rebuild_camera = true;
+        }
+        if let Some(new_cap) = self.shrink.decals.tick(self.decal_buffer_capacity, 8) {
+            // Decal buffer layout: 16-byte count header + records.
+            self.decal_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.decal_buffer,
+                "perro_decal_buffer",
+                (16 + new_cap * std::mem::size_of::<decals::DecalGpu>()) as u64,
+                storage_usage,
+            );
+            self.decal_buffer_capacity = new_cap;
+            rebuild_camera = true;
+        }
         if rebuild_camera {
             // Also rebuilds the multimesh cull + shadow multimesh bind groups.
             self.rebuild_camera_bind_groups(device);
         }
+
+        // Frustum-cull item triple (static + dynamic + indirect): grown in
+        // lockstep by ensure_frustum_cull_capacity, shrunk in lockstep here.
+        // Content is CPU-restaged (frustum_gpu_inputs_valid = false), so a
+        // plain prefix copy is more than enough.
+        if let Some(new_cap) = self
+            .shrink
+            .frustum_cull_items
+            .tick(self.frustum_cull_items_capacity, 256)
+        {
+            self.frustum_cull_static_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.frustum_cull_static_buffer,
+                "perro_frustum_cull_static",
+                (new_cap * std::mem::size_of::<FrustumCullStaticGpu>()) as u64,
+                storage_usage,
+            );
+            self.frustum_cull_dynamic_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.frustum_cull_dynamic_buffer,
+                "perro_frustum_cull_dynamic",
+                (new_cap * std::mem::size_of::<FrustumCullDynamicGpu>()) as u64,
+                storage_usage,
+            );
+            self.indirect_buffer = shrink_buffer_preserving(
+                device,
+                queue,
+                &self.indirect_buffer,
+                "perro_draw_indirect",
+                (new_cap * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64,
+                wgpu::BufferUsages::INDIRECT
+                    | wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+            );
+            self.hiz_debug_readback_buffer = self.hiz_debug_readback_buffer.is_some().then(|| {
+                device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("perro_hiz_indirect_readback"),
+                    size: (new_cap * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64,
+                    usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                    mapped_at_creation: false,
+                })
+            });
+            self.pending_hiz_debug_count = 0;
+            self.pending_hiz_debug_map_rx = None;
+            self.rebuild_frustum_cull_bind_groups(device);
+            self.frustum_cull_items_capacity = new_cap;
+            self.indirect_capacity = new_cap;
+            self.frustum_gpu_inputs_valid = false;
+        }
+
+        // CPU staging mirrors: shrink_to when capacity stayed >4x the live
+        // length for SHRINK_LOW_TICKS consecutive ticks (same policy as the
+        // GPU buffers above; the target is len * 2).
+        shrink_staging_vec(
+            &mut self.shrink.staged_instance_transforms_vec,
+            &mut self.staged_instance_transforms,
+            256,
+        );
+        shrink_staging_vec(
+            &mut self.shrink.staged_multimesh_instances_vec,
+            &mut self.staged_multimesh_instances,
+            256,
+        );
+        shrink_staging_vec(
+            &mut self.shrink.staged_multimesh_draw_params_vec,
+            &mut self.staged_multimesh_draw_params,
+            256,
+        );
+        shrink_staging_vec(
+            &mut self.shrink.compact_instance_owner_vec,
+            &mut self.compact_instance_owner_scratch,
+            256,
+        );
+        shrink_staging_vec(
+            &mut self.shrink.compact_dst_transforms_vec,
+            &mut self.compact_dst_transforms_scratch,
+            256,
+        );
+        shrink_staging_vec(
+            &mut self.shrink.compact_dst_rigid_meta_vec,
+            &mut self.compact_dst_rigid_meta_scratch,
+            256,
+        );
+        shrink_staging_vec(
+            &mut self.shrink.compact_dst_skinned_meta_vec,
+            &mut self.compact_dst_skinned_meta_scratch,
+            256,
+        );
+        shrink_staging_vec(
+            &mut self.shrink.compact_multimesh_dst_instances_vec,
+            &mut self.compact_multimesh_dst_instances_scratch,
+            256,
+        );
+
+        // Pipeline LRU shares the GC cadence (see evict_stale_pipelines).
+        self.evict_stale_pipelines();
     }
 
     pub(in super::super) fn ensure_frustum_cull_capacity(
@@ -1017,13 +1242,17 @@ impl Gpu3D {
         self.frustum_cull_static_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_frustum_cull_static"),
             size: (new_capacity * std::mem::size_of::<FrustumCullStaticGpu>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         self.frustum_cull_dynamic_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_frustum_cull_dynamic"),
             size: (new_capacity * std::mem::size_of::<FrustumCullDynamicGpu>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         self.indirect_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -1045,6 +1274,15 @@ impl Gpu3D {
         });
         self.pending_hiz_debug_count = 0;
         self.pending_hiz_debug_map_rx = None;
+        self.rebuild_frustum_cull_bind_groups(device);
+        self.frustum_cull_items_capacity = new_capacity;
+        self.indirect_capacity = new_capacity;
+        self.frustum_gpu_inputs_valid = false;
+    }
+
+    // Rebuild the two bind groups that reference the frustum cull static /
+    // dynamic / indirect buffers (grow and shrink paths share this).
+    fn rebuild_frustum_cull_bind_groups(&mut self, device: &wgpu::Device) {
         self.frustum_cull_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_frustum_cull_bg"),
             layout: &self.frustum_cull_bgl,
@@ -1093,8 +1331,15 @@ impl Gpu3D {
                 },
             ],
         });
-        self.frustum_cull_items_capacity = new_capacity;
-        self.indirect_capacity = new_capacity;
-        self.frustum_gpu_inputs_valid = false;
+    }
+}
+
+/// Shrink a CPU staging `Vec` back toward its live length once its capacity
+/// stayed above 4x the tracked usage for `SHRINK_LOW_TICKS` GC ticks
+/// (`crate::gpu_shrink` policy; target capacity is `used * 2`).
+fn shrink_staging_vec<T>(tracker: &mut ShrinkTracker, vec: &mut Vec<T>, min_capacity: usize) {
+    tracker.note_used(vec.len());
+    if let Some(target) = tracker.tick(vec.capacity(), min_capacity) {
+        vec.shrink_to(target);
     }
 }

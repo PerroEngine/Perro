@@ -4,7 +4,7 @@ use crate::{
     resources::ResourceStore,
     shared_textures::SharedTextureStore,
     three_d::{
-        gpu::{Gpu3D, Gpu3DConfig, Prepare3D, Prepare3DStepTiming},
+        gpu::{Gpu3D, Gpu3DConfig, PipelineRegistryCache, Prepare3D, Prepare3DStepTiming},
         particles::gpu::{GpuPointParticles3D, PreparePointParticles3D},
         renderer::{DenseMultiMeshDraw3D, Draw3DInstance, Draw3DKind, Lighting3DState},
     },
@@ -566,6 +566,10 @@ pub struct Gpu {
     // One texel upload per (source, color space, mips) shared by every
     // consumer cache below; consumers keep handles + their own bind groups.
     shared_textures: SharedTextureStore,
+    // One lazily-built pipeline registry per (format, sample count); the main
+    // Gpu3D and camera-stream Gpu3Ds share pipelines through it (see
+    // three_d/gpu/pipeline_registry.rs).
+    pipeline_registries: PipelineRegistryCache,
     shared_texture_frame_counter: u32,
     two_d: Option<Gpu2D>,
     late_overlay_2d: Option<Gpu2D>,

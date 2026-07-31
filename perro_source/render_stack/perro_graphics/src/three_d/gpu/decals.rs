@@ -68,7 +68,11 @@ pub(super) fn create_decal_buffer(device: &wgpu::Device, capacity: usize) -> wgp
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("perro_decal_buffer"),
         size: (16 + capacity * std::mem::size_of::<DecalGpu>()) as u64,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        // COPY_SRC: participates in the GC-tick shrink pass
+        // (shrink_buffer_preserving needs a GPU->GPU prefix copy).
+        usage: wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_DST
+            | wgpu::BufferUsages::COPY_SRC,
         mapped_at_creation: false,
     })
 }

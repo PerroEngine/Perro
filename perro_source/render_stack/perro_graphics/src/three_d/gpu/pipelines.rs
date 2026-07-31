@@ -181,10 +181,11 @@ impl Gpu3D {
             label: Some("perro_mesh_custom"),
             source: wgpu::ShaderSource::Wgsl(wgsl.into()),
         });
+        let registry = self.pipelines.clone();
         let pipeline_culled = if path == RenderPath3D::MultiMesh {
             create_multimesh_pipeline(
                 device,
-                &self.multimesh_pipeline_layout,
+                registry.multimesh_layout(),
                 &shader,
                 self.color_format,
                 self.sample_count,
@@ -193,7 +194,7 @@ impl Gpu3D {
         } else if path == RenderPath3D::Rigid {
             create_pipeline_rigid(
                 device,
-                &self.rigid_material_pipeline_layout,
+                registry.rigid_material_layout(),
                 &shader,
                 self.color_format,
                 self.sample_count,
@@ -202,7 +203,7 @@ impl Gpu3D {
         } else {
             create_pipeline_skinned(
                 device,
-                &self.material_pipeline_layout,
+                registry.material_layout(),
                 &shader,
                 self.color_format,
                 self.sample_count,
@@ -212,7 +213,7 @@ impl Gpu3D {
         let pipeline_double_sided = if path == RenderPath3D::MultiMesh {
             create_multimesh_pipeline(
                 device,
-                &self.multimesh_pipeline_layout,
+                registry.multimesh_layout(),
                 &shader,
                 self.color_format,
                 self.sample_count,
@@ -221,7 +222,7 @@ impl Gpu3D {
         } else if path == RenderPath3D::Rigid {
             create_pipeline_rigid(
                 device,
-                &self.rigid_material_pipeline_layout,
+                registry.rigid_material_layout(),
                 &shader,
                 self.color_format,
                 self.sample_count,
@@ -230,7 +231,7 @@ impl Gpu3D {
         } else {
             create_pipeline_skinned(
                 device,
-                &self.material_pipeline_layout,
+                registry.material_layout(),
                 &shader,
                 self.color_format,
                 self.sample_count,
@@ -240,7 +241,7 @@ impl Gpu3D {
         let pipeline_blend_culled = if path == RenderPath3D::MultiMesh {
             create_multimesh_blend_pipeline(
                 device,
-                &self.multimesh_pipeline_layout,
+                registry.multimesh_layout(),
                 &shader,
                 self.color_format,
                 self.sample_count,
@@ -249,7 +250,7 @@ impl Gpu3D {
         } else if path == RenderPath3D::Rigid {
             create_pipeline_rigid_blend(
                 device,
-                &self.rigid_material_pipeline_layout,
+                registry.rigid_material_layout(),
                 &shader,
                 self.color_format,
                 self.sample_count,
@@ -258,7 +259,7 @@ impl Gpu3D {
         } else {
             create_pipeline_skinned_blend(
                 device,
-                &self.material_pipeline_layout,
+                registry.material_layout(),
                 &shader,
                 self.color_format,
                 self.sample_count,
@@ -268,7 +269,7 @@ impl Gpu3D {
         let pipeline_blend_double_sided = if path == RenderPath3D::MultiMesh {
             create_multimesh_blend_pipeline(
                 device,
-                &self.multimesh_pipeline_layout,
+                registry.multimesh_layout(),
                 &shader,
                 self.color_format,
                 self.sample_count,
@@ -277,7 +278,7 @@ impl Gpu3D {
         } else if path == RenderPath3D::Rigid {
             create_pipeline_rigid_blend(
                 device,
-                &self.rigid_material_pipeline_layout,
+                registry.rigid_material_layout(),
                 &shader,
                 self.color_format,
                 self.sample_count,
@@ -286,13 +287,14 @@ impl Gpu3D {
         } else {
             create_pipeline_skinned_blend(
                 device,
-                &self.material_pipeline_layout,
+                registry.material_layout(),
                 &shader,
                 self.color_format,
                 self.sample_count,
                 None,
             )
         };
+        let tick = self.pipeline_gc_tick;
         let map = if path == RenderPath3D::MultiMesh {
             &mut self.custom_pipelines_multimesh
         } else if path == RenderPath3D::Rigid {
@@ -302,11 +304,14 @@ impl Gpu3D {
         };
         map.insert(
             token,
-            CustomPipeline {
-                pipeline_culled,
-                pipeline_double_sided,
-                pipeline_blend_culled,
-                pipeline_blend_double_sided,
+            TrackedPipelines {
+                pipelines: CustomPipeline {
+                    pipeline_culled,
+                    pipeline_double_sided,
+                    pipeline_blend_culled,
+                    pipeline_blend_double_sided,
+                },
+                last_used_tick: tick,
             },
         );
         Some(token)
@@ -427,10 +432,11 @@ impl Gpu3D {
         } else {
             create_standard_shader_module_skinned_variant(device, kind, features)
         };
+        let registry = self.pipelines.clone();
         let pipeline_culled = if path == RenderPath3D::Rigid {
             create_pipeline_rigid(
                 device,
-                &self.rigid_material_pipeline_layout,
+                registry.rigid_material_layout(),
                 &shader,
                 self.color_format,
                 self.sample_count,
@@ -439,7 +445,7 @@ impl Gpu3D {
         } else {
             create_pipeline_skinned(
                 device,
-                &self.material_pipeline_layout,
+                registry.material_layout(),
                 &shader,
                 self.color_format,
                 self.sample_count,
@@ -449,7 +455,7 @@ impl Gpu3D {
         let pipeline_double_sided = if path == RenderPath3D::Rigid {
             create_pipeline_rigid(
                 device,
-                &self.rigid_material_pipeline_layout,
+                registry.rigid_material_layout(),
                 &shader,
                 self.color_format,
                 self.sample_count,
@@ -458,7 +464,7 @@ impl Gpu3D {
         } else {
             create_pipeline_skinned(
                 device,
-                &self.material_pipeline_layout,
+                registry.material_layout(),
                 &shader,
                 self.color_format,
                 self.sample_count,
@@ -468,7 +474,7 @@ impl Gpu3D {
         let pipeline_blend_culled = if path == RenderPath3D::Rigid {
             create_pipeline_rigid_blend(
                 device,
-                &self.rigid_material_pipeline_layout,
+                registry.rigid_material_layout(),
                 &shader,
                 self.color_format,
                 self.sample_count,
@@ -477,7 +483,7 @@ impl Gpu3D {
         } else {
             create_pipeline_skinned_blend(
                 device,
-                &self.material_pipeline_layout,
+                registry.material_layout(),
                 &shader,
                 self.color_format,
                 self.sample_count,
@@ -487,7 +493,7 @@ impl Gpu3D {
         let pipeline_blend_double_sided = if path == RenderPath3D::Rigid {
             create_pipeline_rigid_blend(
                 device,
-                &self.rigid_material_pipeline_layout,
+                registry.rigid_material_layout(),
                 &shader,
                 self.color_format,
                 self.sample_count,
@@ -496,7 +502,7 @@ impl Gpu3D {
         } else {
             create_pipeline_skinned_blend(
                 device,
-                &self.material_pipeline_layout,
+                registry.material_layout(),
                 &shader,
                 self.color_format,
                 self.sample_count,
@@ -505,11 +511,14 @@ impl Gpu3D {
         };
         self.builtin_variant_pipelines.insert(
             key,
-            CustomPipeline {
-                pipeline_culled,
-                pipeline_double_sided,
-                pipeline_blend_culled,
-                pipeline_blend_double_sided,
+            TrackedPipelines {
+                pipelines: CustomPipeline {
+                    pipeline_culled,
+                    pipeline_double_sided,
+                    pipeline_blend_culled,
+                    pipeline_blend_double_sided,
+                },
+                last_used_tick: self.pipeline_gc_tick,
             },
         );
         true
@@ -531,16 +540,14 @@ impl Gpu3D {
         // first occlude transparents behind them; the *_blend pipelines are
         // the same state with depth write off.
         let soft_depth = batch.mesh_blend || batch.alpha_mode == 2 || prepass_covered;
+        let reg = &*self.pipelines;
         if batch.draw_on_top {
-            return if batch.double_sided && is_rigid {
-                &self.pipeline_rigid_overlay_double_sided
-            } else if is_rigid {
-                &self.pipeline_rigid_overlay_culled
-            } else if batch.double_sided {
-                &self.pipeline_overlay_double_sided
+            let pair = if is_rigid {
+                reg.rigid_overlay()
             } else {
-                &self.pipeline_overlay_culled
+                reg.skinned_overlay()
             };
+            return pair.select(batch.double_sided);
         }
         let builtin_variant = match &batch.material_kind {
             MaterialPipelineKind::StandardVariant(features) => {
@@ -556,12 +563,13 @@ impl Gpu3D {
         };
         if let Some((kind, features)) = builtin_variant
             && !batch.packed_lod
-            && let Some(pipeline) = self.builtin_variant_pipelines.get(&BuiltinPipelineKey {
+            && let Some(entry) = self.builtin_variant_pipelines.get(&BuiltinPipelineKey {
                 path: batch.path,
                 kind,
                 features,
             })
         {
+            let pipeline = &entry.pipelines;
             return if soft_depth && batch.double_sided {
                 &pipeline.pipeline_blend_double_sided
             } else if soft_depth {
@@ -574,69 +582,52 @@ impl Gpu3D {
         }
         match &batch.material_kind {
             MaterialPipelineKind::Standard | MaterialPipelineKind::StandardVariant(_) => {
-                if batch.packed_lod && soft_depth && batch.double_sided && is_rigid {
-                    &self.pipeline_rigid_packed_lod_blend_double_sided
-                } else if batch.packed_lod && soft_depth && is_rigid {
-                    &self.pipeline_rigid_packed_lod_blend_culled
-                } else if batch.packed_lod && batch.double_sided && is_rigid {
-                    &self.pipeline_rigid_packed_lod_double_sided
-                } else if batch.packed_lod && is_rigid {
-                    &self.pipeline_rigid_packed_lod_culled
-                } else if soft_depth && batch.double_sided && is_rigid {
-                    &self.pipeline_rigid_blend_double_sided
-                } else if soft_depth && is_rigid {
-                    &self.pipeline_rigid_blend_culled
-                } else if soft_depth && batch.double_sided {
-                    &self.pipeline_blend_double_sided
-                } else if soft_depth {
-                    &self.pipeline_blend_culled
-                } else if batch.double_sided && is_rigid {
-                    &self.pipeline_rigid_double_sided
+                let pair = if batch.packed_lod && is_rigid {
+                    if soft_depth {
+                        reg.rigid_packed_lod_blend()
+                    } else {
+                        reg.rigid_packed_lod()
+                    }
                 } else if is_rigid {
-                    &self.pipeline_rigid_culled
-                } else if batch.double_sided {
-                    &self.pipeline_double_sided
+                    if soft_depth {
+                        reg.rigid_standard_blend()
+                    } else {
+                        reg.rigid_standard()
+                    }
+                } else if soft_depth {
+                    reg.skinned_standard_blend()
                 } else {
-                    &self.pipeline_culled
-                }
+                    reg.skinned_standard()
+                };
+                pair.select(batch.double_sided)
             }
             MaterialPipelineKind::Unlit | MaterialPipelineKind::UnlitVariant(_) => {
-                if soft_depth && batch.double_sided && is_rigid {
-                    &self.pipeline_rigid_unlit_blend_double_sided
-                } else if soft_depth && is_rigid {
-                    &self.pipeline_rigid_unlit_blend_culled
-                } else if soft_depth && batch.double_sided {
-                    &self.pipeline_unlit_blend_double_sided
+                let pair = if is_rigid {
+                    if soft_depth {
+                        reg.rigid_unlit_blend()
+                    } else {
+                        reg.rigid_unlit()
+                    }
                 } else if soft_depth {
-                    &self.pipeline_unlit_blend_culled
-                } else if batch.double_sided && is_rigid {
-                    &self.pipeline_rigid_unlit_double_sided
-                } else if is_rigid {
-                    &self.pipeline_rigid_unlit_culled
-                } else if batch.double_sided {
-                    &self.pipeline_unlit_double_sided
+                    reg.skinned_unlit_blend()
                 } else {
-                    &self.pipeline_unlit_culled
-                }
+                    reg.skinned_unlit()
+                };
+                pair.select(batch.double_sided)
             }
             MaterialPipelineKind::Toon | MaterialPipelineKind::ToonVariant(_) => {
-                if soft_depth && batch.double_sided && is_rigid {
-                    &self.pipeline_rigid_toon_blend_double_sided
-                } else if soft_depth && is_rigid {
-                    &self.pipeline_rigid_toon_blend_culled
-                } else if soft_depth && batch.double_sided {
-                    &self.pipeline_toon_blend_double_sided
+                let pair = if is_rigid {
+                    if soft_depth {
+                        reg.rigid_toon_blend()
+                    } else {
+                        reg.rigid_toon()
+                    }
                 } else if soft_depth {
-                    &self.pipeline_toon_blend_culled
-                } else if batch.double_sided && is_rigid {
-                    &self.pipeline_rigid_toon_double_sided
-                } else if is_rigid {
-                    &self.pipeline_rigid_toon_culled
-                } else if batch.double_sided {
-                    &self.pipeline_toon_double_sided
+                    reg.skinned_toon_blend()
                 } else {
-                    &self.pipeline_toon_culled
-                }
+                    reg.skinned_toon()
+                };
+                pair.select(batch.double_sided)
             }
             MaterialPipelineKind::Custom(token) => {
                 let map = if is_rigid {
@@ -644,37 +635,126 @@ impl Gpu3D {
                 } else {
                     &self.custom_pipelines
                 };
-                map.get(token)
-                    .map(|pipeline| {
-                        if soft_depth && batch.double_sided {
-                            &pipeline.pipeline_blend_double_sided
-                        } else if soft_depth {
-                            &pipeline.pipeline_blend_culled
-                        } else if batch.double_sided {
-                            &pipeline.pipeline_double_sided
+                if let Some(entry) = map.get(token) {
+                    let pipeline = &entry.pipelines;
+                    if soft_depth && batch.double_sided {
+                        &pipeline.pipeline_blend_double_sided
+                    } else if soft_depth {
+                        &pipeline.pipeline_blend_culled
+                    } else if batch.double_sided {
+                        &pipeline.pipeline_double_sided
+                    } else {
+                        &pipeline.pipeline_culled
+                    }
+                } else {
+                    // Custom pipeline missing (still compiling or evicted):
+                    // fall back to the standard family.
+                    let pair = if is_rigid {
+                        if soft_depth {
+                            reg.rigid_standard_blend()
                         } else {
-                            &pipeline.pipeline_culled
+                            reg.rigid_standard()
                         }
-                    })
-                    .unwrap_or_else(|| {
-                        if soft_depth && batch.double_sided && is_rigid {
-                            &self.pipeline_rigid_blend_double_sided
-                        } else if soft_depth && is_rigid {
-                            &self.pipeline_rigid_blend_culled
-                        } else if soft_depth && batch.double_sided {
-                            &self.pipeline_blend_double_sided
-                        } else if soft_depth {
-                            &self.pipeline_blend_culled
-                        } else if batch.double_sided && is_rigid {
-                            &self.pipeline_rigid_double_sided
-                        } else if is_rigid {
-                            &self.pipeline_rigid_culled
-                        } else if batch.double_sided {
-                            &self.pipeline_double_sided
-                        } else {
-                            &self.pipeline_culled
-                        }
-                    })
+                    } else if soft_depth {
+                        reg.skinned_standard_blend()
+                    } else {
+                        reg.skinned_standard()
+                    };
+                    pair.select(batch.double_sided)
+                }
+            }
+        }
+    }
+
+    /// Periodic (GC-tick) LRU sweep over the content-keyed pipeline caches:
+    /// `builtin_variant_pipelines` (keyed by (path, kind, features) - up to
+    /// thousands of combos, each one shader module + 4 pipelines) and the
+    /// three `custom_pipelines*` maps. An entry is live while any retained
+    /// draw/multimesh batch references it; live entries are re-stamped every
+    /// sweep, and entries unreferenced for [`PIPELINE_EVICT_GC_TICKS`] sweeps
+    /// are dropped (lazily rebuilt by a later batch rebuild if the material
+    /// returns). `builtin_variant_pipelines` is additionally capped at
+    /// [`BUILTIN_VARIANT_PIPELINE_CAP`] entries, evicting the stalest
+    /// unreferenced entries first. Only unreferenced entries are ever
+    /// removed, so `pipeline_for_batch` cannot lose a pipeline out from under
+    /// a live batch (its builtin fallback covers even that defensively).
+    pub(super) fn evict_stale_pipelines(&mut self) {
+        self.pipeline_gc_tick = self.pipeline_gc_tick.wrapping_add(1);
+        let tick = self.pipeline_gc_tick;
+        for batch in &self.draw_batches {
+            match &batch.material_kind {
+                MaterialPipelineKind::StandardVariant(features) => {
+                    if let Some(entry) =
+                        self.builtin_variant_pipelines.get_mut(&BuiltinPipelineKey {
+                            path: batch.path,
+                            kind: BuiltinShaderKind::Standard,
+                            features: *features,
+                        })
+                    {
+                        entry.last_used_tick = tick;
+                    }
+                }
+                MaterialPipelineKind::UnlitVariant(features) => {
+                    if let Some(entry) =
+                        self.builtin_variant_pipelines.get_mut(&BuiltinPipelineKey {
+                            path: batch.path,
+                            kind: BuiltinShaderKind::Unlit,
+                            features: *features,
+                        })
+                    {
+                        entry.last_used_tick = tick;
+                    }
+                }
+                MaterialPipelineKind::ToonVariant(features) => {
+                    if let Some(entry) =
+                        self.builtin_variant_pipelines.get_mut(&BuiltinPipelineKey {
+                            path: batch.path,
+                            kind: BuiltinShaderKind::Toon,
+                            features: *features,
+                        })
+                    {
+                        entry.last_used_tick = tick;
+                    }
+                }
+                MaterialPipelineKind::Custom(token) => {
+                    let map = if batch.path == RenderPath3D::Rigid {
+                        &mut self.custom_pipelines_rigid
+                    } else {
+                        &mut self.custom_pipelines
+                    };
+                    if let Some(entry) = map.get_mut(token) {
+                        entry.last_used_tick = tick;
+                    }
+                }
+                _ => {}
+            }
+        }
+        for batch in &self.multimesh_batches {
+            if let MaterialPipelineKind::Custom(token) = &batch.material_kind
+                && let Some(entry) = self.custom_pipelines_multimesh.get_mut(token)
+            {
+                entry.last_used_tick = tick;
+            }
+        }
+        let live = |entry: &TrackedPipelines| {
+            tick.wrapping_sub(entry.last_used_tick) <= PIPELINE_EVICT_GC_TICKS
+        };
+        self.builtin_variant_pipelines.retain(|_, entry| live(entry));
+        self.custom_pipelines.retain(|_, entry| live(entry));
+        self.custom_pipelines_rigid.retain(|_, entry| live(entry));
+        self.custom_pipelines_multimesh
+            .retain(|_, entry| live(entry));
+        if self.builtin_variant_pipelines.len() > BUILTIN_VARIANT_PIPELINE_CAP {
+            let excess = self.builtin_variant_pipelines.len() - BUILTIN_VARIANT_PIPELINE_CAP;
+            let mut stale: Vec<(BuiltinPipelineKey, u64)> = self
+                .builtin_variant_pipelines
+                .iter()
+                .filter(|(_, entry)| entry.last_used_tick != tick)
+                .map(|(key, entry)| (*key, entry.last_used_tick))
+                .collect();
+            stale.sort_by_key(|&(_, last_used)| last_used);
+            for (key, _) in stale.into_iter().take(excess) {
+                self.builtin_variant_pipelines.remove(&key);
             }
         }
     }

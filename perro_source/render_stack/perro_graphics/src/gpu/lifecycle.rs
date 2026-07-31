@@ -297,6 +297,7 @@ impl Gpu {
             present_intermediate_bind_group: None,
             shared_textures: SharedTextureStore::default(),
             shared_texture_frame_counter: 0,
+            pipeline_registries: PipelineRegistryCache::new(),
             two_d: None,
             late_overlay_2d: None,
             ui: None,
@@ -444,8 +445,8 @@ impl Gpu {
         if let Some(three_d) = self.three_d.as_mut() {
             three_d.set_sample_count(
                 &self.device,
-                self.render_format,
-                sample_count,
+                self.pipeline_registries
+                    .get_or_create(&self.device, self.render_format, sample_count),
                 self.render_width,
                 self.render_height,
             );
