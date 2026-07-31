@@ -117,8 +117,11 @@ impl Gpu {
             || three_d_content_changed
             || (self.three_d.is_some() && three_d_dirty);
 
-        let needs_3d_prepare =
-            needs_3d_pipeline && (has_3d_content || three_d_content_changed || three_d_dirty);
+        // Prepare only on actual change: dirty bits or tracked content deltas.
+        // `has_3d_content` alone must NOT force prepare — it is true every
+        // frame in any 3D scene and re-running prepare (uniform rebuilds,
+        // buffer writes, shadow state) on static frames costs real fps.
+        let needs_3d_prepare = needs_3d_pipeline && (three_d_content_changed || three_d_dirty);
 
         let needs_3d_particles_path = has(DIRTY_PARTICLES_3D) || needs_particles_3d;
         let needs_3d_particles_prepare = needs_3d_particles_path
