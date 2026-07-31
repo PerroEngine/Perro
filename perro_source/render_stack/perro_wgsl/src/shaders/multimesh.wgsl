@@ -181,6 +181,7 @@ struct VertexInput {
     @location(0) pos: vec3<f32>,
     @location(1) normal: vec4<f32>,
     @location(12) uv: vec2<f32>,
+    @location(15) paint_uv: vec2<f32>,
 };
 
 // Instance payload, fetched from storage (no longer a vertex buffer).
@@ -210,6 +211,7 @@ struct VertexOutput {
     @location(3) normal_ws: vec3<f32>,
     @location(4) @interpolate(flat) custom_range: vec2<u32>,
     @location(5) uv: vec2<f32>,
+    @location(14) paint_uv: vec2<f32>,
     @location(7) @interpolate(flat) packed_bleed: u32,
     @location(8) ambient_color: vec3<f32>,
     @location(9) @interpolate(flat) packed_pbr_params_0: u32,
@@ -226,6 +228,7 @@ struct FragmentInput {
     @location(3) normal_ws: vec3<f32>,
     @location(4) @interpolate(flat) custom_range: vec2<u32>,
     @location(5) uv: vec2<f32>,
+    @location(14) paint_uv: vec2<f32>,
     @location(7) @interpolate(flat) packed_bleed: u32,
     @location(8) ambient_color: vec3<f32>,
     @location(9) @interpolate(flat) packed_pbr_params_0: u32,
@@ -323,7 +326,7 @@ fn perro_apply_blend_shapes(v: VertexInput, inst: InstanceInput, vertex_index: u
         out_pos = out_pos + delta.position_delta.xyz * weight;
         out_normal = out_normal + delta.normal_delta.xyz * weight;
     }
-    return VertexInput(out_pos, vec4<f32>(normalize(out_normal), 0.0), v.uv);
+    return VertexInput(out_pos, vec4<f32>(normalize(out_normal), 0.0), v.uv, v.paint_uv);
 }
 
 struct LocalBleed {
@@ -647,6 +650,7 @@ fn perro_multimesh_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_inde
     out.normal_ws = normal_ws;
     out.custom_range = draw.custom_params;
     out.uv = blended.uv;
+    out.paint_uv = blended.paint_uv;
     out.packed_bleed = draw.packed_bleed;
     out.packed_pbr_params_0 = draw.packed_pbr_params_0;
     out.packed_material_params = draw.packed_material_params;

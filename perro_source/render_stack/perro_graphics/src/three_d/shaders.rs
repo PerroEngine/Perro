@@ -396,70 +396,109 @@ pub fn create_toon_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
     })
 }
 
+// Packed-LOD patches run against whitespace-minified sources (perro_wgsl's
+// optimize_source collapses every whitespace run to one space), so anchors
+// must be single-line space-separated. A missing anchor panics instead of
+// silently returning the unpatched (non-packed) module.
+fn packed_lod_replace(source: String, anchor: &str, replacement: &str) -> String {
+    assert!(
+        source.contains(anchor),
+        "packed-lod shader patch anchor drifted: `{anchor}`"
+    );
+    source.replace(anchor, replacement)
+}
+
 fn build_packed_lod_rigid_prelude() -> String {
-    regular::prelude_rigid_wgsl()
-        .replace(
-            "@group(0) @binding(5)\nvar<storage, read> blend_shape_instances: array<BlendShapeInstance>;",
-            "@group(0) @binding(5)\nvar<storage, read> blend_shape_instances: array<BlendShapeInstance>;\n@group(0) @binding(6)\nvar<storage, read> packed_lod_params: array<PackedLodParam>;",
-        )
-        .replace(
-            "struct VertexInput {\n    @location(0) pos: vec3<f32>,",
-            "struct VertexInput {\n    @location(0) pos: vec4<f32>,",
-        )
-        .replace(
-            "    @location(13) @interpolate(flat) custom_params: vec2<u32>,\n};",
-            "    @location(13) @interpolate(flat) custom_params: vec2<u32>,\n    @location(14) @interpolate(flat) packed_lod_param_id: u32,\n};",
-        )
-        .replace(
-            "struct BlendShapeDelta {\n    position_delta: vec4<f32>,\n    normal_delta: vec4<f32>,\n};",
-            "struct PackedLodParam {\n    pos_min: vec4<f32>,\n    pos_extent: vec4<f32>,\n    uv_min_extent: vec4<f32>,\n};\n\nstruct BlendShapeDelta {\n    position_delta: vec4<f32>,\n    normal_delta: vec4<f32>,\n};",
-        )
-        .replace("    var out_pos = v.pos;", "    var out_pos = v.pos.xyz;")
-        .replace(
-            "    return VertexInput(out_pos, vec4<f32>(normalize(out_normal), 0.0), v.uv, v.paint_uv);",
-            "    return VertexInput(vec4<f32>(out_pos, 0.0), vec4<f32>(normalize(out_normal), 0.0), v.uv, v.paint_uv);",
-        )
-        .replace(
-            "    let blended = perro_apply_blend_shapes(v, vertex_index, instance_index);",
-            "    let packed_lod = packed_lod_params[inst.packed_lod_param_id];\n    var decoded_v = v;\n    decoded_v.pos = vec4<f32>(packed_lod.pos_min.xyz + v.pos.xyz * packed_lod.pos_extent.xyz, 0.0);\n    decoded_v.uv = packed_lod.uv_min_extent.xy + v.uv * packed_lod.uv_min_extent.zw;\n    let blended = perro_apply_blend_shapes(decoded_v, vertex_index, instance_index);",
-        )
-        .replace(
-            "    let p = vec4<f32>(blended.pos, 1.0);",
-            "    let p = vec4<f32>(blended.pos.xyz, 1.0);",
-        )
+    let base = regular::prelude_rigid_wgsl();
+    let wgsl = packed_lod_replace(
+        base.to_string(),
+        "@group(0) @binding(5) var<storage, read> blend_shape_instances: array<BlendShapeInstance>;",
+        "@group(0) @binding(5) var<storage, read> blend_shape_instances: array<BlendShapeInstance>; @group(0) @binding(6) var<storage, read> packed_lod_params: array<PackedLodParam>;",
+    );
+    let wgsl = packed_lod_replace(
+        wgsl,
+        "struct VertexInput { @location(0) pos: vec3<f32>,",
+        "struct VertexInput { @location(0) pos: vec4<f32>,",
+    );
+    let wgsl = packed_lod_replace(
+        wgsl,
+        "@location(13) @interpolate(flat) custom_params: vec2<u32>, };",
+        "@location(13) @interpolate(flat) custom_params: vec2<u32>, @location(14) @interpolate(flat) packed_lod_param_id: u32, };",
+    );
+    let wgsl = packed_lod_replace(
+        wgsl,
+        "struct BlendShapeDelta { position_delta: vec4<f32>, normal_delta: vec4<f32>, };",
+        "struct PackedLodParam { pos_min: vec4<f32>, pos_extent: vec4<f32>, uv_min_extent: vec4<f32>, }; struct BlendShapeDelta { position_delta: vec4<f32>, normal_delta: vec4<f32>, };",
+    );
+    let wgsl = packed_lod_replace(wgsl, "var out_pos = v.pos;", "var out_pos = v.pos.xyz;");
+    let wgsl = packed_lod_replace(
+        wgsl,
+        "return VertexInput(out_pos, vec4<f32>(normalize(out_normal), 0.0), v.uv, v.paint_uv);",
+        "return VertexInput(vec4<f32>(out_pos, 0.0), vec4<f32>(normalize(out_normal), 0.0), v.uv, v.paint_uv);",
+    );
+    let wgsl = packed_lod_replace(
+        wgsl,
+        "let blended = perro_apply_blend_shapes(v, vertex_index, instance_index);",
+        "let packed_lod = packed_lod_params[inst.packed_lod_param_id]; var decoded_v = v; decoded_v.pos = vec4<f32>(packed_lod.pos_min.xyz + v.pos.xyz * packed_lod.pos_extent.xyz, 0.0); decoded_v.uv = packed_lod.uv_min_extent.xy + v.uv * packed_lod.uv_min_extent.zw; let blended = perro_apply_blend_shapes(decoded_v, vertex_index, instance_index);",
+    );
+    let wgsl = packed_lod_replace(
+        wgsl,
+        "let p = vec4<f32>(blended.pos, 1.0);",
+        "let p = vec4<f32>(blended.pos.xyz, 1.0);",
+    );
+    // The rigid prelude forwards the raw vertex uv; packed vertices store
+    // normalized uv, so route the decoded uv through instead.
+    let wgsl = packed_lod_replace(
+        wgsl,
+        "out.uv = v.uv; out.paint_uv = v.paint_uv;",
+        "out.uv = decoded_v.uv; out.paint_uv = v.paint_uv;",
+    );
+    assert_ne!(wgsl, base, "packed-lod rigid prelude patch was a no-op");
+    assert!(wgsl.contains("packed_lod_params[inst.packed_lod_param_id]"));
+    wgsl
 }
 
 fn build_packed_lod_depth_rigid_wgsl() -> String {
-    regular::DEPTH_PREPASS_RIGID_WGSL
-        .replace(
-            "@group(0) @binding(5)\nvar<storage, read> blend_shape_instances: array<BlendShapeInstance>;",
-            "@group(0) @binding(5)\nvar<storage, read> blend_shape_instances: array<BlendShapeInstance>;\n@group(0) @binding(6)\nvar<storage, read> packed_lod_params: array<PackedLodParam>;",
-        )
-        .replace(
-            "struct VertexInput {\n    @location(0) pos: vec3<f32>,\n    @location(1) normal: vec4<f32>,\n}",
-            "struct VertexInput {\n    @location(0) pos: vec4<f32>,\n    @location(1) normal: vec4<f32>,\n}",
-        )
-        .replace(
-            "struct InstanceInput {\n    @location(4) model_row_0: vec4<f32>,\n    @location(5) model_row_1: vec4<f32>,\n    @location(6) model_row_2: vec4<f32>,\n    @location(7) @interpolate(flat) packed_color: u32,\n    @location(11) @interpolate(flat) packed_material_params: u32,\n    @location(13) @interpolate(flat) custom_range: vec2<u32>,\n}",
-            "struct InstanceInput {\n    @location(4) model_row_0: vec4<f32>,\n    @location(5) model_row_1: vec4<f32>,\n    @location(6) model_row_2: vec4<f32>,\n    @location(7) @interpolate(flat) packed_color: u32,\n    @location(11) @interpolate(flat) packed_material_params: u32,\n    @location(13) @interpolate(flat) custom_range: vec2<u32>,\n    @location(14) @interpolate(flat) packed_lod_param_id: u32,\n}",
-        )
-        .replace(
-            "struct BlendShapeDelta {\n    position_delta: vec4<f32>,\n    normal_delta: vec4<f32>,\n}",
-            "struct PackedLodParam {\n    pos_min: vec4<f32>,\n    pos_extent: vec4<f32>,\n    uv_min_extent: vec4<f32>,\n}\n\nstruct BlendShapeDelta {\n    position_delta: vec4<f32>,\n    normal_delta: vec4<f32>,\n}",
-        )
-        .replace("    var pos = v.pos;", "    var pos = v.pos.xyz;")
-        .replace(
-            "    return VertexInput(pos, vec4<f32>(normalize(normal), 0.0));",
-            "    return VertexInput(vec4<f32>(pos, 0.0), vec4<f32>(normalize(normal), 0.0));",
-        )
-        .replace(
-            "    let blended = apply_blend_shapes(v, vertex_index, instance_index);",
-            "    let packed_lod = packed_lod_params[inst.packed_lod_param_id];\n    var decoded_v = v;\n    decoded_v.pos = vec4<f32>(packed_lod.pos_min.xyz + v.pos.xyz * packed_lod.pos_extent.xyz, 0.0);\n    let blended = apply_blend_shapes(decoded_v, vertex_index, instance_index);",
-        )
-        .replace(
-            "    let p = vec4<f32>(blended.pos, 1.0);",
-            "    let p = vec4<f32>(blended.pos.xyz, 1.0);",
-        )
+    let base = regular::DEPTH_PREPASS_RIGID_WGSL;
+    let wgsl = packed_lod_replace(
+        base.to_string(),
+        "@group(0) @binding(5) var<storage, read> blend_shape_instances: array<BlendShapeInstance>;",
+        "@group(0) @binding(5) var<storage, read> blend_shape_instances: array<BlendShapeInstance>; @group(0) @binding(6) var<storage, read> packed_lod_params: array<PackedLodParam>;",
+    );
+    let wgsl = packed_lod_replace(
+        wgsl,
+        "struct VertexInput { @location(0) pos: vec3<f32>, @location(1) normal: vec4<f32>, }",
+        "struct VertexInput { @location(0) pos: vec4<f32>, @location(1) normal: vec4<f32>, }",
+    );
+    let wgsl = packed_lod_replace(
+        wgsl,
+        "struct InstanceInput { @location(4) model_row_0: vec4<f32>, @location(5) model_row_1: vec4<f32>, @location(6) model_row_2: vec4<f32>, @location(7) @interpolate(flat) packed_color: u32, @location(11) @interpolate(flat) packed_material_params: u32, @location(13) @interpolate(flat) custom_range: vec2<u32>, }",
+        "struct InstanceInput { @location(4) model_row_0: vec4<f32>, @location(5) model_row_1: vec4<f32>, @location(6) model_row_2: vec4<f32>, @location(7) @interpolate(flat) packed_color: u32, @location(11) @interpolate(flat) packed_material_params: u32, @location(13) @interpolate(flat) custom_range: vec2<u32>, @location(14) @interpolate(flat) packed_lod_param_id: u32, }",
+    );
+    let wgsl = packed_lod_replace(
+        wgsl,
+        "struct BlendShapeDelta { position_delta: vec4<f32>, normal_delta: vec4<f32>, }",
+        "struct PackedLodParam { pos_min: vec4<f32>, pos_extent: vec4<f32>, uv_min_extent: vec4<f32>, } struct BlendShapeDelta { position_delta: vec4<f32>, normal_delta: vec4<f32>, }",
+    );
+    let wgsl = packed_lod_replace(wgsl, "var pos = v.pos;", "var pos = v.pos.xyz;");
+    let wgsl = packed_lod_replace(
+        wgsl,
+        "return VertexInput(pos, vec4<f32>(normalize(normal), 0.0));",
+        "return VertexInput(vec4<f32>(pos, 0.0), vec4<f32>(normalize(normal), 0.0));",
+    );
+    let wgsl = packed_lod_replace(
+        wgsl,
+        "let blended = apply_blend_shapes(v, vertex_index, instance_index);",
+        "let packed_lod = packed_lod_params[inst.packed_lod_param_id]; var decoded_v = v; decoded_v.pos = vec4<f32>(packed_lod.pos_min.xyz + v.pos.xyz * packed_lod.pos_extent.xyz, 0.0); let blended = apply_blend_shapes(decoded_v, vertex_index, instance_index);",
+    );
+    let wgsl = packed_lod_replace(
+        wgsl,
+        "let p = vec4<f32>(blended.pos, 1.0);",
+        "let p = vec4<f32>(blended.pos.xyz, 1.0);",
+    );
+    assert_ne!(wgsl, base, "packed-lod depth rigid patch was a no-op");
+    assert!(wgsl.contains("packed_lod_params[inst.packed_lod_param_id]"));
+    wgsl
 }
 
 // Mask entry point appended to the depth-prepass shaders: writes the batch's
@@ -772,10 +811,61 @@ mod tests {
     #[test]
     fn packed_lod_material_wgsl_keeps_paint_uv() {
         let prelude = build_packed_lod_rigid_prelude();
+        // The patch must actually change the module; a drifted anchor used to
+        // no-op silently and ship the non-packed prelude.
+        assert_ne!(prelude, regular::prelude_rigid_wgsl());
+        assert!(prelude.contains(
+            "@group(0) @binding(6) var<storage, read> packed_lod_params: array<PackedLodParam>;"
+        ));
+        assert!(prelude.contains("packed_lod_params[inst.packed_lod_param_id]"));
+        assert!(prelude.contains("struct VertexInput { @location(0) pos: vec4<f32>,"));
+        assert!(prelude.contains("out.uv = decoded_v.uv;"));
         let wgsl = build_material_shader_with_prelude(&prelude, regular::MATERIAL_STANDARD_WGSL);
         parse_and_validate(&wgsl, "packed lod paint uv");
         assert!(wgsl.contains("@location(15) paint_uv"));
         assert!(wgsl.contains("out.paint_uv = v.paint_uv"));
+    }
+
+    #[test]
+    fn packed_lod_depth_rigid_wgsl_patch_applies_and_validates() {
+        let wgsl = build_packed_lod_depth_rigid_wgsl();
+        assert_ne!(wgsl, regular::DEPTH_PREPASS_RIGID_WGSL);
+        assert!(wgsl.contains(
+            "@group(0) @binding(6) var<storage, read> packed_lod_params: array<PackedLodParam>;"
+        ));
+        assert!(wgsl.contains("packed_lod_params[inst.packed_lod_param_id]"));
+        assert!(wgsl.contains("@location(14) @interpolate(flat) packed_lod_param_id: u32"));
+        assert!(wgsl.contains("struct VertexInput { @location(0) pos: vec4<f32>,"));
+        parse_and_validate(&wgsl, "packed lod depth prepass");
+    }
+
+    #[test]
+    fn custom_material_paint_uv_reads_in_all_paths() {
+        // MultiMesh used to lack the paint_uv attribute/varying, so a custom
+        // material touching in.paint_uv paniced with `invalid field accessor`.
+        let material = r#"
+fn shade_material(in: FragmentInput) -> vec4<f32> {
+    return vec4<f32>(in.paint_uv, in.uv.x, 1.0);
+}
+"#;
+        for (prelude, label) in [
+            (regular::prelude_rigid_wgsl(), "rigid"),
+            (regular::prelude_skinned_wgsl(), "skinned"),
+        ] {
+            let wgsl = build_custom_material_shader_with_prelude(
+                prelude,
+                material,
+                perro_render_bridge::CustomMaterialLighting3D::Raw,
+            );
+            parse_and_validate(&wgsl, &format!("custom material paint_uv ({label})"));
+        }
+        let multi = build_custom_multimesh_material_shader(
+            material,
+            perro_render_bridge::CustomMaterialLighting3D::Raw,
+        );
+        assert!(multi.contains("@location(15) paint_uv"));
+        assert!(multi.contains("@location(14) paint_uv"));
+        parse_and_validate(&multi, "custom multimesh material paint_uv");
     }
 
     #[test]
