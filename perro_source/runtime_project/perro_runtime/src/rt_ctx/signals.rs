@@ -4,7 +4,7 @@ use perro_resource_api::ResourceWindow;
 use perro_runtime_api::{RuntimeWindow, sub_apis::SignalAPI};
 use perro_scripting::ScriptContext;
 use perro_variant::Variant;
-use std::sync::Arc;
+use std::rc::Rc;
 
 use crate::Runtime;
 
@@ -47,7 +47,7 @@ pub fn bench_insert_noop_signal_script(runtime: &mut Runtime, id: NodeID) {
 
     runtime
         .scripts
-        .insert(id, Arc::new(BenchNoopSignalScript), Box::new(()));
+        .insert(id, Rc::new(BenchNoopSignalScript), Box::new(()));
 }
 
 impl SignalAPI for Runtime {
@@ -92,7 +92,7 @@ impl SignalAPI for Runtime {
             else {
                 return 0;
             };
-            let behavior = Arc::clone(&instance.behavior);
+            let behavior = Rc::clone(&instance.behavior);
             let active_context = self.current_script_callback_context();
             let resource_api = active_context.is_none().then(|| self.resource_api.clone());
             let context = active_context.unwrap_or_else(|| {
@@ -172,7 +172,7 @@ impl SignalAPI for Runtime {
                 .scripts
                 .get_instance_scheduled_indexed(instance_index, connection.script_id)
             {
-                Some(instance) => Arc::clone(&instance.behavior),
+                Some(instance) => Rc::clone(&instance.behavior),
                 None => continue,
             };
             self.push_active_script_with_context(instance_index, connection.script_id, context);
@@ -204,7 +204,7 @@ impl Runtime {
     pub(crate) fn queue_ui_signal(&mut self, signal: SignalID, params: &[Variant]) {
         self.signal_runtime
             .queued_ui_signals
-            .push((signal, Arc::from(params)));
+            .push((signal, Rc::from(params)));
     }
 
     pub(crate) fn flush_queued_ui_signals(&mut self) -> usize {
@@ -315,7 +315,7 @@ mod tests {
 
         for i in 0..4 {
             let id = NodeID::new(i + 1);
-            let behavior: Arc<dyn ScriptBehavior<RuntimeScriptApi>> = Arc::new(NoopSignalScript);
+            let behavior: Rc<dyn ScriptBehavior<RuntimeScriptApi>> = Rc::new(NoopSignalScript);
             runtime.scripts.insert(id, behavior, Box::new(()));
             assert!(runtime.signal_connect(id, signal, method, &connect_params));
         }

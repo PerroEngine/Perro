@@ -1,8 +1,9 @@
 //! Core scripting traits and context types.
 //!
 //! Generated and hand-written scripts implement [`ScriptBehavior`]. The runtime
-//! stores each behavior behind an `Arc<dyn ScriptBehavior<_>>` and creates one
-//! boxed state object per attached script instance. Lifecycle callbacks receive
+//! stores each behavior behind an `Rc<dyn ScriptBehavior<_>>` shared via a
+//! per-script-hash cache and creates one boxed state object per attached
+//! script instance. Lifecycle callbacks receive
 //! [`ScriptContext`], which exposes runtime, resource, and input windows for the
 //! duration of that callback.
 

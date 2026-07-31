@@ -1,15 +1,15 @@
 use perro_ids::NodeID;
 use perro_scripting::{ScriptBehavior, state_mut_unchecked, state_ref_unchecked};
 use std::any::{Any, TypeId};
-use std::sync::Arc;
+use std::rc::Rc;
 
 pub(crate) struct ScriptInstance {
     /// Shared behavior/vtable for this script definition.
     ///
-    /// The behavior object is stored in an `Arc` so callback dispatch can clone
+    /// The behavior object is stored in an `Rc` so callback dispatch can clone
     /// a stable handle before borrowing the runtime mutably for `ScriptContext`.
     /// Per-node mutable data does not live here; it lives in `state`.
-    pub(crate) behavior: Arc<dyn ScriptBehavior<crate::runtime::RuntimeScriptApi>>,
+    pub(crate) behavior: Rc<dyn ScriptBehavior<crate::runtime::RuntimeScriptApi>>,
     /// Cached concrete state type.
     ///
     /// `with_state*` compares this to `TypeId::of::<T>()` before using the
@@ -27,7 +27,7 @@ pub(crate) struct ScriptInstance {
 /// Dense script instance store plus side indexes for hot runtime lookups.
 ///
 /// Behavior/state model:
-/// - `behavior` is shared through `Arc`; it holds generated method/field glue.
+/// - `behavior` is shared through `Rc`; it holds generated method/field glue.
 /// - `state` is a per-node `Box<dyn Any>` created by that behavior.
 /// - `state_type` caches `TypeId` so hot state access avoids repeated downcast
 ///   dispatch.
@@ -179,7 +179,7 @@ impl ScriptCollection {
     pub(crate) fn insert(
         &mut self,
         id: NodeID,
-        behavior: Arc<dyn ScriptBehavior<crate::runtime::RuntimeScriptApi>>,
+        behavior: Rc<dyn ScriptBehavior<crate::runtime::RuntimeScriptApi>>,
         state: Box<dyn Any>,
     ) {
         let flags = behavior.script_flags();
@@ -700,7 +700,7 @@ mod scheduled_instance_tests {
     fn insert_marker(coll: &mut ScriptCollection, id: NodeID, marker: i64, flags: u8) {
         coll.insert(
             id,
-            Arc::new(MarkerScript {
+            Rc::new(MarkerScript {
                 marker,
                 flags: ScriptFlags::new(flags),
             }),

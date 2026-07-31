@@ -280,7 +280,7 @@ mod layout {
         let script_id = runtime.create::<Node3D>();
         runtime.scripts.insert(
             script_id,
-            Arc::new(HideClickedButtonScript {
+            std::rc::Rc::new(HideClickedButtonScript {
                 calls: Arc::clone(&calls),
             }),
             Box::new(()),
