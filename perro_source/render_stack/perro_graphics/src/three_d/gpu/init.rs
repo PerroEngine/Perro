@@ -1709,6 +1709,7 @@ impl Gpu3D {
             shadow_layer_valid: Vec::new(),
             shadow_cascade_defer_age: [0; MAX_SHADOW_RAY_CASCADES],
             shadow_cascade_defer_count: 0,
+            shadow_cascade_light_dir: [[0.0; 3]; MAX_SHADOW_RAY_CASCADES],
             shadow_casters_dirty: true,
             last_shadow_caster_key: None,
             last_shadow_input_camera: None,

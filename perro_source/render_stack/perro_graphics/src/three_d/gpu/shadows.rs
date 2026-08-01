@@ -48,6 +48,41 @@ pub(super) fn set_cascade_snap_steps_override(steps: Option<f32>) {
 /// lower it to shave more raster off a moving camera.
 const CASCADE_RENDER_BUDGET: usize = 2;
 
+/// Angular tolerance for "the ray light points the same way as when this
+/// cascade's cached depth was rendered", expressed as `1 - cos(angle)`.
+///
+/// The budget only holds a cascade back on the assumption that a deferred layer
+/// is *self-consistent*: old window, old contents, shadows in the right place.
+/// That is true for a translating camera (the light is fixed, so the shadows
+/// are), and false the moment the sun animates -- a deferred layer would then
+/// paint shadows cast from an older sun angle while its neighbours paint the
+/// current one, which reads as shimmering bands at every cascade seam. So a
+/// direction change forces the re-render.
+///
+/// 1e-9 is ~0.0026 degrees. Re-normalizing an unchanged direction reproduces it
+/// bit-for-bit (the comparison below is exact at zero difference), so the
+/// tolerance only has to absorb noise, not real motion: any animated sun
+/// accumulates past it -- against the direction the layer was RENDERED at, not
+/// the previous frame's, so even a sub-tolerance drift per frame accumulates --
+/// within a frame or two, while a static light never trips it and keeps the
+/// budget's win.
+const CASCADE_LIGHT_DIR_EPS: f64 = 1.0e-9;
+
+/// True when the ray light no longer points the way `previous` did, past
+/// `CASCADE_LIGHT_DIR_EPS`. Both inputs are normalized, so
+/// `|a - b|^2 == 2 * (1 - dot(a, b))`; differencing instead of dotting keeps an
+/// unchanged direction at exactly zero, where an f32-rounded unit vector's own
+/// dot product already sits ~1e-7 short of 1.0 and would drown the tolerance.
+/// A non-finite input compares as changed (forces the safe path).
+#[inline]
+pub(super) fn ray_light_dir_changed(previous: [f32; 3], current: [f32; 3]) -> bool {
+    let dx = (current[0] - previous[0]) as f64;
+    let dy = (current[1] - previous[1]) as f64;
+    let dz = (current[2] - previous[2]) as f64;
+    let diff_sq = dx * dx + dy * dy + dz * dz;
+    diff_sq.is_nan() || diff_sq > 2.0 * CASCADE_LIGHT_DIR_EPS
+}
+
 /// Hard cap on how many consecutive frames one cascade may sit pending. A
 /// cascade at the cap renders regardless of the budget, so no layer can starve;
 /// it is only reachable when more cascades than the budget want a re-render for
@@ -158,6 +193,12 @@ pub(super) struct ShadowSetup {
     pub(super) point_count: usize,
     pub(super) focus_center: Vec3,
     pub(super) focus_radius: f32,
+    /// Normalized direction the cascade windows were fitted for -- the only
+    /// light state the depth side depends on (colour/intensity/strength/bias are
+    /// shading-side and ride in the uniform, which is rewritten in full every
+    /// frame regardless of what the budget defers). `[0; 3]` when no ray light
+    /// casts shadows.
+    pub(super) ray_light_dir: [f32; 3],
 }
 
 impl Gpu3D {
@@ -488,6 +529,7 @@ impl Gpu3D {
             self.shadow_layer_shrink.point.note_used(0);
             self.shadow_cascade_defer_age = [0; MAX_SHADOW_RAY_CASCADES];
             self.shadow_cascade_defer_count = 0;
+            self.shadow_cascade_light_dir = [[0.0; 3]; MAX_SHADOW_RAY_CASCADES];
             return;
         }
         let mut setup = build_shadow_setup(ShadowSetupArgs {
@@ -564,18 +606,22 @@ impl Gpu3D {
         // Falling back to the previous window needs a previous uniform to
         // restore the cascade's matrix + texel from.
         let can_defer = self.last_shadow.is_some();
+        let ray_light_dir = setup.ray_light_dir;
         let mut cascade_wants = [false; MAX_SHADOW_RAY_CASCADES];
         let mut cascade_forced = [false; MAX_SHADOW_RAY_CASCADES];
         for index in 0..cascade_layers {
             let scene_changed = self.last_shadow_scenes.get(index).copied().flatten()
                 != setup.scenes.get(index).copied();
             let was_valid = self.shadow_layer_valid.get(index).copied().unwrap_or(false);
-            cascade_wants[index] =
-                shadow_layer_needs_render(casters_dirty, scene_changed, was_valid);
-            // Moved casters and garbage depth are correctness, not freshness: a
-            // stale window is invisible, a shadow left behind by a moved caster
-            // is not.
-            cascade_forced[index] = casters_dirty || !was_valid || !can_defer;
+            let (wants, forced) = cascade_render_flags(
+                casters_dirty,
+                can_defer,
+                scene_changed,
+                was_valid,
+                ray_light_dir_changed(self.shadow_cascade_light_dir[index], ray_light_dir),
+            );
+            cascade_wants[index] = wants;
+            cascade_forced[index] = forced;
         }
         let cascade_granted = schedule_cascade_renders(
             cascade_wants,
@@ -599,6 +645,12 @@ impl Gpu3D {
                     setup.uniform.ray_texel[index] = previous.ray_texel[index];
                 }
                 continue;
+            }
+            if index < cascade_layers {
+                // Not deferred: this layer either re-renders now or its window
+                // is already the one the current direction fits, so its cached
+                // depth belongs to `ray_light_dir` from here on.
+                self.shadow_cascade_light_dir[index] = ray_light_dir;
             }
             // Cache the frustum planes so shadow draws can sphere-cull per view.
             let view_proj = Mat4::from_cols_array_2d(&scene.view_proj);
@@ -646,11 +698,41 @@ pub(super) fn shadow_layer_needs_render(
     casters_dirty || scene_changed || !was_valid
 }
 
+/// One cascade's two budget inputs: does it want a re-render, and may the
+/// round-robin budget hold it back?
+///
+/// A cascade is *forced* (budget bypassed) whenever deferring it would be
+/// wrong rather than merely stale:
+/// - `casters_dirty`: a caster moved, so the cached depth holds a shadow that
+///   is no longer there.
+/// - `!was_valid`: the layer holds garbage depth (fresh/resized atlas).
+/// - `!can_defer`: no previously-uploaded uniform to restore the cached
+///   window's matrix + texel from, so the layer could not be held consistent.
+/// - `light_dir_changed`: the sun rotated. Deferring assumes the cached depth
+///   still shows shadows in the right place, which is true when only the camera
+///   moved and false as soon as the light direction turns.
+///
+/// Everything else -- a window that slid because the camera translated -- is
+/// freshness, and is what the budget exists to spread over frames.
+#[inline]
+pub(super) fn cascade_render_flags(
+    casters_dirty: bool,
+    can_defer: bool,
+    scene_changed: bool,
+    was_valid: bool,
+    light_dir_changed: bool,
+) -> (bool, bool) {
+    let wants = shadow_layer_needs_render(casters_dirty, scene_changed, was_valid);
+    let forced = casters_dirty || !was_valid || !can_defer || light_dir_changed;
+    (wants, forced)
+}
+
 /// Round-robin cascade budget.
 ///
 /// `wants[i]` = cascade i asked for a re-render (its window moved, or its depth
-/// is gone). `forced[i]` = it cannot be deferred at all -- casters actually
-/// moved, the layer holds garbage depth, or there is no previously-uploaded
+/// is gone). `forced[i]` = it cannot be deferred at all (see
+/// `cascade_render_flags`): casters actually moved, the layer holds garbage
+/// depth, the light direction turned, or there is no previously-uploaded
 /// uniform to fall back on. Returns which cascades render this frame; the rest
 /// keep their cached depth AND the matrix it was drawn with, so each deferred
 /// cascade stays internally consistent (old window, old contents).
@@ -734,6 +816,7 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
     uniform.point_light_slots = [[-1.0; 4]; MAX_POINT_LIGHTS.div_ceil(4)];
     let mut focus_center = fallback_focus_center;
     let mut focus_radius = fallback_focus_radius;
+    let mut ray_light_dir = [0.0f32; 3];
 
     if !has_casters {
         return ShadowSetup {
@@ -745,6 +828,7 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
             point_count: 0,
             focus_center,
             focus_radius,
+            ray_light_dir,
         };
     }
 
@@ -780,6 +864,7 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
         ];
         focus_center = ray_setup.focus_center;
         focus_radius = ray_setup.focus_radius;
+        ray_light_dir = ray_setup.light_dir.to_array();
         any_enabled = true;
         ray_enabled = true;
     }
@@ -869,6 +954,7 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
         point_count,
         focus_center,
         focus_radius,
+        ray_light_dir,
     }
 }
 
@@ -943,6 +1029,10 @@ struct RayShadowScenes {
     texels: [f32; MAX_SHADOW_RAY_CASCADES],
     focus_center: Vec3,
     focus_radius: f32,
+    /// The normalized light direction every window above was fitted with. Kept
+    /// so the cascade budget can tell a moved camera (same direction, safe to
+    /// defer) from a moved sun (rotated shadows, must re-render).
+    light_dir: Vec3,
 }
 
 fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScenes> {
@@ -1146,6 +1236,7 @@ fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScen
         texels,
         focus_center,
         focus_radius,
+        light_dir: dir,
     })
 }
 
@@ -1613,6 +1704,242 @@ mod tests {
         }
     }
 
+    /// Outcome of running the real cascade-budget predicates
+    /// (`cascade_render_flags` + `schedule_cascade_renders`) over real
+    /// `build_shadow_setup` output, frame by frame -- the same sequence
+    /// `update_shadow_state` runs, minus the GPU.
+    #[derive(Debug, Default)]
+    struct CascadeBudgetSim {
+        /// Frames each cascade asked for a re-render.
+        wanted: [u32; MAX_SHADOW_RAY_CASCADES],
+        /// Frames each cascade got one.
+        rendered: [u32; MAX_SHADOW_RAY_CASCADES],
+        /// Total (cascade, frame) pairs the budget held back.
+        deferrals: u32,
+        /// Cascades rendered per frame.
+        per_frame: Vec<usize>,
+        /// Worst angle, in degrees, between the light direction a deferred
+        /// cascade's cached depth was rendered at and the current one. This is
+        /// the artifact being bounded: a deferred layer paints shadows cast
+        /// from a sun this far from where the sun now is.
+        worst_stale_sun_deg: f64,
+    }
+
+    fn simulate_cascade_budget(
+        frames: usize,
+        budget: usize,
+        mut frame_state: impl FnMut(usize) -> (Camera3DState, Lighting3DState),
+    ) -> CascadeBudgetSim {
+        let mut ground = caster_batch();
+        ground.local_radius = 400.0;
+        let batches = [ground];
+        let instances = [identity_instance()];
+        let mut sim = CascadeBudgetSim::default();
+        let mut ages = [0u32; MAX_SHADOW_RAY_CASCADES];
+        let mut valid = [false; MAX_SHADOW_RAY_CASCADES];
+        let mut cached_dir = [[0.0f32; 3]; MAX_SHADOW_RAY_CASCADES];
+        let mut cached_scene: [Option<Scene3DUniform>; MAX_SHADOW_RAY_CASCADES] =
+            [None; MAX_SHADOW_RAY_CASCADES];
+        for frame in 0..frames {
+            let (view, lighting) = frame_state(frame);
+            let setup = build_shadow_setup(ShadowSetupArgs {
+                camera: &view,
+                lighting: &lighting,
+                draw_batches: &batches,
+                staged_instances: &instances,
+                fallback_focus_center: Vec3::ZERO,
+                fallback_focus_radius: 64.0,
+                viewport_width: 1280,
+                viewport_height: 720,
+                shadow_map_size: SHADOW_MAP_SIZE,
+                has_casters: true,
+            });
+            assert!(setup.ray_enabled, "frame {frame} lost its ray shadow");
+            let dir = setup.ray_light_dir;
+            // `can_defer` is "a previous uniform exists to restore the cached
+            // window from", i.e. every frame after the first.
+            let can_defer = frame > 0;
+            let mut wants = [false; MAX_SHADOW_RAY_CASCADES];
+            let mut forced = [false; MAX_SHADOW_RAY_CASCADES];
+            for cascade in 0..MAX_SHADOW_RAY_CASCADES {
+                let scene_changed = cached_scene[cascade] != setup.scenes.get(cascade).copied();
+                let (want, force) = cascade_render_flags(
+                    false,
+                    can_defer,
+                    scene_changed,
+                    valid[cascade],
+                    ray_light_dir_changed(cached_dir[cascade], dir),
+                );
+                wants[cascade] = want;
+                forced[cascade] = force;
+            }
+            let granted = schedule_cascade_renders(wants, forced, &mut ages, budget);
+            let mut this_frame = 0usize;
+            for cascade in 0..MAX_SHADOW_RAY_CASCADES {
+                if wants[cascade] {
+                    sim.wanted[cascade] += 1;
+                }
+                if wants[cascade] && !granted[cascade] {
+                    sim.deferrals += 1;
+                    let stale = (Vec3::from(cached_dir[cascade]) - Vec3::from(dir)).length() as f64;
+                    sim.worst_stale_sun_deg = sim
+                        .worst_stale_sun_deg
+                        .max((2.0 * (stale * 0.5).clamp(0.0, 1.0).asin()).to_degrees());
+                    continue;
+                }
+                if granted[cascade] {
+                    sim.rendered[cascade] += 1;
+                    this_frame += 1;
+                }
+                // Rendered, or already holding the window the current direction
+                // fits: either way its depth now belongs to `dir`.
+                cached_scene[cascade] = setup.scenes.get(cascade).copied();
+                cached_dir[cascade] = dir;
+                valid[cascade] = true;
+            }
+            sim.per_frame.push(this_frame);
+        }
+        sim
+    }
+
+    /// An animated sun -- the sky demo's time-of-day cycle -- rotates the light
+    /// direction every frame, which rotates the shadows themselves. The budget's
+    /// premise (a deferred layer is self-consistent: old window, old contents,
+    /// shadows still in the right place) only holds while the light is fixed. A
+    /// cascade deferred across a sun move paints shadows cast from the OLD sun
+    /// angle next to neighbours painting the new one, which bands and shimmers
+    /// at every cascade seam -- worse than the spike the budget avoids. So a
+    /// direction change forces every invalidated cascade, budget or not.
+    #[test]
+    fn animated_sun_forces_every_cascade_past_the_budget() {
+        // 0.25 deg/frame: a 24-second full sky cycle at 60 fps.
+        let step = 0.25f32.to_radians();
+        let sim = simulate_cascade_budget(48, 2, |frame| {
+            let angle = 0.7 + frame as f32 * step;
+            (
+                camera(Quat::IDENTITY),
+                lighting_with_ray([-angle.cos(), -angle.sin(), -0.25]),
+            )
+        });
+        println!(
+            "animated sun @0.25 deg/frame: wanted={:?} rendered={:?} deferrals={} \
+             per-frame renders max={:?}",
+            sim.wanted,
+            sim.rendered,
+            sim.deferrals,
+            sim.per_frame.iter().max()
+        );
+        assert_eq!(
+            sim.deferrals, 0,
+            "a moving sun must not leave any cascade on stale-direction depth"
+        );
+        for cascade in 0..MAX_SHADOW_RAY_CASCADES {
+            assert!(
+                sim.wanted[cascade] >= 47,
+                "cascade {cascade} should be invalidated every frame the sun turns: {:?}",
+                sim.wanted
+            );
+            assert_eq!(
+                sim.rendered[cascade], sim.wanted[cascade],
+                "cascade {cascade} must render every frame it is invalidated by the sun"
+            );
+        }
+    }
+
+    /// Even a sun far too slow to trip the tolerance in one frame must not
+    /// stick: the comparison is against the direction each layer was RENDERED
+    /// at, not the previous frame's, so the drift accumulates and forces within
+    /// a frame or two. What the tolerance buys is a bound on how far a deferred
+    /// cascade's sun may lag -- and that bound must be invisible.
+    #[test]
+    fn a_very_slow_sun_still_forces_and_bounds_the_stale_angle() {
+        // 0.002 deg/frame: a ~50-minute sky cycle at 60 fps, ~1/70th of the
+        // tolerance angle per frame.
+        let step = 0.002f32.to_radians();
+        let sim = simulate_cascade_budget(120, 2, |frame| {
+            let angle = 0.7 + frame as f32 * step;
+            (
+                camera(Quat::IDENTITY),
+                lighting_with_ray([-angle.cos(), -angle.sin(), -0.25]),
+            )
+        });
+        println!(
+            "very slow sun @0.002 deg/frame: rendered={:?} of wanted={:?} \
+             deferrals={} worst stale sun={:.6} deg",
+            sim.rendered, sim.wanted, sim.deferrals, sim.worst_stale_sun_deg
+        );
+        for cascade in 0..MAX_SHADOW_RAY_CASCADES {
+            assert!(
+                sim.rendered[cascade] > 0,
+                "cascade {cascade} never re-rendered under a slow sun"
+            );
+        }
+        assert!(
+            sim.worst_stale_sun_deg < 0.01,
+            "a deferred cascade lagged the sun by {:.6} degrees -- past the \
+             invisible-error budget the tolerance is meant to hold",
+            sim.worst_stale_sun_deg
+        );
+    }
+
+    /// The case the budget exists for, and the one the fix must not cost: the
+    /// camera translates under a fixed sun. Shadows do not move, so a deferred
+    /// cascade stays correct, and the frame stays capped at the budget.
+    #[test]
+    fn translating_camera_under_a_static_sun_keeps_the_budget() {
+        let budget = 2;
+        let sim = simulate_cascade_budget(48, budget, |frame| {
+            let mut moving = camera(Quat::IDENTITY);
+            moving.position[0] = frame as f32 * 2.0;
+            (moving, lighting_with_ray([-0.4, -1.0, -0.3]))
+        });
+        println!(
+            "translating camera @2 u/frame, static sun: wanted={:?} rendered={:?} \
+             deferrals={} per-frame renders={:?}",
+            sim.wanted, sim.rendered, sim.deferrals, sim.per_frame
+        );
+        assert_eq!(
+            sim.worst_stale_sun_deg, 0.0,
+            "a static sun must never register as moved"
+        );
+        assert!(
+            sim.deferrals > 0,
+            "the budget must still spread a translating camera's cascade renders"
+        );
+        // Frame 0 has no cached depth and no previous uniform, so every cascade
+        // is forced; every frame after it must respect the cap.
+        for (frame, rendered) in sim.per_frame.iter().enumerate().skip(1) {
+            assert!(
+                *rendered <= budget,
+                "frame {frame} rendered {rendered} cascades, past the budget of {budget}"
+            );
+        }
+    }
+
+    #[test]
+    fn light_dir_change_tolerance_ignores_noise_and_catches_animation() {
+        let dir = Vec3::new(-0.5, -1.0, -0.2).normalize().to_array();
+        assert!(
+            !ray_light_dir_changed(dir, dir),
+            "an unchanged direction must never force a re-render"
+        );
+        // One f32 ulp of wobble on each component: noise, not animation.
+        let wobble = [
+            f32::from_bits(dir[0].to_bits() + 1),
+            f32::from_bits(dir[1].to_bits() + 1),
+            f32::from_bits(dir[2].to_bits() + 1),
+        ];
+        assert!(!ray_light_dir_changed(dir, wobble));
+        // A hundredth of a degree is already real animation.
+        let turned = (Quat::from_rotation_y(0.01f32.to_radians()) * Vec3::from(dir)).to_array();
+        assert!(
+            ray_light_dir_changed(dir, turned),
+            "0.01 degrees of sun rotation must force a re-render"
+        );
+        // A zeroed slot (no cached direction yet) counts as changed.
+        assert!(ray_light_dir_changed([0.0; 3], dir));
+    }
+
     #[test]
     fn cascade_budget_caps_renders_and_always_serves_cascade_zero() {
         let mut ages = [0u32; MAX_SHADOW_RAY_CASCADES];
@@ -1875,20 +2202,113 @@ mod tests {
             );
         }
     }
+    /// Sun directions the cascade fit has to hold up under. The grazing pair is
+    /// a ~5-degree sunrise/sunset in a time-of-day cycle: the camera slice's
+    /// light-plane footprint is at its most elongated there, so it is where a
+    /// window that fit an AABB (instead of the slice's bounding sphere) or a
+    /// caster-box clamp that cut the footprint would start missing coverage.
+    fn sun_dirs() -> [(&'static str, [f32; 3]); 4] {
+        let grazing = 5.0f32.to_radians();
+        [
+            ("default", [-0.5, -1.0, -0.2]),
+            ("near-vertical", [-0.05, -1.0, 0.02]),
+            ("grazing +x", [-grazing.cos(), -grazing.sin(), 0.0]),
+            (
+                "grazing diagonal",
+                [
+                    -0.70 * grazing.cos(),
+                    -grazing.sin(),
+                    -0.71 * grazing.cos(),
+                ],
+            ),
+        ]
+    }
+
     /// The stable (bounding-sphere) window must still cover every cascade's
-    /// camera slice, at any camera orientation -- otherwise receivers near a
-    /// slice edge sample outside the map and read as fully lit.
+    /// camera slice, at any camera orientation AND any sun elevation --
+    /// otherwise receivers near a slice edge sample outside the map and read as
+    /// fully lit.
     #[test]
     fn every_cascade_window_covers_its_camera_slice() {
         let mut ground = caster_batch();
         ground.local_radius = 400.0;
         let batches = [ground];
         let instances = [identity_instance()];
-        for (yaw, pitch) in [(0.0, 0.0), (0.9, 0.3), (2.4, -0.6), (4.1, 0.15)] {
-            let view = camera(Quat::from_rotation_y(yaw) * Quat::from_rotation_x(pitch));
-            let setup = build_shadow_setup(ShadowSetupArgs {
+        for (sun_name, sun) in sun_dirs() {
+            for (yaw, pitch) in [(0.0, 0.0), (0.9, 0.3), (2.4, -0.6), (4.1, 0.15)] {
+                let view = camera(Quat::from_rotation_y(yaw) * Quat::from_rotation_x(pitch));
+                let setup = build_shadow_setup(ShadowSetupArgs {
+                    camera: &view,
+                    lighting: &lighting_with_ray(sun),
+                    draw_batches: &batches,
+                    staged_instances: &instances,
+                    fallback_focus_center: Vec3::ZERO,
+                    fallback_focus_radius: 64.0,
+                    viewport_width: 1280,
+                    viewport_height: 720,
+                    shadow_map_size: SHADOW_MAP_SIZE,
+                    has_casters: true,
+                });
+                let splits = setup.uniform.ray_splits;
+                for cascade in 0..MAX_SHADOW_RAY_CASCADES {
+                    let corners = camera_frustum_slice_corners_world(
+                        &view,
+                        1280,
+                        720,
+                        if cascade == 0 {
+                            0.0
+                        } else {
+                            splits[cascade - 1]
+                        },
+                        splits[cascade],
+                    )
+                    .expect("slice corners must be finite");
+                    let light =
+                        Mat4::from_cols_array_2d(&setup.uniform.ray_light_view_proj[cascade]);
+                    for corner in corners {
+                        let clip = light * corner.extend(1.0);
+                        assert!(
+                            clip.x.abs() <= 1.0 && clip.y.abs() <= 1.0,
+                            "cascade {cascade} window misses slice corner {corner} \
+                             (clip {clip}) at yaw {yaw} pitch {pitch} under the {sun_name} sun"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// World-space depth range one cascade's ortho window spans, recovered from
+    /// its view-proj: NDC z is a linear function of world position, so the
+    /// length of its world-space gradient is `1 / depth_range`.
+    fn cascade_depth_range(view_proj: &[[f32; 4]; 4]) -> f32 {
+        let m = Mat4::from_cols_array_2d(view_proj);
+        let gradient = Vec3::new(m.x_axis.z, m.y_axis.z, m.z_axis.z);
+        1.0 / gradient.length().max(1.0e-9)
+    }
+
+    /// The cascade window is fitted to the slice's bounding SPHERE (and clamped
+    /// only by the world-static caster box), both of which are independent of
+    /// where the sun is. So a sunrise must not resize the window or coarsen the
+    /// texel relative to noon -- if it did, a time-of-day cycle would pump the
+    /// shadow resolution as the sun sank.
+    ///
+    /// Also reports the grazing-angle depth-bias headroom, which is a separate
+    /// (pre-existing, shading-side) matter: at a 5-degree sun the receiver
+    /// surface is nearly parallel to the light, so the depth offset needed to
+    /// clear self-shadowing is `texel / tan(elevation)` ~ 11x the texel, while
+    /// the constant NDC bias buys `params0.z * depth_range` world units.
+    #[test]
+    fn grazing_sun_keeps_the_cascade_window_size() {
+        let mut ground = caster_batch();
+        ground.local_radius = 400.0;
+        let batches = [ground];
+        let instances = [identity_instance()];
+        let view = camera(Quat::IDENTITY);
+        let fit = |sun: [f32; 3]| {
+            build_shadow_setup(ShadowSetupArgs {
                 camera: &view,
-                lighting: &lighting_with_ray([-0.5, -1.0, -0.2]),
+                lighting: &lighting_with_ray(sun),
                 draw_batches: &batches,
                 staged_instances: &instances,
                 fallback_focus_center: Vec3::ZERO,
@@ -1897,29 +2317,39 @@ mod tests {
                 viewport_height: 720,
                 shadow_map_size: SHADOW_MAP_SIZE,
                 has_casters: true,
-            });
-            let splits = setup.uniform.ray_splits;
+            })
+        };
+        let high = fit([-0.05, -1.0, 0.02]);
+        for (sun_name, sun) in sun_dirs() {
+            let setup = fit(sun);
+            let elevation = {
+                let dir = Vec3::from(setup.ray_light_dir);
+                (-dir.y).asin()
+            };
+            let depths: Vec<f32> = (0..MAX_SHADOW_RAY_CASCADES)
+                .map(|c| cascade_depth_range(&setup.uniform.ray_light_view_proj[c]))
+                .collect();
+            let bias_world: Vec<f32> = depths
+                .iter()
+                .map(|d| d * setup.uniform.params0[2])
+                .collect();
+            let bias_needed: Vec<f32> = (0..MAX_SHADOW_RAY_CASCADES)
+                .map(|c| setup.uniform.ray_texel[c] / elevation.tan().max(1.0e-4))
+                .collect();
+            println!(
+                "{sun_name} sun ({:.2} deg above horizon): texel={:?} depth_range={depths:?} \
+                 bias world units available={bias_world:?} needed at this incidence={bias_needed:?}",
+                elevation.to_degrees(),
+                setup.uniform.ray_texel
+            );
             for cascade in 0..MAX_SHADOW_RAY_CASCADES {
-                let corners = camera_frustum_slice_corners_world(
-                    &view,
-                    1280,
-                    720,
-                    if cascade == 0 {
-                        0.0
-                    } else {
-                        splits[cascade - 1]
-                    },
-                    splits[cascade],
-                )
-                .expect("slice corners must be finite");
-                let light = Mat4::from_cols_array_2d(&setup.uniform.ray_light_view_proj[cascade]);
-                for corner in corners {
-                    let clip = light * corner.extend(1.0);
-                    assert!(
-                        clip.x.abs() <= 1.0 && clip.y.abs() <= 1.0,
-                        "cascade {cascade} window misses slice corner {corner}                          (clip {clip}) at yaw {yaw} pitch {pitch}"
-                    );
-                }
+                let ratio =
+                    setup.uniform.ray_texel[cascade] / high.uniform.ray_texel[cascade].max(1.0e-9);
+                assert!(
+                    (ratio - 1.0).abs() < 1.0e-4,
+                    "{sun_name} sun resized cascade {cascade}'s window {ratio}x vs a high sun: \
+                     the fit must not depend on sun elevation"
+                );
             }
         }
     }

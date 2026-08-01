@@ -1415,6 +1415,14 @@ pub struct Gpu3D {
     // stops moving.
     shadow_cascade_defer_age: [u32; MAX_SHADOW_RAY_CASCADES],
     shadow_cascade_defer_count: u32,
+    // Normalized ray-light direction each cascade's *cached* depth was fitted
+    // for. A deferred cascade is only self-consistent while the light direction
+    // it was rendered from still holds: the budget assumes camera motion (window
+    // slides, shadows stay put), but an animated sun rotates the shadows
+    // themselves, so a deferred layer would show shadows cast from an old sun
+    // angle. Comparing this against the current direction forces those layers
+    // past the budget (see `ray_light_dir_changed`).
+    shadow_cascade_light_dir: [[f32; 3]; MAX_SHADOW_RAY_CASCADES],
     // Set when any shadow-caster geometry MAY have moved this frame (full
     // rebuild, transform patch, or multimesh instance/pose upload). A full
     // rebuild is not proof of movement -- a camera-only frame restages
