@@ -31,7 +31,9 @@ mic-jack = ["playback", "cpal/jack"]
 [[bench]]
 name = "play_source"
 harness = false
+required-features = ["playback"]
 
 [[bench]]
 name = "midi"
 harness = false
+required-features = ["playback"]
