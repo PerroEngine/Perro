@@ -167,6 +167,11 @@ pub(super) struct QueryNodeData {
     pub(super) surfaces: Vec<MeshSurfaceBinding>,
     pub(super) instance_local: Vec<Mat4>,
     pub(super) skeleton: Option<NodeID>,
+    /// Lazily built instance-level acceleration structure (see
+    /// [`InstanceAccel`]). Lives on the snapshot so it inherits the snapshot's
+    /// `(structural_revision, node_change_stamp)` invalidation for free: a
+    /// write to this node retires the snapshot, which drops the accel with it.
+    pub(super) instance_accel: Mutex<InstanceAccelSlot>,
 }
 
 /// Per-node cache entry for [`QueryNodeData`]. `instance_local` is the
@@ -290,12 +295,393 @@ impl QueryNodeDataCache {
 
 /// Resident-byte estimate for one node snapshot. Per-instance `Mat4`s dominate
 /// (64B each on `MultiMeshInstance3D`).
+///
+/// Snapshots big enough to build an [`InstanceAccel`] are charged for it up
+/// front, before the lazy build runs: the cache measures at insert time and
+/// never re-measures, so budgeting the projected size is the only way the accel
+/// bytes are ever accounted. Over-charging an accel that is never built only
+/// makes eviction slightly earlier.
 fn query_node_data_bytes(data: &QueryNodeData) -> usize {
     use std::mem::size_of;
+    let instances = data.instance_local.len();
+    let accel = if instances >= INSTANCE_ACCEL_MIN_INSTANCES {
+        instances * INSTANCE_ACCEL_BYTES_PER_INSTANCE
+    } else {
+        0
+    };
     size_of::<QueryNodeData>()
         + data.source.as_ref().map_or(0, String::len)
         + data.surfaces.len() * size_of::<MeshSurfaceBinding>()
-        + data.instance_local.len() * size_of::<Mat4>()
+        + instances * size_of::<Mat4>()
+        + accel
+}
+
+/// Minimum instance count before a node builds an [`InstanceAccel`]. Below
+/// this the plain per-instance scan costs less than the build would amortize
+/// (build is ~16ns/instance against ~400ns/instance for a full instance test,
+/// so the crossover is far below this; the margin covers cheap meshes).
+pub(super) const INSTANCE_ACCEL_MIN_INSTANCES: usize = 32;
+
+/// Instances per [`InstanceAccel`] BVH leaf.
+const INSTANCE_BVH_LEAF: usize = 4;
+
+/// Resident bytes charged per instance for an [`InstanceAccel`]: two AABB
+/// corners, one order slot, and (leaf size 4, median split) roughly half a BVH
+/// node.
+const INSTANCE_ACCEL_BYTES_PER_INSTANCE: usize = 2 * std::mem::size_of::<Vec3>()
+    + std::mem::size_of::<u32>()
+    + std::mem::size_of::<InstanceBvhNode>() / 2;
+
+/// Relative slack applied when a global-space distance bound is converted into
+/// the node-space `t` used for instance-box culling. The conversion
+/// `global_t = k * node_t` is exact in real arithmetic (see [`NodeSpaceRay`]);
+/// the slack absorbs f32 drift so culling can never reject a box the exact
+/// per-instance path would have accepted.
+const INSTANCE_ACCEL_T_SLACK: f32 = 1.0 + 1.0e-3;
+
+/// Absolute node-space floor added on top of [`INSTANCE_ACCEL_T_SLACK`], for
+/// bounds near zero where a relative slack vanishes.
+const INSTANCE_ACCEL_T_EPSILON: f32 = 1.0e-4;
+
+/// Relative + absolute padding applied to each instance AABB, so f32 rounding
+/// in the 8-corner transform can never shrink a box below the geometry it
+/// bounds.
+const INSTANCE_AABB_PAD_RELATIVE: f32 = 1.0e-4;
+const INSTANCE_AABB_PAD_ABSOLUTE: f32 = 1.0e-5;
+
+#[cfg(test)]
+thread_local! {
+    /// Test hook: forces the linear per-instance path so a test can compare it
+    /// against the accelerated path on the same runtime. Thread-local, so
+    /// parallel test threads never observe each other's setting.
+    static INSTANCE_ACCEL_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Run `body` with the instance acceleration structure forced off. Restores on
+/// unwind so a failing assertion inside `body` cannot leak the flag into the
+/// next test on this thread.
+#[cfg(test)]
+pub(super) fn without_instance_accel<T>(body: impl FnOnce() -> T) -> T {
+    struct Restore;
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            INSTANCE_ACCEL_DISABLED.with(|flag| flag.set(false));
+        }
+    }
+    INSTANCE_ACCEL_DISABLED.with(|flag| flag.set(true));
+    let _restore = Restore;
+    body()
+}
+
+#[inline]
+fn instance_accel_disabled() -> bool {
+    #[cfg(test)]
+    {
+        INSTANCE_ACCEL_DISABLED.with(std::cell::Cell::get)
+    }
+    #[cfg(not(test))]
+    {
+        false
+    }
+}
+
+/// Lazily filled [`InstanceAccel`] slot. `built_for` records the mesh-local
+/// AABB the boxes were derived from, so a mesh revision that changes the mesh
+/// bounds rebuilds instead of culling against stale boxes. A build that fails
+/// (degenerate instance matrix) is remembered as `Some(bounds)` with
+/// `accel: None`, so the failure is not retried on every query.
+#[derive(Default)]
+pub(super) struct InstanceAccelSlot {
+    built_for: Option<(Vec3, Vec3)>,
+    accel: Option<Arc<InstanceAccel>>,
+}
+
+#[derive(Clone, Copy)]
+struct InstanceBvhNode {
+    aabb_min: Vec3,
+    aabb_max: Vec3,
+    /// `u32::MAX` marks a leaf.
+    left: u32,
+    right: u32,
+    start: u32,
+    count: u32,
+}
+
+/// BVH over a `MultiMeshInstance3D`'s per-instance AABBs, in the NODE's local
+/// space.
+///
+/// Node-local (not global) is deliberate: the snapshot is keyed on this node's
+/// change stamp, but the node's global transform also moves when a PARENT
+/// moves, which the stamp does not see. Building in node space keeps the
+/// structure independent of `get_global_transform_3d`, so a parent moving costs
+/// nothing.
+///
+/// Ray queries transform the ray into node space once, cull instances against
+/// this BVH, then run the unchanged per-instance test on the survivors — the
+/// structure only decides WHICH instances are tested, never what a test
+/// returns.
+pub(super) struct InstanceAccel {
+    /// Per-instance node-local AABB, indexed by instance index.
+    aabb_min: Vec<Vec3>,
+    aabb_max: Vec<Vec3>,
+    /// Instance indices in BVH leaf order.
+    order: Vec<u32>,
+    nodes: Vec<InstanceBvhNode>,
+}
+
+/// A global-space ray expressed in a node's local space, plus the exact scalar
+/// that maps node-space `t` back to the global distance the query reports.
+///
+/// For a fixed ray direction `d` in node space, every hit point is
+/// `o + t*d`, so its global position is `M*o + t*(L*d)` where `M` is the node's
+/// global transform and `L` its linear part. The reported metric is
+/// `|hit_global - origin_global| = t * |L*d|`, i.e. `global_t = k * node_t` with
+/// `k = |L*d|` CONSTANT for the ray. That identity is what lets node-space box
+/// culling prune on a global-space best-so-far.
+pub(super) struct NodeSpaceRay {
+    origin: Vec3,
+    dir: Vec3,
+    /// Node-space limit matching the query's global `max_distance`.
+    max_t: f32,
+    /// `k` above: global distance per unit of node-space `t`.
+    global_per_node_t: f32,
+}
+
+impl NodeSpaceRay {
+    /// `None` when the node transform is degenerate or the mapping is not
+    /// finite — callers then fall back to the exact linear path.
+    pub(super) fn new(
+        node_global: Mat4,
+        origin_global: Vec3,
+        dir_global: Vec3,
+        max_t_global: f32,
+    ) -> Option<Self> {
+        let determinant = node_global.determinant();
+        if !determinant.is_finite() || determinant.abs() <= 1.0e-20 {
+            return None;
+        }
+        let node_from_global = node_global.inverse();
+        let origin = node_from_global.transform_point3(origin_global);
+        let dir_raw = node_from_global.transform_vector3(dir_global);
+        let dir_len = dir_raw.length();
+        if !origin.is_finite() || !dir_len.is_finite() || dir_len <= 1.0e-12 {
+            return None;
+        }
+        let dir = dir_raw / dir_len;
+        let global_per_node_t = (Mat3::from_mat4(node_global) * dir).length();
+        if !global_per_node_t.is_finite() || global_per_node_t <= 1.0e-12 {
+            return None;
+        }
+        let max_t = if max_t_global.is_finite() {
+            node_limit(max_t_global, global_per_node_t)
+        } else {
+            f32::INFINITY
+        };
+        (dir.is_finite() && max_t > 0.0).then_some(Self {
+            origin,
+            dir,
+            max_t,
+            global_per_node_t,
+        })
+    }
+
+    /// Node-space `t` bound corresponding to a global-space distance, widened
+    /// so culling stays conservative under f32 drift.
+    #[inline]
+    pub(super) fn node_limit_for(&self, global_t: f32) -> f32 {
+        node_limit(global_t, self.global_per_node_t)
+    }
+}
+
+#[inline]
+fn node_limit(global_t: f32, global_per_node_t: f32) -> f32 {
+    (global_t / global_per_node_t) * INSTANCE_ACCEL_T_SLACK + INSTANCE_ACCEL_T_EPSILON
+}
+
+impl QueryNodeData {
+    /// Instance acceleration structure for this snapshot against `mesh`, built
+    /// on first use. `None` means "use the linear path" — too few instances, a
+    /// degenerate instance matrix, or an unusable mesh AABB.
+    pub(super) fn ray_instance_accel(&self, mesh: &QueryMeshData) -> Option<Arc<InstanceAccel>> {
+        if self.instance_local.len() < INSTANCE_ACCEL_MIN_INSTANCES || instance_accel_disabled() {
+            return None;
+        }
+        let root = mesh.bvh_nodes.first()?;
+        let bounds = (root.aabb_min, root.aabb_max);
+        if !bounds.0.is_finite() || !bounds.1.is_finite() || bounds.0.cmpgt(bounds.1).any() {
+            return None;
+        }
+        let mut slot = self.instance_accel.lock().ok()?;
+        if slot.built_for == Some(bounds) {
+            return slot.accel.clone();
+        }
+        let built = InstanceAccel::build(&self.instance_local, bounds.0, bounds.1).map(Arc::new);
+        slot.built_for = Some(bounds);
+        slot.accel = built.clone();
+        built
+    }
+}
+
+impl InstanceAccel {
+    fn build(instance_local: &[Mat4], mesh_min: Vec3, mesh_max: Vec3) -> Option<Self> {
+        let count = instance_local.len();
+        if count == 0 {
+            return None;
+        }
+        let mut aabb_min = Vec::with_capacity(count);
+        let mut aabb_max = Vec::with_capacity(count);
+        let mut centroids = Vec::with_capacity(count);
+        for local in instance_local {
+            let mut lo = Vec3::splat(f32::INFINITY);
+            let mut hi = Vec3::splat(f32::NEG_INFINITY);
+            for x in [mesh_min.x, mesh_max.x] {
+                for y in [mesh_min.y, mesh_max.y] {
+                    for z in [mesh_min.z, mesh_max.z] {
+                        let corner = local.transform_point3(Vec3::new(x, y, z));
+                        lo = lo.min(corner);
+                        hi = hi.max(corner);
+                    }
+                }
+            }
+            if !lo.is_finite() || !hi.is_finite() {
+                return None;
+            }
+            let pad =
+                (hi - lo) * INSTANCE_AABB_PAD_RELATIVE + Vec3::splat(INSTANCE_AABB_PAD_ABSOLUTE);
+            let lo = lo - pad;
+            let hi = hi + pad;
+            centroids.push((lo + hi) * 0.5);
+            aabb_min.push(lo);
+            aabb_max.push(hi);
+        }
+
+        let mut order: Vec<u32> = (0..count as u32).collect();
+        let mut nodes = Vec::with_capacity(2 * count.div_ceil(INSTANCE_BVH_LEAF) + 1);
+        build_instance_bvh(
+            &aabb_min, &aabb_max, &centroids, &mut order, &mut nodes, 0, count,
+        );
+        Some(Self {
+            aabb_min,
+            aabb_max,
+            order,
+            nodes,
+        })
+    }
+
+    /// Push `(node_space_tmin, instance_index)` for every instance whose box
+    /// the ray enters within `ray.max_t`. Instances not pushed cannot produce a
+    /// hit: their box conservatively bounds all of the instance's geometry.
+    pub(super) fn gather_ray_candidates(&self, ray: &NodeSpaceRay, out: &mut Vec<(f32, u32)>) {
+        out.clear();
+        if self.nodes.is_empty() {
+            return;
+        }
+        let mut stack = QueryBvhStack::root();
+        while let Some(node_idx) = stack.pop() {
+            let Some(node) = self.nodes.get(node_idx as usize) else {
+                continue;
+            };
+            if ray_aabb_tmin(ray.origin, ray.dir, node.aabb_min, node.aabb_max, ray.max_t).is_none()
+            {
+                continue;
+            }
+            if node.left == u32::MAX {
+                let start = node.start as usize;
+                let end = start + node.count as usize;
+                for &instance in self.order.get(start..end).unwrap_or_default() {
+                    let index = instance as usize;
+                    let (Some(lo), Some(hi)) = (self.aabb_min.get(index), self.aabb_max.get(index))
+                    else {
+                        continue;
+                    };
+                    if let Some(tmin) = ray_aabb_tmin(ray.origin, ray.dir, *lo, *hi, ray.max_t) {
+                        out.push((tmin, instance));
+                    }
+                }
+            } else {
+                stack.push(node.left);
+                stack.push(node.right);
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn instance_count(&self) -> usize {
+        self.aabb_min.len()
+    }
+}
+
+/// Median-split BVH over instance boxes. Uses `select_nth_unstable_by` instead
+/// of a full sort per level, so the build stays cheap enough to be worth paying
+/// even for a multimesh that is rewritten every frame.
+fn build_instance_bvh(
+    aabb_min: &[Vec3],
+    aabb_max: &[Vec3],
+    centroids: &[Vec3],
+    order: &mut [u32],
+    nodes: &mut Vec<InstanceBvhNode>,
+    start: usize,
+    count: usize,
+) -> u32 {
+    let node_index = nodes.len() as u32;
+    let mut node_min = Vec3::splat(f32::INFINITY);
+    let mut node_max = Vec3::splat(f32::NEG_INFINITY);
+    let mut centroid_min = Vec3::splat(f32::INFINITY);
+    let mut centroid_max = Vec3::splat(f32::NEG_INFINITY);
+    for &instance in &order[start..start + count] {
+        let index = instance as usize;
+        node_min = node_min.min(aabb_min[index]);
+        node_max = node_max.max(aabb_max[index]);
+        centroid_min = centroid_min.min(centroids[index]);
+        centroid_max = centroid_max.max(centroids[index]);
+    }
+    nodes.push(InstanceBvhNode {
+        aabb_min: node_min,
+        aabb_max: node_max,
+        left: u32::MAX,
+        right: u32::MAX,
+        start: start as u32,
+        count: count as u32,
+    });
+    if count <= INSTANCE_BVH_LEAF {
+        return node_index;
+    }
+
+    let extent = centroid_max - centroid_min;
+    let axis = if extent.x >= extent.y && extent.x >= extent.z {
+        0
+    } else if extent.y >= extent.z {
+        1
+    } else {
+        2
+    };
+    let key = |instance: &u32| {
+        let centroid = centroids[*instance as usize];
+        match axis {
+            0 => centroid.x,
+            1 => centroid.y,
+            _ => centroid.z,
+        }
+    };
+    let left_count = count / 2;
+    order[start..start + count]
+        .select_nth_unstable_by(left_count, |a, b| key(a).total_cmp(&key(b)));
+
+    let left = build_instance_bvh(
+        aabb_min, aabb_max, centroids, order, nodes, start, left_count,
+    );
+    let right = build_instance_bvh(
+        aabb_min,
+        aabb_max,
+        centroids,
+        order,
+        nodes,
+        start + left_count,
+        count - left_count,
+    );
+    nodes[node_index as usize].left = left;
+    nodes[node_index as usize].right = right;
+    node_index
 }
 
 #[derive(Clone, Copy)]
@@ -596,7 +982,13 @@ pub(super) fn query_ray_tri_local(
     let a = mesh.vertices[tri.a as usize];
     let b = mesh.vertices[tri.b as usize];
     let c = mesh.vertices[tri.c as usize];
-    let t = ray_intersect_triangle(ray_origin_local, ray_dir_local, a, b, c)?;
+    // A miss on THIS triangle keeps `best` and moves on. `?` here would fold
+    // the miss into the outer `None`, which callers read as "abandon this
+    // mesh/instance" -- one missed triangle used to silently drop every
+    // triangle after it.
+    let Some(t) = ray_intersect_triangle(ray_origin_local, ray_dir_local, a, b, c) else {
+        return Some(best);
+    };
     if t > max_t {
         return Some(best);
     }
@@ -652,7 +1044,10 @@ pub(super) fn query_ray_tri_global(
     let a = mesh.vertices[tri.a as usize];
     let b = mesh.vertices[tri.b as usize];
     let c = mesh.vertices[tri.c as usize];
-    let t = ray_intersect_triangle(ray_origin_local, ray_dir_local, a, b, c)?;
+    // Same as `query_ray_tri_local`: a triangle miss is not a scan abort.
+    let Some(t) = ray_intersect_triangle(ray_origin_local, ray_dir_local, a, b, c) else {
+        return Some(best);
+    };
     if t > max_t {
         return Some(best);
     }
@@ -852,6 +1247,28 @@ pub(super) fn nearer_hit(
             } else {
                 Some(left)
             }
+        }
+        (Some(hit), None) | (None, Some(hit)) => Some(hit),
+        (None, None) => None,
+    }
+}
+
+/// Order-independent form of [`nearer_hit`]: lexicographic min on
+/// `(metric, instance_index)`.
+///
+/// The linear path folds instances in index order with [`nearer_hit`], which
+/// keeps the accumulator on a metric tie — i.e. the LOWEST instance index wins
+/// ties. The accelerated path visits instances in BVH/distance order, so it
+/// must spell that tie-break out to return the same instance.
+pub(super) fn nearer_hit_by_index(
+    a: Option<QueryHitCandidate>,
+    b: Option<QueryHitCandidate>,
+) -> Option<QueryHitCandidate> {
+    match (a, b) {
+        (Some(left), Some(right)) => {
+            let take_right = right.metric < left.metric
+                || (right.metric == left.metric && right.instance_index < left.instance_index);
+            Some(if take_right { right } else { left })
         }
         (Some(hit), None) | (None, Some(hit)) => Some(hit),
         (None, None) => None,

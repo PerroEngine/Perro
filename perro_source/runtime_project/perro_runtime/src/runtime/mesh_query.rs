@@ -165,6 +165,13 @@ impl Runtime {
         })
     }
 
+    /// Deliberately NOT routed through [`InstanceAccel`], unlike the ray path.
+    ///
+    /// The candidate metric here is `distance^2` measured in each instance's
+    /// MESH-local space, so it is not comparable across instances with
+    /// different scales. Culling instances on a distance bound in node space
+    /// would therefore change which instance wins, and query semantics are
+    /// contractual. Accelerating this needs the metric normalised first.
     fn query_mesh_surface_at_global_point_impl(
         &mut self,
         node_id: NodeID,
@@ -359,66 +366,16 @@ impl Runtime {
         };
 
         let node_global = self.get_global_transform_3d(node_id)?.to_mat4();
-        let instance_parallel =
-            should_parallel_instances(node.instance_local.len(), mesh.triangles.len());
-        let best_for_instance = |(instance_index, local): (usize, &Mat4)| {
-            let global_from_mesh = node_global * *local;
-            let mesh_from_global = global_from_mesh.inverse();
-            let global_normal_basis = Mat3::from_mat4(global_from_mesh).inverse().transpose();
-            let ray_origin_local = mesh_from_global.transform_point3(ray_origin_global);
-            let ray_dir_local = mesh_from_global
-                .transform_vector3(ray_dir_global)
-                .normalize_or_zero();
-            if ray_dir_local.length_squared() <= 1e-10 {
-                return None;
-            }
-            let mut best: Option<QueryHitCandidate> = None;
-            match query_mesh_strategy(mesh.triangles.len()) {
-                QueryMeshStrategy::Linear => {
-                    for tri_idx in 0..mesh.triangles.len() {
-                        best = query_ray_tri_global(
-                            mesh.as_ref(),
-                            tri_idx,
-                            ray_origin_local,
-                            ray_dir_local,
-                            ray_origin_global,
-                            max_t,
-                            instance_index as u32,
-                            global_from_mesh,
-                            global_normal_basis,
-                            best,
-                        )?;
-                    }
-                }
-                QueryMeshStrategy::Bvh => {
-                    best = query_ray_mesh_bvh_global(
-                        mesh.as_ref(),
-                        ray_origin_local,
-                        ray_dir_local,
-                        ray_origin_global,
-                        max_t,
-                        instance_index as u32,
-                        global_from_mesh,
-                        global_normal_basis,
-                        best,
-                    )?;
-                }
-            }
-            best
-        };
-        let best = if instance_parallel {
-            node.instance_local
-                .par_iter()
-                .enumerate()
-                .map(best_for_instance)
-                .reduce(|| None, nearer_hit)
-        } else {
-            node.instance_local
-                .iter()
-                .enumerate()
-                .map(best_for_instance)
-                .fold(None, nearer_hit)
-        }?;
+        let accel = node.ray_instance_accel(mesh.as_ref());
+        let best = query_global_ray_best_over_instances(
+            mesh.as_ref(),
+            &node,
+            node_global,
+            ray_origin_global,
+            ray_dir_global,
+            max_t,
+            accel.as_deref(),
+        )?;
         let material = if resolve_material {
             self.query_surface_material(node_id, &node, best.surface_index)
         } else {
@@ -462,18 +419,20 @@ impl Runtime {
             return vec![None; rays.len()];
         };
 
-        let instance_parallel =
-            should_parallel_instances(node.instance_local.len(), mesh.triangles.len());
         let ray_parallel = rays.len() >= QUERY_INSTANCE_PAR_THRESHOLD
             && rays.len() * mesh.triangles.len() >= QUERY_PAR_WORK_THRESHOLD;
 
+        // Resolve the instance accel once, not per ray: the lookup takes the
+        // snapshot's mutex, and the parallel ray path would otherwise contend
+        // on it for every ray.
+        let accel = node.ray_instance_accel(mesh.as_ref());
         let best_for_ray = |ray: &MeshSurfaceRay3D| {
             query_global_ray_candidates_for_node_mesh(
                 mesh.as_ref(),
-                &node.instance_local,
+                &node,
                 node_global,
                 *ray,
-                instance_parallel,
+                accel.as_deref(),
             )
         };
 
@@ -755,6 +714,7 @@ impl Runtime {
                 surfaces: mesh.surfaces.clone(),
                 instance_local: vec![Mat4::IDENTITY],
                 skeleton: (!mesh.skeleton.is_nil()).then_some(mesh.skeleton),
+                instance_accel: Mutex::default(),
             }),
             SceneNodeData::MultiMeshInstance3D(mesh) => {
                 let instance_local = if mesh.instances.is_empty() {
@@ -791,6 +751,7 @@ impl Runtime {
                     surfaces: mesh.surfaces.clone(),
                     instance_local,
                     skeleton: None,
+                    instance_accel: Mutex::default(),
                 })
             }
             _ => None,
@@ -1030,10 +991,10 @@ fn validated_surface_barycentric(value: Vector3) -> Option<Vec3> {
 
 fn query_global_ray_candidates_for_node_mesh(
     mesh: &QueryMeshData,
-    instance_local: &[Mat4],
+    node: &QueryNodeData,
     node_global: Mat4,
     ray: MeshSurfaceRay3D,
-    instance_parallel: bool,
+    accel: Option<&InstanceAccel>,
 ) -> Option<QueryHitCandidate> {
     let ray_origin_global: Vec3 = ray.origin.into();
     let ray_dir_global_raw: Vec3 = ray.direction.into();
@@ -1047,64 +1008,147 @@ fn query_global_ray_candidates_for_node_mesh(
     } else {
         f32::INFINITY
     };
+    query_global_ray_best_over_instances(
+        mesh,
+        node,
+        node_global,
+        ray_origin_global,
+        ray_dir_global,
+        max_t,
+        accel,
+    )
+}
 
-    let best_for_instance = |(instance_index, local): (usize, &Mat4)| {
-        let global_from_mesh = node_global * *local;
-        let mesh_from_global = global_from_mesh.inverse();
-        let global_normal_basis = Mat3::from_mat4(global_from_mesh).inverse().transpose();
-        let ray_origin_local = mesh_from_global.transform_point3(ray_origin_global);
-        let ray_dir_local = mesh_from_global
-            .transform_vector3(ray_dir_global)
-            .normalize_or_zero();
-        if ray_dir_local.length_squared() <= 1e-10 {
-            return None;
-        }
-        let mut best: Option<QueryHitCandidate> = None;
-        match query_mesh_strategy(mesh.triangles.len()) {
-            QueryMeshStrategy::Linear => {
-                for tri_idx in 0..mesh.triangles.len() {
-                    best = query_ray_tri_global(
-                        mesh,
-                        tri_idx,
-                        ray_origin_local,
-                        ray_dir_local,
-                        ray_origin_global,
-                        max_t,
-                        instance_index as u32,
-                        global_from_mesh,
-                        global_normal_basis,
-                        best,
-                    )?;
-                }
-            }
-            QueryMeshStrategy::Bvh => {
-                best = query_ray_mesh_bvh_global(
+/// Full ray test for ONE instance. Unchanged from the pre-acceleration inline
+/// closure — the acceleration structure only picks which instances reach here.
+#[allow(clippy::too_many_arguments)]
+fn query_ray_best_for_instance(
+    mesh: &QueryMeshData,
+    instance_local: Mat4,
+    instance_index: u32,
+    node_global: Mat4,
+    ray_origin_global: Vec3,
+    ray_dir_global: Vec3,
+    max_t: f32,
+) -> Option<QueryHitCandidate> {
+    let global_from_mesh = node_global * instance_local;
+    let mesh_from_global = global_from_mesh.inverse();
+    let global_normal_basis = Mat3::from_mat4(global_from_mesh).inverse().transpose();
+    let ray_origin_local = mesh_from_global.transform_point3(ray_origin_global);
+    let ray_dir_local = mesh_from_global
+        .transform_vector3(ray_dir_global)
+        .normalize_or_zero();
+    if ray_dir_local.length_squared() <= 1e-10 {
+        return None;
+    }
+    let mut best: Option<QueryHitCandidate> = None;
+    match query_mesh_strategy(mesh.triangles.len()) {
+        QueryMeshStrategy::Linear => {
+            for tri_idx in 0..mesh.triangles.len() {
+                best = query_ray_tri_global(
                     mesh,
+                    tri_idx,
                     ray_origin_local,
                     ray_dir_local,
                     ray_origin_global,
                     max_t,
-                    instance_index as u32,
+                    instance_index,
                     global_from_mesh,
                     global_normal_basis,
                     best,
                 )?;
             }
         }
-        best
+        QueryMeshStrategy::Bvh => {
+            best = query_ray_mesh_bvh_global(
+                mesh,
+                ray_origin_local,
+                ray_dir_local,
+                ray_origin_global,
+                max_t,
+                instance_index,
+                global_from_mesh,
+                global_normal_basis,
+                best,
+            )?;
+        }
+    }
+    best
+}
+
+/// Nearest hit across a node's instances.
+///
+/// With an [`InstanceAccel`] the ray is transformed into node space once, the
+/// instance BVH yields only the instances whose bounds the ray enters, and
+/// those are tested nearest-box-first so the scan stops as soon as no remaining
+/// box can beat the best hit. Without one (few instances, degenerate node
+/// transform, unusable mesh bounds) this is the original index-order scan.
+///
+/// Both paths test survivors with the SAME per-instance routine and select with
+/// the same `(metric, instance_index)` ordering, so the returned hit is
+/// identical — the accel only removes instances that provably cannot win.
+#[allow(clippy::too_many_arguments)]
+fn query_global_ray_best_over_instances(
+    mesh: &QueryMeshData,
+    node: &QueryNodeData,
+    node_global: Mat4,
+    ray_origin_global: Vec3,
+    ray_dir_global: Vec3,
+    max_t: f32,
+    accel: Option<&InstanceAccel>,
+) -> Option<QueryHitCandidate> {
+    let instance_local = &node.instance_local;
+    let test = |index: usize| -> Option<QueryHitCandidate> {
+        query_ray_best_for_instance(
+            mesh,
+            *instance_local.get(index)?,
+            index as u32,
+            node_global,
+            ray_origin_global,
+            ray_dir_global,
+            max_t,
+        )
     };
-    if instance_parallel {
-        instance_local
-            .par_iter()
-            .enumerate()
-            .map(best_for_instance)
+
+    if let Some(accel) = accel
+        && let Some(node_ray) =
+            NodeSpaceRay::new(node_global, ray_origin_global, ray_dir_global, max_t)
+    {
+        let mut candidates = Vec::new();
+        accel.gather_ray_candidates(&node_ray, &mut candidates);
+        if candidates.is_empty() {
+            return None;
+        }
+        candidates.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
+        // A wide survivor set against a heavy mesh is still worth spreading,
+        // same rule the linear path uses.
+        if should_parallel_instances(candidates.len(), mesh.triangles.len()) {
+            return candidates
+                .par_iter()
+                .map(|&(_, instance)| test(instance as usize))
+                .reduce(|| None, nearer_hit_by_index);
+        }
+        let mut best: Option<QueryHitCandidate> = None;
+        for (box_tmin, instance) in candidates {
+            // Sorted by box entry distance: once a box starts beyond the best
+            // hit, every later box does too.
+            if let Some(hit) = best
+                && box_tmin > node_ray.node_limit_for(hit.metric)
+            {
+                break;
+            }
+            best = nearer_hit_by_index(best, test(instance as usize));
+        }
+        return best;
+    }
+
+    if should_parallel_instances(instance_local.len(), mesh.triangles.len()) {
+        (0..instance_local.len())
+            .into_par_iter()
+            .map(test)
             .reduce(|| None, nearer_hit)
     } else {
-        instance_local
-            .iter()
-            .enumerate()
-            .map(best_for_instance)
-            .fold(None, nearer_hit)
+        (0..instance_local.len()).map(test).fold(None, nearer_hit)
     }
 }
 

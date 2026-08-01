@@ -194,28 +194,107 @@ fn build_multimesh_node(runtime: &mut Runtime, instance_count: usize) -> perro_i
 }
 
 fn bench_multimesh_node_query(c: &mut Criterion) {
-    let mut group = c.benchmark_group("mesh_query/multimesh_node");
-    for instance_count in [100usize, 1_000, 10_000] {
-        let mut runtime = Runtime::new();
-        let node_id = build_multimesh_node(&mut runtime, instance_count);
-        let ray_origin = Vector3::new(0.0, 10.0, 0.0);
-        let ray_dir = Vector3::new(0.0, -1.0, 0.0);
+    use perro_nodes::MultiMeshInstance3D;
 
-        group.bench_with_input(
-            BenchmarkId::new("ray_hit_repeated", instance_count),
-            &instance_count,
-            |b, _| {
-                b.iter(|| {
-                    black_box(NodeAPI::mesh_instance_surface_on_global_ray(
-                        &mut runtime,
-                        node_id,
-                        black_box(ray_origin),
-                        black_box(ray_dir),
-                        black_box(100.0),
-                    ))
-                })
-            },
-        );
+    let mut group = c.benchmark_group("mesh_query/multimesh_node");
+    let ray_origin = Vector3::new(0.0, 10.0, 0.0);
+    let ray_dir = Vector3::new(0.0, -1.0, 0.0);
+
+    for instance_count in [100usize, 1_000, 10_000] {
+        // Steady state: nothing in the scene changes between queries, so the
+        // node snapshot AND its instance acceleration structure both stay warm.
+        // This case cannot tell a cache hit from a miss -- it never mutates.
+        {
+            let mut runtime = Runtime::new();
+            let node_id = build_multimesh_node(&mut runtime, instance_count);
+            group.bench_with_input(
+                BenchmarkId::new("ray_hit_repeated", instance_count),
+                &instance_count,
+                |b, _| {
+                    b.iter(|| {
+                        black_box(NodeAPI::mesh_instance_surface_on_global_ray(
+                            &mut runtime,
+                            node_id,
+                            black_box(ray_origin),
+                            black_box(ray_dir),
+                            black_box(100.0),
+                        ))
+                    })
+                },
+            );
+        }
+
+        // A DIFFERENT node is written between queries -- the live-scene case.
+        // The old global-mutation-revision cache key missed every iteration
+        // here (and dropped every other node's entry on the way); the per-node
+        // change stamp keeps this a hit, so it should track `ray_hit_repeated`
+        // plus the cost of the unrelated write.
+        {
+            let mut runtime = Runtime::new();
+            let node_id = build_multimesh_node(&mut runtime, instance_count);
+            let other_id = build_multimesh_node(&mut runtime, 4);
+            group.bench_with_input(
+                BenchmarkId::new("ray_hit_unrelated_write", instance_count),
+                &instance_count,
+                |b, _| {
+                    let mut tick = 0.0_f32;
+                    b.iter(|| {
+                        tick += 1.0;
+                        NodeAPI::with_node_mut::<MultiMeshInstance3D, _, _>(
+                            &mut runtime,
+                            other_id,
+                            |mesh| {
+                                mesh.instances[0].transform.position =
+                                    Vector3::new(black_box(tick), 0.0, 0.0);
+                            },
+                        );
+                        black_box(NodeAPI::mesh_instance_surface_on_global_ray(
+                            &mut runtime,
+                            node_id,
+                            black_box(ray_origin),
+                            black_box(ray_dir),
+                            black_box(100.0),
+                        ))
+                    })
+                },
+            );
+        }
+
+        // The QUERIED node is written between queries -- a moving multimesh.
+        // Forced full rebuild every iteration: the `Vec<Mat4>` snapshot plus
+        // the instance acceleration structure. This is the worst case for any
+        // lazily built per-node structure, so it is the one that has to stay
+        // cheaper than the linear scan it replaces.
+        {
+            let mut runtime = Runtime::new();
+            let node_id = build_multimesh_node(&mut runtime, instance_count);
+            group.bench_with_input(
+                BenchmarkId::new("ray_hit_self_write", instance_count),
+                &instance_count,
+                |b, _| {
+                    let mut tick = 0.0_f32;
+                    b.iter(|| {
+                        tick += 1.0;
+                        NodeAPI::with_node_mut::<MultiMeshInstance3D, _, _>(
+                            &mut runtime,
+                            node_id,
+                            |mesh| {
+                                let last = mesh.instances.len() - 1;
+                                mesh.instances[last].transform.position =
+                                    Vector3::new(black_box(tick), 40.0, 0.0);
+                            },
+                        );
+                        black_box(NodeAPI::mesh_instance_surface_on_global_ray(
+                            &mut runtime,
+                            node_id,
+                            black_box(ray_origin),
+                            black_box(ray_dir),
+                            black_box(100.0),
+                        ))
+                    })
+                },
+            );
+        }
     }
     group.finish();
 }

@@ -276,16 +276,11 @@ fn batch_global_ray_query_preserves_order_and_surface_index() {
         },
     ];
 
+    let node = single_instance_query_node_data();
     let hits: Vec<_> = rays
         .iter()
         .map(|ray| {
-            query_global_ray_candidates_for_node_mesh(
-                &query,
-                &[Mat4::IDENTITY],
-                Mat4::IDENTITY,
-                *ray,
-                false,
-            )
+            query_global_ray_candidates_for_node_mesh(&query, &node, Mat4::IDENTITY, *ray, None)
         })
         .collect();
 
@@ -463,5 +458,513 @@ fn mutating_multimesh_instance_transform_invalidates_cache_and_reflects_change()
     assert!(
         runtime.mesh_query_node_rebuilds.get() > rebuilds_before_mutation,
         "mutating an instance transform must invalidate the cached QueryNodeData"
+    );
+}
+
+fn single_instance_query_node_data() -> QueryNodeData {
+    QueryNodeData {
+        mesh_id: MeshID::nil(),
+        source: None,
+        surfaces: Vec::new(),
+        instance_local: vec![Mat4::IDENTITY],
+        skeleton: None,
+        instance_accel: Mutex::default(),
+    }
+}
+
+/// Deterministic 32-bit LCG, so the accel-vs-linear comparison covers a spread
+/// of transforms and ray directions without a rand dep or flaky input.
+struct TestRng(u32);
+
+impl TestRng {
+    fn next_unit(&mut self) -> f32 {
+        self.0 = self.0.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        (self.0 >> 8) as f32 / 16_777_216.0
+    }
+
+    fn range(&mut self, lo: f32, hi: f32) -> f32 {
+        lo + self.next_unit() * (hi - lo)
+    }
+}
+
+/// Multimesh with enough instances to cross `INSTANCE_ACCEL_MIN_INSTANCES`,
+/// scattered with rotations and non-uniform scales. Every 8th instance
+/// duplicates its predecessor, so metric ties between two instances really
+/// occur and the tie-break gets exercised.
+fn build_scattered_multimesh(
+    runtime: &mut Runtime,
+    instance_count: usize,
+) -> (NodeID, Vec<Transform3D>) {
+    let node_id = runtime.create::<MultiMeshInstance3D>();
+    runtime
+        .render_3d
+        .mesh_sources
+        .insert(node_id, "__cube__".to_string());
+    let mut rng = TestRng(0x1234_5678);
+    let mut transforms: Vec<Transform3D> = Vec::with_capacity(instance_count);
+    for index in 0..instance_count {
+        if index % 8 == 7 {
+            transforms.push(transforms[index - 1]);
+            continue;
+        }
+        transforms.push(Transform3D::new(
+            Vector3::new(
+                rng.range(-30.0, 30.0),
+                rng.range(-6.0, 6.0),
+                rng.range(-30.0, 30.0),
+            ),
+            Quaternion::from_euler_xyz(
+                rng.range(0.0, std::f32::consts::TAU),
+                rng.range(0.0, std::f32::consts::TAU),
+                rng.range(0.0, std::f32::consts::TAU),
+            ),
+            Vector3::new(
+                rng.range(0.4, 2.5),
+                rng.range(0.4, 2.5),
+                rng.range(0.4, 2.5),
+            ),
+        ));
+    }
+    let instances = transforms.clone();
+    runtime.with_node_mut::<MultiMeshInstance3D, _, _>(node_id, |mesh| {
+        mesh.instances = instances
+            .into_iter()
+            .map(MultiMeshInstanceTransform::new)
+            .collect();
+    });
+    (node_id, transforms)
+}
+
+fn assert_same_hit(
+    accelerated: Option<MeshSurfaceHit3D>,
+    linear: Option<MeshSurfaceHit3D>,
+    context: &str,
+) {
+    match (accelerated, linear) {
+        (None, None) => {}
+        (Some(a), Some(b)) => {
+            assert_eq!(a.instance_index, b.instance_index, "{context}: instance");
+            assert_eq!(a.surface_index, b.surface_index, "{context}: surface");
+            assert_eq!(a.triangle_index, b.triangle_index, "{context}: triangle");
+            assert_eq!(a.distance, b.distance, "{context}: distance");
+            assert_eq!(a.global_point, b.global_point, "{context}: global point");
+            assert_eq!(a.local_point, b.local_point, "{context}: local point");
+            assert_eq!(a.global_normal, b.global_normal, "{context}: global normal");
+        }
+        (a, b) => panic!("{context}: accel {a:?} vs linear {b:?}"),
+    }
+}
+
+/// The instance acceleration structure must be a pure culling device: same
+/// node + same ray => byte-identical hit to the linear scan, including which
+/// instance wins a distance tie.
+#[test]
+fn instance_accel_ray_hits_match_the_linear_scan() {
+    let mut runtime = Runtime::new();
+    let (node_id, transforms) = build_scattered_multimesh(&mut runtime, 96);
+    // Node transform w/ rotation + non-uniform scale: exercises the node-space
+    // `t` <-> global-distance conversion the culling bound rests on.
+    let node_transform = Transform3D::new(
+        Vector3::new(3.0, -1.5, 2.0),
+        Quaternion::from_euler_xyz(0.4, 0.9, -0.3),
+        Vector3::new(1.7, 0.6, 1.1),
+    );
+    assert!(NodeAPI::set_global_transform_3d(
+        &mut runtime,
+        node_id,
+        node_transform
+    ));
+    let node_global = node_transform.to_mat4();
+
+    let mut rng = TestRng(0x0bad_c0de);
+    let mut hits = 0usize;
+    let mut distinct_instances = std::collections::BTreeSet::new();
+    for case in 0..192 {
+        // Two thirds of the cases aim at a real instance (so the sweep is
+        // hit-rich and exercises the pruning), the rest are free rays that
+        // mostly miss (so the culling is checked against "no hit" too).
+        let (origin, direction) = if case % 3 == 0 {
+            (
+                Vector3::new(
+                    rng.range(-40.0, 40.0),
+                    rng.range(-20.0, 20.0),
+                    rng.range(-40.0, 40.0),
+                ),
+                Vector3::new(
+                    rng.range(-1.0, 1.0),
+                    rng.range(-1.0, 1.0),
+                    rng.range(-1.0, 1.0),
+                ),
+            )
+        } else {
+            let target: Vec3 =
+                node_global.transform_point3(transforms[case % transforms.len()].position.into());
+            let offset = Vec3::new(
+                rng.range(-1.0, 1.0),
+                rng.range(-1.0, 1.0),
+                rng.range(-1.0, 1.0),
+            )
+            .normalize_or(Vec3::Y)
+                * rng.range(4.0, 30.0);
+            let jitter = Vec3::new(
+                rng.range(-0.12, 0.12),
+                rng.range(-0.12, 0.12),
+                rng.range(-0.12, 0.12),
+            );
+            let origin = target + offset;
+            ((origin).into(), (target + jitter - origin).into())
+        };
+        if direction.length_squared() < 1.0e-6 {
+            continue;
+        }
+        // Mix bounded and effectively unbounded rays.
+        let max_distance = if case % 4 == 0 {
+            rng.range(1.0, 25.0)
+        } else {
+            1_000.0
+        };
+
+        let accelerated = NodeAPI::mesh_instance_surface_on_global_ray(
+            &mut runtime,
+            node_id,
+            origin,
+            direction,
+            max_distance,
+        );
+        let linear = without_instance_accel(|| {
+            NodeAPI::mesh_instance_surface_on_global_ray(
+                &mut runtime,
+                node_id,
+                origin,
+                direction,
+                max_distance,
+            )
+        });
+        assert_same_hit(accelerated, linear, &format!("case {case}"));
+        if let Some(hit) = accelerated {
+            hits += 1;
+            distinct_instances.insert(hit.instance_index);
+        }
+    }
+    // Guard against a vacuous pass: the sweep has to actually land on a spread
+    // of instances, not miss everything.
+    assert!(hits >= 40, "expect a hit-rich sweep, got {hits} hits");
+    assert!(
+        distinct_instances.len() >= 15,
+        "expect many instances hit, got {}",
+        distinct_instances.len()
+    );
+}
+
+/// Duplicate instance transforms produce identical metrics. The linear fold
+/// keeps the accumulator on a tie (lowest index wins); the accel visits
+/// instances in box-distance order, so it must reproduce that explicitly.
+#[test]
+fn instance_accel_breaks_metric_ties_on_lowest_instance_index() {
+    let mut runtime = Runtime::new();
+    let node_id = runtime.create::<MultiMeshInstance3D>();
+    runtime
+        .render_3d
+        .mesh_sources
+        .insert(node_id, "__cube__".to_string());
+    // 64 instances (over the accel threshold) parked far away, except three
+    // stacked @ origin: 5, 20 + 40 share one transform, so a straight-down ray
+    // hits all three @ the exact same distance.
+    runtime.with_node_mut::<MultiMeshInstance3D, _, _>(node_id, |mesh| {
+        mesh.instances = (0..64)
+            .map(|index| {
+                let position = if matches!(index, 5 | 20 | 40) {
+                    Vector3::ZERO
+                } else {
+                    Vector3::new(500.0 + index as f32, 0.0, 0.0)
+                };
+                MultiMeshInstanceTransform::new(Transform3D::new(
+                    position,
+                    Quaternion::IDENTITY,
+                    Vector3::ONE,
+                ))
+            })
+            .collect();
+    });
+
+    let origin = Vector3::new(0.0, 10.0, 0.0);
+    let direction = Vector3::new(0.0, -1.0, 0.0);
+    let accelerated = NodeAPI::mesh_instance_surface_on_global_ray(
+        &mut runtime,
+        node_id,
+        origin,
+        direction,
+        100.0,
+    );
+    let linear = without_instance_accel(|| {
+        NodeAPI::mesh_instance_surface_on_global_ray(
+            &mut runtime,
+            node_id,
+            origin,
+            direction,
+            100.0,
+        )
+    });
+    assert_eq!(
+        accelerated.map(|hit| hit.instance_index),
+        Some(5),
+        "tie must resolve 2 lowest instance index"
+    );
+    assert_same_hit(accelerated, linear, "stacked-instance tie");
+}
+
+/// The accel lives on the `QueryNodeData` snapshot, so writing the node must
+/// retire it with the snapshot -- a stale accel would keep culling against the
+/// old instance boxes.
+#[test]
+fn instance_accel_retires_with_the_node_snapshot() {
+    let mut runtime = Runtime::new();
+    let node_id = build_multimesh_cube_node(&mut runtime, 64);
+    let origin = Vector3::new(0.0, 10.0, 0.0);
+    let direction = Vector3::new(0.0, -1.0, 0.0);
+
+    // Instances sit @ x = 4*i, so only instance 0 is under the ray.
+    assert!(
+        NodeAPI::mesh_instance_surface_on_global_ray(
+            &mut runtime,
+            node_id,
+            origin,
+            direction,
+            100.0
+        )
+        .is_some(),
+        "ray must hit instance 0 b4 the move"
+    );
+
+    runtime.with_node_mut::<MultiMeshInstance3D, _, _>(node_id, |mesh| {
+        mesh.instances[0].transform.position = Vector3::new(900.0, 0.0, 0.0);
+    });
+    assert!(
+        NodeAPI::mesh_instance_surface_on_global_ray(
+            &mut runtime,
+            node_id,
+            origin,
+            direction,
+            100.0
+        )
+        .is_none(),
+        "accel must not survive the instance write that moved the box"
+    );
+
+    // Moving an instance INTO the ray must be picked up too.
+    runtime.with_node_mut::<MultiMeshInstance3D, _, _>(node_id, |mesh| {
+        mesh.instances[63].transform.position = Vector3::ZERO;
+    });
+    assert_eq!(
+        NodeAPI::mesh_instance_surface_on_global_ray(
+            &mut runtime,
+            node_id,
+            origin,
+            direction,
+            100.0
+        )
+        .map(|hit| hit.instance_index),
+        Some(63),
+        "accel must see an instance moved under the ray"
+    );
+}
+
+/// The accel is built in NODE space precisely so a parent's movement -- which
+/// never touches this node's change stamp -- cannot stale it.
+#[test]
+fn instance_accel_survives_parent_movement_without_stale_hits() {
+    let mut runtime = Runtime::new();
+    let parent_id = runtime.create::<perro_nodes::Node3D>();
+    let node_id = build_multimesh_cube_node(&mut runtime, 64);
+    assert!(NodeAPI::reparent(&mut runtime, parent_id, node_id));
+
+    let origin = Vector3::new(0.0, 10.0, 0.0);
+    let direction = Vector3::new(0.0, -1.0, 0.0);
+    assert_eq!(
+        NodeAPI::mesh_instance_surface_on_global_ray(
+            &mut runtime,
+            node_id,
+            origin,
+            direction,
+            100.0
+        )
+        .map(|hit| hit.instance_index),
+        Some(0),
+        "ray must hit instance 0 b4 the parent moves"
+    );
+
+    // Slide the parent so instance 1 (local x = 4) lands under the ray.
+    assert!(NodeAPI::set_global_transform_3d(
+        &mut runtime,
+        parent_id,
+        Transform3D::new(
+            Vector3::new(-4.0, 0.0, 0.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE,
+        ),
+    ));
+    assert_eq!(
+        NodeAPI::mesh_instance_surface_on_global_ray(
+            &mut runtime,
+            node_id,
+            origin,
+            direction,
+            100.0
+        )
+        .map(|hit| hit.instance_index),
+        Some(1),
+        "node-space accel must follow the parent transform"
+    );
+}
+
+/// Batched ray queries share one resolved accel; they must still agree w/ the
+/// linear path ray 4 ray.
+#[test]
+fn instance_accel_batched_rays_match_the_linear_scan() {
+    let mut runtime = Runtime::new();
+    let (node_id, transforms) = build_scattered_multimesh(&mut runtime, 96);
+    let mut rng = TestRng(0x00c0_ffee);
+    // Aim each ray at an instance so the batch is hit-rich.
+    let rays: Vec<MeshSurfaceRay3D> = (0..48)
+        .map(|index| {
+            let target: Vec3 = transforms[index % transforms.len()].position.into();
+            let origin = target
+                + Vec3::new(
+                    rng.range(-1.0, 1.0),
+                    rng.range(-1.0, 1.0),
+                    rng.range(-1.0, 1.0),
+                )
+                .normalize_or(Vec3::Y)
+                    * rng.range(4.0, 30.0);
+            MeshSurfaceRay3D {
+                origin: origin.into(),
+                direction: (target - origin).into(),
+                max_distance: 200.0,
+            }
+        })
+        .collect();
+
+    let accelerated =
+        NodeAPI::mesh_instance_surfaces_on_global_rays(&mut runtime, node_id, &rays, true);
+    let linear = without_instance_accel(|| {
+        NodeAPI::mesh_instance_surfaces_on_global_rays(&mut runtime, node_id, &rays, true)
+    });
+    assert_eq!(accelerated.len(), rays.len());
+    for (index, (a, b)) in accelerated.into_iter().zip(linear).enumerate() {
+        assert_same_hit(a, b, &format!("batched ray {index}"));
+    }
+}
+
+/// Nodes under the instance threshold must not build an accel @ all, and the
+/// structure that is built has 2 cover every instance.
+#[test]
+fn instance_accel_threshold_and_coverage() {
+    let mut runtime = Runtime::new();
+    let small_id = build_multimesh_cube_node(&mut runtime, INSTANCE_ACCEL_MIN_INSTANCES - 1);
+    let big_id = build_multimesh_cube_node(&mut runtime, INSTANCE_ACCEL_MIN_INSTANCES + 5);
+
+    let mesh = runtime
+        .load_query_mesh_data("__cube__")
+        .expect("builtin cube query mesh");
+
+    let small = runtime.query_node_mesh_data(small_id).expect("small node");
+    assert!(
+        small.ray_instance_accel(&mesh).is_none(),
+        "under-threshold node must stay on the linear path"
+    );
+
+    let big = runtime.query_node_mesh_data(big_id).expect("big node");
+    let accel = big.ray_instance_accel(&mesh).expect("accel 4 big node");
+    assert_eq!(
+        accel.instance_count(),
+        INSTANCE_ACCEL_MIN_INSTANCES + 5,
+        "accel must cover every instance"
+    );
+    // Second lookup reuses the cached structure.
+    assert!(Arc::ptr_eq(
+        &accel,
+        &big.ray_instance_accel(&mesh).expect("cached accel")
+    ));
+}
+
+/// Regression: a ray that enters a triangle's AABB but misses the triangle
+/// must not abandon the rest of the scan.
+///
+/// `query_ray_tri_*` used `ray_intersect_triangle(..)?`, folding that miss into
+/// the outer `None` that callers read as "abort this mesh/instance". Any
+/// triangle ordered before the real hit could silently kill the whole query --
+/// a rotated cube missed a ray straight through its centre.
+#[test]
+fn ray_query_survives_a_triangle_miss_before_the_hit() {
+    let mut runtime = Runtime::new();
+    // Linear tri scan: two coplanar triangles sharing one AABB, ray through
+    // the SECOND only. Built directly (not via `create_mesh_data`) because the
+    // decoded-query cache is process-global and keyed on `MeshID` + revision,
+    // which collides across `Runtime`s inside one test binary.
+    let vertex = |position| perro_render_bridge::RuntimeMeshVertex {
+        position,
+        normal: [0.0, 1.0, 0.0],
+        uv: [0.0, 0.0],
+        paint_uv: [0.0, 0.0],
+        joints: [0; 4],
+        weights: UnitVector4::ZERO,
+    };
+    let query = build_query_mesh_from_runtime_mesh(&Mesh3D {
+        vertices: vec![
+            // Triangle 0: lower-left half of the [0,1]^2 quad.
+            vertex([0.0, 0.0, 0.0]),
+            vertex([1.0, 0.0, 0.0]),
+            vertex([0.0, 0.0, 1.0]),
+            // Triangle 1: upper-right half, sharing the same AABB.
+            vertex([1.0, 0.0, 1.0]),
+        ],
+        indices: vec![0, 1, 2, 1, 3, 2],
+        surface_ranges: vec![],
+        blend_shapes: Vec::new(),
+    })
+    .expect("query mesh");
+    let mut best = None;
+    for tri_idx in 0..query.triangles.len() {
+        best = query_ray_tri_local(
+            &query,
+            tri_idx,
+            Vec3::new(0.85, 1.0, 0.85),
+            Vec3::NEG_Y,
+            10.0,
+            best,
+        )
+        .expect("a triangle miss must not abort the scan");
+    }
+    let hit = best.expect("ray thru triangle 1 must hit");
+    assert_eq!(hit.triangle_index, 1);
+    assert!((hit.metric - 1.0).abs() < 1.0e-4);
+
+    // Node ray: a rotated cube instance. Every face triangle whose AABB the ray
+    // crosses but whose surface it misses used to abort the instance.
+    let node_id = runtime.create::<MultiMeshInstance3D>();
+    runtime
+        .render_3d
+        .mesh_sources
+        .insert(node_id, "__cube__".to_string());
+    runtime.with_node_mut::<MultiMeshInstance3D, _, _>(node_id, |mesh| {
+        mesh.instances = vec![MultiMeshInstanceTransform::new(Transform3D::new(
+            Vector3::ZERO,
+            Quaternion::from_euler_xyz(0.3, 1.1, 2.0),
+            Vector3::ONE,
+        ))];
+    });
+    let hit = NodeAPI::mesh_instance_surface_on_global_ray(
+        &mut runtime,
+        node_id,
+        Vector3::new(0.0, 40.0, 0.0),
+        Vector3::new(0.0, -1.0, 0.0),
+        1_000.0,
+    )
+    .expect("ray straight thru a rotated cube's centre must hit");
+    assert_eq!(hit.instance_index, 0);
+    assert!(
+        (hit.distance - 39.44).abs() < 0.05,
+        "hit @ the rotated cube surface, got {}",
+        hit.distance
     );
 }
