@@ -839,7 +839,8 @@ mod streams {
         assert!(commands.iter().any(|command| matches!(
             command,
             RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
-                if *node == viewport && state.resolution == [400, 200]
+                // 200x100 rect, 2x supersample, long axis bucketed up to 64s.
+                if *node == viewport && state.resolution == [448, 224]
         )));
         assert!(commands.iter().any(|command| matches!(
             command,
@@ -867,7 +868,8 @@ mod streams {
             RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
                 if *node == viewport
                     && !state.transparent_background
-                    && state.resolution == [200, 100]
+                    // 100x50 rect, 2x supersample, long axis bucketed.
+                    && state.resolution == [256, 128]
         )));
     }
 
@@ -1130,7 +1132,8 @@ mod streams {
         assert!(commands.iter().any(|command| matches!(
             command,
             RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
-                if *node == viewport && state.resolution == [2, 2]
+                // 1x1 startup fallback rect: one bucket.
+                if *node == viewport && state.resolution == [64, 64]
         )));
 
         runtime.clear_dirty_flags();

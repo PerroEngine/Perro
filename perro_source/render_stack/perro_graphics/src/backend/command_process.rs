@@ -362,19 +362,10 @@ impl PerroGraphics {
                         height,
                         rgba,
                     } => {
-                        // idle sweep may have reclaimed the CPU copy; restore it
-                        // from the source so the region write has a base image.
-                        if self
-                            .resources
-                            .decoded_texture_data(id)
-                            .is_some_and(|decoded| !decoded.has_pixels())
-                            && let Some(source) =
-                                self.resources.texture_source(id).map(str::to_owned)
-                            && let Some(restored) =
-                                Self::decode_texture_source(&source, self.static_texture_lookup)
-                        {
-                            let _ = self.resources.set_decoded_texture_data(id, restored);
-                        }
+                        // idle sweep may have reclaimed the CPU copy (or the row
+                        // is dims-only): restore/zero-fill so the region write
+                        // has a base image.
+                        self.ensure_decoded_texture_pixels(id);
                         if self.resources.write_decoded_texture_region(
                             id,
                             x,
@@ -880,9 +871,10 @@ impl PerroGraphics {
         resolution: [u32; 2],
     ) {
         let [width, height] = resolution;
-        let Some(len) = checked_runtime_texture_rgba_len(width, height) else {
+        // size gate only: no CPU buffer is allocated here (see below).
+        if checked_runtime_texture_rgba_len(width, height).is_none() {
             return;
-        };
+        }
         let texture = if texture.is_nil() {
             camera_stream_texture_id(node)
         } else {
@@ -897,6 +889,46 @@ impl PerroGraphics {
             return;
         }
         self.camera_stream_targets.insert(node, resolution);
+        // Dims-only row: every caller here is render-target-backed, so the
+        // pixels come from the offscreen pass and every consumer binds the
+        // target view (2D/UI external textures, 3D external material slot) or
+        // reads back on the GPU (`SaveTextureImage`). A zero-filled rgba copy
+        // was 8.3MB per 1080p resize and nothing ever read it. Consumers that
+        // do need CPU bytes fill them on first write
+        // (`ensure_decoded_texture_pixels`); dims stay valid meanwhile
+        // (nine-slice sizing, ui/sprite sizing).
+        let _ = self.resources.set_decoded_texture_data(
+            id,
+            DecodedTextureRgba {
+                rgba: Arc::from(&[][..]),
+                width,
+                height,
+            },
+        );
+    }
+
+    /// Give a pixel-less decoded entry real bytes b4 a CPU write reads it:
+    /// re-decode from the texture source when it has one, else zero-fill at the
+    /// recorded dims. Covers both idle-sweep eviction + the dims-only rows
+    /// `upsert_camera_stream_texture` writes.
+    fn ensure_decoded_texture_pixels(&mut self, id: TextureID) {
+        let Some([width, height]) = self
+            .resources
+            .decoded_texture_data(id)
+            .filter(|decoded| !decoded.has_pixels())
+            .map(|decoded| [decoded.width, decoded.height])
+        else {
+            return;
+        };
+        if let Some(source) = self.resources.texture_source(id).map(str::to_owned)
+            && let Some(restored) = Self::decode_texture_source(&source, self.static_texture_lookup)
+        {
+            let _ = self.resources.set_decoded_texture_data(id, restored);
+            return;
+        }
+        let Some(len) = checked_runtime_texture_rgba_len(width, height) else {
+            return;
+        };
         let _ = self.resources.set_decoded_texture_data(
             id,
             DecodedTextureRgba {
@@ -905,6 +937,8 @@ impl PerroGraphics {
                 height,
             },
         );
+        // no source to re-decode from: never let the idle sweep reclaim it.
+        self.resources.pin_decoded_texture_data(id);
     }
 
     pub(super) fn process_late_overlay_commands<I>(&mut self, commands: I)

@@ -43,6 +43,22 @@ impl Default for StreamRetainedLanes {
     }
 }
 
+/// Bucketed auto-resolution 4 one sub-view node (logic + consts live in
+/// `render::bridge::stream_state`).
+///
+/// A UI size animation moves a rect by sub-pixel steps every frame; an exact
+/// auto resolution turned each of those into a full target-chain recreate (up
+/// to 4 textures + external bindings + tonemap bind-cache drop). The long axis
+/// snaps UP to a bucket (short axis follows the aspect), and a smaller size
+/// only lands aft a hold, so a wobbling rect keeps one target.
+#[derive(Default)]
+pub(crate) struct AutoResolutionState {
+    /// last emitted target size (0 = none yet).
+    pub(crate) emitted: [u32; 2],
+    /// consecutive refreshes whose wanted size stayed under `emitted`.
+    pub(crate) shrink_streak: u32,
+}
+
 /// Cross-refresh retention 4 camera-stream / sub-view extraction output.
 ///
 /// Value-based: retention never decides WHETHER a stream refreshes (the
@@ -63,6 +79,9 @@ pub(crate) struct StreamRetention {
     /// same palette, reuse w/o rebuild (mirrors the main pass, which only
     /// rebuilds palettes 4 traversed = dirty nodes).
     pub(crate) skeleton_palettes: AHashMap<NodeID, (u64, SkeletonPalette)>,
+    /// per sub-view node w/ an auto (0) resolution axis: bucket + shrink-hold
+    /// state so size animations stop recreating the stream target chain.
+    pub(crate) auto_resolutions: AHashMap<NodeID, AutoResolutionState>,
 }
 
 impl StreamRetention {
@@ -70,6 +89,7 @@ impl StreamRetention {
         self.lanes.remove(&node);
         self.states.remove(&node);
         self.skeleton_palettes.remove(&node);
+        self.auto_resolutions.remove(&node);
     }
 }
 

@@ -1,5 +1,101 @@
 use super::*;
 use super::stream_3d::finish_stream_lighting_3d;
+use crate::runtime::world_state::AutoResolutionState;
+
+/// Supersample 4 auto (0) sub-view resolutions. Display DPI never reaches the
+/// runtime (`ui_pixel_snap_scale_factor` is a hardcoded 1.0), so this stays a
+/// fixed 2x instead of `min(2.0, scale_factor)`.
+const AUTO_RESOLUTION_SCALE: f32 = 2.0;
+/// Bucket 4 the long axis of an auto resolution, in target px. Rounds UP, so
+/// the target is never smaller than the exact supersampled rect.
+const AUTO_RESOLUTION_BUCKET: u32 = 64;
+/// Refreshes a smaller size must hold b4 the target shrinks. Growth lands
+/// same-refresh; only shrink waits.
+const AUTO_RESOLUTION_SHRINK_HOLD: u32 = 60;
+/// Shrink >= this many buckets = real layout chg, not animation wobble: skip
+/// the hold + shrink now.
+const AUTO_RESOLUTION_SHRINK_JUMP: u32 = 2;
+/// Max relative aspect drift a held target may carry. The UI composite fits the
+/// TARGET aspect into the rect (`camera_stream_aspect_ratio`), so a held pair
+/// whose aspect no longer matches the rect letterboxes: past this, re-emit.
+const AUTO_RESOLUTION_ASPECT_DRIFT: f32 = 0.005;
+
+/// Exact px -> bucket, rounded UP + clamped to the target limit.
+fn auto_resolution_bucket(exact: f32) -> u32 {
+    // NaN casts to 0; `max(1)` keeps the result a real bucket.
+    let exact = (exact.ceil().clamp(1.0, 8192.0) as u32).max(1);
+    exact
+        .div_ceil(AUTO_RESOLUTION_BUCKET)
+        .saturating_mul(AUTO_RESOLUTION_BUCKET)
+        .clamp(1, 8192)
+}
+
+/// Wanted target 4 an auto rect size: long axis snaps up to a bucket, short
+/// axis follows the exact aspect. Bucketing both axes independently would skew
+/// the target aspect (a 100x60 rect -> 256x128), which the UI composite turns
+/// into letterbox bars, so only the long axis quantizes.
+fn auto_resolution_target(size: [f32; 2]) -> [u32; 2] {
+    let exact = [
+        (size[0] * AUTO_RESOLUTION_SCALE).max(1.0),
+        (size[1] * AUTO_RESOLUTION_SCALE).max(1.0),
+    ];
+    let long = usize::from(exact[1] > exact[0]);
+    let short = 1 - long;
+    let long_px = auto_resolution_bucket(exact[long]);
+    let ratio = exact[short] / exact[long];
+    // inf/inf + inf/x are NaN: fall back to square rather than a 1px axis.
+    let ratio = if ratio.is_finite() {
+        ratio.clamp(1.0e-4, 1.0)
+    } else {
+        1.0
+    };
+    let short_px = ((long_px as f32 * ratio).round() as u32).clamp(1, 8192);
+    let mut out = [0u32; 2];
+    out[long] = long_px;
+    out[short] = short_px;
+    out
+}
+
+/// Relative aspect difference btw two target sizes.
+fn auto_resolution_aspect_drift(held: [u32; 2], want: [u32; 2]) -> f32 {
+    let aspect = |size: [u32; 2]| size[0] as f32 / size[1].max(1) as f32;
+    let want_aspect = aspect(want).max(1.0e-6);
+    ((aspect(held) - want_aspect) / want_aspect).abs()
+}
+
+impl AutoResolutionState {
+    fn emit(&mut self, want: [u32; 2]) -> [u32; 2] {
+        self.emitted = want;
+        self.shrink_streak = 0;
+        want
+    }
+
+    /// Hysteresis: grow now, shrink only aft `AUTO_RESOLUTION_SHRINK_HOLD`
+    /// consecutive smaller refreshes, a `AUTO_RESOLUTION_SHRINK_JUMP`-bucket
+    /// drop, or an aspect drift the composite would show.
+    fn resolve(&mut self, want: [u32; 2]) -> [u32; 2] {
+        let held = self.emitted;
+        if held[0] == 0 || held[1] == 0 || want[0] > held[0] || want[1] > held[1] {
+            return self.emit(want);
+        }
+        if want == held {
+            self.shrink_streak = 0;
+            return held;
+        }
+        let jump = AUTO_RESOLUTION_SHRINK_JUMP * AUTO_RESOLUTION_BUCKET;
+        if held[0] - want[0] >= jump
+            || held[1] - want[1] >= jump
+            || auto_resolution_aspect_drift(held, want) > AUTO_RESOLUTION_ASPECT_DRIFT
+        {
+            return self.emit(want);
+        }
+        self.shrink_streak += 1;
+        if self.shrink_streak >= AUTO_RESOLUTION_SHRINK_HOLD {
+            return self.emit(want);
+        }
+        held
+    }
+}
 
 /// Output of one fused member collection: every lane a stream state carries.
 /// Dimensions the stream did not request stay shared-empty / default.
@@ -465,6 +561,37 @@ impl Runtime {
         })
     }
 
+    /// Explicit axes pass thru clamped; auto (0) axes go thru the bucket +
+    /// shrink-hold, so a per-frame 1-px size animation keeps one target instead
+    /// of recreating the whole chain every frame.
+    fn sub_view_resolution(
+        &mut self,
+        view_node: NodeID,
+        view: &SubView,
+        auto_size: Option<[f32; 2]>,
+    ) -> [u32; 2] {
+        if view.resolution.x != 0 && view.resolution.y != 0 {
+            return [
+                view.resolution.x.clamp(1, 8192),
+                view.resolution.y.clamp(1, 8192),
+            ];
+        }
+        let size = auto_size.unwrap_or([1.0, 1.0]);
+        let mut want = auto_resolution_target(size);
+        // one explicit axis: it pins that side, the other keeps its bucket.
+        for axis in 0..2 {
+            let explicit = [view.resolution.x, view.resolution.y][axis];
+            if explicit != 0 {
+                want[axis] = explicit.clamp(1, 8192);
+            }
+        }
+        self.stream_retention
+            .auto_resolutions
+            .entry(view_node)
+            .or_default()
+            .resolve(want)
+    }
+
     pub(crate) fn sub_view_state(
         &mut self,
         view_node: NodeID,
@@ -475,23 +602,7 @@ impl Runtime {
             return None;
         }
 
-        const AUTO_RESOLUTION_SCALE: f32 = 2.0;
-        let resolution = [
-            if view.resolution.x == 0 {
-                (auto_size.unwrap_or([1.0, 1.0])[0] * AUTO_RESOLUTION_SCALE)
-                    .round()
-                    .clamp(1.0, 8192.0) as u32
-            } else {
-                view.resolution.x.clamp(1, 8192)
-            },
-            if view.resolution.y == 0 {
-                (auto_size.unwrap_or([1.0, 1.0])[1] * AUTO_RESOLUTION_SCALE)
-                    .round()
-                    .clamp(1.0, 8192.0) as u32
-            } else {
-                view.resolution.y.clamp(1, 8192)
-            },
-        ];
+        let resolution = self.sub_view_resolution(view_node, view, auto_size);
 
         self.prepare_nested_sub_views(view_node, resolution);
         self.camera_stream_node_scratch = self.world_members_arc(view_node);
@@ -785,5 +896,88 @@ mod stream_retention_tests {
             .expect("retained whole state")
             .clone();
         assert!(Arc::ptr_eq(&still_retained, &first));
+    }
+
+    #[test]
+    fn auto_resolution_target_buckets_long_axis_and_keeps_aspect() {
+        // long axis rounds up into a bucket, never below the exact size.
+        for size in [[1.0f32, 1.0], [100.0, 60.0], [320.0, 180.0], [301.0, 173.0]] {
+            let target = auto_resolution_target(size);
+            let long = usize::from(size[1] > size[0]);
+            assert_eq!(target[long] % AUTO_RESOLUTION_BUCKET, 0);
+            assert!(target[long] as f32 >= size[long] * AUTO_RESOLUTION_SCALE);
+            let want_aspect = size[0] / size[1];
+            let got_aspect = target[0] as f32 / target[1] as f32;
+            assert!((got_aspect - want_aspect).abs() / want_aspect < 0.01);
+        }
+        // exact-bucket 16:9 rects keep their exact supersampled target.
+        assert_eq!(auto_resolution_target([320.0, 180.0]), [640, 360]);
+        assert_eq!(auto_resolution_target([1280.0, 720.0]), [2560, 1440]);
+        // clamped, not overflowed; degenerate input never panics.
+        assert_eq!(auto_resolution_target([f32::MAX, f32::MAX]), [8192, 8192]);
+        assert_eq!(auto_resolution_target([f32::NAN, 0.0]), [64, 64]);
+    }
+
+    #[test]
+    fn auto_resolution_absorbs_sub_bucket_wobble() {
+        let mut state = AutoResolutionState::default();
+        let first = state.resolve(auto_resolution_target([300.0, 300.0]));
+        // a per-frame size animation inside one bucket: same target.
+        for step in 0..40 {
+            let size = 300.0 + step as f32 * 0.5;
+            assert_eq!(state.resolve(auto_resolution_target([size, size])), first);
+        }
+        // crossing the bucket grows same-refresh.
+        let grown = state.resolve(auto_resolution_target([400.0, 400.0]));
+        assert!(grown[0] > first[0]);
+    }
+
+    #[test]
+    fn auto_resolution_shrink_waits_but_big_drop_lands_now() {
+        let mut state = AutoResolutionState::default();
+        let big = state.resolve(auto_resolution_target([1000.0, 1000.0]));
+        // one bucket smaller, same aspect: hold applies.
+        let want = auto_resolution_target([992.0, 992.0]);
+        assert!(want[0] < big[0]);
+        for _ in 0..AUTO_RESOLUTION_SHRINK_HOLD - 1 {
+            assert_eq!(state.resolve(want), big);
+        }
+        assert_eq!(state.resolve(want), want);
+
+        // >= 2 buckets smaller = real layout change: no hold.
+        let mut state = AutoResolutionState::default();
+        state.resolve(auto_resolution_target([1000.0, 1000.0]));
+        let small = auto_resolution_target([880.0, 880.0]);
+        assert_eq!(state.resolve(small), small);
+    }
+
+    #[test]
+    fn auto_resolution_shrink_hold_yields_to_aspect_drift() {
+        let mut state = AutoResolutionState::default();
+        let square = state.resolve(auto_resolution_target([1000.0, 1000.0]));
+        // shrink on one axis only: the held target would letterbox, so the
+        // hold does not apply.
+        let narrowed = auto_resolution_target([1000.0, 970.0]);
+        assert_ne!(state.resolve(narrowed), square);
+    }
+
+    #[test]
+    fn auto_sub_view_resolution_stays_put_across_wobbling_refreshes() {
+        let mut runtime = Runtime::new();
+        let (view, _light, _mover) = retention_scene(&mut runtime);
+        let sub_view = sub_view_of(&runtime, view);
+
+        let first = runtime
+            .sub_view_state(view, &sub_view, Some([300.0, 200.0]))
+            .expect("test or bench setup must succeed")
+            .resolution;
+        for step in 1..30 {
+            let scale = 1.0 + step as f32 * 0.001;
+            let size = [300.0 * scale, 200.0 * scale];
+            let state = runtime
+                .sub_view_state(view, &sub_view, Some(size))
+                .expect("test or bench setup must succeed");
+            assert_eq!(state.resolution, first);
+        }
     }
 }
