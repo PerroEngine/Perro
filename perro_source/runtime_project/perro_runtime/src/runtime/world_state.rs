@@ -1,8 +1,77 @@
 use super::Runtime;
+use ahash::AHashMap;
 use perro_ids::NodeID;
 use perro_nodes::{Node2D, Node3D, SceneNodeData};
-use perro_structs::{Color, NodeModulate};
+use perro_render_bridge::{
+    CameraStreamDraw3DState, CameraStreamState, Light2DState, PointParticles2DState,
+    PointParticles3DState, SkeletonPalette, Sprite2DCommand, Water2DState, Water3DState,
+    empty_arc_slice,
+};
+use perro_structs::{Color, NodeModulate, PostProcessEffect};
 use perro_ui::UiNode;
+use std::sync::Arc;
+
+/// Last emitted lane `Arc`s 4 one stream/sub-view node.
+///
+/// A stream refresh rebuilds each lane into scratch; when the rebuilt slice
+/// equals the retained one, the retained `Arc` is handed back so downstream
+/// `Arc::ptr_eq` fast paths hit and the graphics-side upsert compare collapses
+/// to a pointer check instead of two deep walks of the whole state.
+pub(crate) struct StreamRetainedLanes {
+    pub(crate) post_processing: Arc<[PostProcessEffect]>,
+    pub(crate) sprites_2d: Arc<[Sprite2DCommand]>,
+    pub(crate) lights_2d: Arc<[Light2DState]>,
+    pub(crate) point_particles_2d: Arc<[(NodeID, PointParticles2DState)]>,
+    pub(crate) waters_2d: Arc<[(NodeID, Water2DState)]>,
+    pub(crate) draws_3d: Arc<[CameraStreamDraw3DState]>,
+    pub(crate) point_particles_3d: Arc<[(NodeID, PointParticles3DState)]>,
+    pub(crate) waters_3d: Arc<[(NodeID, Water3DState)]>,
+}
+
+impl Default for StreamRetainedLanes {
+    fn default() -> Self {
+        Self {
+            post_processing: empty_arc_slice(),
+            sprites_2d: empty_arc_slice(),
+            lights_2d: empty_arc_slice(),
+            point_particles_2d: empty_arc_slice(),
+            waters_2d: empty_arc_slice(),
+            draws_3d: empty_arc_slice(),
+            point_particles_3d: empty_arc_slice(),
+            waters_3d: empty_arc_slice(),
+        }
+    }
+}
+
+/// Cross-refresh retention 4 camera-stream / sub-view extraction output.
+///
+/// Value-based: retention never decides WHETHER a stream refreshes (the
+/// dirty-world set stays the only trigger) — only whether a refresh hands back
+/// the previously emitted `Arc` instead of allocating an equal fresh one.
+/// Entries drop with their node in `note_removed_render_node`.
+#[derive(Default)]
+pub(crate) struct StreamRetention {
+    /// per stream/sub-view node: last emitted lane `Arc`s.
+    pub(crate) lanes: AHashMap<NodeID, StreamRetainedLanes>,
+    /// per stream/sub-view node: last upserted whole-state `Arc`. An equal
+    /// rebuild re-sends this exact `Arc` so the gpu-side upsert hits
+    /// `Arc::ptr_eq` and skips its deep compare + re-render mark.
+    pub(crate) states: AHashMap<NodeID, Arc<CameraStreamState>>,
+    /// per skeleton node: (node change stamp @ build, palette). The palette
+    /// reads only the `Skeleton3D` node's own data, so the arena's per-node
+    /// change stamp is an exact invalidation signal: same stamp = same bones =
+    /// same palette, reuse w/o rebuild (mirrors the main pass, which only
+    /// rebuilds palettes 4 traversed = dirty nodes).
+    pub(crate) skeleton_palettes: AHashMap<NodeID, (u64, SkeletonPalette)>,
+}
+
+impl StreamRetention {
+    pub(crate) fn note_removed_node(&mut self, node: NodeID) {
+        self.lanes.remove(&node);
+        self.states.remove(&node);
+        self.skeleton_palettes.remove(&node);
+    }
+}
 
 /// Per-epoch memo for the O(depth) ancestor walks in
 /// [`Runtime::is_effectively_visible`] and

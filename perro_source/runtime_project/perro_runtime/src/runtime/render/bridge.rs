@@ -3,7 +3,7 @@
 use super::Runtime;
 use crate::render_result::RuntimeRenderResult;
 use ahash::{AHashMap, AHashSet};
-use glam::Mat4;
+use glam::{Mat3, Mat4};
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_nodes::{
     CameraProjection, CameraStream, NodeType, Renderable, SceneNodeData, Spatial, SubView,
@@ -86,25 +86,95 @@ impl Runtime {
     pub(crate) const UI_DIRTY_TEXT: u16 = crate::runtime::state::DirtyState::DIRTY_TEXT;
 }
 
-/// Camera-stream skinning palette. Shares the retained builder
-/// (`build_skeleton_palette`) so the inverse-bind lane and 3-row affine packing
-/// stay in one place; scratch buffers are threaded in from the caller to avoid
-/// a per-draw allocation.
-fn stream_skeleton_palette(
-    nodes: &crate::cns::NodeArena,
-    skeleton_id: NodeID,
-    global_scratch: &mut Vec<Mat4>,
-    palette_scratch: &mut Vec<[[f32; 4]; 3]>,
-) -> Option<perro_render_bridge::SkeletonPalette> {
-    crate::runtime::render_3d::build_skeleton_palette(
-        nodes,
-        skeleton_id,
-        global_scratch,
-        palette_scratch,
-    )?;
-    Some(perro_render_bridge::SkeletonPalette {
-        matrices: Arc::from(palette_scratch.as_slice()),
-    })
+/// Per-refresh localization 4 stream member transforms. `SubView2D/3D` roots
+/// localize members into root space; the root inverse is computed ONCE per
+/// stream refresh here instead of per member per collector.
+pub(super) enum StreamLocalize2D {
+    /// non-sub-view stream: members keep their global transform.
+    Global,
+    /// sub-view root has no global transform: members fall back to their
+    /// local transform (legacy `stream_render_transform_2d` returned None).
+    Fail,
+    Inverse(Mat3),
+}
+
+pub(super) enum StreamLocalize3D {
+    Global,
+    Fail,
+    Inverse(Mat4),
+}
+
+/// Reuse a retained lane `Arc` when the freshly built slice equals it;
+/// otherwise store + return a new `Arc` (shared empty 4 the empty case).
+/// `None` slot = retention off (one-shot camera captures).
+pub(super) fn retained_arc_lane<T>(slot: Option<&mut Arc<[T]>>, built: &[T]) -> Arc<[T]>
+where
+    T: PartialEq + Clone + perro_render_bridge::EmptyArcSlice,
+{
+    let fresh = |built: &[T]| -> Arc<[T]> {
+        if built.is_empty() {
+            empty_arc_slice()
+        } else {
+            Arc::from(built)
+        }
+    };
+    match slot {
+        Some(slot) => {
+            if slot.as_ref() != built {
+                *slot = fresh(built);
+            }
+            slot.clone()
+        }
+        None => fresh(built),
+    }
+}
+
+/// Whole-state equality w/ `Arc::ptr_eq` fast paths on the lane slices. The
+/// per-lane retention hands back ptr-identical `Arc`s 4 unchanged lanes, so
+/// the steady-state compare is pointer checks + small scalar fields instead
+/// of a deep walk of every draw. Exhaustive destructure: a new
+/// `CameraStreamState` field breaks this compile instead of silently matching.
+fn camera_stream_state_matches(prev: &CameraStreamState, next: &CameraStreamState) -> bool {
+    #[inline]
+    fn lane_eq<T: PartialEq>(a: &Arc<[T]>, b: &Arc<[T]>) -> bool {
+        Arc::ptr_eq(a, b) || a == b
+    }
+    let CameraStreamState {
+        source,
+        tone_map_output,
+        overlay_camera_2d,
+        transparent_background,
+        clear_color,
+        resolution,
+        aspect_ratio,
+        post_processing,
+        output_texture,
+        sprites_2d,
+        lights_2d,
+        point_particles_2d,
+        waters_2d,
+        draws_3d,
+        lighting_3d,
+        point_particles_3d,
+        waters_3d,
+    } = prev;
+    *tone_map_output == next.tone_map_output
+        && *transparent_background == next.transparent_background
+        && *clear_color == next.clear_color
+        && *resolution == next.resolution
+        && *aspect_ratio == next.aspect_ratio
+        && *output_texture == next.output_texture
+        && lane_eq(post_processing, &next.post_processing)
+        && lane_eq(sprites_2d, &next.sprites_2d)
+        && lane_eq(lights_2d, &next.lights_2d)
+        && lane_eq(point_particles_2d, &next.point_particles_2d)
+        && lane_eq(waters_2d, &next.waters_2d)
+        && lane_eq(draws_3d, &next.draws_3d)
+        && lane_eq(point_particles_3d, &next.point_particles_3d)
+        && lane_eq(waters_3d, &next.waters_3d)
+        && *source == next.source
+        && *overlay_camera_2d == next.overlay_camera_2d
+        && *lighting_3d == next.lighting_3d
 }
 
 enum StreamMeshInstanceKind {
@@ -201,6 +271,17 @@ impl Runtime {
         node: NodeID,
         state: Arc<CameraStreamState>,
     ) {
+        // Whole-state retention: an unchanged rebuild re-sends the previously
+        // upserted Arc, so the gpu-side upsert hits Arc::ptr_eq instead of a
+        // deep compare. Value-gated (never skips the command), so streams can
+        // never go stale through this path.
+        let state = match self.stream_retention.states.get(&node) {
+            Some(prev) if camera_stream_state_matches(prev, &state) => prev.clone(),
+            _ => {
+                self.stream_retention.states.insert(node, state.clone());
+                state
+            }
+        };
         self.camera_stream_active.insert(node);
         self.queue_render_command(RenderCommand::CameraStream(CameraStreamCommand::Upsert {
             node,
@@ -284,46 +365,110 @@ impl Runtime {
         self.node_world(node) != Some(stream_world)
     }
 
-    fn stream_render_transform_2d(
-        &mut self,
-        node: NodeID,
-        stream_node: NodeID,
-    ) -> Option<perro_structs::Transform2D> {
-        let child = self.get_render_global_transform_2d(node)?;
+    /// Once-per-refresh member localization 4 a stream root. Replaces the
+    /// legacy per-member `root.to_mat3().inverse()` (up 2 4x members per
+    /// refresh) with one inverse here.
+    pub(super) fn stream_localizer_2d(&mut self, stream_node: NodeID) -> StreamLocalize2D {
         let localize = self
             .nodes
             .get(stream_node)
             .is_some_and(|root| matches!(root.data, SceneNodeData::SubView2D(_)));
         if !localize {
-            return Some(child);
+            return StreamLocalize2D::Global;
         }
-        let root = self.get_render_global_transform_2d(stream_node)?;
-        let local = root.to_mat3().inverse() * child.to_mat3();
-        local
-            .is_finite()
-            .then(|| perro_structs::Transform2D::from_mat3(local))
-            .or(Some(child))
+        match self.get_render_global_transform_2d(stream_node) {
+            Some(root) => StreamLocalize2D::Inverse(root.to_mat3().inverse()),
+            None => StreamLocalize2D::Fail,
+        }
     }
 
-    fn stream_render_transform_3d(
-        &mut self,
-        node: NodeID,
-        stream_node: NodeID,
-    ) -> Option<perro_structs::Transform3D> {
-        let child = self.get_render_global_transform_3d(node)?;
+    pub(super) fn stream_localizer_3d(&mut self, stream_node: NodeID) -> StreamLocalize3D {
         let localize = self
             .nodes
             .get(stream_node)
             .is_some_and(|root| matches!(root.data, SceneNodeData::SubView3D(_)));
         if !localize {
-            return Some(child);
+            return StreamLocalize3D::Global;
         }
-        let root = self.get_render_global_transform_3d(stream_node)?;
-        let local = root.to_mat4().inverse() * child.to_mat4();
-        local
-            .is_finite()
-            .then(|| perro_structs::Transform3D::from_mat4(local))
-            .or(Some(child))
+        match self.get_render_global_transform_3d(stream_node) {
+            Some(root) => StreamLocalize3D::Inverse(root.to_mat4().inverse()),
+            None => StreamLocalize3D::Fail,
+        }
+    }
+
+    pub(super) fn stream_localized_transform_2d(
+        &mut self,
+        node: NodeID,
+        localize: &StreamLocalize2D,
+    ) -> Option<perro_structs::Transform2D> {
+        let child = self.get_render_global_transform_2d(node)?;
+        match localize {
+            StreamLocalize2D::Global => Some(child),
+            StreamLocalize2D::Fail => None,
+            StreamLocalize2D::Inverse(inverse) => {
+                let local = *inverse * child.to_mat3();
+                local
+                    .is_finite()
+                    .then(|| perro_structs::Transform2D::from_mat3(local))
+                    .or(Some(child))
+            }
+        }
+    }
+
+    pub(super) fn stream_localized_transform_3d(
+        &mut self,
+        node: NodeID,
+        localize: &StreamLocalize3D,
+    ) -> Option<perro_structs::Transform3D> {
+        let child = self.get_render_global_transform_3d(node)?;
+        match localize {
+            StreamLocalize3D::Global => Some(child),
+            StreamLocalize3D::Fail => None,
+            StreamLocalize3D::Inverse(inverse) => {
+                let local = *inverse * child.to_mat4();
+                local
+                    .is_finite()
+                    .then(|| perro_structs::Transform3D::from_mat4(local))
+                    .or(Some(child))
+            }
+        }
+    }
+
+    /// Camera-stream skinning palette, stamp-gated. Shares the retained
+    /// builder (`build_skeleton_palette`) so the inverse-bind lane + 3-row
+    /// affine packing stay in one place. The palette reads only the skeleton
+    /// node's own data, so `node_change_stamp` is exact: same stamp -> reuse
+    /// the retained Arc w/o rebuild (one entry serves every stream + refresh);
+    /// changed stamp -> rebuild, then still reuse the Arc when contents match.
+    pub(super) fn stream_skeleton_palette(
+        &mut self,
+        skeleton_id: NodeID,
+        global_scratch: &mut Vec<Mat4>,
+        palette_scratch: &mut Vec<[[f32; 4]; 3]>,
+    ) -> Option<perro_render_bridge::SkeletonPalette> {
+        let stamp = self.nodes.node_change_stamp(skeleton_id)?;
+        if let Some((cached_stamp, palette)) =
+            self.stream_retention.skeleton_palettes.get(&skeleton_id)
+            && *cached_stamp == stamp
+        {
+            return Some(palette.clone());
+        }
+        crate::runtime::render_3d::build_skeleton_palette(
+            &self.nodes,
+            skeleton_id,
+            global_scratch,
+            palette_scratch,
+        )?;
+        let palette = match self.stream_retention.skeleton_palettes.get(&skeleton_id) {
+            Some((_, prev)) if prev.matrices.as_ref() == palette_scratch.as_slice() => prev.clone(),
+            _ => perro_render_bridge::SkeletonPalette {
+                matrices: Arc::from(palette_scratch.as_slice()),
+            },
+        };
+        self.stream_retention
+            .skeleton_palettes
+            .insert(skeleton_id, (stamp, palette.clone()));
+        Some(palette)
     }
 }
 

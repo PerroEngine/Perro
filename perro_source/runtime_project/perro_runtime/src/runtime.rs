@@ -318,6 +318,9 @@ pub struct Runtime {
     /// stream/sub-view nodes with a live gpu-side CameraStream upsert. gates
     /// redundant RemoveNode traffic (each command wakes a full gpu frame).
     pub(crate) camera_stream_active: AHashSet<NodeID>,
+    /// cross-refresh Arc retention 4 stream/sub-view lanes + whole states +
+    /// skinning palettes; see [`world_state::StreamRetention`].
+    pub(crate) stream_retention: world_state::StreamRetention,
     /// last built (output_texture, resolution, ui rect size) per ui stream /
     /// sub-view node. lets input-refresh command visits reuse the previous
     /// output w/o re-collecting the watched world; rect-size change (auto
@@ -703,6 +706,7 @@ impl Runtime {
             stream_node_scratch: Vec::new(),
             camera_postfx_cache: AHashMap::new(),
             camera_stream_active: AHashSet::new(),
+            stream_retention: world_state::StreamRetention::default(),
             ui_stream_render_info: AHashMap::new(),
             pending_camera_capture_removals: Vec::new(),
             world_membership: RefCell::new(WorldMembershipCache::default()),
