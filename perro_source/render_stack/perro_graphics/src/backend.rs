@@ -87,9 +87,12 @@ fn checked_runtime_texture_rgba_len(width: u32, height: u32) -> Option<usize> {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn asset_ready_log_enabled() -> bool {
-    std::env::var("PERRO_ASSET_READY_LOG")
-        .ok()
-        .is_some_and(|raw| matches!(raw.as_str(), "1" | "true" | "yes" | "on"))
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("PERRO_ASSET_READY_LOG")
+            .ok()
+            .is_some_and(|raw| matches!(raw.as_str(), "1" | "true" | "yes" | "on"))
+    })
 }
 
 #[cfg(target_arch = "wasm32")]
