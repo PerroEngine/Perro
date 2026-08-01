@@ -379,6 +379,52 @@ fn repeated_multimesh_query_hits_cache_and_skips_rebuild() {
 }
 
 #[test]
+fn mutating_an_unrelated_node_keeps_the_multimesh_snapshot_cached() {
+    let mut runtime = Runtime::new();
+    let node_id = build_multimesh_cube_node(&mut runtime, 8);
+    let other_id = build_multimesh_cube_node(&mut runtime, 8);
+
+    let ray_origin = Vector3::new(0.0, 10.0, 0.0);
+    let ray_dir = Vector3::new(0.0, -1.0, 0.0);
+
+    assert!(
+        NodeAPI::mesh_instance_surface_on_global_ray(
+            &mut runtime,
+            node_id,
+            ray_origin,
+            ray_dir,
+            100.0,
+        )
+        .is_some(),
+        "ray must hit instance 0's cube"
+    );
+    let rebuilds = runtime.mesh_query_node_rebuilds.get();
+
+    // Data write 2 a DIFFERENT node: bumps the global mutation revision but
+    // not this node's stamp, so the cached snapshot must survive.
+    runtime.with_node_mut::<MultiMeshInstance3D, _, _>(other_id, |mesh| {
+        mesh.instances[0].transform.position = Vector3::new(50.0, 0.0, 0.0);
+    });
+
+    assert!(
+        NodeAPI::mesh_instance_surface_on_global_ray(
+            &mut runtime,
+            node_id,
+            ray_origin,
+            ray_dir,
+            100.0,
+        )
+        .is_some(),
+        "query must still hit after an unrelated node mutation"
+    );
+    assert_eq!(
+        runtime.mesh_query_node_rebuilds.get(),
+        rebuilds,
+        "another node's mutation must not retire this node's QueryNodeData"
+    );
+}
+
+#[test]
 fn mutating_multimesh_instance_transform_invalidates_cache_and_reflects_change() {
     let mut runtime = Runtime::new();
     let node_id = build_multimesh_cube_node(&mut runtime, 4);

@@ -447,6 +447,57 @@ fn node_arena_structural_revision_moves_only_on_structural_change() {
 }
 
 #[test]
+fn node_arena_node_change_stamp_is_per_node_and_reuse_safe() {
+    let mut arena = NodeArena::new();
+    let a = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    let b = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+
+    let a_stamp = arena.node_change_stamp(a).expect("live node has a stamp");
+    let b_stamp = arena.node_change_stamp(b).expect("live node has a stamp");
+
+    // Writing b must not move a's stamp -- that is the whole point of the lane.
+    let _ = arena.get_mut(b);
+    assert_eq!(
+        arena.node_change_stamp(a),
+        Some(a_stamp),
+        "another node's write must not move this node's stamp"
+    );
+    assert!(
+        arena.node_change_stamp(b) > Some(b_stamp),
+        "own write must move own stamp"
+    );
+
+    // Every tracked write path moves the stamp.
+    for step in 0..5 {
+        let before = arena.node_change_stamp(a).expect("a still live");
+        match step {
+            0 => assert!(arena.rename(a, std::borrow::Cow::Borrowed("renamed"))),
+            1 => assert!(arena.set_node_tags(a, Some(vec![perro_ids::NodeTag::borrowed("tag")]))),
+            2 => assert!(arena.add_node_tag(a, perro_ids::NodeTag::borrowed("other"))),
+            3 => assert!(arena.set_parent(a, b)),
+            _ => assert!(arena.push_child(a, b)),
+        }
+        assert!(
+            arena.node_change_stamp(a) > Some(before),
+            "write path {step} must move the stamp"
+        );
+    }
+
+    // Dead ids have no stamp, and a slot reused by a new node never lands back
+    // on a stamp value an old cache entry could have observed.
+    let stale = arena.node_change_stamp(a).expect("a still live");
+    let _ = arena.remove(a);
+    assert_eq!(arena.node_change_stamp(a), None, "dead id has no stamp");
+    let reused = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    assert_eq!(reused.index(), a.index(), "free list must reuse the slot");
+    assert!(
+        arena.node_change_stamp(reused) > Some(stale),
+        "reused slot must not inherit the previous occupant's stamp"
+    );
+    arena.validate_mirrors();
+}
+
+#[test]
 fn node_arena_packed_children_rebuild_and_stale_fallback() {
     let mut arena = NodeArena::new();
     let root = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));

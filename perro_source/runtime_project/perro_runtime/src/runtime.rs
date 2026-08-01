@@ -465,7 +465,8 @@ pub struct Runtime {
     /// Per-node cache 4 mesh point/ray/region queries; avoids re-cloning
     /// surfaces + rebuilding per-instance Mat4s (MultiMeshInstance3D) on
     /// every query. Keyed by NodeID (generation-safe on slot reuse) +
-    /// validated against `nodes.mutation_revision()` @ build time.
+    /// validated against `(structural_revision, node_change_stamp)` @ build
+    /// time, so only writes 2 THAT node retire the entry.
     mesh_query_node_cache: mesh_query::QueryNodeDataCache,
     /// test/bench probe: # of QueryNodeData rebuilds (cache misses). proves
     /// repeated queries on an unchanged node hit the cache.
@@ -792,7 +793,7 @@ impl Runtime {
             force_rerender_stack_scratch: Vec::new(),
             ui_node_ids_scratch: Vec::new(),
             audio: AudioPropagationState::new(),
-            mesh_query_node_cache: AHashMap::default(),
+            mesh_query_node_cache: mesh_query::QueryNodeDataCache::default(),
             #[cfg(any(test, feature = "bench"))]
             mesh_query_node_rebuilds: std::cell::Cell::new(0),
             #[cfg(any(test, feature = "bench"))]

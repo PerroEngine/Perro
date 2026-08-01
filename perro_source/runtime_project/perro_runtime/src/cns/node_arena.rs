@@ -57,6 +57,12 @@ pub struct NodeArena {
     /// Slot-indexed hot mirror of each node's parent id. Kept in sync by
     /// insert/remove/clear + [`Self::set_parent`]. Nil while slot is free.
     parents: Vec<NodeID>,
+    /// Slot-indexed per-node change stamp. Set to the post-bump
+    /// `mutation_revision` on every write that touches that slot, so values are
+    /// globally unique + strictly increasing: a reused slot always lands on a
+    /// stamp no observer has ever seen, and per-node snapshot caches survive
+    /// unrelated nodes' writes. Read via [`Self::node_change_stamp`].
+    node_stamps: Vec<u64>,
     /// Packed read cache for child traversal. `packed_child_offsets[i]..[i+1]`
     /// indexes `packed_child_ids` for slot `i`. Writes keep `SceneNode.children`
     /// authoritative; stale caches fall back to that source until rebuilt.
@@ -71,7 +77,8 @@ pub struct NodeArena {
     tag_index: AHashMap<TagID, AHashSet<NodeID>>,
     active_len: usize,
     /// bump on any mut access / structural chg; cache invalidation key 4 systems
-    /// that mirror node data (resource-ref scan)
+    /// that mirror node data (resource-ref scan). Per-node caches want
+    /// [`Self::node_change_stamp`] instead — this one move on ANY node write.
     mutation_revision: u64,
     /// bump on structural chg + physics-relevant mut access. Split frm
     /// mutation_revision so per-frame non-physics data mut (UI text, sprite
@@ -174,9 +181,9 @@ impl Drop for NodeMut<'_> {
         self.arena.node_types[self.index] = new_node_type;
         if self.old_parent != new_parent || self.old_node_type != new_node_type || children_changed
         {
-            self.arena.bump_structural_revision();
+            self.arena.bump_node_structural(self.index);
         } else {
-            self.arena.bump_mutation_revision();
+            self.arena.bump_node_mutation(self.index);
         }
     }
 }
@@ -205,6 +212,7 @@ impl NodeArena {
             generations,
             node_types: vec![NodeType::Node],
             parents: vec![NodeID::nil()],
+            node_stamps: vec![0],
             packed_child_offsets: vec![0, 0],
             packed_child_ids: Vec::new(),
             packed_children_revision: 0,
@@ -231,11 +239,14 @@ impl NodeArena {
         node_types.push(NodeType::Node);
         let mut parents = Vec::with_capacity(capacity.saturating_add(1));
         parents.push(NodeID::nil());
+        let mut node_stamps = Vec::with_capacity(capacity.saturating_add(1));
+        node_stamps.push(0);
         Self {
             nodes,
             generations,
             node_types,
             parents,
+            node_stamps,
             packed_child_offsets: vec![0, 0],
             packed_child_ids: Vec::with_capacity(capacity.saturating_sub(1)),
             packed_children_revision: 0,
@@ -297,6 +308,45 @@ impl NodeArena {
         self.mutation_revision = self.mutation_revision.wrapping_add(1);
     }
 
+    /// Per-node change stamp: moves ONLY when this node is written, unlike
+    /// [`Self::mutation_revision`] which any node's write moves. Pair with
+    /// [`Self::structural_revision`] to key per-node snapshot caches — the
+    /// stamp covers node data, the structural revision covers everything a
+    /// snapshot reads from outside the node. `None` for dead ids, so a cache
+    /// keyed on it can never serve a removed node.
+    #[inline]
+    pub fn node_change_stamp(&self, id: NodeID) -> Option<u64> {
+        let index = self.valid_slot(id)?;
+        self.node_stamps.get(index).copied()
+    }
+
+    /// Stamp one slot with the already-bumped global revision. Must run AFTER
+    /// the revision bump so the value is fresh (never handed out before).
+    #[inline]
+    fn stamp_node(&mut self, index: usize) {
+        if let Some(stamp) = self.node_stamps.get_mut(index) {
+            *stamp = self.mutation_revision;
+        }
+    }
+
+    #[inline]
+    fn bump_node_mutation(&mut self, index: usize) {
+        self.bump_mutation_revision();
+        self.stamp_node(index);
+    }
+
+    #[inline]
+    fn bump_node_structural(&mut self, index: usize) {
+        self.bump_structural_revision();
+        self.stamp_node(index);
+    }
+
+    #[inline]
+    fn bump_node_data_only(&mut self, index: usize) {
+        self.bump_data_revision_only();
+        self.stamp_node(index);
+    }
+
     // ---- Allocation ----
 
     /// Reserve slots for additional node inserts.
@@ -305,6 +355,7 @@ impl NodeArena {
         self.generations.reserve(additional);
         self.node_types.reserve(additional);
         self.parents.reserve(additional);
+        self.node_stamps.reserve(additional);
     }
 
     /// Insert a node and return its current slot/generation id.
@@ -321,6 +372,9 @@ impl NodeArena {
             self.nodes[index] = Some(node);
             self.node_types[index] = node_type;
             self.parents[index] = parent;
+            // Reused slot: overwrite the previous occupant's stamp with the
+            // fresh structural revision so no cache entry can match it.
+            self.node_stamps[index] = self.mutation_revision;
             self.active_len = self.active_len.saturating_add(1);
             let generation = self.generations[index];
             NodeID::from_parts(index as u32, generation)
@@ -336,6 +390,7 @@ impl NodeArena {
             };
             self.node_types.push(node_type);
             self.parents.push(parent);
+            self.node_stamps.push(self.mutation_revision);
             self.active_len = self.active_len.saturating_add(1);
             NodeID::from_parts(index as u32, generation)
         };
@@ -409,7 +464,7 @@ impl NodeArena {
     /// Prefer [`Self::get_mut`] outside profiled internal paths.
     pub(crate) fn get_mut_untracked(&mut self, id: NodeID) -> Option<&mut SceneNode> {
         let index = self.valid_slot(id)?;
-        self.bump_mutation_revision();
+        self.bump_node_mutation(index);
         debug_assert_eq!(self.parents[index], self.nodes[index].as_ref()?.parent);
         debug_assert_eq!(
             self.node_types[index],
@@ -425,7 +480,7 @@ impl NodeArena {
     /// Caller must also prove the edit cannot affect physics state.
     pub(crate) fn get_mut_untracked_non_physics(&mut self, id: NodeID) -> Option<&mut SceneNode> {
         let index = self.valid_slot(id)?;
-        self.bump_data_revision_only();
+        self.bump_node_data_only(index);
         debug_assert_eq!(self.parents[index], self.nodes[index].as_ref()?.parent);
         debug_assert_eq!(
             self.node_types[index],
@@ -442,7 +497,7 @@ impl NodeArena {
     /// the free list for later reuse.
     pub fn remove(&mut self, id: NodeID) -> Option<SceneNode> {
         let index = self.valid_slot(id)?;
-        self.bump_structural_revision();
+        self.bump_node_structural(index);
         self.generations[index] = self.generations[index].wrapping_add(1);
         let removed = self.nodes[index].take();
         if let Some(node) = &removed {
@@ -489,7 +544,7 @@ impl NodeArena {
         if node.name == name {
             return true;
         }
-        self.bump_mutation_revision();
+        self.bump_node_mutation(index);
         let node = self.nodes[index].as_mut().expect("slot checked live above");
         let new_hash = string_to_u64(name.as_ref());
         let new_empty = name.is_empty();
@@ -532,7 +587,7 @@ impl NodeArena {
             .map(|tags| tags.into_iter().map(NodeTag::intern).collect())
             .unwrap_or_default();
         let old = std::mem::take(&mut node.tags);
-        self.bump_mutation_revision();
+        self.bump_node_mutation(index);
         for tag in old {
             if !new.contains(&tag) {
                 self.unindex_tag(tag, id);
@@ -564,7 +619,7 @@ impl NodeArena {
             node.add_tag(tag);
             true
         };
-        self.bump_mutation_revision();
+        self.bump_node_mutation(index);
         if added {
             self.tag_index.entry(tag_id).or_default().insert(id);
         }
@@ -584,7 +639,7 @@ impl NodeArena {
         if removed {
             node.remove_tag(tag);
         }
-        self.bump_mutation_revision();
+        self.bump_node_mutation(index);
         if removed {
             self.unindex_tag(tag, id);
         }
@@ -608,7 +663,7 @@ impl NodeArena {
         };
         node.parent = parent;
         self.parents[index] = parent;
-        self.bump_structural_revision();
+        self.bump_node_structural(index);
         true
     }
 
@@ -622,7 +677,7 @@ impl NodeArena {
             return false;
         };
         node.children.push(child);
-        self.bump_structural_revision();
+        self.bump_node_structural(index);
         true
     }
 
@@ -636,7 +691,7 @@ impl NodeArena {
             return false;
         };
         node.children.retain(|&c| c != child);
-        self.bump_structural_revision();
+        self.bump_node_structural(index);
         true
     }
 
@@ -654,7 +709,7 @@ impl NodeArena {
         };
         node.children.reserve_exact(children.len());
         node.children.extend_from_slice(children);
-        self.bump_structural_revision();
+        self.bump_node_structural(index);
         true
     }
 
@@ -698,6 +753,7 @@ impl NodeArena {
         self.nodes.truncate(1);
         self.node_types.truncate(1);
         self.parents.truncate(1);
+        self.node_stamps.truncate(1);
         self.packed_child_offsets.clear();
         self.packed_child_offsets.extend_from_slice(&[0, 0]);
         self.packed_child_ids.clear();
@@ -850,6 +906,7 @@ impl NodeArena {
         }
         debug_assert_eq!(self.node_types.len(), self.nodes.len());
         debug_assert_eq!(self.parents.len(), self.nodes.len());
+        debug_assert_eq!(self.node_stamps.len(), self.nodes.len());
     }
 
     // ---- Slot validation ----

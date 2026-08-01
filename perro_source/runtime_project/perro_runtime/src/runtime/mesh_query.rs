@@ -712,34 +712,35 @@ impl Runtime {
     /// `MultiMeshInstance3D` (a `surfaces.clone()` plus one
     /// `Mat4::from_scale_rotation_translation` per instance), so repeated
     /// point/ray/region queries against an unchanged node reuse the cached
-    /// `Arc` instead of rebuilding every call. Cache entries are validated
-    /// against `nodes.mutation_revision()`, which bumps on ANY node mutation
-    /// (not just this node) -- conservative but always correct, never a
-    /// stale hit.
+    /// `Arc` instead of rebuilding every call.
+    ///
+    /// Entries are keyed on `(structural_revision, node_change_stamp)`: the
+    /// stamp moves only when THIS node is written, so unrelated per-frame node
+    /// writes no longer force a rebuild (the old global-mutation key made the
+    /// hit rate ~0 in a live scene). The stamp lookup also fails for dead ids,
+    /// so a removed node can never serve a cached snapshot.
     fn query_node_mesh_data(&mut self, node_id: NodeID) -> Option<Arc<QueryNodeData>> {
-        let current_revision = self.nodes.mutation_revision();
-        if let Some(entry) = self.mesh_query_node_cache.get(&node_id)
-            && entry.built_at_revision == current_revision
-        {
-            return Some(entry.data.clone());
+        let structural = self.nodes.structural_revision();
+        let stamp = self.nodes.node_change_stamp(node_id)?;
+        if let Some(data) = self.mesh_query_node_cache.get(node_id, structural, stamp) {
+            return Some(data);
         }
 
         let data = Arc::new(self.build_query_node_mesh_data(node_id)?);
         #[cfg(any(test, feature = "bench"))]
         self.mesh_query_node_rebuilds
             .set(self.mesh_query_node_rebuilds.get() + 1);
-        // Entries stamped with an older revision can never hit again (the
-        // revision only moves forward), so drop them on the miss that already
-        // pays for a rebuild. Without this the map is insert-only and holds a
-        // snapshot per queried node forever -- freed nodes included, and a
-        // `MultiMeshInstance3D` snapshot is 64B per instance.
-        self.mesh_query_node_cache
-            .retain(|_, entry| entry.built_at_revision == current_revision);
+        let nodes = &self.nodes;
         self.mesh_query_node_cache.insert(
             node_id,
-            QueryNodeDataCacheEntry {
-                data: data.clone(),
-                built_at_revision: current_revision,
+            data.clone(),
+            structural,
+            stamp,
+            |id, built_structural, built_stamp| {
+                built_structural == structural
+                    && nodes
+                        .node_change_stamp(id)
+                        .is_some_and(|current| current == built_stamp)
             },
         );
         Some(data)

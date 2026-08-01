@@ -174,17 +174,129 @@ pub(super) struct QueryNodeData {
 /// `Mat4::from_scale_rotation_translation` per instance, plus a
 /// `surfaces.clone()`), so point/ray/region queries reuse it across calls
 /// instead of rebuilding on every query.
-pub(crate) struct QueryNodeDataCacheEntry {
-    pub(super) data: Arc<QueryNodeData>,
-    /// `nodes.mutation_revision()` snapshot taken when `data` was built. Any
-    /// node mutation anywhere bumps this (see `NodeArena::bump_mutation_revision`),
-    /// so it's a conservative-but-correct invalidation signal: no false
-    /// cache hits, occasional false invalidations when unrelated nodes
-    /// change between queries.
-    pub(super) built_at_revision: u64,
+struct QueryNodeDataCacheEntry {
+    data: Arc<QueryNodeData>,
+    /// Resident-byte estimate, held so budget accounting never re-walks the
+    /// snapshot.
+    bytes: usize,
+    /// `nodes.structural_revision()` when `data` was built. Covers what the
+    /// snapshot reads from OUTSIDE the node (`render_3d.mesh_sources`, which
+    /// is only written alongside scene-graph inserts).
+    built_at_structural: u64,
+    /// `nodes.node_change_stamp()` when `data` was built. Moves only when THIS
+    /// node is written, so an unrelated node's per-frame mutation no longer
+    /// retires the entry.
+    built_at_stamp: u64,
 }
 
-pub(crate) type QueryNodeDataCache = AHashMap<NodeID, QueryNodeDataCacheEntry>;
+/// Byte budget for the per-node snapshot cache. A `MultiMeshInstance3D`
+/// snapshot is 64B per instance, so a few 100k-instance nodes would otherwise
+/// pin hundreds of MB. Same rebuild-on-demand tradeoff as
+/// [`QUERY_MESH_CACHE_MAX_BYTES`].
+const QUERY_NODE_CACHE_MAX_BYTES: usize = 32 * 1024 * 1024;
+
+/// Per-node [`QueryNodeData`] snapshots keyed by [`NodeID`].
+///
+/// Entry validity is `(structural_revision, node_change_stamp)`. The stamp is
+/// per node, so the common live-scene case — some other node moved since the
+/// last query — is now a hit. The previous key was the GLOBAL mutation
+/// revision, which any node write moved, so the hit rate was ~0 and every miss
+/// additionally dropped every other node's entry.
+#[derive(Default)]
+pub(crate) struct QueryNodeDataCache {
+    entries: AHashMap<NodeID, QueryNodeDataCacheEntry>,
+    total_bytes: usize,
+}
+
+impl QueryNodeDataCache {
+    /// Cached snapshot for `id`, or `None` when absent or retired.
+    pub(super) fn get(
+        &self,
+        id: NodeID,
+        structural: u64,
+        stamp: u64,
+    ) -> Option<Arc<QueryNodeData>> {
+        let entry = self.entries.get(&id)?;
+        (entry.built_at_structural == structural && entry.built_at_stamp == stamp)
+            .then(|| entry.data.clone())
+    }
+
+    /// Store a freshly built snapshot. `still_fresh(id, structural, stamp)`
+    /// decides which existing entries survive an over-budget sweep; it only
+    /// runs when this insert pushes the cache past its budget.
+    pub(super) fn insert(
+        &mut self,
+        id: NodeID,
+        data: Arc<QueryNodeData>,
+        structural: u64,
+        stamp: u64,
+        still_fresh: impl Fn(NodeID, u64, u64) -> bool,
+    ) {
+        let bytes = query_node_data_bytes(&data);
+        let replaced = self.entries.insert(
+            id,
+            QueryNodeDataCacheEntry {
+                data,
+                bytes,
+                built_at_structural: structural,
+                built_at_stamp: stamp,
+            },
+        );
+        if let Some(old) = replaced {
+            self.total_bytes = self.total_bytes.saturating_sub(old.bytes);
+        }
+        self.total_bytes = self.total_bytes.saturating_add(bytes);
+        if self.total_bytes > QUERY_NODE_CACHE_MAX_BYTES {
+            self.enforce_budget(id, still_fresh);
+        }
+    }
+
+    /// Drop entries that can never hit again (node dead, or its data moved),
+    /// then — only if that did not reclaim enough — everything but the entry
+    /// that triggered enforcement. Runs on over-budget inserts only, so a
+    /// steady-state miss touches one key instead of the whole map.
+    fn enforce_budget(&mut self, keep: NodeID, still_fresh: impl Fn(NodeID, u64, u64) -> bool) {
+        let mut live_bytes = 0;
+        self.entries.retain(|id, entry| {
+            let live =
+                *id == keep || still_fresh(*id, entry.built_at_structural, entry.built_at_stamp);
+            if live {
+                live_bytes += entry.bytes;
+            }
+            live
+        });
+        self.total_bytes = live_bytes;
+        if self.total_bytes <= QUERY_NODE_CACHE_MAX_BYTES {
+            return;
+        }
+        // Everything resident is still valid: no LRU signal to pick from, so
+        // keep only the snapshot this insert just paid for.
+        let mut kept_bytes = 0;
+        self.entries.retain(|id, entry| {
+            if *id != keep {
+                return false;
+            }
+            kept_bytes += entry.bytes;
+            true
+        });
+        self.total_bytes = kept_bytes;
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.entries.clear();
+        self.total_bytes = 0;
+    }
+}
+
+/// Resident-byte estimate for one node snapshot. Per-instance `Mat4`s dominate
+/// (64B each on `MultiMeshInstance3D`).
+fn query_node_data_bytes(data: &QueryNodeData) -> usize {
+    use std::mem::size_of;
+    size_of::<QueryNodeData>()
+        + data.source.as_ref().map_or(0, String::len)
+        + data.surfaces.len() * size_of::<MeshSurfaceBinding>()
+        + data.instance_local.len() * size_of::<Mat4>()
+}
 
 #[derive(Clone, Copy)]
 pub(super) struct QueryHitCandidate {
