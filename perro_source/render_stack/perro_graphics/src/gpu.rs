@@ -783,11 +783,15 @@ pub struct GpuConfig {
     pub shadow_quality: crate::ShadowQuality,
 }
 
+// Views built once w/ the textures: `ensure_camera_stream_target` rebuilds the
+// whole struct on any resolution/shape change, so a stored view can never go
+// stale. Cloning a view is a refcount bump; create_view is not.
 struct GpuCameraStreamTarget {
     texture: wgpu::Texture,
-    post_input: Option<wgpu::Texture>,
-    tonemap_input: Option<wgpu::Texture>,
-    depth: Option<wgpu::Texture>,
+    view: wgpu::TextureView,
+    post_input_view: Option<wgpu::TextureView>,
+    tonemap_input_view: Option<wgpu::TextureView>,
+    depth_view: Option<wgpu::TextureView>,
     resolution: [u32; 2],
     post_view_key: u64,
 }
@@ -892,6 +896,7 @@ pub struct RenderFrame<'a> {
     pub point_lights_2d: &'a [Light2DState],
     pub point_lights_2d_revision: u64,
     pub shadow_casters_2d: &'a [ShadowCaster2DState],
+    pub shadow_casters_2d_revision: u64,
     pub waters_2d: &'a [(NodeID, Water2DState)],
     pub waters_2d_revision: u64,
     pub late_overlay_camera_2d: Camera2DUniform,
@@ -902,6 +907,7 @@ pub struct RenderFrame<'a> {
     pub late_overlay_point_lights_2d: &'a [Light2DState],
     pub late_overlay_point_lights_2d_revision: u64,
     pub late_overlay_shadow_casters_2d: &'a [ShadowCaster2DState],
+    pub late_overlay_shadow_casters_2d_revision: u64,
     pub ui_primitives: &'a [Arc<ClippedPrimitive>],
     pub ui_primitive_depths: &'a [Option<Arc<[f32]>>],
     pub ui_textures_delta: &'a TexturesDelta,

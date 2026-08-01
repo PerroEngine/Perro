@@ -1,5 +1,19 @@
 use super::*;
 
+// True when any instance of `batch` sits inside a patched span. `spans` is
+// sorted + disjoint, but `instance_start` is NOT monotonic across batches
+// (compaction can repoint a later batch at an earlier region), so binary-search
+// per batch instead of sweeping.
+pub(super) fn batch_overlaps_dirty_spans(batch: &DrawBatch, spans: &[Range<u32>]) -> bool {
+    let start = batch.instance_start;
+    let end = start.saturating_add(batch.instance_count);
+    if start >= end {
+        return false;
+    }
+    let candidate = spans.partition_point(|span| span.end <= start);
+    spans.get(candidate).is_some_and(|span| span.start < end)
+}
+
 pub(super) fn mesh_blend_relevant_sphere_changed(
     batches: &[DrawBatch],
     sources: &[usize],

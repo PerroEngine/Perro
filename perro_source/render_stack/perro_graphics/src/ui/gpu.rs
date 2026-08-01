@@ -104,6 +104,14 @@ pub struct GpuUi {
     scene_depth_bind_group_layout: wgpu::BindGroupLayout,
     _dummy_depth_texture: wgpu::Texture,
     dummy_depth_view: wgpu::TextureView,
+    // scene-depth bind group + the depth-view generation it was built from.
+    // 0 = dummy view (no 3D pass); Gpu3D bumps its generation whenever the
+    // prepass depth view is recreated, so a stale group can never survive.
+    scene_depth_bind_group: Option<wgpu::BindGroup>,
+    scene_depth_bind_group_generation: u64,
+    // device.limits() clones the whole limits struct; the only field the
+    // per-frame supersample math needs never changes for a device.
+    max_texture_dimension_2d: u32,
     sampler: wgpu::Sampler,
     texture_filter: TextureFilterMode,
     font_texture: Option<UiTextureGpu>,
@@ -405,6 +413,9 @@ impl GpuUi {
             scene_depth_bind_group_layout,
             _dummy_depth_texture: dummy_depth_texture,
             dummy_depth_view,
+            scene_depth_bind_group: None,
+            scene_depth_bind_group_generation: 0,
+            max_texture_dimension_2d: device.limits().max_texture_dimension_2d,
             sampler,
             texture_filter,
             font_texture: None,
@@ -451,7 +462,7 @@ impl GpuUi {
         let viewport = [viewport[0].max(1), viewport[1].max(1)];
         let render_viewport = supersampled_size(
             viewport,
-            device.limits().max_texture_dimension_2d,
+            self.max_texture_dimension_2d,
             self.max_render_pixels,
         );
         let render_scale = viewport_scale(viewport, render_viewport);
@@ -579,7 +590,8 @@ impl GpuUi {
         encoder: &mut wgpu::CommandEncoder,
         output_view: &wgpu::TextureView,
         viewport: [u32; 2],
-        scene_depth_view: Option<&wgpu::TextureView>,
+        // generation identifies the view; None => the dummy depth view.
+        scene_depth: Option<(&wgpu::TextureView, u64)>,
     ) {
         if self.meshes.is_empty() {
             return;
@@ -587,7 +599,7 @@ impl GpuUi {
         let viewport = [viewport[0].max(1), viewport[1].max(1)];
         let render_viewport = supersampled_size(
             viewport,
-            device.limits().max_texture_dimension_2d,
+            self.max_texture_dimension_2d,
             self.max_render_pixels,
         );
         self.ensure_supersample_target(device, render_viewport);
@@ -599,16 +611,27 @@ impl GpuUi {
         let Some(target) = self.supersample_target.as_ref() else {
             return;
         };
-        let scene_depth_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("perro_ui_scene_depth_bg"),
-            layout: &self.scene_depth_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(
-                    scene_depth_view.unwrap_or(&self.dummy_depth_view),
-                ),
-            }],
-        });
+        // rebuilt only when the bound view changes (incl None <-> Some); the
+        // group was otherwise recreated every single frame.
+        let scene_depth_generation = scene_depth.map_or(0, |(_, generation)| generation);
+        if self.scene_depth_bind_group.is_none()
+            || self.scene_depth_bind_group_generation != scene_depth_generation
+        {
+            let view = scene_depth.map_or(&self.dummy_depth_view, |(view, _)| view);
+            self.scene_depth_bind_group =
+                Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("perro_ui_scene_depth_bg"),
+                    layout: &self.scene_depth_bind_group_layout,
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(view),
+                    }],
+                }));
+            self.scene_depth_bind_group_generation = scene_depth_generation;
+        }
+        let Some(scene_depth_bind_group) = self.scene_depth_bind_group.as_ref() else {
+            return;
+        };
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("perro_ui_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -627,7 +650,7 @@ impl GpuUi {
         });
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-        pass.set_bind_group(2, &scene_depth_bind_group, &[]);
+        pass.set_bind_group(2, scene_depth_bind_group, &[]);
         pass.set_vertex_buffer(0, vertex_buffer.slice(..));
         pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         for mesh in &self.meshes {

@@ -35,6 +35,7 @@ impl Gpu {
             point_lights_2d,
             point_lights_2d_revision,
             shadow_casters_2d,
+            shadow_casters_2d_revision,
             waters_2d,
             waters_2d_revision,
             late_overlay_camera_2d,
@@ -45,6 +46,7 @@ impl Gpu {
             late_overlay_point_lights_2d,
             late_overlay_point_lights_2d_revision,
             late_overlay_shadow_casters_2d,
+            late_overlay_shadow_casters_2d_revision,
             redraw_requested,
             frame_time_seconds,
             frame_delta_seconds,
@@ -158,9 +160,9 @@ impl Gpu {
             let needs_external_binding =
                 self.camera_stream_targets.get(node).is_none_or(|target| {
                     target.resolution != resolution
-                        || target.post_input.is_some() != needs_intermediate
-                        || target.tonemap_input.is_some() != needs_tonemap_input
-                        || target.depth.is_some() != needs_post_depth
+                        || target.post_input_view.is_some() != needs_intermediate
+                        || target.tonemap_input_view.is_some() != needs_tonemap_input
+                        || target.depth_view.is_some() != needs_post_depth
                 }) || self.camera_stream_external_bindings.get(node).copied() != Some(resolution);
             let Some(target) = self.ensure_camera_stream_target(
                 *node,
@@ -173,12 +175,8 @@ impl Gpu {
             };
             if needs_external_binding {
                 let texture_id = stream.output_texture;
-                let view_2d = target
-                    .texture
-                    .create_view(&wgpu::TextureViewDescriptor::default());
-                let view_ui = target
-                    .texture
-                    .create_view(&wgpu::TextureViewDescriptor::default());
+                let view_2d = target.view.clone();
+                let view_ui = target.view.clone();
                 if let Some(two_d) = self.two_d.as_mut() {
                     two_d.upsert_external_texture(
                         &self.device,
@@ -230,6 +228,7 @@ impl Gpu {
                         point_lights: point_lights_2d,
                         point_lights_revision: point_lights_2d_revision,
                         shadow_casters: shadow_casters_2d,
+                        shadow_casters_revision: shadow_casters_2d_revision,
                         static_texture_lookup,
                     },
                 );
@@ -388,13 +387,10 @@ impl Gpu {
                     let Some(target) = self.camera_stream_targets.get(node) else {
                         continue;
                     };
-                    let view = target
-                        .texture
-                        .create_view(&wgpu::TextureViewDescriptor::default());
                     three_d.upsert_external_material_texture(
                         &self.device,
                         stream.output_texture.index(),
-                        &view,
+                        &target.view,
                         format!("__camera_stream__:{}", node.as_u64()),
                     );
                     self.camera_stream_3d_bindings.insert(*node, resolution);
@@ -705,27 +701,20 @@ impl Gpu {
                     continue;
                 };
                 (
-                    target
-                        .texture
-                        .create_view(&wgpu::TextureViewDescriptor::default()),
+                    target.view.clone(),
                     needs_intermediate.then(|| {
                         target
-                            .post_input
-                            .as_ref()
+                            .post_input_view
+                            .clone()
                             .expect("camera stream intermediate target")
-                            .create_view(&wgpu::TextureViewDescriptor::default())
                     }),
                     (has_stream_post && tone_map_stream).then(|| {
                         target
-                            .tonemap_input
-                            .as_ref()
+                            .tonemap_input_view
+                            .clone()
                             .expect("camera stream tonemap input")
-                            .create_view(&wgpu::TextureViewDescriptor::default())
                     }),
-                    target
-                        .depth
-                        .as_ref()
-                        .map(|depth| depth.create_view(&wgpu::TextureViewDescriptor::default())),
+                    target.depth_view.clone(),
                     target.post_view_key,
                 )
             };
@@ -897,6 +886,7 @@ impl Gpu {
                             point_lights: stream.lights_2d.as_ref(),
                             point_lights_revision: u64::MAX,
                             shadow_casters: &[],
+                            shadow_casters_revision: u64::MAX,
                             static_texture_lookup,
                         },
                     );
@@ -1218,6 +1208,7 @@ impl Gpu {
                                 point_lights: stream.lights_2d.as_ref(),
                                 point_lights_revision: u64::MAX,
                                 shadow_casters: &[],
+                                shadow_casters_revision: u64::MAX,
                                 static_texture_lookup,
                             },
                         );
@@ -1683,9 +1674,12 @@ impl Gpu {
                     &mut encoder,
                     output_view,
                     viewport,
-                    self.three_d
-                        .as_ref()
-                        .map(|three_d| three_d.depth_prepass_view()),
+                    self.three_d.as_ref().map(|three_d| {
+                        (
+                            three_d.depth_prepass_view(),
+                            three_d.depth_prepass_view_generation(),
+                        )
+                    }),
                 );
             }
         }
@@ -1719,6 +1713,7 @@ impl Gpu {
                         point_lights: late_overlay_point_lights_2d,
                         point_lights_revision: late_overlay_point_lights_2d_revision,
                         shadow_casters: late_overlay_shadow_casters_2d,
+                        shadow_casters_revision: late_overlay_shadow_casters_2d_revision,
                         static_texture_lookup,
                     },
                 );

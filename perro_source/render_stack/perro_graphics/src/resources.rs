@@ -169,6 +169,13 @@ pub struct ResourceStore {
     texture_ref_ids: Vec<TextureID>,
     material_ref_ids: Vec<MaterialID>,
     rejected_explicit_ids: u64,
+    // Bumped on every material insert/replace/drop. Lets consumers memoize
+    // per-frame walks over material bodies (custom-shader probes).
+    material_revision: u64,
+    // Bumped whenever a texture's decoded dims or its source can change
+    // (decode store, decode drop, create, drop). Lets consumers memoize
+    // per-frame texture-size probes.
+    texture_dims_revision: u64,
 }
 
 impl ResourceStore {
@@ -196,6 +203,19 @@ impl ResourceStore {
     #[inline]
     pub fn rejected_explicit_id_count(&self) -> u64 {
         self.rejected_explicit_ids
+    }
+
+    /// Monotonic counter over material inserts/replaces/drops.
+    #[inline]
+    pub(crate) fn material_revision(&self) -> u64 {
+        self.material_revision
+    }
+
+    /// Monotonic counter over changes that can move a texture's decoded dims
+    /// or its source string.
+    #[inline]
+    pub(crate) fn texture_dims_revision(&self) -> u64 {
+        self.texture_dims_revision
     }
 
     #[inline]
@@ -465,6 +485,7 @@ impl ResourceStore {
         self.material_by_source.remove(&source_key(source));
         self.material_source_by.remove(&id);
         self.material_by.remove(&id);
+        self.material_revision = self.material_revision.wrapping_add(1);
         self.clear_material_meta(id);
     }
 
@@ -556,6 +577,7 @@ impl ResourceStore {
         let id = TextureID::from_parts(index, generation);
         self.texture_by_source.insert(key, id);
         self.texture_source_by.insert(id, source.to_string());
+        self.texture_dims_revision = self.texture_dims_revision.wrapping_add(1);
         self.set_texture_source_slot(index, source);
         self.set_texture_meta(
             id,
@@ -599,6 +621,7 @@ impl ResourceStore {
         }
         self.texture_by_source.insert(key, id);
         self.texture_source_by.insert(id, source.to_string());
+        self.texture_dims_revision = self.texture_dims_revision.wrapping_add(1);
         self.set_texture_source_slot(id.index(), source);
         self.set_texture_meta(
             id,
@@ -634,6 +657,7 @@ impl ResourceStore {
         let (index, generation) = self.materials.create_parts();
         let id = MaterialID::from_parts(index, generation);
         self.material_by.insert(id, material);
+        self.material_revision = self.material_revision.wrapping_add(1);
         if let Some(source) = source {
             self.material_by_source.insert(source_key(source), id);
             self.material_source_by.insert(id, source.to_string());
@@ -688,6 +712,7 @@ impl ResourceStore {
             return self.create_material(material, source, reserved);
         }
         self.material_by.insert(id, material);
+        self.material_revision = self.material_revision.wrapping_add(1);
         if let Some(source) = source {
             self.material_by_source.insert(source_key(source), id);
             self.material_source_by.insert(id, source.to_string());
@@ -743,6 +768,7 @@ impl ResourceStore {
         self.decoded_texture_bytes = self.decoded_texture_bytes.saturating_add(new_len);
         self.decoded_texture_stamp
             .insert(id, self.decoded_evict_clock);
+        self.texture_dims_revision = self.texture_dims_revision.wrapping_add(1);
         self.enforce_decoded_texture_budget(id, DECODED_TEXTURE_CACHE_MAX_BYTES);
         true
     }
@@ -762,6 +788,7 @@ impl ResourceStore {
         }
         self.decoded_texture_pinned.remove(&id);
         self.decoded_texture_stamp.remove(&id);
+        self.texture_dims_revision = self.texture_dims_revision.wrapping_add(1);
     }
 
     /// Reclaim the rgba bytes of decoded entries idle for `ttl_ticks` sweep
@@ -1073,6 +1100,7 @@ impl ResourceStore {
             return false;
         }
         self.material_by.insert(id, material.into());
+        self.material_revision = self.material_revision.wrapping_add(1);
         true
     }
 
@@ -1537,6 +1565,7 @@ impl ResourceStore {
             return false;
         }
         self.material_by.remove(&id);
+        self.material_revision = self.material_revision.wrapping_add(1);
         let source = self.material_source_by.remove(&id);
         if let Some(source) = source {
             let key = source_key(&source);

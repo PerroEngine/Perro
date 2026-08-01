@@ -372,6 +372,11 @@ impl Gpu3D {
                     ),
                 );
             }
+            // The multimesh block below reuses the merged scratch; keep the
+            // transform spans for the mesh-blend sphere refresh.
+            self.transform_dirty_spans_snapshot.clear();
+            self.transform_dirty_spans_snapshot
+                .extend_from_slice(&self.merged_instance_spans_scratch);
             // Dense multimeshes whose poses are unchanged: only the draw model
             // moved. Instances are relative to the draw model in the shader, so
             // patch just the MultiMeshDrawParamGpu rows and upload those slots.
@@ -448,7 +453,9 @@ impl Gpu3D {
             }
             // Transforms shifted: overlap tests may change, so refresh receiver
             // lists unless no blend-relevant batch actually moved this frame.
-            self.rebuild_mesh_blend_receivers_gated(true);
+            let dirty_spans = std::mem::take(&mut self.transform_dirty_spans_snapshot);
+            self.rebuild_mesh_blend_receivers_gated(Some(dirty_spans.as_slice()));
+            self.transform_dirty_spans_snapshot = dirty_spans;
             let frustum_cull_active = self.should_run_frustum_cull();
             let hiz_active = self.should_run_hiz_occlusion(frustum_cull_active);
             if frustum_cull_active {

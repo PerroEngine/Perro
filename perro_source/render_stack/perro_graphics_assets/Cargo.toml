@@ -7,6 +7,7 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+ahash = "0.8.12"
 bytemuck = { version = "1.24.0", features = ["derive"] }
 gltf.workspace = true
 image = { version = "0.25.8", default-features = false, features = ["png", "jpeg", "webp", "bmp", "tga", "ico"] }

@@ -133,6 +133,12 @@ struct PointLightStageKey {
     hash: u64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ShadowCasterStageKey {
+    len: usize,
+    hash: u64,
+}
+
 pub struct Gpu2D {
     camera_bgl: wgpu::BindGroupLayout,
     texture_bgl: wgpu::BindGroupLayout,
@@ -171,6 +177,7 @@ pub struct Gpu2D {
     last_sprite_stage: Option<u64>,
     last_sprite_prepare: Option<SpritePrepareKey>,
     last_point_light_stage: Option<PointLightStageKey>,
+    last_shadow_caster_stage: Option<ShadowCasterStageKey>,
     sprite_perf: SpritePerfCounters,
     // Usage trackers for the periodic buffer-shrink pass (crate::gpu_shrink).
     shrink_rects: ShrinkTracker,
@@ -191,6 +198,8 @@ pub struct Prepare2D<'a> {
     pub point_lights: &'a [Light2DState],
     pub point_lights_revision: u64,
     pub shadow_casters: &'a [ShadowCaster2DState],
+    /// `u64::MAX` = caller has no revision; falls back to a content hash.
+    pub shadow_casters_revision: u64,
     pub static_texture_lookup: Option<StaticTextureLookup>,
 }
 
@@ -426,6 +435,7 @@ impl Gpu2D {
             last_sprite_stage: None,
             last_sprite_prepare: None,
             last_point_light_stage: None,
+            last_shadow_caster_stage: None,
             sprite_perf: SpritePerfCounters::default(),
             shrink_rects: ShrinkTracker::default(),
             shrink_sprites: ShrinkTracker::default(),
@@ -555,6 +565,7 @@ impl Gpu2D {
             point_lights,
             point_lights_revision,
             shadow_casters,
+            shadow_casters_revision,
             static_texture_lookup,
         } = frame;
         if force_sprite_prepare {
@@ -744,21 +755,28 @@ impl Gpu2D {
             }
             self.last_point_light_stage = Some(point_light_stage);
         }
-        self.shadow_caster_instances.clear();
-        self.shadow_caster_instances.extend(
-            shadow_casters
-                .iter()
-                .filter_map(|caster| shadow_caster_2d_gpu(*caster)),
-        );
-        if self.shadow_caster_instances.is_empty() {
-            self.shadow_caster_instances
-                .push(ShadowCaster2DGpu::zeroed());
+        // same gate as point lights: unchanged casters keep the staged buffer,
+        // incl the zeroed placeholder on frames w/ no casters at all.
+        let shadow_caster_stage =
+            shadow_caster_stage_key_with_revision(shadow_casters, shadow_casters_revision);
+        if self.last_shadow_caster_stage != Some(shadow_caster_stage) {
+            self.shadow_caster_instances.clear();
+            self.shadow_caster_instances.extend(
+                shadow_casters
+                    .iter()
+                    .filter_map(|caster| shadow_caster_2d_gpu(*caster)),
+            );
+            if self.shadow_caster_instances.is_empty() {
+                self.shadow_caster_instances
+                    .push(ShadowCaster2DGpu::zeroed());
+            }
+            queue.write_buffer(
+                &self.shadow_caster_buffer,
+                0,
+                bytemuck::cast_slice(&self.shadow_caster_instances),
+            );
+            self.last_shadow_caster_stage = Some(shadow_caster_stage);
         }
-        queue.write_buffer(
-            &self.shadow_caster_buffer,
-            0,
-            bytemuck::cast_slice(&self.shadow_caster_instances),
-        );
     }
 
     pub fn prepare_stream_point_particles(
@@ -1144,6 +1162,8 @@ impl Gpu2D {
             mapped_at_creation: false,
         });
         self.shadow_caster_capacity = new_capacity;
+        // fresh buffer holds no staged data.
+        self.last_shadow_caster_stage = None;
         self.rebuild_shadow_caster_bind_group(device);
     }
 }
@@ -1222,6 +1242,45 @@ fn point_light_stage_key_with_revision(
     }
 }
 
+fn shadow_caster_stage_key(casters: &[ShadowCaster2DState]) -> ShadowCasterStageKey {
+    let mut hash = 0xcbf29ce484222325;
+    hash = hash_mix(hash, casters.len() as u64);
+    for caster in casters {
+        hash = hash_f32_slice(hash, &caster.center);
+        hash = hash_f32_slice(hash, &caster.half_extents);
+        hash = hash_f32(hash, caster.rotation_radians);
+        hash = hash_mix(hash, caster.z_index as u32 as u64);
+        match caster.shape {
+            ShadowCaster2DShapeState::Quad => hash = hash_mix(hash, 0),
+            ShadowCaster2DShapeState::Circle => hash = hash_mix(hash, 1),
+            ShadowCaster2DShapeState::Triangle => hash = hash_mix(hash, 2),
+            ShadowCaster2DShapeState::TrianglePoints(points) => {
+                hash = hash_mix(hash, 3);
+                for point in &points {
+                    hash = hash_f32_slice(hash, point);
+                }
+            }
+        }
+    }
+    ShadowCasterStageKey {
+        len: casters.len(),
+        hash,
+    }
+}
+
+fn shadow_caster_stage_key_with_revision(
+    casters: &[ShadowCaster2DState],
+    revision: u64,
+) -> ShadowCasterStageKey {
+    if revision == u64::MAX {
+        return shadow_caster_stage_key(casters);
+    }
+    ShadowCasterStageKey {
+        len: casters.len(),
+        hash: revision,
+    }
+}
+
 fn hash_f32_slice(mut hash: u64, values: &[f32]) -> u64 {
     for value in values {
         hash = hash_f32(hash, *value);
@@ -1292,10 +1351,14 @@ fn resolve_sprite_geometry(
 mod tests {
     use super::{
         SpriteBatchCandidate, point_light_stage_key, point_light_stage_key_with_revision,
-        resolve_sprite_geometry, sprite_batch_candidates_sorted, sprite_batch_sort_key,
+        resolve_sprite_geometry, shadow_caster_stage_key, shadow_caster_stage_key_with_revision,
+        sprite_batch_candidates_sorted, sprite_batch_sort_key,
     };
     use perro_ids::TextureID;
-    use perro_render_bridge::{Light2DState, PointLight2DState, Sprite2DCommand};
+    use perro_render_bridge::{
+        Light2DState, PointLight2DState, ShadowCaster2DShapeState, ShadowCaster2DState,
+        Sprite2DCommand,
+    };
 
     #[test]
     fn sprite_sort_keeps_z_buckets_and_groups_textures() {
@@ -1496,5 +1559,44 @@ mod tests {
             point_light_stage_key_with_revision(&base, u64::MAX),
             point_light_stage_key(&base)
         );
+    }
+
+    #[test]
+    fn shadow_caster_stage_key_uses_revision_when_available() {
+        let base = vec![ShadowCaster2DState {
+            center: [1.0, 2.0],
+            half_extents: [3.0, 4.0],
+            rotation_radians: 0.5,
+            shape: ShadowCaster2DShapeState::Quad,
+            z_index: 2,
+        }];
+        let moved = vec![ShadowCaster2DState {
+            center: [9.0, 2.0],
+            ..base[0]
+        }];
+        let reshaped = vec![ShadowCaster2DState {
+            shape: ShadowCaster2DShapeState::Circle,
+            ..base[0]
+        }];
+
+        // revision wins over content while it holds.
+        assert_eq!(
+            shadow_caster_stage_key_with_revision(&base, 7),
+            shadow_caster_stage_key_with_revision(&moved, 7)
+        );
+        assert_ne!(
+            shadow_caster_stage_key_with_revision(&base, 7),
+            shadow_caster_stage_key_with_revision(&base, 8)
+        );
+        // no revision => content hash, incl the shape tag.
+        assert_eq!(
+            shadow_caster_stage_key_with_revision(&base, u64::MAX),
+            shadow_caster_stage_key(&base)
+        );
+        assert_ne!(
+            shadow_caster_stage_key(&base),
+            shadow_caster_stage_key(&reshaped)
+        );
+        assert_ne!(shadow_caster_stage_key(&base), shadow_caster_stage_key(&[]));
     }
 }

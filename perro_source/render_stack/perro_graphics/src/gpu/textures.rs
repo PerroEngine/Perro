@@ -177,9 +177,9 @@ impl Gpu {
         let resolution = [resolution[0].max(1), resolution[1].max(1)];
         let recreate = self.camera_stream_targets.get(&node).is_none_or(|target| {
             target.resolution != resolution
-                || target.post_input.is_some() != needs_intermediate
-                || target.tonemap_input.is_some() != needs_tonemap_input
-                || target.depth.is_some() != needs_post_depth
+                || target.post_input_view.is_some() != needs_intermediate
+                || target.tonemap_input_view.is_some() != needs_tonemap_input
+                || target.depth_view.is_some() != needs_post_depth
         });
         if recreate {
             self.next_camera_stream_post_view_key =
@@ -256,13 +256,21 @@ impl Gpu {
                     view_formats: &[],
                 })
             });
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let post_input_view = post_input
+                .map(|texture| texture.create_view(&wgpu::TextureViewDescriptor::default()));
+            let tonemap_input_view = tonemap_input
+                .map(|texture| texture.create_view(&wgpu::TextureViewDescriptor::default()));
+            let depth_view =
+                depth.map(|texture| texture.create_view(&wgpu::TextureViewDescriptor::default()));
             self.camera_stream_targets.insert(
                 node,
                 GpuCameraStreamTarget {
                     texture,
-                    post_input,
-                    tonemap_input,
-                    depth,
+                    view,
+                    post_input_view,
+                    tonemap_input_view,
+                    depth_view,
                     resolution,
                     post_view_key,
                 },

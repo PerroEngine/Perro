@@ -7,7 +7,7 @@ use perro_asset_formats::ptex::{
 };
 use perro_io::{decompress_zlib_limited, load_asset};
 use std::{
-    collections::{HashMap, hash_map::DefaultHasher},
+    collections::HashMap,
     hash::{Hash, Hasher},
     io::Cursor,
     path::Path,
@@ -221,16 +221,10 @@ fn decode_svg_rgba_sized(
     );
     resvg::render(&tree, transform, &mut pixmap.as_mut());
 
-    let mut rgba = Vec::with_capacity(
-        (width as usize)
-            .checked_mul(height as usize)?
-            .checked_mul(4)?,
-    );
-    for pixel in pixmap.pixels() {
-        rgba.extend_from_slice(&[pixel.red(), pixel.green(), pixel.blue(), pixel.alpha()]);
-    }
     let _ = logical_size;
-    let rgba: Arc<[u8]> = rgba.into();
+    // pixmap buffer already holds premultiplied RGBA in that byte order, so the
+    // old per-pixel 4-byte push loop was an identity copy. take it whole.
+    let rgba: Arc<[u8]> = pixmap.take().into();
     store_svg_rgba_cache_entry(cache_key, raster_size, Arc::clone(&rgba));
     Some((rgba, width, height))
 }
@@ -272,10 +266,12 @@ fn svg_sizes(bytes: &[u8]) -> Option<((u32, u32), (u32, u32))> {
     Some((logical_size, raster_size))
 }
 
+// ahash over the full source: runs per decode + per size probe, and SipHash
+// (DefaultHasher) dominated both on multi-100KB svg sources.
 fn svg_cache_key(bytes: &[u8]) -> u64 {
-    let mut hasher = DefaultHasher::new();
+    let mut hasher = ahash::AHasher::default();
     bytes.len().hash(&mut hasher);
-    bytes.hash(&mut hasher);
+    hasher.write(bytes);
     hasher.finish()
 }
 
@@ -318,6 +314,9 @@ struct SvgRgbaCacheEntry {
 
 struct SvgRgbaCache {
     entries: HashMap<SvgRgbaCacheKey, SvgRgbaCacheEntry>,
+    // single slot 4 rasters over the whole lru budget. w/o it such a raster is
+    // never cached, so every decode re-parses + re-rasters the svg.
+    oversized: Option<(SvgRgbaCacheKey, Arc<[u8]>)>,
     bytes: usize,
     clock: u64,
     max_bytes: usize,
@@ -327,6 +326,7 @@ impl SvgRgbaCache {
     fn new(max_bytes: usize) -> Self {
         Self {
             entries: HashMap::new(),
+            oversized: None,
             bytes: 0,
             clock: 0,
             max_bytes,
@@ -335,14 +335,21 @@ impl SvgRgbaCache {
 
     fn get(&mut self, key: &SvgRgbaCacheKey) -> Option<Arc<[u8]>> {
         self.clock = self.clock.wrapping_add(1);
-        let entry = self.entries.get_mut(key)?;
-        entry.last_used = self.clock;
-        Some(Arc::clone(&entry.rgba))
+        if let Some(entry) = self.entries.get_mut(key) {
+            entry.last_used = self.clock;
+            return Some(Arc::clone(&entry.rgba));
+        }
+        match &self.oversized {
+            Some((slot_key, rgba)) if slot_key == key => Some(Arc::clone(rgba)),
+            _ => None,
+        }
     }
 
     fn insert(&mut self, key: SvgRgbaCacheKey, rgba: Arc<[u8]>) {
         let item_bytes = rgba.len();
         if item_bytes > self.max_bytes {
+            // 1 entry only: a different oversized asset evicts the last one.
+            self.oversized = Some((key, rgba));
             return;
         }
         if let Some(old) = self.entries.remove(&key) {
@@ -389,6 +396,7 @@ pub fn clear_svg_caches() {
     }
     if let Ok(mut cache) = svg_rgba_cache().lock() {
         cache.entries.clear();
+        cache.oversized = None;
         cache.bytes = 0;
     }
 }
@@ -822,6 +830,24 @@ mod tests {
         assert!(cache.get(&(2, (1, 1))).is_some());
         cache.insert((3, (1, 1)), vec![3; 11].into());
         assert!(!cache.entries.contains_key(&(3, (1, 1))));
+    }
+
+    #[test]
+    fn svg_rgba_cache_keeps_one_oversized_entry() {
+        let mut cache = SvgRgbaCache::new(10);
+        let big: Arc<[u8]> = vec![1; 32].into();
+        cache.insert((1, (4, 2)), Arc::clone(&big));
+        assert!(cache.entries.is_empty(), "oversized stays out of the lru");
+        assert!(Arc::ptr_eq(
+            &cache.get(&(1, (4, 2))).expect("oversized hit"),
+            &big
+        ));
+        // budget untouched by the oversized slot.
+        assert_eq!(cache.bytes, 0);
+        // a different oversized raster evicts the last one.
+        cache.insert((2, (4, 2)), vec![2; 32].into());
+        assert!(cache.get(&(1, (4, 2))).is_none());
+        assert!(cache.get(&(2, (4, 2))).is_some());
     }
 
     #[test]

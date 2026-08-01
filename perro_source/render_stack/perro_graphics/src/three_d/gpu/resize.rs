@@ -39,6 +39,7 @@ impl Gpu3D {
             create_depth_prepass_texture(device, width, height);
         self.depth_prepass_texture = depth_prepass_texture;
         self.depth_prepass_view = depth_prepass_view;
+        self.depth_prepass_view_generation = next_depth_prepass_view_generation();
         let (depth_texture, depth_view) = create_scene_depth_target(
             device,
             width,
@@ -148,6 +149,7 @@ impl Gpu3D {
             create_depth_prepass_texture(device, width, height);
         self.depth_prepass_texture = depth_prepass_texture;
         self.depth_prepass_view = depth_prepass_view;
+        self.depth_prepass_view_generation = next_depth_prepass_view_generation();
         let (depth_texture, depth_view) = create_scene_depth_target(
             device,
             width,

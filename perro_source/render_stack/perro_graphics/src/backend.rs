@@ -476,9 +476,19 @@ pub struct PerroGraphics {
     // shader_path_hash -> shader reads perro_time/delta/frame_index. gates
     // the continuous-redraw path: static custom shaders don't force it.
     custom_shader_animated_cache: AHashMap<u64, bool>,
+    // memo of the retained-draw probe: (draw revision, material revision) ->
+    // result. w/o it every frame (incl idle ones) re-walks all draws x
+    // surfaces + re-hashes shader path strings.
+    retained_animated_material_memo: Option<(u64, u64, bool)>,
     // reusable per-frame set of streams w/ time-reading custom shaders;
     // handed to gpu.render 4 the per-stream idle skip.
     animated_stream_nodes_scratch: ahash::AHashSet<NodeID>,
+    // per-stream memo of the same probe, keyed on the retained state Arc ptr +
+    // material revision. an unchanged Arc = unchanged draws + surfaces.
+    animated_stream_memo: AHashMap<NodeID, (usize, u64, bool)>,
+    // (ui revision, texture dims revision) the nine-slice sizes were last
+    // written for; skips the whole retained-nine-slice walk otherwise.
+    nine_slice_sizes_memo: Option<(u64, u64)>,
     meshlets_enabled: bool,
     dev_meshlets: bool,
     meshlet_debug_view: bool,

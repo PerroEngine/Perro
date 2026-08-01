@@ -539,6 +539,12 @@ impl UiRenderer {
         self.default_font = font;
     }
 
+    /// Bumped on every retained-node mutation. Callers gate work that only
+    /// depends on the retained set on it.
+    pub(crate) fn revision(&self) -> u64 {
+        self.revision
+    }
+
     pub(crate) fn set_nine_slice_texture_sizes(
         &mut self,
         mut size_for: impl FnMut(TextureID) -> [u32; 2],

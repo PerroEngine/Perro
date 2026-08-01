@@ -228,6 +228,15 @@ use sky::*;
 use targets::*;
 
 const DEPTH_PREPASS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+
+// Next identity 4 a freshly created depth-prepass view. Process-wide so two
+// Gpu3D instances (main + camera stream) never hand out the same generation.
+// Starts at 1: 0 means no 3D depth view 2 consumers.
+fn next_depth_prepass_view_generation() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
 const FRUSTUM_CULL_WORKGROUP_SIZE: u32 = 64;
 const HIZ_WORKGROUP_SIZE_X: u32 = 8;
 const HIZ_WORKGROUP_SIZE_Y: u32 = 8;
@@ -1125,6 +1134,10 @@ pub struct Gpu3D {
     depth_view: wgpu::TextureView,
     depth_prepass_texture: wgpu::Texture,
     depth_prepass_view: wgpu::TextureView,
+    // Bumped on every depth-prepass view recreation (init/resize/sample-count).
+    // Consumers outside Gpu3D key their cached bind groups on it. Process-wide
+    // + monotonic, so a fresh Gpu3D never reuses a retired generation.
+    depth_prepass_view_generation: u64,
     // Unjittered camera matrices from the last prepare; `apply_taa_jitter`
     // patches the GPU uniform from these every frame while TAA runs (and
     // restores them when it stops). CPU-side consumers (shadow fitting,
@@ -1208,6 +1221,10 @@ pub struct Gpu3D {
     last_occlusion_culled: u32,
     dirty_instance_spans_scratch: Vec<Range<u32>>,
     merged_instance_spans_scratch: Vec<Range<u32>>,
+    // Snapshot of the merged transform spans a transform-only prepare wrote,
+    // kept because `merged_instance_spans_scratch` is reused for the multimesh
+    // param spans right after. Mesh-blend sphere refresh reads it.
+    transform_dirty_spans_snapshot: Vec<Range<u32>>,
     dirty_cull_batch_spans_scratch: Vec<Range<usize>>,
     transform_only_kinds_scratch: Vec<draw::TransformOnlyDrawKind>,
     debug_point_instances_scratch: Vec<BuiltInstanceParts>,

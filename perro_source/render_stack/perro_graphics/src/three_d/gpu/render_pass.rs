@@ -914,6 +914,12 @@ impl Gpu3D {
         &self.depth_prepass_view
     }
 
+    /// Identity of the current depth-prepass view. Changes only when the view
+    /// is recreated; never 0, so callers can use 0 for "no 3D depth".
+    pub fn depth_prepass_view_generation(&self) -> u64 {
+        self.depth_prepass_view_generation
+    }
+
     /// Depth attachment for the 3D water pass. Water samples scene depth (the
     /// prepass view) while depth-testing; at sample_count == 1 the scene depth
     /// target aliases the prepass texture, and one pass cannot both sample and
@@ -994,13 +1000,15 @@ impl Gpu3D {
     // Precompute source->receiver batch lists so the per-source depth passes
     // skip the O(N) scan over all batches in render_pass.
     pub(super) fn rebuild_mesh_blend_receivers(&mut self) {
-        self.rebuild_mesh_blend_receivers_gated(false);
+        self.rebuild_mesh_blend_receivers_gated(None);
     }
 
-    // `allow_skip` (transform-only frames): reuse the existing receiver lists when
-    // no blend-relevant batch sphere moved since the last build. Conservative:
-    // any structural change or any doubt falls through to a full rebuild.
-    pub(super) fn rebuild_mesh_blend_receivers_gated(&mut self, allow_skip: bool) {
+    // `dirty_spans` = Some on transform-only frames: the merged instance spans
+    // prepare actually patched. Reuse the existing receiver lists when no
+    // blend-relevant batch sphere moved since the last build, and recompute
+    // spheres only for batches overlapping a dirty span. Conservative: any
+    // structural change or any doubt falls through to a full rebuild.
+    pub(super) fn rebuild_mesh_blend_receivers_gated(&mut self, dirty_spans: Option<&[Range<u32>]>) {
         // No sources => no receivers; keep everything cleared.
         if self.mesh_blend_batch_indices.is_empty() {
             self.mesh_blend_source_receivers.clear();
@@ -1014,13 +1022,31 @@ impl Gpu3D {
         let mut spheres = std::mem::take(&mut self.mesh_blend_batch_spheres_scratch);
         spheres.clear();
         spheres.reserve(self.draw_batches.len());
-        for batch in &self.draw_batches {
-            spheres.push(batch_world_sphere(batch, &self.staged_instance_transforms));
+        // A sphere reads only its own batch's instance window, so on a
+        // transform-only frame every batch outside the patched spans keeps last
+        // frame's value: O(dirty instances) instead of O(all instances).
+        let reuse =
+            dirty_spans.filter(|_| self.mesh_blend_prev_spheres.len() == self.draw_batches.len());
+        match reuse {
+            Some(spans) => {
+                for (index, batch) in self.draw_batches.iter().enumerate() {
+                    if batch_overlaps_dirty_spans(batch, spans) {
+                        spheres.push(batch_world_sphere(batch, &self.staged_instance_transforms));
+                    } else {
+                        spheres.push(self.mesh_blend_prev_spheres[index]);
+                    }
+                }
+            }
+            None => {
+                for batch in &self.draw_batches {
+                    spheres.push(batch_world_sphere(batch, &self.staged_instance_transforms));
+                }
+            }
         }
 
         // Reuse the current lists when the previous snapshot is structurally
         // comparable and no source / potential-target sphere moved.
-        let can_skip = allow_skip
+        let can_skip = dirty_spans.is_some()
             && self.mesh_blend_source_receivers.len() == self.mesh_blend_batch_indices.len()
             && self.mesh_blend_prev_spheres.len() == spheres.len()
             && !mesh_blend_relevant_sphere_changed(
@@ -1188,6 +1214,21 @@ mod tests {
         let mut out = Vec::new();
         shadow_layer_cull(&indices, &batches, &transforms, &frustum, &mut out);
         assert_eq!(out, vec![1], "fully off-view multi-instance batch culled");
+    }
+
+    #[test]
+    fn batch_overlaps_dirty_spans_matches_only_touched_instance_windows() {
+        // Sorted + disjoint patched spans; batch windows are not monotonic.
+        let spans = [4u32..6, 10..12];
+        assert!(!batch_overlaps_dirty_spans(&test_batch(0, 4, 1.0), &spans));
+        assert!(batch_overlaps_dirty_spans(&test_batch(3, 2, 1.0), &spans));
+        assert!(batch_overlaps_dirty_spans(&test_batch(5, 1, 1.0), &spans));
+        assert!(!batch_overlaps_dirty_spans(&test_batch(6, 4, 1.0), &spans));
+        assert!(batch_overlaps_dirty_spans(&test_batch(6, 5, 1.0), &spans));
+        assert!(!batch_overlaps_dirty_spans(&test_batch(12, 8, 1.0), &spans));
+        // Empty windows / no patched spans never match.
+        assert!(!batch_overlaps_dirty_spans(&test_batch(4, 0, 1.0), &spans));
+        assert!(!batch_overlaps_dirty_spans(&test_batch(0, 99, 1.0), &[]));
     }
 
     #[test]

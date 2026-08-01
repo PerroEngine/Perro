@@ -46,16 +46,29 @@ impl PerroGraphics {
     // globals (perro_time/perro_time_phase/perro_delta_time/perro_frame_index)
     // and so needs continuous redraw. probe result cached per shader path;
     // unreadable sources count as animated (conservative = old behavior).
+    // whole answer memoized on (draw revision, material revision): those 2 are
+    // the only inputs, so idle frames never re-walk the draw list.
     fn has_retained_animated_custom_material(&mut self) -> bool {
+        let draws_revision = self.renderer_3d.draw_revision();
+        let material_revision = self.resources.material_revision();
+        if let Some((draws, materials, animated)) = self.retained_animated_material_memo
+            && draws == draws_revision
+            && materials == material_revision
+        {
+            return animated;
+        }
         let cache = &mut self.custom_shader_animated_cache;
         let lookup = self.static_shader_lookup;
-        self.renderer_3d
+        let animated = self
+            .renderer_3d
             .any_retained_custom_material_where(&self.resources, |shader_path| {
                 let key = perro_ids::string_to_u64(shader_path);
                 *cache
                     .entry(key)
                     .or_insert_with(|| custom_shader_reads_frame_globals(shader_path, lookup))
-            })
+            });
+        self.retained_animated_material_memo = Some((draws_revision, material_revision, animated));
+        animated
     }
 
     pub(super) fn draw_frame_timed_internal<I>(
@@ -356,25 +369,38 @@ impl PerroGraphics {
                 .extend(self.late_overlay_2d.shadow_casters());
             self.late_overlay_shadow_casters_cache_revision = late_overlay_shadow_casters_revision;
         }
-        let resources = &self.resources;
-        self.renderer_ui.set_nine_slice_texture_sizes(|texture| {
-            let Some(data) = resources.decoded_texture_data(texture) else {
-                return [0, 0];
-            };
-            let mut size = [data.width, data.height];
-            let source = resources.texture_source(texture).unwrap_or_default();
-            let path = source.split('#').next().unwrap_or_default();
-            let svg = path
-                .get(path.len().saturating_sub(4)..)
-                .is_some_and(|ext| ext.eq_ignore_ascii_case(".svg"));
-            if source.eq_ignore_ascii_case("__perro_builtin_logo_svg__") || svg {
-                size = [
-                    (size[0] / SVG_RASTER_SCALE).max(1),
-                    (size[1] / SVG_RASTER_SCALE).max(1),
-                ];
-            }
-            size
-        });
+        // sizes depend only on the retained ui set + texture dims/sources, so
+        // an unchanged pair means the last pass' sizes still hold. w/o this the
+        // walk did a store lookup + '#' split + .svg scan per nine-slice per
+        // frame.
+        let nine_slice_key = (
+            self.renderer_ui.revision(),
+            self.resources.texture_dims_revision(),
+        );
+        if self.nine_slice_sizes_memo != Some(nine_slice_key) {
+            let resources = &self.resources;
+            self.renderer_ui.set_nine_slice_texture_sizes(|texture| {
+                let Some(data) = resources.decoded_texture_data(texture) else {
+                    return [0, 0];
+                };
+                let mut size = [data.width, data.height];
+                let source = resources.texture_source(texture).unwrap_or_default();
+                let path = source.split('#').next().unwrap_or_default();
+                let svg = path
+                    .get(path.len().saturating_sub(4)..)
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case(".svg"));
+                if source.eq_ignore_ascii_case("__perro_builtin_logo_svg__") || svg {
+                    size = [
+                        (size[0] / SVG_RASTER_SCALE).max(1),
+                        (size[1] / SVG_RASTER_SCALE).max(1),
+                    ];
+                }
+                size
+            });
+            // a size change bumps the ui revision; re-read so the memo names
+            // the state the sizes were written into.
+            self.nine_slice_sizes_memo = Some((self.renderer_ui.revision(), nine_slice_key.1));
+        }
         let sprites_refs_changed = self.used_ref_sprites_revision != sprites_revision;
         if sprites_refs_changed {
             self.used_texture_refs_cache.clear();
@@ -503,8 +529,22 @@ impl PerroGraphics {
         animated_streams.clear();
         {
             let cache = &mut self.custom_shader_animated_cache;
+            let memo = &mut self.animated_stream_memo;
             let lookup = self.static_shader_lookup;
+            let material_revision = self.resources.material_revision();
             for (node, stream) in &self.retained_camera_streams {
+                // Arc ptr identity: an unchanged retained state means unchanged
+                // draws + surfaces, so the probe result cannot have moved.
+                let stream_key = Arc::as_ptr(stream) as usize;
+                if let Some((key, materials, animated)) = memo.get(node).copied()
+                    && key == stream_key
+                    && materials == material_revision
+                {
+                    if animated {
+                        animated_streams.insert(*node);
+                    }
+                    continue;
+                }
                 let animated = stream.draws_3d.iter().any(|draw| {
                     let surfaces = match draw {
                         perro_render_bridge::CameraStreamDraw3DState::Draw { surfaces, .. }
@@ -532,9 +572,16 @@ impl PerroGraphics {
                             })
                     })
                 });
+                memo.insert(*node, (stream_key, material_revision, animated));
                 if animated {
                     animated_streams.insert(*node);
                 }
+            }
+            // drop memo rows 4 streams that left; only runs when a stream is
+            // actually removed.
+            if memo.len() > self.retained_camera_streams.len() {
+                let live = &self.retained_camera_streams;
+                memo.retain(|node, _| live.iter().any(|(id, _)| id == node));
             }
         }
         if let Some(gpu) = &mut self.gpu {
@@ -570,6 +617,7 @@ impl PerroGraphics {
                 point_lights_2d: &self.retained_point_lights_cache,
                 point_lights_2d_revision: self.retained_point_lights_cache_revision,
                 shadow_casters_2d: &self.retained_shadow_casters_cache,
+                shadow_casters_2d_revision: self.retained_shadow_casters_cache_revision,
                 waters_2d: &self.retained_waters_2d_cache,
                 waters_2d_revision: self.retained_waters_2d_cache_revision,
                 late_overlay_camera_2d,
@@ -581,6 +629,8 @@ impl PerroGraphics {
                 late_overlay_point_lights_2d_revision: self
                     .late_overlay_point_lights_cache_revision,
                 late_overlay_shadow_casters_2d: &self.late_overlay_shadow_casters_cache,
+                late_overlay_shadow_casters_2d_revision: self
+                    .late_overlay_shadow_casters_cache_revision,
                 ui_primitives: ui_paint.primitives,
                 ui_primitive_depths: ui_paint.primitive_depths,
                 ui_textures_delta: ui_paint.textures_delta,
