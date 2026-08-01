@@ -93,7 +93,10 @@ impl Gpu {
 
         let three_d_content_changed = self.three_d.is_some()
             && (self.last_prepare_3d_camera.as_ref() != Some(&camera_3d)
-                || self.last_prepare_3d_lighting.as_ref() != Some(lighting_3d)
+                || !self
+                    .last_prepare_3d_lighting
+                    .as_ref()
+                    .is_some_and(|prev| prev.content_eq(lighting_3d))
                 || self.last_prepare_3d_draws_revision != draws_3d_revision
                 || self.last_prepare_3d_decals_revision != decals_3d_revision
                 || decals_texture_pending
@@ -456,6 +459,16 @@ impl Gpu {
             timing.skip_prepare_3d_hiz = 1;
             timing.skip_prepare_3d_indirect = 1;
             timing.skip_prepare_3d_cull_inputs = 1;
+            // Prepare skipped: still advance shader frame globals so
+            // perro_time()-driven materials animate on static frames.
+            if needs_3d_pipeline && let Some(three_d) = self.three_d.as_ref() {
+                three_d.patch_scene_globals(
+                    &self.queue,
+                    lighting_3d,
+                    self.render_width,
+                    self.render_height,
+                );
+            }
         } else {
             timing.prepare_3d_frustum = prepare_3d_steps.frustum_prep;
             timing.prepare_3d_hiz = prepare_3d_steps.hiz_prep;

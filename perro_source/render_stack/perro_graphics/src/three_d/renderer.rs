@@ -79,6 +79,34 @@ pub struct Lighting3DState {
     pub spot_lights: [Option<SpotLight3DState>; MAX_SPOT_LIGHTS],
 }
 
+impl Lighting3DState {
+    /// Equality over scene-affecting content only. The frame globals
+    /// (`frame_time_seconds`, `frame_delta_seconds`, `frame_index`) advance
+    /// every frame and are patched into the uniform tail outside prepare, so
+    /// they must not participate in the prepare change gate.
+    pub fn content_eq(&self, other: &Self) -> bool {
+        // Destructure so adding a field without deciding its gate role is a
+        // compile error.
+        let Self {
+            frame_time_seconds: _,
+            frame_delta_seconds: _,
+            frame_index: _,
+            ambient_light,
+            sky,
+            sky_time_seconds,
+            ray_lights,
+            point_lights,
+            spot_lights,
+        } = self;
+        *ambient_light == other.ambient_light
+            && *sky == other.sky
+            && *sky_time_seconds == other.sky_time_seconds
+            && *ray_lights == other.ray_lights
+            && *point_lights == other.point_lights
+            && *spot_lights == other.spot_lights
+    }
+}
+
 pub const MAX_RAY_LIGHTS: usize = 3;
 pub const MAX_POINT_LIGHTS: usize = 8;
 pub const MAX_SPOT_LIGHTS: usize = 8;

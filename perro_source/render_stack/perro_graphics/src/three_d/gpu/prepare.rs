@@ -51,6 +51,37 @@ fn prepare_fast_path_eligible(force_full_rebuild: bool, eligible: bool) -> bool 
 }
 
 impl Gpu3D {
+    /// Writes the per-frame shader globals (time / resolution) into the scene
+    /// uniform tail. Runs inside `prepare`, and standalone on frames where
+    /// prepare is skipped so `perro_time()`-driven shaders keep animating.
+    pub(crate) fn patch_scene_globals(
+        &self,
+        queue: &wgpu::Queue,
+        lighting: &Lighting3DState,
+        width: u32,
+        height: u32,
+    ) {
+        let scene_globals = SceneGlobalsGpu {
+            time_params: [
+                lighting.frame_time_seconds,
+                lighting.frame_delta_seconds,
+                lighting.frame_index as f32,
+                (lighting.frame_time_seconds / 60.0).fract(),
+            ],
+            resolution: [
+                width.max(1) as f32,
+                height.max(1) as f32,
+                1.0 / width.max(1) as f32,
+                1.0 / height.max(1) as f32,
+            ],
+        };
+        queue.write_buffer(
+            &self.camera_buffer,
+            SCENE_GLOBALS_OFFSET,
+            bytemuck::bytes_of(&scene_globals),
+        );
+    }
+
     pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, frame: Prepare3D<'_>) {
         let mut step_timing = Prepare3DStepTiming::default();
         if self.gpu_occlusion_enabled && HIZ_DEBUG_READBACK_ENABLED {
@@ -218,25 +249,7 @@ impl Gpu3D {
         }
         // Frame globals (time / resolution) live in the uniform tail and are
         // patched every frame so they never defeat the change gate above.
-        let scene_globals = SceneGlobalsGpu {
-            time_params: [
-                lighting.frame_time_seconds,
-                lighting.frame_delta_seconds,
-                lighting.frame_index as f32,
-                (lighting.frame_time_seconds / 60.0).fract(),
-            ],
-            resolution: [
-                width.max(1) as f32,
-                height.max(1) as f32,
-                1.0 / width.max(1) as f32,
-                1.0 / height.max(1) as f32,
-            ],
-        };
-        queue.write_buffer(
-            &self.camera_buffer,
-            SCENE_GLOBALS_OFFSET,
-            bytemuck::bytes_of(&scene_globals),
-        );
+        self.patch_scene_globals(queue, lighting, width, height);
         if self.cpu_occlusion_enabled && scene_changed {
             // Retained-mode correctness: when camera/transforms/resources update,
             // previous query visibility is stale and must not gate current frame.

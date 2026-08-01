@@ -111,7 +111,10 @@ impl Gpu3D {
         lighting: &Lighting3DState,
         has_casters: bool,
     ) {
-        if std::env::var_os("PERRO_DISABLE_SHADOWS").is_some() {
+        static SHADOWS_DISABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let shadows_disabled = *SHADOWS_DISABLED
+            .get_or_init(|| std::env::var_os("PERRO_DISABLE_SHADOWS").is_some());
+        if shadows_disabled {
             let zero = ShadowUniform::zeroed();
             if self.last_shadow != Some(zero) {
                 queue.write_buffer(&self.shadow_buffer, 0, bytemuck::bytes_of(&zero));

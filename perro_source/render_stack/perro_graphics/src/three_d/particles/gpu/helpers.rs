@@ -143,11 +143,14 @@ pub(super) fn push_instance_range(
 }
 
 pub(super) fn gpu_compute_particles_enabled() -> bool {
-    std::env::var("PERRO_ENABLE_GPU_COMPUTE_PARTICLES")
-        .ok()
-        .as_deref()
-        .map(|v| matches!(v, "1" | "true" | "TRUE" | "on" | "ON"))
-        .unwrap_or(true)
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("PERRO_ENABLE_GPU_COMPUTE_PARTICLES")
+            .ok()
+            .as_deref()
+            .map(|v| matches!(v, "1" | "true" | "TRUE" | "on" | "ON"))
+            .unwrap_or(true)
+    })
 }
 
 pub(super) fn append_emitter_map_entries(
