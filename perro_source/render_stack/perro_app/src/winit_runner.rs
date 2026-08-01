@@ -814,9 +814,18 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler<RunnerUserEvent>
             #[cfg(target_arch = "wasm32")]
             window.set_visible(true);
             if self.startup_splash.active {
+                // Deferred boot: splash present + window show come first, the
+                // multi-second boot-scene load runs on the first startup frame
+                // (step_frame) w/ the splash already on screen. Raised warm
+                // budget while the splash hides compile cost.
+                self.app.graphics.set_startup_warm_boost(true);
                 let splash_overlay = self.startup_splash_overlay_commands(1.0);
                 let _ = self.app.present_with_overlay_timed_no_ui(splash_overlay);
             } else {
+                // No splash to show: load b4 first present so the first
+                // visible frame is the scene, not a black flash (same UX as
+                // the old sync ctor path).
+                self.app.runtime.load_boot_scene_if_pending();
                 self.app.present();
             }
             // Show native win only aft first GPU present -> no blank white flash.

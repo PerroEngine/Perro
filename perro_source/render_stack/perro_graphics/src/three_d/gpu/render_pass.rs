@@ -594,14 +594,14 @@ impl Gpu3D {
             blend_prepass_run.flush(&self.indirect_buffer, &mut blend_prepass);
             drop(blend_prepass);
         }
-        if hiz_active {
+        if hiz_active && let Some(hiz_cull_pipeline) = self.hiz_cull_pipeline.as_ref() {
             self.build_hiz_from_depth(encoder);
 
             let mut cull_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("perro_hiz_occlusion_cull_pass"),
                 timestamp_writes: None,
             });
-            cull_pass.set_pipeline(&self.hiz_cull_pipeline);
+            cull_pass.set_pipeline(hiz_cull_pipeline);
             cull_pass.set_bind_group(0, &self.hiz_cull_bind_group, &[]);
             let groups = (self.draw_batches.len() as u32).div_ceil(FRUSTUM_CULL_WORKGROUP_SIZE);
             cull_pass.dispatch_workgroups(groups, 1, 1);

@@ -413,7 +413,11 @@ pub fn run_dev_project_from_path(
     let window_title = project.config.name.clone();
     let graphics = graphics_from_project_config(&project.config, false);
     eprintln!("perro dev runner: init runtime");
-    let app = create_dev_app(graphics, project);
+    // Windowed dev run: defer boot load like the release path; window+splash
+    // come up first, runner loads on the first frame.
+    let runtime =
+        Runtime::from_project_with_script_registry_deferred_boot(project, ProviderMode::Dynamic, None);
+    let app = App::new(runtime, graphics);
     let fixed = app
         .runtime
         .project()
@@ -684,6 +688,16 @@ pub fn run_static_embedded_project(
         .with_static_texture_lookup(input.assets.texture_lookup)
         .with_static_font_lookup(input.assets.font_lookup)
         .with_static_shader_lookup(input.assets.shader_lookup);
+    // Native: defer boot-scene load off the pre-window critical path; the
+    // runner shows window+splash first, then loads (see step_frame /
+    // resumed). Wasm kp sync ctor (single-threaded async GPU init path).
+    #[cfg(not(target_arch = "wasm32"))]
+    let runtime = Runtime::from_project_with_script_registry_deferred_boot(
+        project,
+        ProviderMode::Static,
+        input.assets.static_script_registry,
+    );
+    #[cfg(target_arch = "wasm32")]
     let runtime = Runtime::from_project_with_script_registry(
         project,
         ProviderMode::Static,

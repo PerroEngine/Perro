@@ -66,6 +66,13 @@ const DECODED_TEXTURE_EVICT_TTL_TICKS: u64 = 10;
 // warming too slowly just moves the compile to the first visible draw.
 const PIPELINE_WARM_MAX_COMPILES_PER_FRAME: usize = 2;
 const PIPELINE_WARM_TIME_BUDGET: Duration = Duration::from_millis(6);
+// Raised warm budget while the startup splash covers the screen (see
+// `GraphicsBackend::set_startup_warm_boost`): nothing user-visible renders
+// under it, so a splash frame can afford a 30fps-slot compile burst; the
+// splash exit gate waits for the queue to drain, so faster drain = shorter
+// worst-case splash, never a visible hitch.
+const PIPELINE_WARM_BOOST_MAX_COMPILES_PER_FRAME: usize = 4;
+const PIPELINE_WARM_BOOST_TIME_BUDGET: Duration = Duration::from_millis(16);
 const PARALLEL_COMMAND_SUMMARY_MIN: usize = 10_000;
 const PARALLEL_RENDER_PREPARE_MIN: usize = 4_096;
 const MAX_RUNTIME_TEXTURE_DIMENSION: u32 = 8_192;
@@ -165,6 +172,18 @@ pub trait GraphicsBackend: RenderBridge {
     }
 
     fn wait_idle(&mut self) {}
+
+    /// Startup-splash warm boost: while true the speculative pipeline warm
+    /// queue drains w/ a raised per-frame budget (splash hides the cost).
+    /// Default no-op 4 backends w/o a warm queue.
+    fn set_startup_warm_boost(&mut self, _enabled: bool) {}
+
+    /// True when no queued pipeline warms can still drain (queue empty, or 3D
+    /// world absent so warming is a no-op). Splash exit waits on this so
+    /// compiles land under the splash instead of the first gameplay frame.
+    fn pipeline_warm_idle(&self) -> bool {
+        true
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -514,6 +533,8 @@ pub struct PerroGraphics {
     // materials created/written since last frame; drained b4 gpu render 2
     // compile their pipelines at load time instead of first visible draw.
     pending_pipeline_warms: Vec<Arc<Material3D>>,
+    // raised warm budget while startup splash covers screen (runner-driven).
+    startup_warm_boost: bool,
     // Gpu::pipeline_compiles_3d at the end of the previous frame; the diff is
     // reported as DrawFrameTiming::pipeline_compiles_3d.
     last_pipeline_compiles_3d: u64,

@@ -5,12 +5,17 @@ impl Gpu3D {
         let Some(copy_bg) = self.hiz_copy_bind_group.as_ref() else {
             return;
         };
+        // Pipelines are None while GPU occlusion is off; hiz_active already
+        // gates callers, this is belt + braces.
+        let Some(copy_pipeline) = self.hiz_copy_pipeline.as_ref() else {
+            return;
+        };
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("perro_hiz_copy_pass"),
                 timestamp_writes: None,
             });
-            pass.set_pipeline(&self.hiz_copy_pipeline);
+            pass.set_pipeline(copy_pipeline);
             pass.set_bind_group(0, copy_bg, &[]);
             let groups_x = self.hiz_size.0.div_ceil(HIZ_WORKGROUP_SIZE_X);
             let groups_y = self.hiz_size.1.div_ceil(HIZ_WORKGROUP_SIZE_Y);
@@ -21,12 +26,15 @@ impl Gpu3D {
         // using workgroup shared memory, so the only serialization is between the
         // chunk dispatches, not per mip. Falls back to the per-mip path below when
         // the device lacks storage textures for the SPD bind group.
-        if self.hiz_spd_supported && !self.hiz_spd_bind_groups.is_empty() {
+        if self.hiz_spd_supported
+            && !self.hiz_spd_bind_groups.is_empty()
+            && let Some(spd_pipeline) = self.hiz_spd_pipeline.as_ref()
+        {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("perro_hiz_spd_pass"),
                 timestamp_writes: None,
             });
-            pass.set_pipeline(&self.hiz_spd_pipeline);
+            pass.set_pipeline(spd_pipeline);
             // Source-mip index this dispatch reads (mip 0 is filled by the copy).
             let mut src_mip = 0u32;
             for spd_bg in &self.hiz_spd_bind_groups {
@@ -45,6 +53,9 @@ impl Gpu3D {
             }
             return;
         }
+        let Some(downsample_pipeline) = self.hiz_downsample_pipeline.as_ref() else {
+            return;
+        };
         let mut src_w = self.hiz_size.0;
         let mut src_h = self.hiz_size.1;
         for downsample_bg in &self.hiz_downsample_bind_groups {
@@ -54,7 +65,7 @@ impl Gpu3D {
                 label: Some("perro_hiz_downsample_pass"),
                 timestamp_writes: None,
             });
-            pass.set_pipeline(&self.hiz_downsample_pipeline);
+            pass.set_pipeline(downsample_pipeline);
             pass.set_bind_group(0, downsample_bg, &[]);
             pass.dispatch_workgroups(
                 dst_w.div_ceil(HIZ_WORKGROUP_SIZE_X),

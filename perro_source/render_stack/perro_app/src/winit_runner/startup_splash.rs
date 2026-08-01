@@ -10,7 +10,9 @@ use web_time::Instant;
 
 pub(super) const STARTUP_SPLASH_FADE_DURATION: Duration = Duration::from_millis(320);
 pub(super) const STARTUP_SPLASH_HOLD_DURATION: Duration = Duration::from_millis(2000);
-pub(super) const STARTUP_SPLASH_HARD_TIMEOUT: Duration = Duration::from_millis(8000);
+// Cap on the load/warm-gated hold: a pathological compile or load must not
+// pin the splash forever; past this the fade starts regardless.
+pub(super) const STARTUP_SPLASH_HARD_TIMEOUT: Duration = Duration::from_millis(10_000);
 pub(super) const STARTUP_SPLASH_BG_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 pub(super) const STARTUP_SPLASH_MAX_WIDTH_FRAC: f32 = 0.44;
 pub(super) const STARTUP_SPLASH_MAX_HEIGHT_FRAC: f32 = 0.34;

@@ -424,9 +424,6 @@ impl Gpu3D {
         max_compiles: usize,
         time_budget: Option<std::time::Duration>,
     ) -> usize {
-        if materials.is_empty() {
-            return 0;
-        }
         // A zero budget would consume nothing, and the caller keeps the frame
         // pump awake while the queue is non-empty - so it must always make
         // progress.
@@ -454,6 +451,27 @@ impl Gpu3D {
             }
         }
         materials.drain(..consumed);
+        // Leftover budget warms the shared registry's base families (rigid +
+        // depth/shadow, multimesh trio, sky) so they compile during the
+        // startup splash instead of the first visible draw. Materials keep
+        // priority: an actual scene draw needs them first.
+        if !self.base_families_warmed {
+            while compiled < max_compiles {
+                if compiled > 0
+                    && let (Some(start), Some(budget)) = (start, time_budget)
+                    && start.elapsed() >= budget
+                {
+                    break;
+                }
+                if self.pipelines.warm_next_base_family() {
+                    compiled += 1;
+                    self.pipeline_compiles += 1;
+                } else {
+                    self.base_families_warmed = true;
+                    break;
+                }
+            }
+        }
         compiled
     }
 

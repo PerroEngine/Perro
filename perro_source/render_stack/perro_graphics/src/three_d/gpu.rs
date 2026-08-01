@@ -948,6 +948,9 @@ pub struct Gpu3D {
     // is restricted to these paths (plus Rigid) so a scene with no skinned or
     // multimesh geometry never compiles those variants.
     render_paths_drawn: u8,
+    // True once warm_next_base_family reports the shared registry's base
+    // families all built; skips the per-frame probe after that.
+    base_families_warmed: bool,
     shader_variant_mode: crate::ShaderVariantMode,
     custom_pipeline_tokens: AHashMap<CustomPipelineKey, u32>,
     custom_shader_sources: AHashMap<Arc<str>, Arc<str>>,
@@ -1512,9 +1515,12 @@ pub struct Gpu3D {
     hiz_sample_view: wgpu::TextureView,
     hiz_size: (u32, u32),
     hiz_mip_count: u32,
-    hiz_copy_pipeline: wgpu::ComputePipeline,
-    hiz_downsample_pipeline: wgpu::ComputePipeline,
-    hiz_cull_pipeline: wgpu::ComputePipeline,
+    // Hi-z compute pipelines exist only while GPU occlusion is enabled at
+    // construction (occlusion_mode never changes after); None skips 4 shader
+    // compiles at Gpu3D::new for occlusion-off sessions.
+    hiz_copy_pipeline: Option<wgpu::ComputePipeline>,
+    hiz_downsample_pipeline: Option<wgpu::ComputePipeline>,
+    hiz_cull_pipeline: Option<wgpu::ComputePipeline>,
     hiz_copy_bgl: wgpu::BindGroupLayout,
     hiz_downsample_bgl: wgpu::BindGroupLayout,
     hiz_cull_bgl: wgpu::BindGroupLayout,
@@ -1525,7 +1531,7 @@ pub struct Gpu3D {
     // the device having enough storage textures per stage; when false the old
     // per-mip path (hiz_downsample_bind_groups) runs instead.
     hiz_spd_supported: bool,
-    hiz_spd_pipeline: wgpu::ComputePipeline,
+    hiz_spd_pipeline: Option<wgpu::ComputePipeline>,
     hiz_spd_bgl: wgpu::BindGroupLayout,
     // One entry per SPD dispatch. `_buffers` holds the per-dispatch uniforms so
     // they outlive the bind groups that reference them.

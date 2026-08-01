@@ -1330,21 +1330,26 @@ impl Gpu3D {
             ],
         });
 
-        let hiz_copy_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("perro_hiz_copy_pipeline"),
-            layout: Some(
-                &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("perro_hiz_copy_layout"),
-                    bind_group_layouts: &[Some(&hiz_copy_bgl)],
-                    immediate_size: 0,
-                }),
-            ),
-            module: &create_hiz_depth_copy_shader_module(device),
-            entry_point: Some("cs_main"),
-            compilation_options: Default::default(),
-            cache: None,
+        // GPU occlusion off => the hi-z passes never dispatch (hiz_active
+        // requires gpu_occlusion_enabled and occlusion_mode is fixed at
+        // construction), so skip these 4 shader compiles at startup entirely.
+        let hiz_copy_pipeline = gpu_occlusion_enabled.then(|| {
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("perro_hiz_copy_pipeline"),
+                layout: Some(
+                    &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                        label: Some("perro_hiz_copy_layout"),
+                        bind_group_layouts: &[Some(&hiz_copy_bgl)],
+                        immediate_size: 0,
+                    }),
+                ),
+                module: &create_hiz_depth_copy_shader_module(device),
+                entry_point: Some("cs_main"),
+                compilation_options: Default::default(),
+                cache: None,
+            })
         });
-        let hiz_downsample_pipeline =
+        let hiz_downsample_pipeline = gpu_occlusion_enabled.then(|| {
             device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label: Some("perro_hiz_downsample_pipeline"),
                 layout: Some(
@@ -1358,34 +1363,39 @@ impl Gpu3D {
                 entry_point: Some("cs_main"),
                 compilation_options: Default::default(),
                 cache: None,
-            });
-        let hiz_spd_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("perro_hiz_spd_pipeline"),
-            layout: Some(
-                &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("perro_hiz_spd_layout"),
-                    bind_group_layouts: &[Some(&hiz_spd_bgl)],
-                    immediate_size: 0,
-                }),
-            ),
-            module: &create_hiz_downsample_spd_shader_module(device),
-            entry_point: Some("cs_main"),
-            compilation_options: Default::default(),
-            cache: None,
+            })
         });
-        let hiz_cull_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("perro_hiz_cull_pipeline"),
-            layout: Some(
-                &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("perro_hiz_cull_layout"),
-                    bind_group_layouts: &[Some(&hiz_cull_bgl)],
-                    immediate_size: 0,
-                }),
-            ),
-            module: &create_hiz_occlusion_cull_shader_module(device),
-            entry_point: Some("cs_main"),
-            compilation_options: Default::default(),
-            cache: None,
+        let hiz_spd_pipeline = gpu_occlusion_enabled.then(|| {
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("perro_hiz_spd_pipeline"),
+                layout: Some(
+                    &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                        label: Some("perro_hiz_spd_layout"),
+                        bind_group_layouts: &[Some(&hiz_spd_bgl)],
+                        immediate_size: 0,
+                    }),
+                ),
+                module: &create_hiz_downsample_spd_shader_module(device),
+                entry_point: Some("cs_main"),
+                compilation_options: Default::default(),
+                cache: None,
+            })
+        });
+        let hiz_cull_pipeline = gpu_occlusion_enabled.then(|| {
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("perro_hiz_cull_pipeline"),
+                layout: Some(
+                    &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                        label: Some("perro_hiz_cull_layout"),
+                        bind_group_layouts: &[Some(&hiz_cull_bgl)],
+                        immediate_size: 0,
+                    }),
+                ),
+                module: &create_hiz_occlusion_cull_shader_module(device),
+                entry_point: Some("cs_main"),
+                compilation_options: Default::default(),
+                cache: None,
+            })
         });
 
         let hiz_cull_params = device.create_buffer(&wgpu::BufferDescriptor {
@@ -1825,6 +1835,7 @@ impl Gpu3D {
             pipeline_gc_tick: 0,
             pipeline_compiles: 0,
             render_paths_drawn: 0,
+            base_families_warmed: false,
             shader_variant_mode,
             custom_pipeline_tokens: AHashMap::new(),
             custom_shader_sources: AHashMap::new(),

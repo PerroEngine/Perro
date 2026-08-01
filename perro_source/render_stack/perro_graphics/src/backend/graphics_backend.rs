@@ -139,6 +139,18 @@ impl GraphicsBackend for PerroGraphics {
         }
     }
 
+    fn set_startup_warm_boost(&mut self, enabled: bool) {
+        self.startup_warm_boost = enabled;
+    }
+
+    fn pipeline_warm_idle(&self) -> bool {
+        // Mirror the drain gate: queued warms only progress once the lazy 3D
+        // world exists; b4 that the queue must not hold the splash open (a
+        // 2D-only game would sit at the hard timeout otherwise).
+        self.pending_pipeline_warms.is_empty()
+            || !self.gpu.as_ref().is_some_and(Gpu::has_three_d)
+    }
+
     fn draw_frame(&mut self) {
         let _ = self.draw_frame_timed();
     }

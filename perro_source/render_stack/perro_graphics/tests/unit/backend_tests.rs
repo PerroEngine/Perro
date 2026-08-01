@@ -390,6 +390,84 @@ fn webcam_camera_stream_does_not_overwrite_webcam_texture() {
 }
 
 #[test]
+fn render_target_camera_stream_registers_dims_without_cpu_pixels() {
+    let mut graphics = PerroGraphics::new();
+    let node = NodeID::from_parts(93, 0);
+    let texture = TextureID::from_parts(93, 0);
+    let before = graphics.resources.decoded_texture_bytes_for_test();
+
+    let mut upsert = |resolution: [u32; 2]| {
+        graphics.submit(RenderCommand::CameraStream(
+            perro_render_bridge::CameraStreamCommand::Upsert {
+                node,
+                state: Arc::new(CameraStreamState {
+                    tone_map_output: false,
+                    source: CameraStreamSourceState::ThreeD(Camera3DState {
+                        position: [0.0, 0.0, 0.0],
+                        rotation: [0.0, 0.0, 0.0, 1.0],
+                        projection: CameraProjectionState::Perspective {
+                            fov_y_degrees: 60.0,
+                            near: 0.1,
+                            far: 100.0,
+                        },
+                        render_mask: BitMask::NONE,
+                        post_processing: Arc::from([]),
+                        audio_options: perro_structs::AudioListenerOptions::new(),
+                    }),
+                    overlay_camera_2d: None,
+                    transparent_background: true,
+                    clear_color: None,
+                    resolution,
+                    aspect_ratio: 0.0,
+                    post_processing: Arc::from([]),
+                    output_texture: texture,
+                    sprites_2d: Arc::from([]),
+                    lights_2d: Arc::from([]),
+                    point_particles_2d: Arc::from([]),
+                    waters_2d: Arc::from([]),
+                    draws_3d: Arc::from([]),
+                    lighting_3d: CameraStreamLighting3DState::default(),
+                    point_particles_3d: Arc::from([]),
+                    waters_3d: Arc::from([]),
+                }),
+            },
+        ));
+        graphics.draw_frame();
+    };
+    upsert([256, 128]);
+    upsert([1920, 1080]);
+
+    // dims stay queryable (ui/sprite sizing), the rgba placeholder is gone:
+    // the pixels live in the offscreen target, not on the CPU.
+    let decoded = graphics
+        .resources
+        .decoded_texture_data(texture)
+        .expect("stream target dims");
+    assert_eq!([decoded.width, decoded.height], [1920, 1080]);
+    assert!(!decoded.has_pixels());
+    assert_eq!(graphics.resources.decoded_texture_bytes_for_test(), before);
+
+    // a CPU write still gets a base image, created on demand.
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::WriteTextureRgbaRegion {
+            id: texture,
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+            rgba: Arc::from([1u8, 2, 3, 4]),
+        },
+    )));
+    graphics.draw_frame();
+    let decoded = graphics
+        .resources
+        .decoded_texture_data(texture)
+        .expect("stream target dims");
+    assert!(decoded.has_pixels());
+    assert_eq!(&decoded.rgba[..4], &[1, 2, 3, 4]);
+}
+
+#[test]
 fn runtime_texture_size_limit_rejects_oversized_allocations() {
     assert_eq!(checked_runtime_texture_rgba_len(1, 1), Some(4));
     assert_eq!(checked_runtime_texture_rgba_len(0, 1), None);

@@ -9,6 +9,11 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.apply_frame_control_flow(event_loop, now);
             return;
         }
+        // Deferred boot load runs here, first frame aft window+splash show
+        // (no-op once loaded). Runs b4 any update/fixed_update this frame, so
+        // boot-scene ready callbacks fire this same (splash-covered) frame -
+        // always b4 the first gameplay frame presents.
+        self.app.runtime.load_boot_scene_if_pending();
         self.frame_index = self.frame_index.saturating_add(1);
         let frame_index = self.frame_index;
         let frame_start = now;

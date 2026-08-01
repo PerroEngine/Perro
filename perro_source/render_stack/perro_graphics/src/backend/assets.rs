@@ -601,11 +601,24 @@ impl PerroGraphics {
             // shader compile. no-op drain until the 3d pipeline exists.
             // budgeted: a scene switch queues every material at once + the
             // whole drain in one frame was the transition spike.
+            // splash-covered frames afford a bigger burst (nothing visible
+            // stalls); steady-state kp the small budget.
+            let (warm_max, warm_budget) = if self.startup_warm_boost {
+                (
+                    PIPELINE_WARM_BOOST_MAX_COMPILES_PER_FRAME,
+                    PIPELINE_WARM_BOOST_TIME_BUDGET,
+                )
+            } else {
+                (
+                    PIPELINE_WARM_MAX_COMPILES_PER_FRAME,
+                    PIPELINE_WARM_TIME_BUDGET,
+                )
+            };
             gpu.warm_material_pipelines(
                 &mut self.pending_pipeline_warms,
                 self.static_shader_lookup,
-                PIPELINE_WARM_MAX_COMPILES_PER_FRAME,
-                Some(PIPELINE_WARM_TIME_BUDGET),
+                warm_max,
+                Some(warm_budget),
             );
             gpu_timing = gpu.render(RenderFrame {
                 resources: &self.resources,

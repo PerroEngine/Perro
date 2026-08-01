@@ -358,6 +358,9 @@ pub struct Runtime {
     pub(crate) node_api_scratch: NodeApiScratchState,
     pub(crate) resource_api: Rc<RuntimeResourceApi>,
     pub(crate) input: InputSnapshot,
+    /// Deferred-boot flag: ctor skip load_boot_scene -> runner load it aft
+    /// window+splash up (see `load_boot_scene_if_pending`). Sync ctors kp false.
+    boot_scene_pending: bool,
     startup_input_clear_frames_left: u32,
     cursor_icon_request: Option<perro_ui::CursorIcon>,
     pub(crate) window_requests: Vec<WindowRequest>,
@@ -729,6 +732,7 @@ impl Runtime {
             node_api_scratch: NodeApiScratchState::new(),
             resource_api: RuntimeResourceApi::new(None, None, None, None, None, None, None, None),
             input: InputSnapshot::new(),
+            boot_scene_pending: false,
             startup_input_clear_frames_left: 0,
             cursor_icon_request: None,
             window_requests: Vec::new(),
@@ -1076,6 +1080,45 @@ impl Runtime {
         provider_mode: ProviderMode,
         script_registry: Option<StaticScriptRegistry>,
     ) -> Self {
+        Self::from_project_inner(project, provider_mode, script_registry, false)
+    }
+
+    /// Same as `from_project_with_script_registry` but skip boot-scene load.
+    /// Caller MUST cal `load_boot_scene_if_pending` b4 first update/present of
+    /// gameplay. Lets windowed runners show window+splash b4 multi-second
+    /// scene load; headless/editor/tests kp sync ctor.
+    pub fn from_project_with_script_registry_deferred_boot(
+        project: RuntimeProject,
+        provider_mode: ProviderMode,
+        script_registry: Option<StaticScriptRegistry>,
+    ) -> Self {
+        Self::from_project_inner(project, provider_mode, script_registry, true)
+    }
+
+    /// False while deferred boot load ! run yet.
+    #[inline]
+    pub fn boot_scene_loaded(&self) -> bool {
+        !self.boot_scene_pending
+    }
+
+    /// Run deferred boot-scene load once; no-op aft. Same panic contract as
+    /// sync ctor path.
+    pub fn load_boot_scene_if_pending(&mut self) {
+        if !self.boot_scene_pending {
+            return;
+        }
+        self.boot_scene_pending = false;
+        if let Err(err) = self.load_boot_scene() {
+            panic!("failed to load boot scene: {err}");
+        }
+    }
+
+    fn from_project_inner(
+        project: RuntimeProject,
+        provider_mode: ProviderMode,
+        script_registry: Option<StaticScriptRegistry>,
+        defer_boot: bool,
+    ) -> Self {
         let mut runtime = Self::new();
         let static_material_lookup = project.static_material_lookup;
         let static_audio_lookup = project.static_audio_lookup;
@@ -1117,7 +1160,9 @@ impl Runtime {
                 "[runtime][warn] Steam enabled but init failed: {err}. Steam features stay unavailable. Check that Steam is open, the app_id is valid, and the account has access."
             );
         }
-        if let Err(err) = runtime.load_boot_scene() {
+        if defer_boot {
+            runtime.boot_scene_pending = true;
+        } else if let Err(err) = runtime.load_boot_scene() {
             panic!("failed to load boot scene: {err}");
         }
         runtime

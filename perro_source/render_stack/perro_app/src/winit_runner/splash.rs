@@ -106,6 +106,8 @@ impl<B: GraphicsBackend> RunnerState<B> {
     }
 
     pub(super) fn end_startup_splash(&mut self) {
+        // Back to the steady-state warm budget; visible frames run now.
+        self.app.graphics.set_startup_warm_boost(false);
         self.app.graphics.submit_late_overlay_many([
             RenderCommand::TwoD(Command2D::RemoveNode {
                 node: STARTUP_SPLASH_BG_NODE,
@@ -472,8 +474,13 @@ impl<B: GraphicsBackend> RunnerState<B> {
 
         let shown_for = frame_start.saturating_duration_since(self.startup_splash.shown_at);
         let hard_timeout_hit = shown_for >= STARTUP_SPLASH_HARD_TIMEOUT;
+        // Exit = min branding hold done AND boot scene loaded AND warm queue
+        // drained, OR the hard timeout (pathological compile must not pin the
+        // splash forever). Boot done early => the plain min hold, unchanged.
+        let load_ready =
+            self.app.runtime.boot_scene_loaded() && self.app.graphics.pipeline_warm_idle();
         if self.startup_splash.fade_started_at.is_none()
-            && (shown_for >= STARTUP_SPLASH_HOLD_DURATION || hard_timeout_hit)
+            && ((shown_for >= STARTUP_SPLASH_HOLD_DURATION && load_ready) || hard_timeout_hit)
         {
             self.startup_splash.fade_started_at = Some(frame_start);
         }

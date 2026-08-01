@@ -1097,6 +1097,44 @@ impl PipelineRegistry {
             )
         })
     }
+
+    /// Compile the next not-yet-built *base* family; ret false when all base
+    /// families exist. Base = what nearly every 3D scene hits in its first
+    /// frames: rigid mesh + its depth/shadow passes, the multimesh trio, sky.
+    /// Driven by the budgeted warm drain so these land under the startup
+    /// splash instead of the first visible draw; blend/skinned/mask variants
+    /// stay on the lazy first-use path by design (see module doc).
+    pub(crate) fn warm_next_base_family(&self) -> bool {
+        if self.rigid_standard.get().is_none() {
+            self.rigid_standard();
+            return true;
+        }
+        if self.depth_prepass_rigid.get().is_none() {
+            self.depth_prepass_rigid();
+            return true;
+        }
+        if self.shadow_depth_rigid.get().is_none() {
+            self.shadow_depth_rigid();
+            return true;
+        }
+        if self.sky.get().is_none() {
+            self.sky();
+            return true;
+        }
+        if self.multimesh.get().is_none() {
+            self.multimesh();
+            return true;
+        }
+        if self.multimesh_depth_prepass.get().is_none() {
+            self.multimesh_depth_prepass();
+            return true;
+        }
+        if self.multimesh_shadow_depth.get().is_none() {
+            self.multimesh_shadow_depth();
+            return true;
+        }
+        false
+    }
 }
 
 /// One registry per `(color format, sample count)` on a device, all sharing
