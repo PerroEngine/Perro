@@ -1,7 +1,5 @@
 use perro_api::prelude::*;
 
-type SelfNodeType = UiPanel;
-
 #[State]
 struct DemoInfoOverlayState {
     #[default = NodeID::nil()]

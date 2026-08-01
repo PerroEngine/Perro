@@ -9,8 +9,6 @@ use perro_scene::{Node3DField, NodeField};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
-type SelfNodeType = AnimationTree;
-
 // Compact pose-track identity. Replaces the old formatted `String` key so
 // sampling/blending no longer allocs per track per frame. `NodeField` is `Eq`
 // but not `Hash`, so `Hash` is impl'd by hand (see below).
@@ -69,7 +67,7 @@ pub fn internal_update<RT, R, IP>(
     R: ResourceAPI + ?Sized,
     IP: InputAPI + ?Sized,
 {
-    let Some(tree_id) = with_node!(ctx, SelfNodeType, id, |tree| tree.tree) else {
+    let Some(tree_id) = with_node!(ctx, AnimationTree, id, |tree| tree.tree) else {
         return;
     };
     if tree_id.is_nil() {
@@ -80,7 +78,7 @@ pub fn internal_update<RT, R, IP>(
     };
     sync_slots(ctx, id, &asset);
     step_slots(ctx, res, id);
-    let Some(pose) = with_node!(ctx, SelfNodeType, id, |tree| eval_tree_pose(
+    let Some(pose) = with_node!(ctx, AnimationTree, id, |tree| eval_tree_pose(
         tree, res, &asset
     ))
     .warn_none_once(format_args!(
@@ -89,7 +87,7 @@ pub fn internal_update<RT, R, IP>(
     )) else {
         return;
     };
-    let Some(mut applied_transforms) = with_node_mut!(ctx, SelfNodeType, id, |tree| {
+    let Some(mut applied_transforms) = with_node_mut!(ctx, AnimationTree, id, |tree| {
         std::mem::take(&mut tree.internal.applied_transforms)
     })
     .warn_none_once(format_args!(
@@ -99,7 +97,7 @@ pub fn internal_update<RT, R, IP>(
         return;
     };
     apply_pose(ctx, res, &pose, &mut applied_transforms);
-    let _ = with_node_mut!(ctx, SelfNodeType, id, |tree| {
+    let _ = with_node_mut!(ctx, AnimationTree, id, |tree| {
         tree.internal.applied_transforms = applied_transforms;
     });
     fire_slot_events(ctx, res, id);
@@ -121,7 +119,7 @@ fn sync_slots<RT>(ctx: &mut RuntimeWindow<'_, RT>, id: NodeID, asset: &Animation
 where
     RT: RuntimeAPI + ?Sized,
 {
-    let _ = with_node_mut!(ctx, SelfNodeType, id, |tree| {
+    let _ = with_node_mut!(ctx, AnimationTree, id, |tree| {
         let needs_rebuild = tree.internal.slots.len() != asset.slots.len()
             || tree
                 .internal
@@ -155,7 +153,7 @@ where
     R: ResourceAPI + ?Sized,
 {
     let delta_seconds = delta_time!(ctx).max(0.0);
-    let _ = with_node_mut!(ctx, SelfNodeType, id, |tree| {
+    let _ = with_node_mut!(ctx, AnimationTree, id, |tree| {
         for idx in 0..tree.internal.slots.len() {
             let entry = tree.animations.get(idx).cloned().unwrap_or_default();
             let slot = &mut tree.internal.slots[idx];
@@ -599,7 +597,7 @@ where
     RT: RuntimeAPI + ?Sized,
     R: ResourceAPI + ?Sized,
 {
-    let Some(entries) = with_node_mut!(ctx, SelfNodeType, id, |tree| {
+    let Some(entries) = with_node_mut!(ctx, AnimationTree, id, |tree| {
         tree.internal
             .slots
             .iter_mut()
@@ -633,7 +631,7 @@ where
             super::animation_player::apply_frame_events(ctx, &clip, frame, &animation.bindings);
         }
         frames.clear();
-        let _ = with_node_mut!(ctx, SelfNodeType, id, |tree| {
+        let _ = with_node_mut!(ctx, AnimationTree, id, |tree| {
             if let Some(slot) = tree.internal.slots.get_mut(idx)
                 && slot.pending_event_frames.is_empty()
             {

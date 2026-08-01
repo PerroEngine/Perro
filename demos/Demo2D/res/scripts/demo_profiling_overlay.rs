@@ -1,8 +1,6 @@
 use perro_api::prelude::*;
 use perro_api::runtime_api::prelude::FrameRateCap;
 
-type SelfNodeType = UiPanel;
-
 const REFRESH_SECONDS: f32 = 0.25;
 const SCRIPT_FPS_WINDOW_SECONDS: f32 = 0.5;
 const CAP_COUNT: i32 = 6;

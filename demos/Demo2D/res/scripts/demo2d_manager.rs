@@ -1,8 +1,6 @@
 use perro_api::prelude::*;
 use std::time::Duration;
 
-type SelfNodeType = Node2D;
-
 const SPRITE_SHEET: &ResPath = res_path!("res://sprite_sheet.png");
 const PERRO_LOGO: &ResPath = res_path!("res://perro.svg");
 const HERO_SHEET: &ResPath = res_path!("res://hero_sheet.png");

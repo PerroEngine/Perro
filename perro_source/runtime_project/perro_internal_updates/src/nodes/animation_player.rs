@@ -24,8 +24,6 @@ use perro_scene::{
 use std::collections::{HashMap, hash_map::DefaultHasher};
 use std::hash::{Hash, Hasher};
 
-type SelfNodeType = AnimationPlayer;
-
 pub fn internal_update<RT, R, IP>(
     ctx: &mut RuntimeWindow<'_, RT>,
     res: &ResourceWindow<'_, R>,
@@ -36,7 +34,7 @@ pub fn internal_update<RT, R, IP>(
     R: ResourceAPI + ?Sized,
     IP: InputAPI + ?Sized,
 {
-    let Some(animation_id) = with_node!(ctx, SelfNodeType, id, |player| {
+    let Some(animation_id) = with_node!(ctx, AnimationPlayer, id, |player| {
         if res.Animations().is_loaded(player.animation) {
             player.animation
         } else if res
@@ -67,7 +65,7 @@ pub fn internal_update<RT, R, IP>(
 
     let mut applied_transforms = Vec::new();
     if step.should_apply {
-        let Some(previous_transforms) = with_node_mut!(ctx, SelfNodeType, id, |player| {
+        let Some(previous_transforms) = with_node_mut!(ctx, AnimationPlayer, id, |player| {
             std::mem::take(&mut player.internal.applied_transforms)
         })
         .warn_none_once(format_args!(
@@ -89,7 +87,7 @@ pub fn internal_update<RT, R, IP>(
     for frame in step.event_frames.iter().copied() {
         apply_frame_events(ctx, &clip, frame, &step.bindings);
     }
-    let _ = with_node_mut!(ctx, SelfNodeType, id, |player| {
+    let _ = with_node_mut!(ctx, AnimationPlayer, id, |player| {
         if step.should_apply {
             player.internal.applied_transforms = applied_transforms;
         }

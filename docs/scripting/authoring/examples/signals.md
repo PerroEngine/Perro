@@ -43,8 +43,6 @@ methods!({
 ## HUD Script
 
 ```rust
-type SelfNodeType = UiLabel;
-
 lifecycle!({
     fn on_all_init(&self, ctx: &mut ScriptContext<'_, API>) {
         signal_connect!(
@@ -59,7 +57,7 @@ lifecycle!({
 methods!({
     // pub because signal dispatch uses the same glue as call_method!.
     pub fn on_health_changed(&self, ctx: &mut ScriptContext<'_, API>, health: i32) {
-        with_node_mut!(ctx.run, SelfNodeType, ctx.id, |label| {
+        with_node_mut!(ctx.run, UiLabel, ctx.id, |label| {
             label.text = format!("Health: {health}").into();
         });
     }

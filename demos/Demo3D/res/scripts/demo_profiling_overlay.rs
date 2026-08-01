@@ -1,7 +1,5 @@
 use perro_api::prelude::*;
 
-type SelfNodeType = UiPanel;
-
 const REFRESH_SECONDS: f32 = 0.25;
 const SCRIPT_FPS_WINDOW_SECONDS: f32 = 0.5;
 

@@ -1,7 +1,5 @@
 use perro_api::prelude::*;
 
-type SelfNodeType = Node2D;
-
 #[derive(Variant, Clone, Copy, Default)]
 struct DemoUiShowcaseState {
     time: f32,

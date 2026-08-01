@@ -1,7 +1,5 @@
 use perro_api::prelude::*;
 
-type SelfNodeType = Node3D;
-
 const PROJECTILE_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/physics_bone_projectile.scn");
 
 #[State]

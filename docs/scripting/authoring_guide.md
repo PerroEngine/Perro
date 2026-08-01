@@ -84,12 +84,10 @@ Do not search by name every frame for a dependency the scene already knows.
 remains a `NodeID`.
 
 Use `with_node!` for known typed reads and `with_node_mut!` for known typed
-writes. `SelfNodeType` is an optional Rust alias, not an engine rule.
+writes.
 
 ```rust
-type SelfNodeType = CharacterBody3D;
-
-let speed = with_node!(ctx.run, SelfNodeType, ctx.id, |node| {
+let speed = with_node!(ctx.run, CharacterBody3D, ctx.id, |node| {
     node.velocity.length()
 }).unwrap_or_default();
 

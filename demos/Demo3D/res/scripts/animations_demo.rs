@@ -1,7 +1,5 @@
 use perro_api::prelude::*;
 
-type SelfNodeType = Node3D;
-
 #[State]
 struct AnimationsDemoState {
     #[default = NodeID::nil()]

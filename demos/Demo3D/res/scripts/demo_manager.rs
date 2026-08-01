@@ -1,7 +1,5 @@
 use perro_api::prelude::*;
 
-type SelfNodeType = Node3D;
-
 const MAIN_MENU_SCENE_PATH: &ResPath = res_path!("res://Menu/MainMenu.scn");
 const PAUSE_MENU_SCENE_PATH: &ResPath = res_path!("res://Menu/PauseMenu.scn");
 const TRANSITION_FADE_SCENE_PATH: &ResPath = res_path!("res://Menu/TransitionFade.scn");

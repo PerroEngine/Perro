@@ -20,7 +20,6 @@ methods and signals for real runtime boundaries.
 
 Core script pieces:
 
-- `type SelfNodeType = ...`
 - `#[State]` for per-node state
 - `lifecycle!` for engine hooks
 - `methods!` for calls from other scripts

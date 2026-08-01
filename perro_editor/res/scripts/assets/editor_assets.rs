@@ -34,8 +34,10 @@ pub fn open_project<API: ScriptAPI + ?Sized>(
 ) -> Result<(), String> {
     clear_preview(ctx);
     clear_scene_doc_cache();
+    clear_editor_tree_icon_cache();
     let root_path = PathBuf::from(&root);
     validate_project_root(&root_path)?;
+    editor_file_watch::retain_project_scan_job(&root_path);
     let project_text =
         FileMod::load_string(root_path.join("project.toml").to_string_lossy().as_ref())
             .map_err(|err| err.to_string())?;
@@ -91,6 +93,8 @@ pub fn open_project<API: ScriptAPI + ?Sized>(
         state.preview_serial = 0;
         state.selected_key = None;
         state.collapsed_scene_keys.clear();
+        state.inspector_expanded_paths.clear();
+        state.inspector_collapsed_sections.clear();
         state.ui_drag_key = None;
         state.ui_drag_mode.clear();
         state.ui_drag_last_x = 0.0;
@@ -624,6 +628,7 @@ pub fn open_scene_path<API: ScriptAPI + ?Sized>(
         state.selected_key = first_key;
         state.collapsed_scene_keys.clear();
         state.inspector_expanded_paths.clear();
+        state.inspector_collapsed_sections.clear();
         state.viewport_mode = mode.to_string();
         if mode == "3D" {
             reset_freecam(state);
@@ -2049,10 +2054,8 @@ pub fn default_scene_text(name: &str) -> String {
 }
 
 pub fn default_script_text() -> String {
-    format!(
-        "use perro_api::prelude::*;\n\n{} = Node;\n\n{}!({{\n    {}(&self, _ctx: &mut ScriptContext<'_, API>) {{\n    }}\n}});\n",
-        "type SelfNodeType", "lifecycle", "fn on_init"
-    )
+    "use perro_api::prelude::*;\n\nlifecycle!({\n    fn on_init(&self, _ctx: &mut ScriptContext<'_, API>) {\n    }\n});\n"
+        .to_string()
 }
 
 pub fn default_material_pmat() -> String {

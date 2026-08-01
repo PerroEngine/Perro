@@ -1,7 +1,5 @@
 use perro_api::prelude::*;
 
-type SelfNodeType = BoneCollider3D;
-
 #[State]
 struct PhysicsBoneProjectileState {
     #[default = NodeID::nil()]

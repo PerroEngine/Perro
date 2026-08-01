@@ -229,9 +229,6 @@ The comprehensive docs live in the main Perro repository on GitHub: `https://git
 pub fn default_script_example_rs() -> String {
     r#"use perro_api::prelude::*;
 
-// Script is authored against a node type. This default template uses Node2D.
-type SelfNodeType = Node2D;
-
 // State holds per-instance data that must survive a callback.
 // Keep constants and callback-local temporary values outside state.
 
@@ -332,7 +329,7 @@ lifecycle!({
         // with_node! gives read-only typed node access and returns optional closure data.
         // with_node_mut! gives mutable typed node access; it can mutate and optionally return data.
         // Here we mutate the attached node via `self`.
-        with_node_mut!(ctx.run, SelfNodeType, ctx.id, |node| {
+        with_node_mut!(ctx.run, Node2D, ctx.id, |node| {
             node.position.x += dt * SPEED;
         }).unwrap_or_default();
 
@@ -407,8 +404,6 @@ methods!({
 
 pub fn default_script_empty_rs() -> String {
     r#"use perro_api::prelude::*;
-
-type SelfNodeType = Node2D;
 
 #[State]
 struct EmptyState {}

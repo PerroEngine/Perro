@@ -1,7 +1,5 @@
 use perro_api::prelude::*;
 
-type SelfNodeType = Node2D;
-
 #[State]
 struct WebcamDemo2DState {
     #[default = NodeID::nil()]

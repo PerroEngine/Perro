@@ -27,7 +27,7 @@ pub(in super::super) fn step_animation_player<RT>(
 where
     RT: RuntimeAPI + ?Sized,
 {
-    with_node_mut!(ctx, SelfNodeType, id, |player| {
+    with_node_mut!(ctx, AnimationPlayer, id, |player| {
         let previous_frame = player.current_frame;
         let previous_playback_frame = player.internal.playback_frame;
         let previous_boomerang_direction = player.internal.boomerang_direction;

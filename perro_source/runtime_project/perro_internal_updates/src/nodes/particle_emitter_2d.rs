@@ -1,8 +1,6 @@
 use crate::prelude::*;
 use perro_nodes::ParticleEmitter2D;
 
-type SelfNodeType = ParticleEmitter2D;
-
 pub fn internal_update<RT, R, IP>(
     ctx: &mut RuntimeWindow<'_, RT>,
     _res_w: &ResourceWindow<'_, R>,
@@ -15,7 +13,7 @@ pub fn internal_update<RT, R, IP>(
 {
     let delta_seconds = delta_time!(ctx);
     let mut emit_finished_signal = false;
-    let _ = with_node_mut!(ctx, SelfNodeType, id, |emitter| {
+    let _ = with_node_mut!(ctx, ParticleEmitter2D, id, |emitter| {
         emit_finished_signal = internal_step_update(emitter, delta_seconds);
     });
     if emit_finished_signal && let Some(node_name) = get_node_name!(ctx, id) {
@@ -37,7 +35,7 @@ pub fn internal_fixed_update<RT, R, IP>(
     IP: InputAPI + ?Sized,
 {
     let fixed_delta = fixed_delta_time!(ctx);
-    let _ = with_node_mut!(ctx, SelfNodeType, id, |emitter| {
+    let _ = with_node_mut!(ctx, ParticleEmitter2D, id, |emitter| {
         internal_step_fixed_update(emitter, fixed_delta);
     });
 }

@@ -17,8 +17,6 @@ use crate::scripts::scene::editor_viewport::*;
 use crate::scripts::ui::editor_inspector_values::*;
 use crate::scripts::ui::editor_ui::*;
 
-type SelfNodeType = UiPanel;
-
 #[derive(Clone)]
 struct CachedSceneDoc {
     text: String,

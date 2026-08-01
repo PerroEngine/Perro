@@ -1,7 +1,5 @@
 use perro_api::prelude::*;
 
-type SelfNodeType = Camera2D;
-
 const PAN_SPEED: f32 = 900.0;
 const ZOOM_STEP: f32 = 0.08;
 const MIN_ZOOM: f32 = 0.10;

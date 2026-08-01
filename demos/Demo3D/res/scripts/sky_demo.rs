@@ -1,7 +1,5 @@
 use perro_api::prelude::*;
 
-type SelfNodeType = Node3D;
-
 #[State]
 struct SkyDemoState {
     #[default = NodeID::nil()]

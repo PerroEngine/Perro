@@ -44,8 +44,6 @@ Core shape:
 ```rust
 use perro_api::prelude::*;
 
-type SelfNodeType = Node2D;
-
 #[State]
 pub struct PlayerState {
     #[default(240.0)]
@@ -69,7 +67,7 @@ lifecycle!({
 
         if delta.length_squared() > 0.0 {
             let step = delta.normalized() * speed * dt;
-            let _ = with_base_node_mut!(ctx.run, SelfNodeType, ctx.id, |node| {
+            let _ = with_base_node_mut!(ctx.run, Node2D, ctx.id, |node| {
                 node.transform.position += step;
             });
         }

@@ -1,7 +1,5 @@
 use perro_api::prelude::*;
 
-type SelfNodeType = UiLabel;
-
 #[State]
 struct PatternHud {}
 
@@ -18,7 +16,7 @@ lifecycle!({
 
 methods!({
     pub fn show_score(&self, ctx: &mut ScriptContext<'_, API>, score: i32) {
-        with_node_mut!(ctx.run, SelfNodeType, ctx.id, |label| {
+        with_node_mut!(ctx.run, UiLabel, ctx.id, |label| {
             label.text = format!("Score: {score}").into();
         });
     }

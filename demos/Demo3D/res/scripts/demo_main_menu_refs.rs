@@ -1,7 +1,5 @@
 use perro_api::prelude::*;
 
-type SelfNodeType = UiPanel;
-
 #[State]
 struct DemoMainMenuRefsState {
     #[default = NodeID::nil()]

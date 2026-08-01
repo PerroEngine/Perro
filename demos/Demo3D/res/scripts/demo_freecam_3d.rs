@@ -1,7 +1,5 @@
 use perro_api::prelude::*;
 
-type SelfNodeType = Camera3D;
-
 const MOVE_SPEED: f32 = 8.0;
 const MAX_MOVE_DT: f32 = 1.0 / 45.0;
 const DEFAULT_MOUSE_SENSITIVITY: f32 = 0.00012;

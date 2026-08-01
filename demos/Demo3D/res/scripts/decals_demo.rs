@@ -1,7 +1,5 @@
 use perro_api::prelude::*;
 
-type SelfNodeType = Node3D;
-
 // Floor slide half-range in world units.
 const SLIDE_RANGE: f32 = 4.4;
 

@@ -1,8 +1,6 @@
 use perro_api::prelude::*;
 use std::time::Duration;
 
-type SelfNodeType = Node3D;
-
 #[State]
 struct PositionalAudioDemoState {
     #[default = NodeID::nil()]

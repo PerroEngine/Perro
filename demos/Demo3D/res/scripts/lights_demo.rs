@@ -1,7 +1,5 @@
 use perro_api::prelude::*;
 
-type SelfNodeType = Node3D;
-
 const SPEED: f32 = 0.78;
 
 #[State]

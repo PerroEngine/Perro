@@ -22,7 +22,7 @@ vsync = false
 # single-sample for stable docs captures and lower GPU load.
 # Perf-isolation tier: everything off/low to baseline the feature stack cost.
 # Swap anti_alias to "fxaa"/"smaa"/"taa" and ssao to "low" for the normal look.
-anti_alias = "off"
+anti_alias = "fxaa"
 ssao = "off"
 shadow_quality = "low"
 

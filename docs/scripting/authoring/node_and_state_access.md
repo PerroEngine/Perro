@@ -28,12 +28,9 @@ a `NodeID`.
 ## Edit Known Node Types
 
 Use `with_node!` for typed reads and `with_node_mut!` for typed writes.
-`SelfNodeType` is an optional Rust alias for when you know the script is always attached to that node type and you don't want to think about the type after you've written the alias.
 
 ```rust
-type SelfNodeType = CharacterBody3D;
-
-let speed = with_node!(ctx.run, SelfNodeType, ctx.id, |node| {
+let speed = with_node!(ctx.run, CharacterBody3D, ctx.id, |node| {
     node.velocity.length()
 }).unwrap_or_default();
 

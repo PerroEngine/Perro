@@ -1,8 +1,6 @@
 use perro_api::prelude::*;
 use perro_api::runtime_api::prelude::FrameRateCap;
 
-type SelfNodeType = Node2D;
-
 const FPS_WINDOW_SECONDS: f32 = 0.5;
 const LABEL_REFRESH_SECONDS: f32 = 0.15;
 

@@ -6,8 +6,6 @@ use perro_api::prelude::*;
 use std::borrow::Cow;
 use std::sync::{Mutex, OnceLock};
 
-type SelfNodeType = UiPanel;
-
 #[State]
 pub struct InspectorValueRowState {
     pub ready: bool,
@@ -45,7 +43,6 @@ enum InspectorRowTemplate {
 static INSPECTOR_ROW_NAMES: OnceLock<Mutex<Vec<InspectorRowNames>>> = OnceLock::new();
 static INSPECTOR_ROW_TEMPLATES: OnceLock<Mutex<Vec<Option<InspectorRowTemplate>>>> =
     OnceLock::new();
-const INSPECTOR_ROW_CLEANUP_LIMIT: usize = 512;
 
 pub fn ensure_inspector_value_row<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
@@ -230,14 +227,25 @@ pub fn apply_inspector_value_row_panel<API: ScriptAPI + ?Sized>(
     }
 }
 
+/// High-water mark of row indices ever created (== length of the template
+/// cache, which only grows). Cleanup must walk up to this, not a fixed
+/// constant, or rows created past an arbitrary cap (e.g. a big expanded
+/// array) are never removed/hidden on selection change.
+fn inspector_row_high_water() -> usize {
+    let cache = INSPECTOR_ROW_TEMPLATES.get_or_init(|| Mutex::new(Vec::new()));
+    cache.lock().map(|guard| guard.len()).unwrap_or(0)
+}
+
 pub fn hide_inspector_value_rows_from<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     start: usize,
 ) {
     // Rows are contiguous and every created row registers a template, so
-    // the first idx without one means nothing exists past it. Probing all
-    // 512 slots by name costs a full-tree scan per missing name.
-    for idx in start..INSPECTOR_ROW_CLEANUP_LIMIT {
+    // the first idx without one means nothing exists past it. Probing by
+    // name past the last real slot costs a full-tree scan per missing name,
+    // so bound the walk at the actual high-water mark instead of a guess.
+    let limit = inspector_row_high_water();
+    for idx in start..limit {
         if inspector_cached_row_template(idx).is_none() {
             break;
         }
