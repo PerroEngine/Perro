@@ -730,8 +730,34 @@ impl Gpu3D {
             }
         }
         for batch in &self.multimesh_batches {
-            if let MaterialPipelineKind::Custom(token) = &batch.material_kind
-                && let Some(entry) = self.custom_pipelines_multimesh.get_mut(token)
+            // Builtin variants are stamped here too: multimesh batches never
+            // appear in `draw_batches`, and a rebuild that reuses the staged
+            // multimesh buffers never re-resolves their material kind, so this
+            // sweep is the only thing keeping their pipelines live.
+            let builtin_kind = match &batch.material_kind {
+                MaterialPipelineKind::StandardVariant(features) => {
+                    Some((BuiltinShaderKind::Standard, *features))
+                }
+                MaterialPipelineKind::UnlitVariant(features) => {
+                    Some((BuiltinShaderKind::Unlit, *features))
+                }
+                MaterialPipelineKind::ToonVariant(features) => {
+                    Some((BuiltinShaderKind::Toon, *features))
+                }
+                MaterialPipelineKind::Custom(token) => {
+                    if let Some(entry) = self.custom_pipelines_multimesh.get_mut(token) {
+                        entry.last_used_tick = tick;
+                    }
+                    None
+                }
+                _ => None,
+            };
+            if let Some((kind, features)) = builtin_kind
+                && let Some(entry) = self.builtin_variant_pipelines.get_mut(&BuiltinPipelineKey {
+                    path: RenderPath3D::MultiMesh,
+                    kind,
+                    features,
+                })
             {
                 entry.last_used_tick = tick;
             }

@@ -40,7 +40,7 @@ pub(in super::super) struct BuildInstanceArgs {
     pub(in super::super) modulate_bias: bool,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(in super::super) struct ResolvedMeshBlend {
     pub(in super::super) packed_params: u32,
     // Second packed lane set for the screen seam pass: slope factor, strength

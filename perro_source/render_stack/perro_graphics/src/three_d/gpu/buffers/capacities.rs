@@ -808,12 +808,13 @@ impl Gpu3D {
         self.shrink
             .custom_params_values
             .note_used(self.staged_custom_params_values.len());
-        self.shrink
-            .blend_shape_weights
-            .note_used(self.staged_blend_shape_weights.len());
-        self.shrink
-            .blend_shape_instance_meta
-            .note_used(self.staged_blend_shape_instance_meta.len());
+        // Both buffers carry the multimesh tail after the rigid rows.
+        self.shrink.blend_shape_weights.note_used(
+            self.staged_blend_shape_weights.len() + self.staged_multimesh_blend_weights.len(),
+        );
+        self.shrink.blend_shape_instance_meta.note_used(
+            self.staged_blend_shape_instance_meta.len() + self.staged_multimesh_blend_meta.len(),
+        );
         self.shrink
             .packed_lod_params
             .note_used(self.packed_lod_params.len());

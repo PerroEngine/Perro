@@ -616,6 +616,11 @@ impl Gpu3D {
                 self.write_frustum_params_if_needed(queue, &frustum);
                 self.write_multimesh_cull_params_if_needed(queue);
             }
+            // The multimesh staging itself is untouched by a transform patch
+            // (only the draw params' model rows moved, in place), so the reuse
+            // snapshots stay valid -- refresh them with the draws that are now
+            // reflected in the staged rows, keeping pose-Arc identity fresh.
+            self.sync_multimesh_staging_cache_transforms(draws);
             // Transform patch moved rigid + multimesh casters; drop the cache.
             self.shadow_casters_dirty = true;
             self.update_shadow_state(device, queue, &camera, lighting, self.has_shadow_casters);
@@ -632,6 +637,36 @@ impl Gpu3D {
         self.last_draws.clear();
         self.last_draws.extend_from_slice(draws);
         self.last_draws_revision = draws_revision;
+
+        // Scene-resolved mesh blend is an input to the multimesh staging (it is
+        // baked into the draw params and batches), so it has to be resolved
+        // before the reuse decision below -- and before the staging vectors are
+        // cleared, since reuse keeps them.
+        let mut mesh_blends = std::mem::take(&mut self.mesh_blend_scratch);
+        resolve_mesh_blends(draws, &mut mesh_blends);
+        // Screen-space seam pass handles single-mesh and multimesh sources.
+        // MSAA resolves into the single-sample scene texture before the seam.
+        if self.screen_blend_supported {
+            for blend in mesh_blends.iter_mut() {
+                promote_mesh_blend_screen_pass(blend);
+            }
+        }
+        // A full rebuild triggered by an unrelated draw still repacks, hashes
+        // and re-uploads every multimesh instance. When the dense draw sequence
+        // is unchanged that work reproduces the exact same bytes, so skip it
+        // whole: the staged multimesh vectors (instances, draw params, batches
+        // and the blend-shape tails) are left standing and only the per-draw
+        // range bookkeeping is replayed.
+        let multimesh_reuse = self.can_reuse_multimesh_staging(
+            force_full_rebuild,
+            draws,
+            &mesh_blends,
+            camera.position,
+        );
+        if multimesh_reuse {
+            self.multimesh_staging_reuse_count =
+                self.multimesh_staging_reuse_count.saturating_add(1);
+        }
 
         let (regular_instance_hint, multimesh_instance_hint) =
             estimate_draw_instance_capacity(draws);
@@ -658,11 +693,21 @@ impl Gpu3D {
         self.staged_custom_params_values_scratch.clear();
         self.staged_custom_params_key_scratch.clear();
         self.draw_batches.clear();
-        self.multimesh_batches.clear();
-        self.staged_multimesh_instances.clear();
-        self.staged_multimesh_instances
-            .reserve(multimesh_instance_hint);
-        self.staged_multimesh_draw_params.clear();
+        if !multimesh_reuse {
+            self.multimesh_batches.clear();
+            self.staged_multimesh_instances.clear();
+            self.staged_multimesh_instances
+                .reserve(multimesh_instance_hint);
+            self.staged_multimesh_draw_params.clear();
+            self.staged_multimesh_blend_meta.clear();
+            self.staged_multimesh_blend_weights.clear();
+            self.multimesh_blend_meta_base = 0;
+            self.multimesh_blend_weight_base = 0;
+            self.multimesh_blend_tail_revision = self.multimesh_blend_tail_revision.wrapping_add(1);
+            self.multimesh_staging_cache.clear();
+            self.multimesh_staging_cache_valid = false;
+            self.multimesh_staging_cache_custom_params = false;
+        }
         self.multimesh_pose_pack_cache_seen.clear();
         self.draw_batches.reserve(draws.len());
         self.last_draw_instance_spans.clear();
@@ -700,21 +745,35 @@ impl Gpu3D {
         debug_edge_instances.clear();
         let mut surface_entries = std::mem::take(&mut self.surface_entries_scratch);
         surface_entries.clear();
-        let mut mesh_blends = std::mem::take(&mut self.mesh_blend_scratch);
-        resolve_mesh_blends(draws, &mut mesh_blends);
-        // Screen-space seam pass handles single-mesh and multimesh sources.
-        // MSAA resolves into the single-sample scene texture before the seam.
-        if self.screen_blend_supported {
-            for blend in mesh_blends.iter_mut() {
-                promote_mesh_blend_screen_pass(blend);
-            }
-        }
 
+        let mut reused_dense_index = 0usize;
         for (draw_index, draw) in draws.iter().enumerate() {
             let resolved_blend = mesh_blends[draw_index];
             let draw_instance_start = self.staged_instance_transforms.len() as u32;
             let draw_span_start = self.last_draw_instance_spans.len();
             let draw_multimesh_param_start = self.staged_multimesh_draw_params.len() as u32;
+            // Reused multimesh: the staged rows for this draw are already in
+            // place from the previous build, so only the per-draw range
+            // bookkeeping (and the pose-cache retention mark) is replayed.
+            if multimesh_reuse && let Some(dense) = draw.dense_multimesh.as_ref() {
+                let snapshot = &mut self.multimesh_staging_cache[reused_dense_index];
+                let param_range = snapshot.param_range.clone();
+                // Adopt this frame's draw so the next validity check keeps
+                // hitting the pose-Arc pointer fast path even if the producer
+                // handed out an equal-but-new Arc (the deep compare that just
+                // accepted it is the slow path).
+                snapshot.draw = draw.clone();
+                reused_dense_index += 1;
+                self.last_draw_instance_spans
+                    .push(draw_instance_start..draw_instance_start);
+                let draw_span_end = self.last_draw_instance_spans.len();
+                self.last_draw_instance_span_ranges
+                    .push(draw_span_start..draw_span_end);
+                self.last_draw_multimesh_param_ranges.push(param_range);
+                self.multimesh_pose_pack_cache_seen
+                    .insert(Arc::as_ptr(&dense.instances) as *const () as usize);
+                continue;
+            }
             let is_debug_point = matches!(draw.kind, Draw3DKind::DebugPointCube);
             let is_debug_edge = matches!(draw.kind, Draw3DKind::DebugEdgeCylinder);
             let is_camera_stream_quad = matches!(draw.kind, Draw3DKind::CameraStreamQuad { .. });
@@ -861,6 +920,7 @@ impl Gpu3D {
             }
             if let Some(dense) = &draw.dense_multimesh {
                 let draw_model = Mat4::from_cols_array_2d(&dense.node_model);
+                let lod_sensitive = mesh_asset.lods.len() > 1;
                 for entry in surface_entries.iter() {
                     let material: &Material3D = &entry.material;
                     self.ensure_standard_material_texture_slots(
@@ -889,6 +949,11 @@ impl Gpu3D {
                         static_shader_lookup,
                     );
                     let custom_params = self.stage_custom_params(material);
+                    // Custom-material params land in the shared arena, which a
+                    // later rebuild refills from the regular draws; the offset
+                    // baked in here would go stale, so opt this scene out of
+                    // staging reuse.
+                    self.multimesh_staging_cache_custom_params |= custom_params.1 != 0;
                     let mirrored_winding = draw_model.determinant() < 0.0;
                     let packed_material = build_instance(
                         dense.node_model,
@@ -963,8 +1028,10 @@ impl Gpu3D {
                         } else {
                             draw.blend_shape_weights.as_ref()
                         };
-                        let blend_meta_id = self.staged_blend_shape_instance_meta.len() as u32;
-                        self.stage_blend_shape_instance(mesh_asset, weights);
+                        // Tail-local id / weight start; both are rebased onto
+                        // the rigid staging lengths once the loop is done.
+                        let blend_meta_id = self.staged_multimesh_blend_meta.len() as u32;
+                        self.stage_multimesh_blend_shape_instance(mesh_asset, weights);
                         let (position, rotation, scale) = match &cached_geom {
                             Some(geom) => {
                                 let g = geom[index];
@@ -1032,9 +1099,17 @@ impl Gpu3D {
                 let draw_span_end = self.last_draw_instance_spans.len();
                 self.last_draw_instance_span_ranges
                     .push(draw_span_start..draw_span_end);
-                self.last_draw_multimesh_param_ranges.push(
-                    draw_multimesh_param_start..(self.staged_multimesh_draw_params.len() as u32),
-                );
+                let param_range =
+                    draw_multimesh_param_start..(self.staged_multimesh_draw_params.len() as u32);
+                self.last_draw_multimesh_param_ranges
+                    .push(param_range.clone());
+                self.multimesh_staging_cache.push(MultiMeshDrawSnapshot {
+                    draw: draw.clone(),
+                    node_model: dense.node_model,
+                    resolved_blend,
+                    lod_sensitive,
+                    param_range,
+                });
                 continue;
             }
             // CPU occlusion query mode works at object granularity.
@@ -1569,6 +1644,10 @@ impl Gpu3D {
         self.custom_mesh_ranges = custom_mesh_ranges;
         self.mesh_blend_scratch = mesh_blends;
         self.surface_entries_scratch = surface_entries;
+        if !multimesh_reuse {
+            self.multimesh_staging_cache_valid = true;
+            self.multimesh_staging_cache_camera = camera.position;
+        }
         // Drop pose-pack cache entries for pose Arcs not present this build so the
         // cache (and the source Arcs it pins) does not grow unbounded.
         if self.multimesh_pose_pack_cache.len() > self.multimesh_pose_pack_cache_seen.len() {
@@ -1747,17 +1826,32 @@ impl Gpu3D {
         {
             self.ensure_mesh_blend_targets(device);
         }
-        self.apply_local_color_bleed();
-        if !multimesh_batches_sorted(&self.multimesh_batches) {
-            if self.multimesh_batches.len() >= PARALLEL_BATCH_SORT_MIN {
-                self.multimesh_batches
-                    .par_sort_unstable_by_key(multimesh_batch_sort_key);
-            } else {
-                self.multimesh_batches
-                    .sort_unstable_by_key(multimesh_batch_sort_key);
+        if multimesh_reuse {
+            // Bleed writes only the params it finds a tint for, and a fresh
+            // pack starts them at zero; reused params still carry last build's
+            // tint, so reset before the emitters (which come from the regular
+            // draws that just changed) are gathered.
+            for param in self.staged_multimesh_draw_params.iter_mut() {
+                param.packed_bleed = 0;
             }
         }
-        self.compact_sorted_multimesh_batches();
+        self.apply_local_color_bleed();
+        // Reused batches are already sorted AND compacted from the build that
+        // packed them, and the instance rows they point at were left untouched;
+        // re-running compaction would rewrite the same instances into a new
+        // layout for nothing.
+        if !multimesh_reuse {
+            if !multimesh_batches_sorted(&self.multimesh_batches) {
+                if self.multimesh_batches.len() >= PARALLEL_BATCH_SORT_MIN {
+                    self.multimesh_batches
+                        .par_sort_unstable_by_key(multimesh_batch_sort_key);
+                } else {
+                    self.multimesh_batches
+                        .sort_unstable_by_key(multimesh_batch_sort_key);
+                }
+            }
+            self.compact_sorted_multimesh_batches();
+        }
         self.prepare_mesh_blend_screen(device, queue);
         if HIZ_DEBUG_READBACK_ENABLED {
             self.debug_frustum_visible_est = 0;
@@ -1781,13 +1875,19 @@ impl Gpu3D {
         self.ensure_instance_transform_capacity(device, self.staged_instance_transforms.len());
         self.ensure_rigid_instance_meta_capacity(device, self.staged_rigid_instance_meta.len());
         self.ensure_skinned_instance_meta_capacity(device, self.staged_skinned_instance_meta.len());
+        // Multimesh blend-shape rows live in the tail of the same two buffers,
+        // right after the rigid rows (which the rigid/skinned shaders index
+        // positionally, so they must own the head).
+        let multimesh_rows_rebased = self.rebase_multimesh_blend_tails();
         self.ensure_blend_shape_weight_capacity(
             device,
-            self.staged_blend_shape_weights.len().max(1),
+            (self.staged_blend_shape_weights.len() + self.staged_multimesh_blend_weights.len())
+                .max(1),
         );
         self.ensure_blend_shape_instance_meta_capacity(
             device,
-            self.staged_blend_shape_instance_meta.len().max(1),
+            (self.staged_blend_shape_instance_meta.len() + self.staged_multimesh_blend_meta.len())
+                .max(1),
         );
         if !self.staged_instance_transforms.is_empty() {
             queue.write_buffer(
@@ -1824,6 +1924,7 @@ impl Gpu3D {
                 bytemuck::cast_slice(&self.staged_blend_shape_instance_meta),
             );
         }
+        self.upload_multimesh_blend_tails(queue);
         self.ensure_skeleton_capacity(device, self.staged_skeletons.len().max(1));
         if !self.staged_skeletons.is_empty() {
             queue.write_buffer(
@@ -1881,7 +1982,12 @@ impl Gpu3D {
             device,
             self.staged_multimesh_instances.len().max(1),
         );
-        if !self.staged_multimesh_instances.is_empty() {
+        // Reuse already proved the instance rows are the ones sitting in the
+        // GPU buffer, so the hash (a full read of every staged instance byte)
+        // is skipped too; only a blend-tail rebase can have touched them.
+        if !self.staged_multimesh_instances.is_empty()
+            && (!multimesh_reuse || multimesh_rows_rebased)
+        {
             let hash = super::pod_slice_len_hash(&self.staged_multimesh_instances);
             if self.last_uploaded_multimesh_instances_hash != Some(hash) {
                 queue.write_buffer(
@@ -1895,7 +2001,12 @@ impl Gpu3D {
         // Multimesh inputs are topology-only, so rebuild them on the full path.
         // Direct draws also read the identity visible-index buffer, including
         // multimeshes below the GPU-cull threshold.
-        if !self.multimesh_batches.is_empty() {
+        // Reused staging means identical topology, so the per-instance cull
+        // staging (batch ids + identity indices) would come out byte-identical;
+        // skip the O(instances) rebuild when the standing one already matches.
+        let cull_inputs_current =
+            multimesh_reuse && self.multimesh_cull_staging_matches_current_topology();
+        if !self.multimesh_batches.is_empty() && !cull_inputs_current {
             self.rebuild_multimesh_cull_inputs(device, queue);
         }
         if self.should_run_multimesh_cull() {
@@ -1987,6 +2098,176 @@ impl Gpu3D {
         let meta = self.stage_blend_shape_weight_range(mesh, weights);
         self.staged_blend_shape_instance_meta.push(meta);
         meta
+    }
+
+    /// Same as `stage_blend_shape_instance` but for a multimesh instance: the
+    /// row goes into the multimesh tail with a tail-local weight start, both
+    /// rebased onto the rigid lengths by `rebase_multimesh_blend_tails` once
+    /// the build is done.
+    fn stage_multimesh_blend_shape_instance(&mut self, mesh: &MeshAssetRange, weights: &[f32]) {
+        let target_count = mesh.blend_shape_target_count;
+        let weight_count = weights.len().min(target_count as usize) as u32;
+        let weight_start = self.staged_multimesh_blend_weights.len() as u32;
+        self.staged_multimesh_blend_weights.extend(
+            weights
+                .iter()
+                .take(weight_count as usize)
+                .map(|weight| weight.clamp(0.0, 1.0)),
+        );
+        self.staged_multimesh_blend_meta
+            .push(BlendShapeInstanceMetaGpu {
+                weight_range: [weight_start, weight_count, 0, 0],
+                shape_range: [
+                    mesh.blend_shape_delta_start,
+                    target_count,
+                    mesh.blend_shape_vertex_start,
+                    mesh.blend_shape_vertex_count,
+                ],
+            });
+    }
+
+    /// Point the staged multimesh rows at the tail region they will be uploaded
+    /// to. The tail starts where the rigid staging ends, which moves whenever a
+    /// regular draw changes its instance count; the rows are shifted by the
+    /// delta instead of repacked. Returns `true` when instance rows changed
+    /// (i.e. their hash/upload gate has to run again).
+    fn rebase_multimesh_blend_tails(&mut self) -> bool {
+        if self.staged_multimesh_blend_meta.is_empty() {
+            self.multimesh_blend_meta_base = 0;
+            self.multimesh_blend_weight_base = 0;
+            return false;
+        }
+        let meta_base = self.staged_blend_shape_instance_meta.len() as u32;
+        let weight_base = self.staged_blend_shape_weights.len() as u32;
+        let weight_delta = weight_base.wrapping_sub(self.multimesh_blend_weight_base);
+        if weight_delta != 0 {
+            for meta in self.staged_multimesh_blend_meta.iter_mut() {
+                meta.weight_range[0] = meta.weight_range[0].wrapping_add(weight_delta);
+            }
+            self.multimesh_blend_weight_base = weight_base;
+            self.multimesh_blend_tail_revision = self.multimesh_blend_tail_revision.wrapping_add(1);
+        }
+        let meta_delta = meta_base.wrapping_sub(self.multimesh_blend_meta_base);
+        if meta_delta == 0 {
+            return false;
+        }
+        for instance in self.staged_multimesh_instances.iter_mut() {
+            instance.blend_meta_id = instance.blend_meta_id.wrapping_add(meta_delta);
+        }
+        self.multimesh_blend_meta_base = meta_base;
+        true
+    }
+
+    /// Upload the multimesh blend tails into the region right after the rigid
+    /// rows. Gated on (content revision, base, len, buffer capacity) so a
+    /// rebuild that only touched the regular draws re-uploads nothing.
+    fn upload_multimesh_blend_tails(&mut self, queue: &wgpu::Queue) {
+        if !self.staged_multimesh_blend_meta.is_empty() {
+            let key = (
+                self.multimesh_blend_tail_revision,
+                self.multimesh_blend_meta_base,
+                self.staged_multimesh_blend_meta.len(),
+                self.blend_shape_instance_meta_capacity,
+            );
+            if self.uploaded_multimesh_blend_meta != Some(key) {
+                let offset = self.multimesh_blend_meta_base as u64
+                    * std::mem::size_of::<BlendShapeInstanceMetaGpu>() as u64;
+                queue.write_buffer(
+                    &self.blend_shape_instance_meta_buffer,
+                    offset,
+                    bytemuck::cast_slice(&self.staged_multimesh_blend_meta),
+                );
+                self.uploaded_multimesh_blend_meta = Some(key);
+            }
+        }
+        if !self.staged_multimesh_blend_weights.is_empty() {
+            let key = (
+                self.multimesh_blend_tail_revision,
+                self.multimesh_blend_weight_base,
+                self.staged_multimesh_blend_weights.len(),
+                self.blend_shape_weight_capacity,
+            );
+            if self.uploaded_multimesh_blend_weights != Some(key) {
+                let offset =
+                    self.multimesh_blend_weight_base as u64 * std::mem::size_of::<f32>() as u64;
+                queue.write_buffer(
+                    &self.blend_shape_weight_buffer,
+                    offset,
+                    bytemuck::cast_slice(&self.staged_multimesh_blend_weights),
+                );
+                self.uploaded_multimesh_blend_weights = Some(key);
+            }
+        }
+    }
+
+    /// Whether the staged multimesh buffers can be carried into this rebuild
+    /// unchanged.
+    ///
+    /// Everything the staged rows bake in has to be unchanged: the dense draw
+    /// SEQUENCE (order decides `instance_start` / `draw_param_index`, so a
+    /// reorder or an insert invalidates), each draw's poses (pose-`Arc`
+    /// identity, pinned in the snapshot so the pointer cannot be recycled),
+    /// world transform, material/surface bindings and scene-resolved blend, and
+    /// the camera when a mesh has baked LODs. `force_full_rebuild` (raised on
+    /// any resource dirty) covers mesh/material/texture edits.
+    fn can_reuse_multimesh_staging(
+        &self,
+        force_full_rebuild: bool,
+        draws: &[Draw3DInstance],
+        mesh_blends: &[ResolvedMeshBlend],
+        camera_position: [f32; 3],
+    ) -> bool {
+        if force_full_rebuild
+            || !self.multimesh_staging_cache_valid
+            || self.multimesh_staging_cache.is_empty()
+            || self.multimesh_staging_cache_custom_params
+        {
+            return false;
+        }
+        let camera_moved = camera_position != self.multimesh_staging_cache_camera;
+        let mut cached = self.multimesh_staging_cache.iter();
+        for (draw_index, draw) in draws.iter().enumerate() {
+            let Some(dense) = draw.dense_multimesh.as_ref() else {
+                continue;
+            };
+            let Some(snapshot) = cached.next() else {
+                return false;
+            };
+            if snapshot.node_model != dense.node_model
+                || snapshot.resolved_blend != mesh_blends[draw_index]
+                || (snapshot.lod_sensitive && camera_moved)
+                || !same_multimesh_except_node_model(&snapshot.draw, draw)
+            {
+                return false;
+            }
+        }
+        cached.next().is_none()
+    }
+
+    /// Keep the reuse snapshots in step with a transform-only frame: the staged
+    /// draw params were patched in place with the new world transforms, so the
+    /// staging still matches these draws. Refreshing the stored draw also keeps
+    /// pose-`Arc` pointer identity current for the next full rebuild.
+    fn sync_multimesh_staging_cache_transforms(&mut self, draws: &[Draw3DInstance]) {
+        if !self.multimesh_staging_cache_valid {
+            return;
+        }
+        let mut index = 0usize;
+        for draw in draws.iter() {
+            let Some(dense) = draw.dense_multimesh.as_ref() else {
+                continue;
+            };
+            let Some(snapshot) = self.multimesh_staging_cache.get_mut(index) else {
+                self.multimesh_staging_cache_valid = false;
+                return;
+            };
+            snapshot.node_model = dense.node_model;
+            snapshot.draw = draw.clone();
+            index += 1;
+        }
+        if index != self.multimesh_staging_cache.len() {
+            self.multimesh_staging_cache_valid = false;
+        }
     }
 
     fn stage_blend_shape_weight_range(

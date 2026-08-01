@@ -280,6 +280,25 @@ impl Gpu3D {
     // pre-fill), and the indirect draw records. Uploads all buffers. Assumes
     // batches are already sorted/compacted so each batch owns a contiguous
     // region [instance_start, instance_start+instance_count).
+    /// True when the standing multimesh cull staging was built from exactly the
+    /// batch/instance topology now in place AND is already on the GPU, so
+    /// `rebuild_multimesh_cull_inputs` would only reproduce it byte-for-byte.
+    /// Only meaningful next to reused multimesh staging (identical batches).
+    pub(super) fn multimesh_cull_staging_matches_current_topology(&self) -> bool {
+        let batch_count = self.multimesh_batches.len();
+        let instance_count = self.staged_multimesh_instances.len();
+        self.staged_multimesh_cull_batches.len() == batch_count
+            && self.multimesh_indirect_staging.len() == batch_count
+            && self.staged_multimesh_instance_batch.len() == instance_count
+            && self.staged_multimesh_visible_identity.len() == instance_count
+            && self.last_uploaded_multimesh_cull_batches.len() == batch_count
+            && self.last_uploaded_multimesh_indirect.len() == batch_count
+            && self.multimesh_instance_batch_uploaded_len == instance_count
+            && (self.should_run_multimesh_cull()
+                || (self.multimesh_identity_primed
+                    && self.last_uploaded_multimesh_identity_len == instance_count))
+    }
+
     pub(super) fn rebuild_multimesh_cull_inputs(
         &mut self,
         device: &wgpu::Device,

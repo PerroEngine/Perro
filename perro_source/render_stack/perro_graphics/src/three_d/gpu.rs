@@ -145,6 +145,27 @@ const fn material_texture_is_linear(slot: u32) -> bool {
 // Pose-pack cache entry: pinned source Arc + its packed geometry lanes.
 type PosePackCacheEntry = (Arc<[DenseInstancePose3D]>, Arc<[MultiMeshPosePacked]>);
 
+/// One dense multimesh draw exactly as it was staged by the last full rebuild.
+///
+/// A full rebuild that reproduces the same dense draw sequence also reproduces
+/// byte-identical multimesh staging, so the whole repack (and its hash +
+/// upload) can be skipped. The snapshot holds everything the staged rows depend
+/// on: the draw itself (pose `Arc` identity is the natural key, pinned here so
+/// the pointer can never be recycled by a different allocation), the world
+/// transform that was baked into the draw params, the scene-resolved blend, and
+/// the LOD inputs. `param_range` is the `last_draw_multimesh_param_ranges` entry
+/// the draw produced, replayed on the reuse path.
+#[derive(Clone)]
+struct MultiMeshDrawSnapshot {
+    draw: Draw3DInstance,
+    node_model: [[f32; 4]; 4],
+    resolved_blend: ResolvedMeshBlend,
+    // `select_mesh_lod` only reads the camera when the mesh has >1 baked LOD;
+    // scenes without LOD variants stay reusable while the camera moves.
+    lod_sensitive: bool,
+    param_range: Range<u32>,
+}
+
 mod mesh_presets;
 #[path = "gpu/paths/multimesh.rs"]
 mod multimesh_path;
@@ -926,6 +947,40 @@ pub struct Gpu3D {
     multimesh_instance_capacity: usize,
     staged_multimesh_instances: Vec<MultiMeshInstanceGpu>,
     multimesh_batches: Vec<MultiMeshBatch>,
+    // Multimesh blend-shape staging is kept OUT of the shared
+    // staged_blend_shape_* vectors and uploaded into the tail of the same GPU
+    // buffers instead. Two reasons: the rigid/skinned shaders index
+    // `blend_shape_instances` positionally by instance index (so the rigid half
+    // must own [0..rigid_len) with no multimesh rows spliced in), and keeping
+    // the multimesh rows out of the shared vectors makes every staged multimesh
+    // instance row independent of what the regular draws staged -- which is
+    // what lets a full rebuild reuse them verbatim.
+    staged_multimesh_blend_meta: Vec<BlendShapeInstanceMetaGpu>,
+    staged_multimesh_blend_weights: Vec<f32>,
+    // Absolute bases the staged rows are currently rebased onto: the rigid
+    // staging lengths of the build that packed them. When a later rebuild ends
+    // with different rigid lengths the rows are re-based by the delta instead
+    // of repacked.
+    multimesh_blend_meta_base: u32,
+    multimesh_blend_weight_base: u32,
+    // Bumped whenever the multimesh blend tails are repacked; the uploaded
+    // markers below carry it so an unchanged tail is never re-uploaded.
+    multimesh_blend_tail_revision: u64,
+    // (revision, base, len, buffer capacity) of the last tail upload. Capacity
+    // is part of the key because a grown/shrunk buffer is a new allocation.
+    uploaded_multimesh_blend_meta: Option<(u64, u32, usize, usize)>,
+    uploaded_multimesh_blend_weights: Option<(u64, u32, usize, usize)>,
+    // All-or-nothing reuse of the staged multimesh buffers across full
+    // rebuilds. See MultiMeshDrawSnapshot.
+    multimesh_staging_cache: Vec<MultiMeshDrawSnapshot>,
+    multimesh_staging_cache_valid: bool,
+    // Custom-material params are staged into the shared custom-params arena,
+    // which a rebuild refills from the regular draws; the offsets baked into
+    // reused draw params would go stale, so those scenes never reuse.
+    multimesh_staging_cache_custom_params: bool,
+    multimesh_staging_cache_camera: [f32; 3],
+    // Telemetry: full rebuilds that skipped the multimesh repack.
+    multimesh_staging_reuse_count: u64,
     // GPU per-instance frustum cull for multimesh (item 1). Reuses the rigid
     // frustum params buffer for the planes. When inactive, visible_indices is
     // primed as identity so the same storage-fetch draw path is correct.
@@ -2190,3 +2245,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/three_d_prepare_tests.rs"]
+mod prepare_tests;
