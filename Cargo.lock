@@ -4848,6 +4848,7 @@ dependencies = [
 name = "perro_render_bridge"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "perro_asset_formats",
  "perro_ids",
  "perro_particle_math",

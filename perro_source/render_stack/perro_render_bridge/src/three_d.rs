@@ -1152,7 +1152,11 @@ impl Default for CameraProjectionState {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// `repr(C)` + `Pod` so mesh decode can cast a runtime vertex slice straight to
+/// the graphics-side `MeshVertex` instead of copying 52B/vertex per resolve.
+/// The layout pairing is asserted in `perro_graphics_assets::mesh`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct RuntimeMeshVertex {
     pub position: [f32; 3],
     pub normal: [f32; 3],
@@ -1163,7 +1167,9 @@ pub struct RuntimeMeshVertex {
     pub weights: UnitVector4,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// Same zero-copy pairing as `RuntimeMeshVertex`, against `MeshBlendShapeVertex`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct RuntimeMeshBlendShapeVertex {
     pub position_delta: [f32; 3],
     pub normal_delta: [f32; 3],

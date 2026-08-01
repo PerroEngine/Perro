@@ -36,8 +36,7 @@ use glam::{Mat4, Quat, Vec3, Vec4};
 use mesh_presets::build_builtin_mesh_buffer;
 use perro_graphics_assets::{
     DecodedLod, DecodedMesh, DecodedMeshlet, MeshRange, MeshVertex as DecodedMeshVertex,
-    gltf_texture_source_from_mesh_source, load_mesh_from_source,
-    load_mesh_from_source_no_dynamic_lods, load_texture_rgba_arc,
+    gltf_texture_source_from_mesh_source, load_mesh_from_source, load_texture_rgba_arc,
 };
 use perro_ids::MeshID;
 use perro_io::load_asset;

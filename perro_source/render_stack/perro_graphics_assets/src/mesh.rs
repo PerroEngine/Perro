@@ -34,6 +34,32 @@ pub struct MeshVertex {
     pub weights: UnitVector4,
 }
 
+/// `RuntimeMeshVertex`/`MeshVertex` and the two blend-shape vertices are cast
+/// between, not copied (see `borrow_runtime_mesh`), so the pairs must stay
+/// byte-identical. Duplicated GPU-facing structs have drifted apart before, so
+/// the pairing is pinned at compile time instead of trusted.
+const _: () = {
+    use std::mem::{align_of, offset_of, size_of};
+    assert!(size_of::<MeshVertex>() == size_of::<RuntimeMeshVertex>());
+    assert!(align_of::<MeshVertex>() == align_of::<RuntimeMeshVertex>());
+    assert!(offset_of!(MeshVertex, pos) == offset_of!(RuntimeMeshVertex, position));
+    assert!(offset_of!(MeshVertex, normal) == offset_of!(RuntimeMeshVertex, normal));
+    assert!(offset_of!(MeshVertex, uv) == offset_of!(RuntimeMeshVertex, uv));
+    assert!(offset_of!(MeshVertex, paint_uv) == offset_of!(RuntimeMeshVertex, paint_uv));
+    assert!(offset_of!(MeshVertex, joints) == offset_of!(RuntimeMeshVertex, joints));
+    assert!(offset_of!(MeshVertex, weights) == offset_of!(RuntimeMeshVertex, weights));
+    assert!(size_of::<MeshBlendShapeVertex>() == size_of::<RuntimeMeshBlendShapeVertex>());
+    assert!(align_of::<MeshBlendShapeVertex>() == align_of::<RuntimeMeshBlendShapeVertex>());
+    assert!(
+        offset_of!(MeshBlendShapeVertex, position_delta)
+            == offset_of!(RuntimeMeshBlendShapeVertex, position_delta)
+    );
+    assert!(
+        offset_of!(MeshBlendShapeVertex, normal_delta)
+            == offset_of!(RuntimeMeshBlendShapeVertex, normal_delta)
+    );
+};
+
 #[derive(Clone, Copy)]
 pub struct MeshRange {
     pub index_start: u32,
@@ -51,7 +77,78 @@ pub struct DecodedMesh {
     pub has_skinning: bool,
 }
 
+/// Upload-ready view of a mesh that owns none of its bulk data.
+///
+/// A runtime mesh (procedural geometry, `write_mesh_data`) is borrowed straight
+/// out of the resource store: the vertex and index arrays are cast, not copied,
+/// which at 100k vertices saves 5.2MB of memcpy per resolve -- doubled when the
+/// mesh lands on both the rigid and the skinned arena, and paid again on every
+/// revision bump. A file-backed decode reaches the same shape through
+/// `DecodedMesh::as_borrowed`, so both paths share one upload routine.
+pub struct BorrowedMesh<'a> {
+    pub vertices: &'a [MeshVertex],
+    pub indices: &'a [u32],
+    /// Owned only for runtime meshes, whose surface ranges are a different
+    /// struct upstream; a file decode borrows its own.
+    pub surface_ranges: Cow<'a, [MeshRange]>,
+    pub blend_shapes: Vec<BorrowedBlendShape<'a>>,
+    pub meshlets: &'a [DecodedMeshlet],
+    pub lods: &'a [DecodedLod],
+    pub has_skinning: bool,
+}
+
 #[derive(Clone, Copy)]
+pub struct BorrowedBlendShape<'a> {
+    pub vertices: &'a [MeshBlendShapeVertex],
+    pub has_normal_deltas: bool,
+}
+
+impl DecodedMesh {
+    pub fn as_borrowed(&self) -> BorrowedMesh<'_> {
+        BorrowedMesh {
+            vertices: &self.vertices,
+            indices: &self.indices,
+            surface_ranges: Cow::Borrowed(&self.surface_ranges),
+            blend_shapes: self
+                .blend_shapes
+                .iter()
+                .map(|shape| BorrowedBlendShape {
+                    vertices: &shape.vertices,
+                    has_normal_deltas: shape.has_normal_deltas,
+                })
+                .collect(),
+            meshlets: &self.meshlets,
+            lods: &self.lods,
+            has_skinning: self.has_skinning,
+        }
+    }
+}
+
+impl BorrowedMesh<'_> {
+    /// Owned copy, for callers that outlive the borrow. The zero-copy paths do
+    /// not call this.
+    pub fn to_decoded(&self) -> DecodedMesh {
+        DecodedMesh {
+            vertices: self.vertices.to_vec(),
+            indices: self.indices.to_vec(),
+            surface_ranges: self.surface_ranges.to_vec(),
+            blend_shapes: self
+                .blend_shapes
+                .iter()
+                .map(|shape| MeshBlendShape {
+                    vertices: shape.vertices.to_vec(),
+                    has_normal_deltas: shape.has_normal_deltas,
+                })
+                .collect(),
+            meshlets: self.meshlets.to_vec(),
+            lods: self.lods.to_vec(),
+            has_skinning: self.has_skinning,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 pub struct MeshBlendShapeVertex {
     pub position_delta: [f32; 3],
     pub normal_delta: [f32; 3],
@@ -281,44 +378,31 @@ fn normalized_static_mesh_lookup_alias(source: &str) -> Option<String> {
     }
 }
 
-fn decode_runtime_mesh(mesh: &RuntimeMeshData) -> Option<DecodedMesh> {
+/// Validate a runtime mesh and hand back a zero-copy view of it.
+///
+/// Nothing per-vertex is copied: the vertex and blend-shape arrays are cast
+/// through the layout pairing asserted above, and the indices are borrowed.
+/// Only the surface ranges (a handful of u32s) are rebuilt, because upstream
+/// carries them in a different struct.
+pub fn borrow_runtime_mesh(mesh: &RuntimeMeshData) -> Option<BorrowedMesh<'_>> {
     if mesh.vertices.is_empty() || mesh.indices.is_empty() {
         return None;
     }
     if !mesh.indices.len().is_multiple_of(3) {
         return None;
     }
-    let vertices: Vec<MeshVertex> = mesh
-        .vertices
-        .iter()
-        .map(|v| MeshVertex {
-            pos: v.position,
-            normal: v.normal,
-            uv: v.uv,
-            paint_uv: v.paint_uv,
-            joints: v.joints,
-            weights: v.weights,
-        })
-        .collect();
-    if vertices
-        .iter()
-        .any(|v| !v.pos.iter().all(|c| c.is_finite()))
-    {
-        return None;
-    }
-    if vertices
-        .iter()
-        .any(|v| !v.normal.iter().all(|c| c.is_finite()))
-    {
-        return None;
-    }
-    if vertices.iter().any(|v| !v.uv.iter().all(|c| c.is_finite())) {
-        return None;
-    }
-    if vertices
-        .iter()
-        .any(|v| !v.paint_uv.iter().all(|c| c.is_finite()))
-    {
+    let vertices: &[MeshVertex] = bytemuck::cast_slice(&mesh.vertices);
+    // One pass over all four float lanes; four separate scans walked the whole
+    // vertex array (5.2MB at 100k vertices) four times over.
+    let finite = vertices.iter().all(|v| {
+        v.pos
+            .iter()
+            .chain(v.normal.iter())
+            .chain(v.uv.iter())
+            .chain(v.paint_uv.iter())
+            .all(|c| c.is_finite())
+    });
+    if !finite {
         return None;
     }
     if mesh
@@ -336,6 +420,7 @@ fn decode_runtime_mesh(mesh: &RuntimeMeshData) -> Option<DecodedMesh> {
             base_vertex: 0,
         });
     } else {
+        surface_ranges.reserve(mesh.surface_ranges.len());
         for range in &mesh.surface_ranges {
             let end = range.index_start.checked_add(range.index_count)?;
             if end > mesh.indices.len() as u32 {
@@ -351,30 +436,27 @@ fn decode_runtime_mesh(mesh: &RuntimeMeshData) -> Option<DecodedMesh> {
             });
         }
     }
-    Some(DecodedMesh {
+    Some(BorrowedMesh {
         vertices,
-        indices: mesh.indices.clone(),
-        surface_ranges,
+        indices: &mesh.indices,
+        surface_ranges: Cow::Owned(surface_ranges),
         blend_shapes: mesh
             .blend_shapes
             .iter()
             .filter(|shape| shape.vertices.len() == mesh.vertices.len())
-            .map(|shape| MeshBlendShape {
-                vertices: shape
-                    .vertices
-                    .iter()
-                    .map(|v| MeshBlendShapeVertex {
-                        position_delta: v.position_delta,
-                        normal_delta: v.normal_delta,
-                    })
-                    .collect(),
+            .map(|shape| BorrowedBlendShape {
+                vertices: bytemuck::cast_slice(&shape.vertices),
                 has_normal_deltas: shape.has_normal_deltas,
             })
             .collect(),
-        meshlets: Vec::new(),
-        lods: Vec::new(),
+        meshlets: &[],
+        lods: &[],
         has_skinning: mesh_vertices_have_skinning(&mesh.vertices),
     })
+}
+
+fn decode_runtime_mesh(mesh: &RuntimeMeshData) -> Option<DecodedMesh> {
+    Some(borrow_runtime_mesh(mesh)?.to_decoded())
 }
 
 fn build_dynamic_lods(mut decoded: DecodedMesh, build_meshlets_for_lods: bool) -> DecodedMesh {
@@ -1086,7 +1168,87 @@ fn quantize_skin_weights(weights: [f32; 4]) -> UnitVector4 {
 
 #[cfg(test)]
 mod tests {
-    use super::decode_pmesh;
+    use super::{borrow_runtime_mesh, decode_pmesh};
+    use perro_render_bridge::{
+        Mesh3D, MeshSurfaceRange, RuntimeMeshBlendShape, RuntimeMeshBlendShapeVertex,
+        RuntimeMeshVertex,
+    };
+    use perro_structs::UnitVector4;
+
+    fn runtime_mesh() -> Mesh3D {
+        Mesh3D {
+            vertices: vec![
+                RuntimeMeshVertex {
+                    position: [1.0, 2.0, 3.0],
+                    normal: [0.0, 1.0, 0.0],
+                    uv: [0.25, 0.5],
+                    paint_uv: [0.75, 0.125],
+                    joints: [1, 2, 3, 4],
+                    weights: UnitVector4::new([0.5, 0.5, 0.0, 0.0]),
+                };
+                3
+            ],
+            indices: vec![0, 1, 2],
+            surface_ranges: vec![MeshSurfaceRange {
+                index_start: 0,
+                index_count: 3,
+            }],
+            blend_shapes: vec![RuntimeMeshBlendShape {
+                vertices: vec![
+                    RuntimeMeshBlendShapeVertex {
+                        position_delta: [1.0, -1.0, 0.5],
+                        normal_delta: [0.0, 0.25, -0.25],
+                    };
+                    3
+                ],
+                has_normal_deltas: true,
+            }],
+        }
+    }
+
+    /// The zero-copy cast is only sound while the two vertex structs agree
+    /// field for field; the compile-time asserts pin the offsets, this pins the
+    /// meaning of each one.
+    #[test]
+    fn runtime_mesh_borrow_casts_vertices_field_for_field() {
+        let mesh = runtime_mesh();
+        let borrowed = borrow_runtime_mesh(&mesh).expect("borrow");
+        assert_eq!(borrowed.vertices.len(), mesh.vertices.len());
+        for (cast, src) in borrowed.vertices.iter().zip(&mesh.vertices) {
+            assert_eq!(cast.pos, src.position);
+            assert_eq!(cast.normal, src.normal);
+            assert_eq!(cast.uv, src.uv);
+            assert_eq!(cast.paint_uv, src.paint_uv);
+            assert_eq!(cast.joints, src.joints);
+            assert_eq!(cast.weights, src.weights);
+        }
+        let shape = borrowed.blend_shapes.first().expect("blend shape");
+        for (cast, src) in shape.vertices.iter().zip(&mesh.blend_shapes[0].vertices) {
+            assert_eq!(cast.position_delta, src.position_delta);
+            assert_eq!(cast.normal_delta, src.normal_delta);
+        }
+        // Borrowed, not copied.
+        assert!(std::ptr::eq(
+            borrowed.vertices.as_ptr().cast::<u8>(),
+            mesh.vertices.as_ptr().cast::<u8>()
+        ));
+        assert!(std::ptr::eq(borrowed.indices.as_ptr(), mesh.indices.as_ptr()));
+    }
+
+    #[test]
+    fn runtime_mesh_borrow_rejects_non_finite_lanes() {
+        for lane in 0..4usize {
+            let mut mesh = runtime_mesh();
+            let vertex = &mut mesh.vertices[1];
+            match lane {
+                0 => vertex.position[2] = f32::NAN,
+                1 => vertex.normal[0] = f32::INFINITY,
+                2 => vertex.uv[1] = f32::NAN,
+                _ => vertex.paint_uv[0] = f32::NEG_INFINITY,
+            }
+            assert!(borrow_runtime_mesh(&mesh).is_none(), "lane {lane}");
+        }
+    }
 
     #[test]
     fn pmesh_rejects_tiny_declared_size_before_large_inflate() {

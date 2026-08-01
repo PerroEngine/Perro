@@ -26,6 +26,7 @@
 //!   Consumers force a full draw-batch rebuild.
 
 use super::*;
+use perro_graphics_assets::{BorrowedBlendShape, BorrowedMesh, borrow_runtime_mesh};
 
 /// Per-vertex stride of each mesh arena. The two arenas are independent: a mesh
 /// is appended to the skinned one only when a skinned draw asks for it, so
@@ -110,6 +111,97 @@ struct MeshArenaShrink {
     packed_lod_indices: ShrinkTracker,
     packed_lod_params: ShrinkTracker,
     blend_shape_deltas: ShrinkTracker,
+}
+
+/// The arena bytes one already-resolved variant owns, as the in-place rewrite
+/// path needs them. Read off `MeshAssetRange`, which records the mesh's own
+/// vertex block in `blend_shape_vertex_start/count` for every appended mesh,
+/// blend shapes or not.
+#[derive(Clone, Copy)]
+struct InPlaceSlot {
+    index_start: u32,
+    index_count: u32,
+    vertex_start: u32,
+    vertex_count: u32,
+    blend_shape_delta_start: u32,
+    blend_shape_target_count: u32,
+}
+
+fn in_place_slot(range: &MeshAssetRange) -> InPlaceSlot {
+    InPlaceSlot {
+        index_start: range.full.index_start,
+        index_count: range.full.index_count,
+        vertex_start: range.blend_shape_vertex_start,
+        vertex_count: range.blend_shape_vertex_count,
+        blend_shape_delta_start: range.blend_shape_delta_start,
+        blend_shape_target_count: range.blend_shape_target_count,
+    }
+}
+
+/// Decoded surface ranges shifted onto the mesh's index block, with the whole
+/// mesh as the fallback surface when the decode carried none.
+fn uploaded_surface_ranges(
+    decoded: &[MeshRange],
+    index_start: u32,
+    index_count: u32,
+) -> Vec<MeshRange> {
+    if decoded.is_empty() {
+        return vec![MeshRange {
+            index_start,
+            index_count,
+            base_vertex: 0,
+        }];
+    }
+    decoded
+        .iter()
+        .map(|range| MeshRange {
+            index_start: index_start + range.index_start,
+            index_count: range.index_count,
+            base_vertex: 0,
+        })
+        .collect()
+}
+
+fn uploaded_meshlets(decoded: &[DecodedMeshlet], index_start: u32) -> Vec<MeshletRange> {
+    decoded
+        .iter()
+        .copied()
+        .filter_map(|meshlet| {
+            if meshlet.index_count == 0 {
+                return None;
+            }
+            Some(MeshletRange {
+                index_start: index_start + meshlet.index_start,
+                index_count: meshlet.index_count,
+                center: meshlet.center,
+                radius: meshlet.radius.max(0.0),
+            })
+        })
+        .collect()
+}
+
+/// Pack one mesh's blend-shape deltas into the caller's scratch buffer, shape
+/// major (the layout the delta arena stores and the skinning shaders index).
+fn fill_blend_shape_deltas(
+    scratch: &mut Vec<BlendShapeDeltaGpu>,
+    shapes: &[BorrowedBlendShape<'_>],
+    vertex_count: usize,
+) {
+    scratch.clear();
+    scratch.reserve(shapes.len() * vertex_count);
+    for shape in shapes {
+        for vertex_index in 0..vertex_count {
+            let vertex = shape.vertices.get(vertex_index).copied();
+            scratch.push(BlendShapeDeltaGpu {
+                position_delta: vertex
+                    .map(|v| v.position_delta)
+                    .unwrap_or([0.0; 3]),
+                packed_normal_delta: vertex
+                    .map(|v| pack_blend_normal_delta(v.normal_delta))
+                    .unwrap_or(0),
+            });
+        }
+    }
 }
 
 /// One mesh arena set shared by every `Gpu3D`.
@@ -436,6 +528,10 @@ impl SharedMeshArena {
         // Miss path (new mesh, revision bump, or first draw on this path) is
         // cold; the double map lookup below keeps the hot hit path above
         // borrow-check friendly.
+        //
+        // Set when an in-place update refreshed the *other* arena's copy of the
+        // same mesh, which must then survive the revision reset below.
+        let mut refreshed_other = None;
         let range = if let Some(range) = self.builtin_mesh_ranges.get(source).copied() {
             let (bounds_center, bounds_radius) = self
                 .builtin_mesh_bounds
@@ -458,39 +554,64 @@ impl SharedMeshArena {
                 blend_shape_vertex_start: 0,
                 blend_shape_vertex_count: 0,
             }
-        } else {
-            let decoded = if let Some(mesh) = resources.runtime_mesh_data_by_id(mesh_id) {
-                load_mesh_from_source_no_dynamic_lods(
-                    source,
-                    static_mesh_lookup,
-                    Some(mesh.as_ref()),
-                )?
-            } else {
-                let runtime_mesh = resources.runtime_mesh_data(source);
-                if let Some(mesh) = runtime_mesh {
-                    load_mesh_from_source_no_dynamic_lods(
-                        source,
-                        static_mesh_lookup,
-                        Some(mesh.as_ref()),
-                    )?
-                } else {
-                    load_mesh_from_source(
-                        source,
-                        static_mesh_lookup,
-                        None,
-                        self.meshlets_enabled && self.dev_meshlets,
-                    )?
+        } else if let Some(runtime) = resources
+            .runtime_mesh_data_by_id(mesh_id)
+            .or_else(|| resources.runtime_mesh_data(source))
+        {
+            // Runtime meshes are borrowed straight out of the resource store
+            // (zero copy, see `borrow_runtime_mesh`); only file-backed sources
+            // below decode into an owned `DecodedMesh`.
+            let mesh = borrow_runtime_mesh(runtime.as_ref())?;
+            // Revision bump whose new decode is the same shape as the old one:
+            // overwrite the bytes the mesh already owns instead of appending a
+            // second copy and stranding the first. A mesh rewritten every frame
+            // otherwise walks the arena to the compaction floor in seconds and
+            // pays a full re-resolve of every live mesh in one frame.
+            let stale = cache
+                .get(&mesh_id)
+                .filter(|entry| entry.revision != revision);
+            let slot = stale
+                .and_then(|entry| entry.variant(skinned))
+                .map(in_place_slot);
+            let other_slot = stale
+                .and_then(|entry| entry.variant(!skinned))
+                .map(in_place_slot);
+            let updated =
+                slot.and_then(|slot| self.update_mesh_data_in_place(queue, &mesh, slot, skinned));
+            match updated {
+                Some(range) => {
+                    // The other arena holds the same (now stale) geometry, so
+                    // it is refreshed in place too. Both variants share the
+                    // decode's counts, so if this one fit, that one does.
+                    refreshed_other = other_slot.and_then(|slot| {
+                        self.update_mesh_data_in_place(queue, &mesh, slot, !skinned)
+                    });
+                    range
                 }
-            };
+                None => self.append_borrowed_mesh_data(device, queue, &mesh, skinned)?,
+            }
+        } else {
+            // File-backed: the decode is owned already, and a static source has
+            // no revision to bump, so there is nothing to rewrite in place.
+            let decoded = load_mesh_from_source(
+                source,
+                static_mesh_lookup,
+                None,
+                self.meshlets_enabled && self.dev_meshlets,
+            )?;
             self.append_mesh_data(device, queue, source, decoded, skinned)?
         };
         let entry = cache.entry(mesh_id).or_default();
         if entry.revision != revision {
-            // Revision bump: the old upload is stranded in the arena until the
-            // next compaction, so both variants must be re-resolved.
+            // Revision bump: unless it was refreshed in place above, the old
+            // upload is stranded in the arena until the next compaction, so
+            // both variants must be re-resolved.
             entry.revision = revision;
             entry.rigid = None;
             entry.skinned = None;
+        }
+        if let Some(other) = refreshed_other {
+            *entry.variant_mut(!skinned) = Some(other);
         }
         *entry.variant_mut(skinned) = Some(range);
         cache.get(&mesh_id).and_then(|entry| entry.variant(skinned))
@@ -533,6 +654,8 @@ impl SharedMeshArena {
     /// against the arena they were appended to. A mesh drawn on both paths is
     /// appended twice, once per arena, which is why `MeshAssetEntry` keeps a
     /// slot for each.
+    /// Owned-decode entry point, for file-backed meshes. Runtime meshes take
+    /// `append_borrowed_mesh_data` instead, with no per-vertex copy.
     pub(in super::super) fn append_mesh_data(
         &mut self,
         device: &wgpu::Device,
@@ -541,52 +664,43 @@ impl SharedMeshArena {
         decoded: DecodedMesh,
         skinned: bool,
     ) -> Option<MeshAssetRange> {
-        if decoded.vertices.is_empty() || decoded.indices.is_empty() {
+        self.append_borrowed_mesh_data(device, queue, &decoded.as_borrowed(), skinned)
+    }
+
+    /// `append_mesh_data` against a mesh whose vertices/indices are borrowed
+    /// rather than owned -- the shape a runtime mesh arrives in, so a procedural
+    /// mesh is packed straight out of the resource store.
+    pub(in super::super) fn append_borrowed_mesh_data(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        mesh: &BorrowedMesh<'_>,
+        skinned: bool,
+    ) -> Option<MeshAssetRange> {
+        if mesh.vertices.is_empty() || mesh.indices.is_empty() {
             return None;
         }
         // Churn marker for `reclaim_tick`: an arena still taking appends is
         // mid-load, and its live-byte ratio must not be trusted.
         self.appends = self.appends.wrapping_add(1);
-        let DecodedMesh {
-            vertices: decoded_vertices,
-            indices: decoded_indices,
-            surface_ranges: decoded_surface_ranges,
-            blend_shapes: decoded_blend_shapes,
-            meshlets: decoded_meshlets,
-            lods: decoded_lods,
-            has_skinning: _,
-        } = decoded;
+        let decoded_vertices = mesh.vertices;
+        let decoded_surface_ranges: &[MeshRange] = &mesh.surface_ranges;
+        let decoded_blend_shapes = mesh.blend_shapes.as_slice();
+        let decoded_meshlets = mesh.meshlets;
+        let decoded_lods = mesh.lods;
         let base_vertex = if skinned {
             self.mesh_vertex_len as u32
         } else {
             self.rigid_vertex_len as u32
         };
         let index_start = self.mesh_index_len as u32;
-        let index_count = decoded_indices.len() as u32;
+        let index_count = mesh.indices.len() as u32;
 
-        let (bounds_center, bounds_radius) = mesh_bounds_from_vertices(&decoded_vertices)?;
-        let surface_ranges = if decoded_surface_ranges.is_empty() {
-            vec![MeshRange {
-                index_start,
-                index_count,
-                base_vertex: 0,
-            }]
-        } else {
-            decoded_surface_ranges
-                .iter()
-                .copied()
-                .map(|range| MeshRange {
-                    index_start: index_start + range.index_start,
-                    index_count: range.index_count,
-                    base_vertex: 0,
-                })
-                .collect()
-        };
+        let (bounds_center, bounds_radius) = mesh_bounds_from_vertices(decoded_vertices)?;
+        let surface_ranges =
+            uploaded_surface_ranges(decoded_surface_ranges, index_start, index_count);
         let vertex_count = decoded_vertices.len();
-        let mut added_indices = Vec::with_capacity(decoded_indices.len());
-        for idx in decoded_indices {
-            added_indices.push(idx + base_vertex);
-        }
+        let added_indices: Vec<u32> = mesh.indices.iter().map(|idx| idx + base_vertex).collect();
 
         let new_index_len = self.mesh_index_len + added_indices.len();
         let new_skinned_len = self.mesh_vertex_len + if skinned { vertex_count } else { 0 };
@@ -646,33 +760,7 @@ impl SharedMeshArena {
                 old_delta_len + added_delta_count,
             );
             let mut scratch = std::mem::take(&mut self.blend_shape_delta_scratch);
-            scratch.clear();
-            scratch.reserve(added_delta_count);
-            for shape in &decoded_blend_shapes {
-                for vertex_index in 0..decoded_vertices.len() {
-                    let vertex = shape.vertices.get(vertex_index).copied();
-                    scratch.push(BlendShapeDeltaGpu {
-                        position_delta: vertex
-                            .map(|v| {
-                                [
-                                    v.position_delta[0],
-                                    v.position_delta[1],
-                                    v.position_delta[2],
-                                ]
-                            })
-                            .unwrap_or([0.0; 3]),
-                        packed_normal_delta: vertex
-                            .map(|v| {
-                                pack_blend_normal_delta([
-                                    v.normal_delta[0],
-                                    v.normal_delta[1],
-                                    v.normal_delta[2],
-                                ])
-                            })
-                            .unwrap_or(0),
-                    });
-                }
-            }
+            fill_blend_shape_deltas(&mut scratch, decoded_blend_shapes, decoded_vertices.len());
             queue.write_buffer(
                 &self.blend_shape_delta_buffer,
                 old_delta_len as u64 * std::mem::size_of::<BlendShapeDeltaGpu>() as u64,
@@ -689,22 +777,8 @@ impl SharedMeshArena {
             base_vertex: 0,
         };
 
-        let meshlets: Vec<MeshletRange> = decoded_meshlets
-            .iter()
-            .copied()
-            .filter_map(|meshlet| {
-                if meshlet.index_count == 0 {
-                    return None;
-                }
-                Some(MeshletRange {
-                    index_start: index_start + meshlet.index_start,
-                    index_count: meshlet.index_count,
-                    center: meshlet.center,
-                    radius: meshlet.radius.max(0.0),
-                })
-            })
-            .collect();
-        let meshlets_arc: Arc<[MeshletRange]> = Arc::from(meshlets);
+        let meshlets_arc: Arc<[MeshletRange]> =
+            Arc::from(uploaded_meshlets(decoded_meshlets, index_start));
         let surface_ranges_arc: Arc<[MeshRange]> = Arc::from(surface_ranges);
         // Packed LODs are a rigid-path-only optimisation (prepare gates
         // `packed_lod` on `RenderPath3D::Rigid`), so the skinned variant never
@@ -715,21 +789,21 @@ impl SharedMeshArena {
             self.append_packed_lod_data(AppendPackedLodDataArgs {
                 device,
                 queue,
-                vertices: &decoded_vertices,
+                vertices: decoded_vertices,
                 mesh_indices: &added_indices,
                 base_vertex,
-                decoded_lods: &decoded_lods,
-                decoded_surfaces: &decoded_surface_ranges,
+                decoded_lods,
+                decoded_surfaces: decoded_surface_ranges,
             })
         };
         let lods = build_mesh_lod_ranges(BuildMeshLodRangesArgs {
             index_start,
             index_count,
-            decoded_surfaces: &decoded_surface_ranges,
+            decoded_surfaces: decoded_surface_ranges,
             uploaded_surfaces: &surface_ranges_arc,
-            decoded_meshlets: &decoded_meshlets,
+            decoded_meshlets,
             uploaded_meshlets: &meshlets_arc,
-            decoded_lods: &decoded_lods,
+            decoded_lods,
             packed_lods: &packed_lods,
         });
 
@@ -744,6 +818,116 @@ impl SharedMeshArena {
             blend_shape_target_count,
             blend_shape_vertex_start,
             blend_shape_vertex_count,
+        })
+    }
+
+    /// Overwrite a mesh already resident in the arena with a same-shaped decode,
+    /// keeping its range identity: same vertex block, same index block, same
+    /// base vertex, no `layout_generation` bump, no stranded bytes. Retained
+    /// draw batches stay valid, which is what makes this legal without a forced
+    /// rebuild.
+    ///
+    /// Returns `None` when the new decode does not fit the bytes the old one
+    /// owns -- vertex count, index count or blend-shape target count changed, or
+    /// it carries packed LODs, which are appended and never overwritten -- and
+    /// the caller falls back to `append_borrowed_mesh_data`.
+    fn update_mesh_data_in_place(
+        &mut self,
+        queue: &wgpu::Queue,
+        mesh: &BorrowedMesh<'_>,
+        slot: InPlaceSlot,
+        skinned: bool,
+    ) -> Option<MeshAssetRange> {
+        if mesh.vertices.len() != slot.vertex_count as usize
+            || mesh.indices.len() != slot.index_count as usize
+            || mesh.blend_shapes.len() != slot.blend_shape_target_count as usize
+            || mesh.lods.len() > 1
+        {
+            return None;
+        }
+        let (bounds_center, bounds_radius) = mesh_bounds_from_vertices(mesh.vertices)?;
+        let index_start = slot.index_start;
+        let index_count = slot.index_count;
+        // Uploaded indices are absolute (`MeshRange::base_vertex` stays 0), so
+        // the rewrite folds in the base vertex the mesh already sits at -- the
+        // arena tail is irrelevant here.
+        let base_vertex = slot.vertex_start;
+        let indices: Vec<u32> = mesh.indices.iter().map(|idx| idx + base_vertex).collect();
+
+        if skinned {
+            let vertices: Vec<SkinnedMeshVertex> = mesh
+                .vertices
+                .iter()
+                .map(pack_skinned_mesh_vertex)
+                .collect();
+            queue.write_buffer(
+                &self.vertex_buffer,
+                base_vertex as u64 * SKINNED_VERTEX_STRIDE as u64,
+                bytemuck::cast_slice(&vertices),
+            );
+        } else {
+            let vertices: Vec<RigidMeshVertex> =
+                mesh.vertices.iter().map(pack_rigid_mesh_vertex).collect();
+            queue.write_buffer(
+                &self.rigid_vertex_buffer,
+                base_vertex as u64 * RIGID_VERTEX_STRIDE as u64,
+                bytemuck::cast_slice(&vertices),
+            );
+        }
+        queue.write_buffer(
+            &self.index_buffer,
+            index_start as u64 * std::mem::size_of::<u32>() as u64,
+            bytemuck::cast_slice(&indices),
+        );
+
+        if slot.blend_shape_target_count > 0 {
+            let mut scratch = std::mem::take(&mut self.blend_shape_delta_scratch);
+            fill_blend_shape_deltas(&mut scratch, &mesh.blend_shapes, mesh.vertices.len());
+            queue.write_buffer(
+                &self.blend_shape_delta_buffer,
+                slot.blend_shape_delta_start as u64
+                    * std::mem::size_of::<BlendShapeDeltaGpu>() as u64,
+                bytemuck::cast_slice(&scratch),
+            );
+            scratch.clear();
+            self.blend_shape_delta_scratch = scratch;
+        }
+
+        let surface_ranges_arc: Arc<[MeshRange]> = Arc::from(uploaded_surface_ranges(
+            &mesh.surface_ranges,
+            index_start,
+            index_count,
+        ));
+        let meshlets_arc: Arc<[MeshletRange]> =
+            Arc::from(uploaded_meshlets(mesh.meshlets, index_start));
+        // At most one LOD survived the fit check above, so there is no packed
+        // LOD to point at.
+        let packed_lods = vec![None; mesh.lods.len()];
+        let lods = build_mesh_lod_ranges(BuildMeshLodRangesArgs {
+            index_start,
+            index_count,
+            decoded_surfaces: &mesh.surface_ranges,
+            uploaded_surfaces: &surface_ranges_arc,
+            decoded_meshlets: mesh.meshlets,
+            uploaded_meshlets: &meshlets_arc,
+            decoded_lods: mesh.lods,
+            packed_lods: &packed_lods,
+        });
+        Some(MeshAssetRange {
+            full: MeshRange {
+                index_start,
+                index_count,
+                base_vertex: 0,
+            },
+            surface_ranges: surface_ranges_arc,
+            meshlets: meshlets_arc,
+            lods: Arc::from(lods),
+            bounds_center,
+            bounds_radius,
+            blend_shape_delta_start: slot.blend_shape_delta_start,
+            blend_shape_target_count: slot.blend_shape_target_count,
+            blend_shape_vertex_start: slot.vertex_start,
+            blend_shape_vertex_count: slot.vertex_count,
         })
     }
 
@@ -1434,5 +1618,136 @@ impl SharedMeshArena {
             &self.packed_lod_vertex_buffer,
             &self.packed_lod_index_buffer,
         ]
+    }
+}
+
+#[cfg(test)]
+mod in_place_tests {
+    use super::*;
+    use perro_render_bridge::{Mesh3D, RuntimeMeshVertex};
+    use perro_structs::UnitVector4;
+
+    async fn request_device() -> Option<(wgpu::Device, wgpu::Queue)> {
+        let instance = wgpu::Instance::default();
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::LowPower,
+                compatible_surface: None,
+                force_fallback_adapter: false,
+                apply_limit_buckets: false,
+            })
+            .await
+            .ok()?;
+        adapter
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("perro_mesh_arena_in_place_test_device"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                experimental_features: wgpu::ExperimentalFeatures::disabled(),
+                memory_hints: wgpu::MemoryHints::Performance,
+                trace: wgpu::Trace::default(),
+            })
+            .await
+            .ok()
+    }
+
+    /// Triangle fan along +x, `offset` shifting the whole mesh so a rewrite is
+    /// observable in the returned bounds.
+    fn runtime_mesh(vertices: usize, offset: f32) -> Mesh3D {
+        Mesh3D {
+            vertices: (0..vertices)
+                .map(|i| RuntimeMeshVertex {
+                    position: [offset + i as f32, 0.0, 0.0],
+                    normal: [0.0, 1.0, 0.0],
+                    uv: [0.0, 0.0],
+                    paint_uv: [0.0, 0.0],
+                    joints: [0; 4],
+                    weights: UnitVector4::new([1.0, 0.0, 0.0, 0.0]),
+                })
+                .collect(),
+            indices: (0..vertices as u32).collect(),
+            surface_ranges: Vec::new(),
+            blend_shapes: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn same_count_rewrite_keeps_the_range_and_appends_nothing() {
+        let Some((device, queue)) = pollster::block_on(request_device()) else {
+            eprintln!("no wgpu adapter; skipping mesh arena in-place test");
+            return;
+        };
+        for skinned in [false, true] {
+            let mut arena = SharedMeshArena::new(&device, false, false);
+            let first = runtime_mesh(96, 0.0);
+            let range = arena
+                .append_borrowed_mesh_data(
+                    &device,
+                    &queue,
+                    &borrow_runtime_mesh(&first).expect("borrow"),
+                    skinned,
+                )
+                .expect("append");
+            let before = arena.memory_report();
+
+            let second = runtime_mesh(96, 100.0);
+            let updated = arena
+                .update_mesh_data_in_place(
+                    &queue,
+                    &borrow_runtime_mesh(&second).expect("borrow"),
+                    in_place_slot(&range),
+                    skinned,
+                )
+                .expect("in-place update");
+
+            assert_eq!(updated.full.index_start, range.full.index_start);
+            assert_eq!(updated.full.index_count, range.full.index_count);
+            assert_eq!(
+                updated.blend_shape_vertex_start,
+                range.blend_shape_vertex_start
+            );
+            // Content changed, arena did not grow and nothing was stranded.
+            assert_ne!(updated.bounds_center[0], range.bounds_center[0]);
+            let after = arena.memory_report();
+            assert_eq!(after.rigid_arena_vertices, before.rigid_arena_vertices);
+            assert_eq!(after.skinned_arena_vertices, before.skinned_arena_vertices);
+            assert_eq!(after.mesh_index_len, before.mesh_index_len);
+            assert_eq!(arena.layout_generation(), 1);
+        }
+    }
+
+    #[test]
+    fn different_count_rewrite_falls_back_to_append() {
+        let Some((device, queue)) = pollster::block_on(request_device()) else {
+            eprintln!("no wgpu adapter; skipping mesh arena in-place fallback test");
+            return;
+        };
+        let mut arena = SharedMeshArena::new(&device, false, false);
+        let first = runtime_mesh(96, 0.0);
+        let range = arena
+            .append_borrowed_mesh_data(
+                &device,
+                &queue,
+                &borrow_runtime_mesh(&first).expect("borrow"),
+                false,
+            )
+            .expect("append");
+        let before = arena.memory_report();
+
+        let grown = runtime_mesh(192, 0.0);
+        let borrowed = borrow_runtime_mesh(&grown).expect("borrow");
+        assert!(
+            arena
+                .update_mesh_data_in_place(&queue, &borrowed, in_place_slot(&range), false)
+                .is_none()
+        );
+        let appended = arena
+            .append_borrowed_mesh_data(&device, &queue, &borrowed, false)
+            .expect("append");
+        assert_ne!(appended.full.index_start, range.full.index_start);
+        assert_eq!(
+            arena.memory_report().rigid_arena_vertices,
+            before.rigid_arena_vertices + 192
+        );
     }
 }

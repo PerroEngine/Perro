@@ -6,7 +6,8 @@ mod texture;
 mod decoder_fuzz_tests;
 
 pub use mesh::{
-    DecodedLod, DecodedMesh, DecodedMeshlet, MeshRange, MeshVertex, StaticMeshBytesLookup,
+    BorrowedBlendShape, BorrowedMesh, DecodedLod, DecodedMesh, DecodedMeshlet, MeshBlendShape,
+    MeshBlendShapeVertex, MeshRange, MeshVertex, StaticMeshBytesLookup, borrow_runtime_mesh,
     decode_gltf_mesh, decode_pmesh, load_mesh_from_source, load_mesh_from_source_no_dynamic_lods,
     load_mesh3d_from_bytes, load_mesh3d_from_source, validate_mesh_source,
 };
