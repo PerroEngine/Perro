@@ -465,11 +465,9 @@ impl NodeArena {
     pub(crate) fn get_mut_untracked(&mut self, id: NodeID) -> Option<&mut SceneNode> {
         let index = self.valid_slot(id)?;
         self.bump_node_mutation(index);
-        debug_assert_eq!(self.parents[index], self.nodes[index].as_ref()?.parent);
-        debug_assert_eq!(
-            self.node_types[index],
-            self.nodes[index].as_ref()?.node_type()
-        );
+        let node = self.nodes[index].as_ref()?;
+        debug_assert_eq!(self.parents[index], node.parent);
+        debug_assert_eq!(self.node_types[index], node.node_type());
         self.nodes[index].as_mut()
     }
 
@@ -481,11 +479,9 @@ impl NodeArena {
     pub(crate) fn get_mut_untracked_non_physics(&mut self, id: NodeID) -> Option<&mut SceneNode> {
         let index = self.valid_slot(id)?;
         self.bump_node_data_only(index);
-        debug_assert_eq!(self.parents[index], self.nodes[index].as_ref()?.parent);
-        debug_assert_eq!(
-            self.node_types[index],
-            self.nodes[index].as_ref()?.node_type()
-        );
+        let node = self.nodes[index].as_ref()?;
+        debug_assert_eq!(self.parents[index], node.parent);
+        debug_assert_eq!(self.node_types[index], node.node_type());
         self.nodes[index].as_mut()
     }
 
