@@ -1593,6 +1593,13 @@ pub struct Gpu3D {
     // arena, since one compaction invalidates every view at once.
     shadow_layer_shrink: shadows::ShadowLayerShrink,
     decal_layer_shrink: shadows::LayerShrinkTracker,
+    // Camera-stream idle reclaim (see `note_stream_gc_tick`). The layer
+    // trackers above are fed from `update_shadow_state`, which an idle-gated
+    // stream never reaches -- it encodes zero passes -- so a stream that stops
+    // rendering pins its atlases at full size for the session. `render_pass`
+    // raises the flag; the GC tick counts the ticks that saw it clear.
+    rendered_since_gc_tick: bool,
+    idle_gc_ticks: u32,
     perf_counters: RenderPerfCounters,
     pass_counters: PassCounters,
     // Seam-pass gate for the next `mesh_blend_screen_pass`, decided in

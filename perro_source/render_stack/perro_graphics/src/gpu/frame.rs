@@ -1941,6 +1941,12 @@ impl Gpu {
         for three_d in self.camera_stream_3d.values_mut() {
             three_d.shrink_tick(&device, &queue);
             three_d.reclaim_memory_tick(&device);
+            // Stream-only: the per-frame idle gate skips unchanged, non-animated
+            // streams entirely, so their shadow atlases (and lazy mesh-blend
+            // targets) sit fully grown behind a view that encodes nothing.
+            // ~80MB per stream at 2 spot + 2 point casters. The main view above
+            // renders every frame and is deliberately excluded.
+            three_d.note_stream_gc_tick(&device);
         }
         for two_d in self.camera_stream_2d.values_mut() {
             two_d.shrink_tick(&device, &queue);

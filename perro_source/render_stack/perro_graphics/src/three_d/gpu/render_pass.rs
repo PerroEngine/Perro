@@ -93,6 +93,10 @@ impl Gpu3D {
         camera: &Camera3DState,
         render_sky: bool,
     ) {
+        // Idle-reclaim liveness (see `note_stream_gc_tick`): set here, not at
+        // the call site, so a camera stream that stops encoding cannot drift
+        // past the flag by way of one of the many early-outs above it.
+        self.note_render_pass();
         self.perf_counters.pipeline_switches = 0;
         self.perf_counters.texture_bind_group_switches = 0;
         self.perf_counters.camera_bind_group_switches = 0;

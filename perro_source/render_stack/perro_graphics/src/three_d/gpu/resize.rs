@@ -29,6 +29,37 @@ impl Gpu3D {
         self.invalidate_shadow_layers();
     }
 
+    /// Idle counterpart of `ensure_mesh_blend_targets`: put the blend
+    /// depth/mask targets (and the screen-blend scene copy) back on their 1x1
+    /// placeholders, ~9MB per instance at 1080p. Same invalidation set as the
+    /// upgrade, since the same views come out of both.
+    ///
+    /// Self-healing: the upgrade's guard is a size compare, so the next prepare
+    /// that still holds a blend batch re-fires it. Only reached from the
+    /// camera-stream idle path (see `note_stream_gc_tick`).
+    pub(super) fn release_mesh_blend_targets(&mut self, device: &wgpu::Device) -> bool {
+        if self.mesh_blend_depth_texture.width() <= 1
+            && self.mesh_blend_depth_texture.height() <= 1
+            && self.mesh_blend_scene_copy.is_none()
+        {
+            return false;
+        }
+        let (mesh_blend_depth_texture, mesh_blend_depth_view) =
+            create_depth_prepass_texture(device, 1, 1);
+        self.mesh_blend_depth_texture = mesh_blend_depth_texture;
+        self.mesh_blend_depth_view = mesh_blend_depth_view;
+        let (mesh_blend_mask_texture, mesh_blend_mask_view) =
+            mesh_blend_screen::create_mesh_blend_mask_texture(device, 1, 1);
+        self._mesh_blend_mask_texture = mesh_blend_mask_texture;
+        self.mesh_blend_mask_view = mesh_blend_mask_view;
+        self.mesh_blend_seam_bind_group = None;
+        self.mesh_blend_scene_copy = None;
+        self.rebuild_environment_bind_group(device);
+        self.rebuild_camera_bind_groups(device);
+        self.invalidate_shadow_layers();
+        true
+    }
+
     pub fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
         let width = width.max(1);
         let height = height.max(1);

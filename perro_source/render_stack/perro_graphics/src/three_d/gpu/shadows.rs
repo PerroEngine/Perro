@@ -164,6 +164,24 @@ pub(super) struct ShadowLayerShrink {
     pub(super) point: LayerShrinkTracker,
 }
 
+/// Consecutive GC ticks (one per `GC_INTERVAL_FRAMES`, so ~1s each at 60fps) a
+/// camera-stream view may encode nothing before its shadow atlases are released
+/// outright.
+///
+/// The shrink pass below cannot reach an idle stream: its trackers are fed from
+/// `update_shadow_state`, and a stream the per-frame idle gate skips never
+/// prepares, so `last` holds the layer count of the last frame it drew forever.
+///
+/// 10 matches the two existing idle TTLs (`DECODED_TEXTURE_EVICT_TTL_TICKS`,
+/// `PIPELINE_EVICT_GC_TICKS`) -- ~10s of *uninterrupted* idle. Long on purpose:
+/// a single rendered frame resets the count, and the resume frame pays a full
+/// re-raster of every shadow layer (the grow path forces them all), so a
+/// shorter window would trade a real frame spike for memory on a stream that is
+/// merely between updates. A stream that is genuinely parked (paused security
+/// camera, off-screen portal, minimap on a still scene) crosses it once and
+/// gives back its whole atlas set.
+pub(super) const STREAM_SHADOW_IDLE_RELEASE_TICKS: u32 = 10;
+
 /// Recreate one shadow atlas at `layers`. `layers == 0` restores the 1x1
 /// single-layer placeholder the constructor allocates (empty layer-view vec, so
 /// every shadow render loop clamps back to zero).
@@ -328,6 +346,106 @@ impl Gpu3D {
             self.invalidate_shadow_layers();
         }
         shrunk
+    }
+
+    /// Note that this view encoded its passes this frame. Cleared by the GC
+    /// tick, so a camera stream sitting behind the per-frame idle gate reads as
+    /// idle from the very first tick that sees no render.
+    pub(super) fn note_render_pass(&mut self) {
+        self.rendered_since_gc_tick = true;
+    }
+
+    /// GC-tick idle reclaim for a CAMERA-STREAM view. Never call it for the
+    /// main view: that one renders every frame, so the counter would never
+    /// arm -- and a stall that did arm it would thrash a 224MB re-allocation
+    /// onto the next frame.
+    ///
+    /// Releases the shadow atlases and the lazy mesh-blend depth/mask targets.
+    /// Returns true on the tick that actually released; the counter never even
+    /// arms while everything still sits on its 1x1 placeholder, which is where
+    /// a stream with no shadow-casting lights and no mesh blends stays.
+    pub fn note_stream_gc_tick(&mut self, device: &wgpu::Device) -> bool {
+        if std::mem::take(&mut self.rendered_since_gc_tick) {
+            self.idle_gc_ticks = 0;
+            return false;
+        }
+        let holds_atlas = self.ray_shadow_layers_allocated != 0
+            || self.spot_shadow_layers_allocated != 0
+            || self.point_shadow_layers_allocated != 0;
+        let holds_blend_targets = self.mesh_blend_depth_texture.width() > 1
+            || self.mesh_blend_depth_texture.height() > 1
+            || self.mesh_blend_scene_copy.is_some();
+        if !holds_atlas && !holds_blend_targets {
+            self.idle_gc_ticks = 0;
+            return false;
+        }
+        self.idle_gc_ticks = self.idle_gc_ticks.saturating_add(1);
+        if self.idle_gc_ticks < STREAM_SHADOW_IDLE_RELEASE_TICKS {
+            return false;
+        }
+        self.idle_gc_ticks = 0;
+        if holds_atlas {
+            self.release_shadow_atlases(device);
+        }
+        // Same TTL, same self-healing shape: the lazy 1x1 -> full-res upgrade
+        // for the mesh-blend depth/mask targets has no release path either.
+        if holds_blend_targets {
+            self.release_mesh_blend_targets(device);
+        }
+        true
+    }
+
+    /// Drop all three shadow atlases back to the 1x1 placeholder the
+    /// constructor allocates, i.e. the fresh-lazy state
+    /// `ensure_shadow_atlas_capacity` grows from.
+    ///
+    /// Same invalidation contract as `shrink_shadow_atlases_tick` (this is that
+    /// path with an unconditional target of 0): the atlas views feed exactly one
+    /// bind group (`shadow_bind_group`, rebuilt here) and the per-layer views
+    /// feed the depth attachments directly, so nothing else holds a handle. The
+    /// shadow camera / rigid-shadow / multimesh-shadow-cull bind groups are
+    /// buffer-only and stay valid. Layer contents are gone, so every layer is
+    /// forced to re-render via `invalidate_shadow_layers`, which also raises
+    /// `shadow_casters_dirty` -- that defeats `update_shadow_state`'s input
+    /// memo, so the resume frame is guaranteed to reach the grow path even
+    /// though camera and lights never moved while the stream was parked.
+    ///
+    /// No texture is `destroy`ed: the handles are dropped and wgpu keeps the
+    /// allocation alive behind any command buffer still in flight.
+    fn release_shadow_atlases(&mut self, device: &wgpu::Device) {
+        let (texture, view, layer_views) =
+            recreate_shadow_atlas(device, "perro_ray_shadow_map", self.shadow_map_size, 0);
+        self._shadow_map_texture = texture;
+        self.shadow_map_view = view;
+        self.shadow_layer_views = layer_views;
+        self.ray_shadow_layers_allocated = 0;
+        let (texture, view, layer_views) =
+            recreate_shadow_atlas(device, "perro_spot_shadow_map", self.shadow_spot_map_size, 0);
+        self._spot_shadow_map_texture = texture;
+        self.spot_shadow_map_view = view;
+        self.spot_shadow_layer_views = layer_views;
+        self.spot_shadow_layers_allocated = 0;
+        let (texture, view, layer_views) = recreate_shadow_atlas(
+            device,
+            "perro_point_shadow_map",
+            self.shadow_point_map_size,
+            0,
+        );
+        self._point_shadow_map_texture = texture;
+        self.point_shadow_map_view = view;
+        self.point_shadow_layer_views = layer_views;
+        self.point_shadow_layers_allocated = 0;
+        // Trackers held the parked stream's last need; from a placeholder the
+        // high-water restarts at whatever the resume frame asks for.
+        self.shadow_layer_shrink = ShadowLayerShrink::default();
+        // Cascade bookkeeping describes depth that no longer exists. `!was_valid`
+        // already forces every cascade, but a stale recorded light direction
+        // would outlive its layer.
+        self.shadow_cascade_defer_age = [0; MAX_SHADOW_RAY_CASCADES];
+        self.shadow_cascade_defer_count = 0;
+        self.shadow_cascade_light_dir = [[0.0; 3]; MAX_SHADOW_RAY_CASCADES];
+        self.rebuild_shadow_bind_group(device);
+        self.invalidate_shadow_layers();
     }
 
     /// Unconditional "every layer's depth contents are gone" reset. Used by the

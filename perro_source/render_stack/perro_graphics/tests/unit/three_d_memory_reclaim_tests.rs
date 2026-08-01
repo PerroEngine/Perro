@@ -594,6 +594,84 @@ fn point_shadow_layers_return_to_baseline_after_lights_leave() {
 }
 
 #[test]
+fn an_idle_camera_stream_view_releases_its_shadow_atlases() {
+    let Some((device, queue)) = pollster::block_on(test_device()) else {
+        eprintln!("no wgpu adapter; skipping stream shadow atlas release test");
+        return;
+    };
+    let arena = new_arena(&device);
+    let mut gpu = new_gpu_3d(&device, &queue, &arena);
+    let camera = Camera3DState::default();
+    let mut lighting = Lighting3DState::default();
+    for (index, slot) in lighting.point_lights.iter_mut().enumerate().take(4) {
+        *slot = Some(shadow_point_light(index as f32 * 3.0));
+    }
+
+    // Stand in for a stream that staged a mesh blend: the lazy 1x1 blend
+    // depth/mask targets are upgraded to the view resolution and never come
+    // back down on their own.
+    gpu.resize(&device, 64, 64);
+    gpu.ensure_mesh_blend_targets(&device);
+    assert_eq!(gpu.mesh_blend_depth_texture.width(), 64);
+
+    // A stream that renders: state is stable, so the layer trackers keep
+    // reporting the full need and the shrink pass can never reclaim.
+    for _ in 0..shadows::STREAM_SHADOW_IDLE_RELEASE_TICKS * 2 {
+        gpu.update_shadow_state(&device, &queue, &camera, &lighting, true);
+        gpu.note_render_pass();
+        gpu.reclaim_memory_tick(&device);
+        assert!(!gpu.note_stream_gc_tick(&device));
+    }
+    let live = gpu.memory_report();
+    assert_eq!(live.point_shadow_layers_allocated, 24);
+    assert_eq!(gpu.mesh_blend_depth_texture.width(), 64);
+
+    // Now the per-frame idle gate skips it: no prepare, no render pass.
+    for _ in 0..shadows::STREAM_SHADOW_IDLE_RELEASE_TICKS - 1 {
+        gpu.reclaim_memory_tick(&device);
+        assert!(!gpu.note_stream_gc_tick(&device));
+        assert_eq!(gpu.memory_report().point_shadow_layers_allocated, 24);
+        assert_eq!(gpu.mesh_blend_depth_texture.width(), 64);
+    }
+    gpu.reclaim_memory_tick(&device);
+    assert!(gpu.note_stream_gc_tick(&device));
+    let released = gpu.memory_report();
+    assert_eq!(released.ray_shadow_layers_allocated, 0);
+    assert_eq!(released.spot_shadow_layers_allocated, 0);
+    assert_eq!(released.point_shadow_layers_allocated, 0);
+    assert!(gpu.shadow_layer_views.is_empty());
+    assert!(gpu.spot_shadow_layer_views.is_empty());
+    assert!(gpu.point_shadow_layer_views.is_empty());
+    // Released contents must not be trusted: every layer invalid, and the
+    // caster flag raised so the resume frame cannot take the input memo.
+    assert!(gpu.shadow_casters_dirty);
+    assert!(gpu.shadow_layer_valid.iter().all(|valid| !valid));
+    // The lazy mesh-blend targets ride the same tick.
+    assert_eq!(gpu.mesh_blend_depth_texture.width(), 1);
+    assert!(gpu.mesh_blend_seam_bind_group.is_none());
+    assert!(gpu.mesh_blend_scene_copy.is_none());
+    eprintln!(
+        "idle stream point shadow layers: {} -> {}",
+        live.point_shadow_layers_allocated, released.point_shadow_layers_allocated
+    );
+
+    // Already released: further idle ticks are a no-op, not a re-allocation.
+    for _ in 0..shadows::STREAM_SHADOW_IDLE_RELEASE_TICKS * 2 {
+        assert!(!gpu.note_stream_gc_tick(&device));
+    }
+    assert_eq!(gpu.memory_report().point_shadow_layers_allocated, 0);
+
+    // The stream renders again: the grow path rebuilds from the placeholder and
+    // re-forces every layer.
+    gpu.update_shadow_state(&device, &queue, &camera, &lighting, true);
+    assert_eq!(gpu.memory_report().point_shadow_layers_allocated, 24);
+    assert!(gpu.shadow_layer_valid.iter().all(|valid| !valid));
+    assert!(!gpu.point_shadow_layer_views.is_empty());
+    gpu.ensure_mesh_blend_targets(&device);
+    assert_eq!(gpu.mesh_blend_depth_texture.width(), 64);
+}
+
+#[test]
 fn decal_texture_array_shrinks_to_the_live_layer_count() {
     let Some((device, queue)) = pollster::block_on(test_device()) else {
         eprintln!("no wgpu adapter; skipping decal array shrink test");

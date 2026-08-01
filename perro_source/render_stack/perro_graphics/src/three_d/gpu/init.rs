@@ -1825,6 +1825,8 @@ impl Gpu3D {
             multimesh_bind_group_generation: 1,
             shadow_layer_shrink: shadows::ShadowLayerShrink::default(),
             decal_layer_shrink: shadows::LayerShrinkTracker::default(),
+            rendered_since_gc_tick: false,
+            idle_gc_ticks: 0,
             perf_counters: RenderPerfCounters::default(),
             pass_counters: PassCounters::default(),
             mesh_blend_seam_region: SeamRegion::default(),
