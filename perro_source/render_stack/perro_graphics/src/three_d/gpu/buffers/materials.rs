@@ -27,12 +27,36 @@ impl Gpu3D {
         self.multi_draw_indirect_count_active
     }
 
+    /// Same, for the depth prepass.
+    #[inline]
+    pub fn indirect_count_prepass_active(&self) -> bool {
+        self.multi_draw_indirect_count_prepass_active
+    }
+
+    /// Same, for the mesh-blend depth pass.
+    #[inline]
+    pub fn indirect_count_blend_depth_active(&self) -> bool {
+        self.multi_draw_indirect_count_blend_depth_active
+    }
+
     /// Indirect commands the last main pass would have submitted without
     /// compaction: the sum of every run's `max_count`. The GPU frontend only
     /// walks the per-run counts, which are strictly <= this.
     #[inline]
     pub fn indirect_max_count(&self) -> u32 {
         self.indirect_planned_command_count
+    }
+
+    /// Same, for the depth prepass.
+    #[inline]
+    pub fn indirect_max_count_prepass(&self) -> u32 {
+        self.indirect_planned_command_count_prepass
+    }
+
+    /// Same, for the mesh-blend depth pass.
+    #[inline]
+    pub fn indirect_max_count_blend_depth(&self) -> u32 {
+        self.indirect_planned_command_count_blend_depth
     }
 
     #[inline]

@@ -6,8 +6,13 @@ use super::*;
 use crate::resources::ResourceStore;
 use crate::three_d::renderer::DenseMultiMeshDraw3D;
 use perro_ids::{MaterialID, MeshID, NodeID};
-use perro_render_bridge::{DenseInstancePose3D, LODOptions3D, MeshSurfaceBinding3D};
+use perro_render_bridge::{
+    CustomMaterial3D, CustomMaterialLighting3D, CustomMaterialParam3D, CustomMaterialParamValue3D,
+    DenseInstancePose3D, LODOptions3D, MaterialParamOverride3D, MeshSurfaceBinding3D,
+    StandardMaterial3D, VertexModifier3D,
+};
 use perro_structs::Color;
+use std::borrow::Cow;
 use std::time::{Duration, Instant};
 
 const DENSE_DRAWS: u32 = 50;
@@ -83,7 +88,72 @@ fn identity_at(x: f32) -> [[f32; 4]; 4] {
     ]
 }
 
+/// Custom material carrying both vertex modifiers and custom shader params, so
+/// a staged entry uses every word shape the arena can hold: the `value_base`
+/// header word (read by the modifier path) and the `(offset << 2) | kind` param
+/// words. `extra` adds a param so the entry's length changes too.
+fn custom_material(scale: f32, extra: bool) -> Material3D {
+    let mut params = vec![
+        CustomMaterialParam3D::named(
+            "tint",
+            CustomMaterialParamValue3D::Vec4([scale, 0.25, 0.5, 1.0]),
+        ),
+        CustomMaterialParam3D::named("wobble", CustomMaterialParamValue3D::F32(scale)),
+    ];
+    if extra {
+        params.push(CustomMaterialParam3D::named(
+            "extra",
+            CustomMaterialParamValue3D::Vec2([scale, 2.0]),
+        ));
+    }
+    Material3D::Custom(CustomMaterial3D {
+        // Resolved through the harness' `static_shader_lookup` so the pipeline
+        // compiles once and caches, instead of missing the asset store on
+        // every draw of every build.
+        shader_path: Cow::Borrowed("__prepare_test_shader__"),
+        params: Cow::Owned(params),
+        images: Cow::Borrowed(&[]),
+        lighting: CustomMaterialLighting3D::Standard,
+        surface: StandardMaterial3D::default(),
+    })
+    .with_vertex_modifiers(vec![VertexModifier3D::Inflate {
+        amount: scale,
+        mask: None,
+    }])
+}
+
+/// Fragment-only custom material body (no `shade_vertex` hook, which would pull
+/// these draws out of the depth/shadow batches). Reads param 0 so the staged
+/// arena is actually load-bearing for the compiled shader.
+fn test_custom_shader(_path_hash: u64) -> &'static str {
+    r#"
+fn shade_material(in: FragmentInput) -> vec4<f32> {
+    let tint = custom_f_param(in, 0u);
+    return vec4<f32>(tint.rgb + in.normal_ws * 0.05, tint.a);
+}
+"#
+}
+
+fn surfaces_with_override(material: MaterialID, tint: f32) -> Arc<[MeshSurfaceBinding3D]> {
+    Arc::from([MeshSurfaceBinding3D {
+        material: Some(material),
+        overrides: Arc::from([MaterialParamOverride3D {
+            name: Cow::Borrowed("tint"),
+            value: CustomMaterialParamValue3D::F32(tint),
+        }]),
+        modulate: Color::WHITE,
+    }])
+}
+
 fn dense_draw(index: u32, mesh: MeshID, material: MaterialID) -> Draw3DInstance {
+    dense_draw_with_surfaces(index, mesh, surfaces(material, Color::WHITE))
+}
+
+fn dense_draw_with_surfaces(
+    index: u32,
+    mesh: MeshID,
+    surfaces: Arc<[MeshSurfaceBinding3D]>,
+) -> Draw3DInstance {
     let instances: Arc<[DenseInstancePose3D]> = (0..DENSE_INSTANCES)
         .map(|i| DenseInstancePose3D {
             position: [(i % 64) as f32 * 0.5, 0.0, (i / 64) as f32 * 0.5],
@@ -97,7 +167,7 @@ fn dense_draw(index: u32, mesh: MeshID, material: MaterialID) -> Draw3DInstance 
     Draw3DInstance {
         node: NodeID::from_parts(900_000 + index, 0),
         kind: Draw3DKind::Mesh(mesh),
-        surfaces: surfaces(material, Color::WHITE),
+        surfaces,
         instance_mats: Arc::from([]),
         blend_shape_weights: Arc::from([]),
         debug_color: None,
@@ -142,6 +212,10 @@ struct StagingSnapshot {
     blend_weights: Vec<f32>,
     blend_meta_base: u32,
     blend_weight_base: u32,
+    custom_params_meta: Vec<u32>,
+    custom_params_values: Vec<f32>,
+    custom_params_meta_base: u32,
+    custom_params_values_base: u32,
     batch_keys: Vec<(u32, u32, u32, u32, u32, bool, bool)>,
     param_ranges: Vec<std::ops::Range<u32>>,
     rigid_meta_len: usize,
@@ -165,6 +239,10 @@ fn snapshot(gpu: &Gpu3D) -> StagingSnapshot {
         blend_weights: gpu.staged_multimesh_blend_weights.clone(),
         blend_meta_base: gpu.multimesh_blend_meta_base,
         blend_weight_base: gpu.multimesh_blend_weight_base,
+        custom_params_meta: gpu.staged_multimesh_custom_params_meta.clone(),
+        custom_params_values: gpu.staged_multimesh_custom_params_values.clone(),
+        custom_params_meta_base: gpu.multimesh_custom_params_meta_base,
+        custom_params_values_base: gpu.multimesh_custom_params_values_base,
         batch_keys: gpu
             .multimesh_batches
             .iter()
@@ -193,6 +271,9 @@ struct Harness {
     shared_textures: SharedTextureStore,
     lighting: Lighting3DState,
     revision: u64,
+    /// Supplied by the custom-material test so its shader resolves (and its
+    /// pipeline caches) instead of missing the asset store on every draw.
+    static_shader_lookup: Option<StaticShaderLookup>,
 }
 
 impl Harness {
@@ -216,7 +297,7 @@ impl Harness {
                 height: 256,
                 static_texture_lookup: None,
                 static_mesh_lookup: None,
-                static_shader_lookup: None,
+                static_shader_lookup: self.static_shader_lookup,
             },
         );
         start.elapsed()
@@ -248,6 +329,7 @@ fn multimesh_staging_reuse_matches_full_repack_and_is_cheaper() {
             shared_textures: SharedTextureStore::default(),
             lighting: Lighting3DState::default(),
             revision: 0,
+            static_shader_lookup: None,
         };
 
         let mut draws: Vec<Draw3DInstance> = (0..DENSE_DRAWS)
@@ -356,6 +438,171 @@ fn multimesh_staging_reuse_matches_full_repack_and_is_cheaper() {
         assert!(
             reuse < repack,
             "multimesh staging reuse ({reuse:?}) is not cheaper than a repack ({repack:?})"
+        );
+    });
+}
+
+/// Dense draws whose material carries custom-shader params used to opt the whole
+/// scene out of staging reuse: their param offsets pointed into the shared arena
+/// that every rebuild refills from the regular draws. The params now stage into
+/// their own tail arena and are rebased by a delta, so these scenes reuse like
+/// any other -- and reproduce the same bytes a repack would.
+#[test]
+fn multimesh_custom_param_staging_reuse_matches_full_repack_and_is_cheaper() {
+    pollster::block_on(async {
+        let Some((device, queue)) = test_device().await else {
+            eprintln!("skip multimesh custom-param staging reuse test: no wgpu adapter");
+            return;
+        };
+        let gpu = new_gpu_3d(&device, &queue);
+        let mut resources = ResourceStore::new();
+        let mesh = resources.create_mesh("__prepare_custom_test_mesh__", true);
+        let dense_material = resources.create_material(
+            custom_material(1.0, false),
+            Some("__prepare_custom_dense_mat__"),
+            true,
+        );
+        // Two regular materials with DIFFERENT param counts: swapping between
+        // them changes the regular arena's length, which moves the multimesh
+        // tail and forces the delta rebase to run.
+        let regular_short = resources.create_material(
+            custom_material(0.5, false),
+            Some("__prepare_custom_reg_short__"),
+            true,
+        );
+        let regular_long = resources.create_material(
+            custom_material(0.75, true),
+            Some("__prepare_custom_reg_long__"),
+            true,
+        );
+        let mut harness = Harness {
+            device,
+            queue,
+            gpu,
+            resources,
+            shared_textures: SharedTextureStore::default(),
+            lighting: Lighting3DState::default(),
+            revision: 0,
+            static_shader_lookup: Some(test_custom_shader),
+        };
+
+        let dense_surfaces = surfaces_with_override(dense_material, 0.125);
+        let mut draws: Vec<Draw3DInstance> = (0..DENSE_DRAWS)
+            .map(|i| dense_draw_with_surfaces(i, mesh, dense_surfaces.clone()))
+            .collect();
+        draws.extend(
+            (0..REGULAR_DRAWS).map(|i| regular_draw(i, mesh, regular_short, Color::WHITE)),
+        );
+
+        harness.prepare(&draws, true);
+        assert!(
+            !harness.gpu.staged_multimesh_custom_params_meta.is_empty(),
+            "dense custom-material params never staged; scene setup is wrong"
+        );
+        assert!(
+            !harness.gpu.staged_custom_params_meta.is_empty(),
+            "regular custom-material params never staged; scene setup is wrong"
+        );
+        // The tail must sit exactly after the regular rows in both arenas.
+        assert_eq!(
+            harness.gpu.multimesh_custom_params_meta_base,
+            harness.gpu.staged_custom_params_meta.len() as u32
+        );
+        assert_eq!(
+            harness.gpu.multimesh_custom_params_values_base,
+            harness.gpu.staged_custom_params_values.len() as u32
+        );
+        // ...and every dense draw param must address into it.
+        let tail_start = harness.gpu.multimesh_custom_params_meta_base;
+        for param in harness.gpu.staged_multimesh_draw_params.iter() {
+            assert!(
+                param.custom_params[0] >= tail_start + 2,
+                "dense draw param header {} points outside the multimesh tail (starts at {})",
+                param.custom_params[0],
+                tail_start,
+            );
+        }
+
+        // Swap one regular draw between the short and long custom material: a
+        // semantic change that forces the full rebuild AND resizes the regular
+        // arena underneath the tail, but touches nothing multimesh.
+        let flip = |draws: &mut Vec<Draw3DInstance>, long: bool| {
+            let material = if long { regular_long } else { regular_short };
+            draws[DENSE_DRAWS as usize] = regular_draw(0, mesh, material, Color::WHITE);
+        };
+
+        flip(&mut draws, true);
+        let reuse_before = harness.gpu.multimesh_staging_reuse_count;
+        harness.prepare(&draws, false);
+        assert_eq!(
+            harness.gpu.multimesh_staging_reuse_count,
+            reuse_before + 1,
+            "custom-param multimesh scene did not reuse its staging"
+        );
+        let reused = snapshot(&harness.gpu);
+        // The rebase must have tracked the resized regular arena.
+        assert_eq!(
+            harness.gpu.multimesh_custom_params_meta_base,
+            harness.gpu.staged_custom_params_meta.len() as u32
+        );
+        assert_eq!(
+            harness.gpu.multimesh_custom_params_values_base,
+            harness.gpu.staged_custom_params_values.len() as u32
+        );
+
+        // Same draw list through the repack path: byte-identical staging.
+        harness.prepare(&draws, true);
+        let repacked = snapshot(&harness.gpu);
+        assert!(
+            reused == repacked,
+            "reused custom-param multimesh staging diverges from a full repack"
+        );
+
+        // Negative: a changed param VALUE on the dense surfaces must repack, and
+        // the staged tail values must actually move.
+        let before_values = harness.gpu.staged_multimesh_custom_params_values.clone();
+        let mut retinted = draws.clone();
+        let retinted_surfaces = surfaces_with_override(dense_material, 0.875);
+        for draw in retinted.iter_mut().take(DENSE_DRAWS as usize) {
+            draw.surfaces = retinted_surfaces.clone();
+        }
+        let reuse_before = harness.gpu.multimesh_staging_reuse_count;
+        harness.prepare(&retinted, false);
+        assert_eq!(
+            harness.gpu.multimesh_staging_reuse_count, reuse_before,
+            "changed custom-param value must repack"
+        );
+        assert_ne!(
+            harness.gpu.staged_multimesh_custom_params_values, before_values,
+            "changed custom-param value did not reach the staged tail"
+        );
+
+        // Back to the original params, then time repack vs reuse.
+        harness.prepare(&draws, true);
+        const SAMPLES: usize = 15;
+        let mut repack_samples = Vec::with_capacity(SAMPLES);
+        let mut reuse_samples = Vec::with_capacity(SAMPLES);
+        let mut long = false;
+        for _ in 0..SAMPLES {
+            long = !long;
+            flip(&mut draws, long);
+            repack_samples.push(harness.prepare(&draws, true));
+            long = !long;
+            flip(&mut draws, long);
+            reuse_samples.push(harness.prepare(&draws, false));
+        }
+        let repack = median(repack_samples);
+        let reuse = median(reuse_samples);
+        println!(
+            "multimesh custom-param full rebuild ({DENSE_DRAWS} dense x {DENSE_INSTANCES} inst + \
+             {REGULAR_DRAWS} regular): repack={:?} reuse={:?} ({:.2}x)",
+            repack,
+            reuse,
+            repack.as_secs_f64() / reuse.as_secs_f64().max(f64::EPSILON),
+        );
+        assert!(
+            reuse < repack,
+            "custom-param staging reuse ({reuse:?}) is not cheaper than a repack ({repack:?})"
         );
     });
 }

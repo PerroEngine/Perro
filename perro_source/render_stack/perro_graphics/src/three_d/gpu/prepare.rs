@@ -704,9 +704,16 @@ impl Gpu3D {
             self.multimesh_blend_meta_base = 0;
             self.multimesh_blend_weight_base = 0;
             self.multimesh_blend_tail_revision = self.multimesh_blend_tail_revision.wrapping_add(1);
+            self.staged_multimesh_custom_params_meta.clear();
+            self.staged_multimesh_custom_params_values.clear();
+            self.staged_multimesh_custom_params_dedupe.clear();
+            self.staged_multimesh_custom_params_entry_starts.clear();
+            self.multimesh_custom_params_meta_base = 0;
+            self.multimesh_custom_params_values_base = 0;
+            self.multimesh_custom_params_tail_revision =
+                self.multimesh_custom_params_tail_revision.wrapping_add(1);
             self.multimesh_staging_cache.clear();
             self.multimesh_staging_cache_valid = false;
-            self.multimesh_staging_cache_custom_params = false;
         }
         self.multimesh_pose_pack_cache_seen.clear();
         self.draw_batches.reserve(draws.len());
@@ -948,12 +955,11 @@ impl Gpu3D {
                         draw.receive_shadows,
                         static_shader_lookup,
                     );
-                    let custom_params = self.stage_custom_params(material);
-                    // Custom-material params land in the shared arena, which a
-                    // later rebuild refills from the regular draws; the offset
-                    // baked in here would go stale, so opt this scene out of
-                    // staging reuse.
-                    self.multimesh_staging_cache_custom_params |= custom_params.1 != 0;
+                    // Tail-local header offset; rebased onto the regular arena
+                    // lengths by `rebase_multimesh_custom_params_tail` once the
+                    // build is done, so this row never depends on what the
+                    // regular draws staged.
+                    let custom_params = self.stage_multimesh_custom_params(material);
                     let mirrored_winding = draw_model.determinant() < 0.0;
                     let packed_material = build_instance(
                         dense.node_model,
@@ -1879,6 +1885,11 @@ impl Gpu3D {
         // right after the rigid rows (which the rigid/skinned shaders index
         // positionally, so they must own the head).
         let multimesh_rows_rebased = self.rebase_multimesh_blend_tails();
+        // Same treatment for the custom-material params: the tail sits after
+        // the rows the regular draws just staged. Must run before the draw
+        // params are hashed/uploaded below (it rewrites their header offsets)
+        // and after `apply_local_color_bleed`, which owns a different lane.
+        self.rebase_multimesh_custom_params_tail();
         self.ensure_blend_shape_weight_capacity(
             device,
             (self.staged_blend_shape_weights.len() + self.staged_multimesh_blend_weights.len())
@@ -1933,10 +1944,15 @@ impl Gpu3D {
                 bytemuck::cast_slice(&self.staged_skeletons),
             );
         }
+        // Both arenas carry the multimesh tail after the regular rows.
         self.ensure_custom_params_capacity(
             device,
-            self.staged_custom_params_meta.len().max(1),
-            self.staged_custom_params_values.len().max(1),
+            (self.staged_custom_params_meta.len()
+                + self.staged_multimesh_custom_params_meta.len())
+            .max(1),
+            (self.staged_custom_params_values.len()
+                + self.staged_multimesh_custom_params_values.len())
+            .max(1),
         );
         if self.custom_params_meta_uploaded < self.staged_custom_params_meta.len() {
             let upload_start = self.custom_params_meta_uploaded;
@@ -1958,6 +1974,7 @@ impl Gpu3D {
             );
             self.custom_params_values_uploaded = self.staged_custom_params_values.len();
         }
+        self.upload_multimesh_custom_params_tail(queue);
         self.ensure_multimesh_draw_params_capacity(
             device,
             self.staged_multimesh_draw_params.len().max(1),
@@ -2200,6 +2217,102 @@ impl Gpu3D {
         }
     }
 
+    /// Point the staged multimesh custom-param rows at the arena tail they will
+    /// be uploaded to, which starts where the regular draws' rows end. Both
+    /// levels of indirection are explicit offsets, so a moved tail is a delta
+    /// rewrite rather than a repack:
+    ///
+    /// - `MultiMeshDrawParamGpu::custom_params[0]` -> header index in the meta
+    ///   arena (`0` means the material has no params; a real entry is >= 2),
+    /// - meta word 0 of each header -> value index of its modifier records,
+    ///   and each following param word packs `(value index << 2) | kind`.
+    ///
+    /// The values themselves are position-independent, so only the offsets
+    /// move.
+    fn rebase_multimesh_custom_params_tail(&mut self) {
+        if self.staged_multimesh_custom_params_meta.is_empty() {
+            self.multimesh_custom_params_meta_base = 0;
+            self.multimesh_custom_params_values_base = 0;
+            return;
+        }
+        let values_base = self.staged_custom_params_values.len() as u32;
+        let values_delta = values_base.wrapping_sub(self.multimesh_custom_params_values_base);
+        if values_delta != 0 {
+            let starts = &self.staged_multimesh_custom_params_entry_starts;
+            let meta = &mut self.staged_multimesh_custom_params_meta;
+            for (entry, &start) in starts.iter().enumerate() {
+                let end = starts
+                    .get(entry + 1)
+                    .copied()
+                    .unwrap_or(meta.len() as u32) as usize;
+                let start = start as usize;
+                meta[start] = meta[start].wrapping_add(values_delta);
+                // Word 1 is the modifier count; the rest are param words.
+                for word in &mut meta[(start + 2).min(end)..end] {
+                    let kind = *word & 0x3;
+                    let offset = (*word >> 2).wrapping_add(values_delta);
+                    *word = (offset << 2) | kind;
+                }
+            }
+            self.multimesh_custom_params_values_base = values_base;
+            self.multimesh_custom_params_tail_revision =
+                self.multimesh_custom_params_tail_revision.wrapping_add(1);
+        }
+        let meta_base = self.staged_custom_params_meta.len() as u32;
+        let meta_delta = meta_base.wrapping_sub(self.multimesh_custom_params_meta_base);
+        if meta_delta == 0 {
+            return;
+        }
+        for param in self.staged_multimesh_draw_params.iter_mut() {
+            if param.custom_params[0] != 0 {
+                param.custom_params[0] = param.custom_params[0].wrapping_add(meta_delta);
+            }
+        }
+        self.multimesh_custom_params_meta_base = meta_base;
+    }
+
+    /// Upload the multimesh custom-param tails into the region right after the
+    /// regular rows. Gated the same way as the blend tails: a rebuild that only
+    /// touched the regular draws re-uploads nothing.
+    fn upload_multimesh_custom_params_tail(&mut self, queue: &wgpu::Queue) {
+        if !self.staged_multimesh_custom_params_meta.is_empty() {
+            let key = (
+                self.multimesh_custom_params_tail_revision,
+                self.multimesh_custom_params_meta_base,
+                self.staged_multimesh_custom_params_meta.len(),
+                self.custom_params_meta_capacity,
+            );
+            if self.uploaded_multimesh_custom_params_meta != Some(key) {
+                let offset = self.multimesh_custom_params_meta_base as u64
+                    * std::mem::size_of::<u32>() as u64;
+                queue.write_buffer(
+                    &self.custom_params_meta_buffer,
+                    offset,
+                    bytemuck::cast_slice(&self.staged_multimesh_custom_params_meta),
+                );
+                self.uploaded_multimesh_custom_params_meta = Some(key);
+            }
+        }
+        if !self.staged_multimesh_custom_params_values.is_empty() {
+            let key = (
+                self.multimesh_custom_params_tail_revision,
+                self.multimesh_custom_params_values_base,
+                self.staged_multimesh_custom_params_values.len(),
+                self.custom_params_values_capacity,
+            );
+            if self.uploaded_multimesh_custom_params_values != Some(key) {
+                let offset = self.multimesh_custom_params_values_base as u64
+                    * std::mem::size_of::<f32>() as u64;
+                queue.write_buffer(
+                    &self.custom_params_values_buffer,
+                    offset,
+                    bytemuck::cast_slice(&self.staged_multimesh_custom_params_values),
+                );
+                self.uploaded_multimesh_custom_params_values = Some(key);
+            }
+        }
+    }
+
     /// Whether the staged multimesh buffers can be carried into this rebuild
     /// unchanged.
     ///
@@ -2210,6 +2323,11 @@ impl Gpu3D {
     /// world transform, material/surface bindings and scene-resolved blend, and
     /// the camera when a mesh has baked LODs. `force_full_rebuild` (raised on
     /// any resource dirty) covers mesh/material/texture edits.
+    ///
+    /// Custom-material params ride on the same key: they are a pure function of
+    /// the surface bindings (material id + per-surface overrides) plus the
+    /// material asset, and their staged rows live in the multimesh tail arena,
+    /// so nothing a regular draw stages can move them.
     fn can_reuse_multimesh_staging(
         &self,
         force_full_rebuild: bool,
@@ -2220,7 +2338,6 @@ impl Gpu3D {
         if force_full_rebuild
             || !self.multimesh_staging_cache_valid
             || self.multimesh_staging_cache.is_empty()
-            || self.multimesh_staging_cache_custom_params
         {
             return false;
         }

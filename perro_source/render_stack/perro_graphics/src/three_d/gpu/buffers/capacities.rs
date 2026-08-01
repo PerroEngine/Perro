@@ -802,12 +802,15 @@ impl Gpu3D {
             .note_used(self.blend_shape_delta_len);
         // Retained CPU mirrors are the authoritative live lengths for the
         // bind-group-facing storage buffers below.
-        self.shrink
-            .custom_params_meta
-            .note_used(self.staged_custom_params_meta.len());
-        self.shrink
-            .custom_params_values
-            .note_used(self.staged_custom_params_values.len());
+        // Both custom-param arenas carry the multimesh tail after the regular
+        // draws' rows.
+        self.shrink.custom_params_meta.note_used(
+            self.staged_custom_params_meta.len() + self.staged_multimesh_custom_params_meta.len(),
+        );
+        self.shrink.custom_params_values.note_used(
+            self.staged_custom_params_values.len()
+                + self.staged_multimesh_custom_params_values.len(),
+        );
         // Both buffers carry the multimesh tail after the rigid rows.
         self.shrink.blend_shape_weights.note_used(
             self.staged_blend_shape_weights.len() + self.staged_multimesh_blend_weights.len(),
@@ -1295,9 +1298,14 @@ impl Gpu3D {
             // the new indirect buffer, which the caller handles.
             return;
         }
-        self.indirect_compact_buffer = create_indirect_compact_buffer(device, new_capacity);
-        self.indirect_count_buffer = create_indirect_count_buffer(device, new_capacity);
-        self.indirect_run_buffer = create_indirect_run_buffer(device, new_capacity);
+        // Every consuming pass owns one `new_capacity`-wide region of the
+        // compacted / count buffers, and the run buffer holds all their plans
+        // at once (each plan is at most one run per indirect slot).
+        let regioned = new_capacity * INDIRECT_COMPACT_REGIONS;
+        self.indirect_compact_region_stride = new_capacity;
+        self.indirect_compact_buffer = create_indirect_compact_buffer(device, regioned);
+        self.indirect_count_buffer = create_indirect_count_buffer(device, regioned);
+        self.indirect_run_buffer = create_indirect_run_buffer(device, regioned);
         // fresh buffer, undefined contents: the skip-identical gate must not fire.
         self.last_uploaded_indirect_runs.clear();
     }
@@ -1305,32 +1313,36 @@ impl Gpu3D {
     // Rebuild the two bind groups that reference the frustum cull static /
     // dynamic / indirect buffers (grow and shrink paths share this).
     fn rebuild_frustum_cull_bind_groups(&mut self, device: &wgpu::Device) {
-        self.indirect_compact_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("perro_indirect_compact_bg"),
-            layout: &self.indirect_compact_bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.indirect_compact_params_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: self.indirect_run_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: self.indirect_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: self.indirect_compact_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: self.indirect_count_buffer.as_entire_binding(),
-                },
-            ],
+        let indirect_compact_bind_groups = std::array::from_fn(|dispatch| {
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("perro_indirect_compact_bg"),
+                layout: &self.indirect_compact_bgl,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: self.indirect_compact_params_buffers[dispatch]
+                            .as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: self.indirect_run_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: self.indirect_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: self.indirect_compact_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: self.indirect_count_buffer.as_entire_binding(),
+                    },
+                ],
+            })
         });
+        self.indirect_compact_bind_groups = indirect_compact_bind_groups;
         self.frustum_cull_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_frustum_cull_bg"),
             layout: &self.frustum_cull_bgl,

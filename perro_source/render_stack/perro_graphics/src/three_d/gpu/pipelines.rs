@@ -785,7 +785,24 @@ impl Gpu3D {
         }
     }
 
+    /// Stage `material`'s vertex modifiers + custom shader params into the
+    /// shared arena the regular draws own. Returns `(header offset, param
+    /// count)`; `(0, 0)` means the material carries neither.
+    #[inline]
     pub(super) fn stage_custom_params(&mut self, material: &Material3D) -> (u32, u32) {
+        self.stage_custom_params_into(material, false)
+    }
+
+    /// Same, but into the multimesh tail arena (tail-local offsets, rebased
+    /// onto the regular arena lengths by `rebase_multimesh_custom_params_tail`).
+    /// Keeping dense draws out of the shared arena is what lets a full rebuild
+    /// reuse their staged rows verbatim.
+    #[inline]
+    pub(super) fn stage_multimesh_custom_params(&mut self, material: &Material3D) -> (u32, u32) {
+        self.stage_custom_params_into(material, true)
+    }
+
+    fn stage_custom_params_into(&mut self, material: &Material3D, tail: bool) -> (u32, u32) {
         let modifiers = material.vertex_modifiers();
         let custom_params = match material {
             Material3D::Custom(custom) => custom.params.as_ref(),
@@ -795,68 +812,110 @@ impl Gpu3D {
             return (0, 0);
         }
 
-        self.staged_custom_params_key_scratch.clear();
-        self.staged_custom_params_meta_scratch.clear();
-        self.staged_custom_params_values_scratch.clear();
-        self.staged_custom_params_key_scratch
-            .push(modifiers.len() as u32);
+        // Taken out so the commit below can borrow the destination arenas.
+        let mut key = std::mem::take(&mut self.staged_custom_params_key_scratch);
+        let mut meta_scratch = std::mem::take(&mut self.staged_custom_params_meta_scratch);
+        let mut values_scratch = std::mem::take(&mut self.staged_custom_params_values_scratch);
+        key.clear();
+        meta_scratch.clear();
+        values_scratch.clear();
+        key.push(modifiers.len() as u32);
         for modifier in modifiers {
-            encode_vertex_modifier(modifier, &mut self.staged_custom_params_values_scratch);
+            encode_vertex_modifier(modifier, &mut values_scratch);
         }
-        self.staged_custom_params_key_scratch.extend(
-            self.staged_custom_params_values_scratch
-                .iter()
-                .map(|value| value.to_bits()),
-        );
+        key.extend(values_scratch.iter().map(|value| value.to_bits()));
 
         for param in custom_params {
-            let value_offset = self.staged_custom_params_values_scratch.len() as u32;
-            let kind = encode_custom_param_value_packed(
-                &param.value,
-                &mut self.staged_custom_params_values_scratch,
-            );
-            self.staged_custom_params_meta_scratch
-                .push((value_offset << 2) | kind);
-            self.staged_custom_params_key_scratch.push(kind);
+            let value_offset = values_scratch.len() as u32;
+            let kind = encode_custom_param_value_packed(&param.value, &mut values_scratch);
+            meta_scratch.push((value_offset << 2) | kind);
+            key.push(kind);
             let value_len = match kind {
                 CUSTOM_PARAM_KIND_SCALAR => 1,
                 CUSTOM_PARAM_KIND_VEC2 => 2,
                 CUSTOM_PARAM_KIND_VEC3 => 3,
                 _ => 4,
             };
-            self.staged_custom_params_key_scratch.extend(
-                self.staged_custom_params_values_scratch
-                    [value_offset as usize..value_offset as usize + value_len]
+            key.extend(
+                values_scratch[value_offset as usize..value_offset as usize + value_len]
                     .iter()
                     .map(|value| value.to_bits()),
             );
         }
 
-        if let Some(&cached) = self
-            .staged_custom_params_dedupe
-            .get(self.staged_custom_params_key_scratch.as_slice())
-        {
+        let staged = CustomParamsStaging {
+            key: &key,
+            meta: &meta_scratch,
+            values: &values_scratch,
+            modifier_count: modifiers.len() as u32,
+        };
+        let result = if tail {
+            CustomParamsArena {
+                meta: &mut self.staged_multimesh_custom_params_meta,
+                values: &mut self.staged_multimesh_custom_params_values,
+                dedupe: &mut self.staged_multimesh_custom_params_dedupe,
+                entry_starts: Some(&mut self.staged_multimesh_custom_params_entry_starts),
+            }
+            .commit(staged)
+        } else {
+            CustomParamsArena {
+                meta: &mut self.staged_custom_params_meta,
+                values: &mut self.staged_custom_params_values,
+                dedupe: &mut self.staged_custom_params_dedupe,
+                entry_starts: None,
+            }
+            .commit(staged)
+        };
+
+        self.staged_custom_params_key_scratch = key;
+        self.staged_custom_params_meta_scratch = meta_scratch;
+        self.staged_custom_params_values_scratch = values_scratch;
+        result
+    }
+}
+
+/// One encoded material's params, ready to be appended to an arena.
+struct CustomParamsStaging<'a> {
+    /// Dedupe key: modifier count + every value bit pattern + param kinds.
+    key: &'a [u32],
+    /// Param words with arena-relative value offsets: `(offset << 2) | kind`.
+    meta: &'a [u32],
+    values: &'a [f32],
+    modifier_count: u32,
+}
+
+/// Destination arena for `stage_custom_params_into`: either the shared one the
+/// regular draws fill or the multimesh tail.
+struct CustomParamsArena<'a> {
+    meta: &'a mut Vec<u32>,
+    values: &'a mut Vec<f32>,
+    dedupe: &'a mut AHashMap<Vec<u32>, (u32, u32)>,
+    /// Tail only: header start of each entry, so the rebase can walk the arena.
+    entry_starts: Option<&'a mut Vec<u32>>,
+}
+
+impl CustomParamsArena<'_> {
+    fn commit(self, staged: CustomParamsStaging<'_>) -> (u32, u32) {
+        if let Some(&cached) = self.dedupe.get(staged.key) {
             return cached;
         }
-
-        let header_offset = self.staged_custom_params_meta.len() as u32;
-        let value_base = self.staged_custom_params_values.len() as u32;
-        self.staged_custom_params_meta.push(value_base);
-        self.staged_custom_params_meta.push(modifiers.len() as u32);
-        for meta in &self.staged_custom_params_meta_scratch {
+        let header_offset = self.meta.len() as u32;
+        let value_base = self.values.len() as u32;
+        if let Some(starts) = self.entry_starts {
+            starts.push(header_offset);
+        }
+        self.meta.push(value_base);
+        self.meta.push(staged.modifier_count);
+        for meta in staged.meta {
             let kind = *meta & 0x3;
             let rel_offset = *meta >> 2;
-            self.staged_custom_params_meta
-                .push(((value_base + rel_offset) << 2) | kind);
+            self.meta.push(((value_base + rel_offset) << 2) | kind);
         }
-        self.staged_custom_params_values
-            .extend_from_slice(&self.staged_custom_params_values_scratch);
-        let result = (
-            header_offset + 2,
-            self.staged_custom_params_meta_scratch.len() as u32,
-        );
-        self.staged_custom_params_dedupe
-            .insert(self.staged_custom_params_key_scratch.clone(), result);
+        self.values.extend_from_slice(staged.values);
+        // `header_offset + 2` skips the two header words; a real entry is
+        // therefore always >= 2, which is what makes 0 a usable "none" marker.
+        let result = (header_offset + 2, staged.meta.len() as u32);
+        self.dedupe.insert(staged.key.to_vec(), result);
         result
     }
 }

@@ -55,6 +55,13 @@ impl Gpu3D {
     }
 }
 
+// No indirect-count path here, by construction. Shadow layers are culled on the
+// CPU (compute_shadow_cull -> shadow_cull_scratch keeps only the survivors) and
+// drawn with direct draw_indexed, so there are no culled-to-zero indirect slots
+// to compact: the command stream already carries exactly the visible casters.
+// The camera cull's indirect buffer is also unusable here - it is written by a
+// compute pass encoded after these layers, and its visibility is the camera's,
+// not the light's. Same for draw_multimesh_shadow_casters below.
 pub(super) fn draw_shadow_batches<'a>(
     gpu: &'a Gpu3D,
     shadow_pass: &mut wgpu::RenderPass<'a>,

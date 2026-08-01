@@ -265,69 +265,170 @@ impl Gpu3D {
         self.compact_src_region_dedup_scratch = src_region_dedup;
     }
 
-    // Rebuild `indirect_run_plan` from the current main-pass batch groups and
-    // return the total command count the pass would submit without compaction
-    // (the sum of every run's max_count). The render loop walks this exact plan,
-    // so the runs the compaction pass writes counts for and the runs the draws
-    // read counts from can never diverge.
-    pub(super) fn build_indirect_run_plan(&mut self) -> u32 {
+    // Rebuild `indirect_run_plan` for every pass that can draw from compacted
+    // commands, laid out [depth prepass][mesh-blend depth][main]. Segmentation
+    // is pure CPU work over `draw_batches` (no cull result is read), so the
+    // whole frame's plan can be built and uploaded before the first consumer
+    // even though the passes observe different states of the indirect buffer.
+    // Each render loop walks the exact slice planned here, so the runs the
+    // compaction writes counts for and the runs the draws read counts from can
+    // never diverge.
+    pub(super) fn build_indirect_run_plans(
+        &mut self,
+        count_path_available: bool,
+        depth_prepass_active: bool,
+        mesh_blend_depth_active: bool,
+    ) {
+        self.multi_draw_indirect_count_active = false;
+        self.multi_draw_indirect_count_prepass_active = false;
+        self.multi_draw_indirect_count_blend_depth_active = false;
+        self.indirect_planned_command_count = 0;
+        self.indirect_planned_command_count_prepass = 0;
+        self.indirect_planned_command_count_blend_depth = 0;
         let mut plan = std::mem::take(&mut self.indirect_run_plan);
         plan.clear();
+        self.indirect_run_plan_prepass = 0..0;
+        self.indirect_run_plan_blend_depth = 0..0;
+        self.indirect_run_plan_main = 0..0;
+        self.indirect_run_plan_groups = [0..0, 0..0, 0..0];
+        if !count_path_available {
+            self.indirect_run_plan = plan;
+            return;
+        }
+        let stride = self.indirect_compact_region_stride as u32;
+
+        // Depth prepass + mesh-blend depth: one run per (path, double_sided,
+        // packed_lod) state, matching their render loops' rebind condition.
+        if depth_prepass_active {
+            let range = plan_depth_runs(
+                &self.draw_batches,
+                &self.depth_prepass_batch_indices,
+                INDIRECT_COMPACT_REGION_DEPTH_PREPASS * stride,
+                &mut plan,
+            );
+            let planned = planned_commands(&plan, &range);
+            self.indirect_planned_command_count_prepass = planned;
+            if planned >= INDIRECT_COUNT_MIN_COMMANDS {
+                self.indirect_run_plan_prepass = range;
+                self.multi_draw_indirect_count_prepass_active = true;
+            } else {
+                plan.truncate(range.start);
+            }
+        }
+        if mesh_blend_depth_active {
+            let range = plan_depth_runs(
+                &self.draw_batches,
+                &self.mesh_blend_depth_batch_indices,
+                INDIRECT_COMPACT_REGION_BLEND_DEPTH * stride,
+                &mut plan,
+            );
+            let planned = planned_commands(&plan, &range);
+            self.indirect_planned_command_count_blend_depth = planned;
+            if planned >= INDIRECT_COUNT_MIN_COMMANDS {
+                self.indirect_run_plan_blend_depth = range;
+                self.multi_draw_indirect_count_blend_depth_active = true;
+            } else {
+                plan.truncate(range.start);
+            }
+        }
+
+        // Main pass: one run per pipeline-state / material-texture change, with
+        // occlusion-query batches drawn on their own.
+        let main_start = plan.len();
         let groups = [
             self.opaque_batch_indices.as_slice(),
             self.alpha_batch_indices.as_slice(),
             self.overlay_batch_indices.as_slice(),
         ];
         let mut ranges = [0..0, 0..0, 0..0];
-        plan_indirect_runs(&self.draw_batches, groups, &mut plan, &mut ranges);
-        let total = plan.iter().map(|run| run.len).sum();
+        plan_indirect_runs(
+            &self.draw_batches,
+            groups,
+            INDIRECT_COMPACT_REGION_MAIN * stride,
+            &mut plan,
+            &mut ranges,
+        );
+        let main_range = main_start..plan.len();
+        let planned = planned_commands(&plan, &main_range);
+        self.indirect_planned_command_count = planned;
+        if planned >= INDIRECT_COUNT_MIN_COMMANDS {
+            self.indirect_run_plan_main = main_range;
+            self.indirect_run_plan_groups = ranges;
+            self.multi_draw_indirect_count_active = true;
+        } else {
+            plan.truncate(main_start);
+            self.indirect_run_plan_main = main_start..main_start;
+        }
+
+        // One workgroup per run: a plan past the guaranteed dispatch limit
+        // drops every pass back to the plain multi-draw path.
+        if plan.len() as u32 > INDIRECT_COUNT_MAX_RUNS {
+            plan.clear();
+            self.indirect_run_plan_prepass = 0..0;
+            self.indirect_run_plan_blend_depth = 0..0;
+            self.indirect_run_plan_main = 0..0;
+            self.indirect_run_plan_groups = [0..0, 0..0, 0..0];
+            self.multi_draw_indirect_count_active = false;
+            self.multi_draw_indirect_count_prepass_active = false;
+            self.multi_draw_indirect_count_blend_depth_active = false;
+        }
         self.indirect_run_plan = plan;
-        self.indirect_run_plan_groups = ranges;
-        total
     }
 
-    // Upload the run plan + params and dispatch one compaction workgroup per
-    // run. Must be encoded after the last cull pass writes the indirect buffer
-    // and before the main render pass reads the compacted one.
+    // Push the whole frame's run plan to the GPU once. Queue writes all land
+    // before the first command of the submission, so both dispatches read the
+    // same array and only the per-dispatch params differ.
+    pub(super) fn upload_indirect_run_plan(&mut self, queue: &wgpu::Queue) {
+        if self.indirect_run_plan.is_empty()
+            || pod_slices_equal(&self.indirect_run_plan, &self.last_uploaded_indirect_runs)
+        {
+            return;
+        }
+        queue.write_buffer(
+            &self.indirect_run_buffer,
+            0,
+            bytemuck::cast_slice(&self.indirect_run_plan),
+        );
+        self.last_uploaded_indirect_runs.clear();
+        self.last_uploaded_indirect_runs
+            .extend_from_slice(&self.indirect_run_plan);
+    }
+
+    // Dispatch one compaction workgroup per run of `runs` (a slice of the
+    // uploaded plan). Must be encoded after the cull pass that wrote the
+    // instance counts those runs will read and before the render pass that
+    // reads the compacted commands back.
     pub(super) fn encode_indirect_compaction(
         &mut self,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
+        dispatch: usize,
+        runs: Range<usize>,
     ) {
-        let run_count = self.indirect_run_plan.len() as u32;
+        let run_count = runs.len() as u32;
         if run_count == 0 {
             return;
         }
-        if !pod_slices_equal(&self.indirect_run_plan, &self.last_uploaded_indirect_runs) {
-            queue.write_buffer(
-                &self.indirect_run_buffer,
-                0,
-                bytemuck::cast_slice(&self.indirect_run_plan),
-            );
-            self.last_uploaded_indirect_runs.clear();
-            self.last_uploaded_indirect_runs
-                .extend_from_slice(&self.indirect_run_plan);
-        }
         let params = IndirectCompactParamsGpu {
+            run_offset: runs.start as u32,
             run_count,
             _pad0: 0,
             _pad1: 0,
-            _pad2: 0,
         };
-        if self.last_indirect_compact_params != Some(params) {
+        if self.last_indirect_compact_params[dispatch] != Some(params) {
             queue.write_buffer(
-                &self.indirect_compact_params_buffer,
+                &self.indirect_compact_params_buffers[dispatch],
                 0,
                 bytemuck::bytes_of(&params),
             );
-            self.last_indirect_compact_params = Some(params);
+            self.last_indirect_compact_params[dispatch] = Some(params);
         }
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("perro_indirect_compact_pass"),
             timestamp_writes: None,
         });
         pass.set_pipeline(&self.indirect_compact_pipeline);
-        pass.set_bind_group(0, &self.indirect_compact_bind_group, &[]);
+        pass.set_bind_group(0, &self.indirect_compact_bind_groups[dispatch], &[]);
         pass.dispatch_workgroups(run_count, 1, 1);
     }
 
@@ -590,6 +691,68 @@ impl Gpu3D {
     }
 }
 
+// Sum of a plan slice's max_counts: the commands that pass would submit with no
+// compaction.
+#[inline]
+pub(super) fn planned_commands(plan: &[IndirectRunGpu], range: &Range<usize>) -> u32 {
+    plan[range.clone()].iter().map(|run| run.len).sum()
+}
+
+// Core run segmentation, shared by every pass so no two of them can disagree
+// about where a `multi_draw_indexed_indirect(_count)` call starts and ends. A
+// run breaks on any change of `key` (the render loop's rebind condition), on
+// any `solo` batch (drawn by itself, so it joins no run), and on any gap in
+// indirect-slot indices. Returns the slice of `out` this call appended.
+fn plan_runs_by_key<K: PartialEq>(
+    batches: &[DrawBatch],
+    indices: &[usize],
+    dst_base: u32,
+    key: impl Fn(&DrawBatch) -> K,
+    solo: impl Fn(&DrawBatch) -> bool,
+    out: &mut Vec<IndirectRunGpu>,
+) -> Range<usize> {
+    #[inline]
+    fn flush(run: &mut Option<IndirectRunGpu>, out: &mut Vec<IndirectRunGpu>) {
+        if let Some(finished) = run.take() {
+            out.push(finished);
+        }
+    }
+
+    let start = out.len();
+    let mut current_key: Option<K> = None;
+    let mut run: Option<IndirectRunGpu> = None;
+    for &i in indices {
+        let Some(batch) = batches.get(i) else {
+            continue;
+        };
+        let batch_key = key(batch);
+        let key_change = current_key.as_ref() != Some(&batch_key);
+        let is_solo = solo(batch);
+        if key_change || is_solo {
+            flush(&mut run, out);
+        }
+        if key_change {
+            current_key = Some(batch_key);
+        }
+        if is_solo {
+            continue;
+        }
+        match &mut run {
+            Some(open) if open.start as usize + open.len as usize == i => open.len += 1,
+            _ => {
+                flush(&mut run, out);
+                run = Some(IndirectRunGpu {
+                    start: i as u32,
+                    len: 1,
+                    dst_base,
+                });
+            }
+        }
+    }
+    flush(&mut run, out);
+    start..out.len()
+}
+
 // Segment the main pass's three batch groups into indirect-buffer runs, using
 // exactly the breaks the render loop applies: any pipeline-state change, any
 // material-texture change, any occlusion-query batch (drawn on its own), and
@@ -599,56 +762,43 @@ impl Gpu3D {
 pub(super) fn plan_indirect_runs(
     batches: &[DrawBatch],
     groups: [&[usize]; 3],
+    dst_base: u32,
     out: &mut Vec<IndirectRunGpu>,
     group_ranges: &mut [Range<usize>; 3],
 ) {
-    #[inline]
-    fn flush(run: &mut Option<IndirectRunGpu>, out: &mut Vec<IndirectRunGpu>) {
-        if let Some(finished) = run.take() {
-            out.push(finished);
-        }
-    }
-
     for (group_index, indices) in groups.into_iter().enumerate() {
-        let group_start = out.len();
         // Matches the render loop: state/texture tracking resets per group.
-        let mut current_state_key: Option<u64> = None;
-        let mut current_texture_key = MaterialTextureKey::empty();
-        let mut run: Option<IndirectRunGpu> = None;
-        for &i in indices {
-            let Some(batch) = batches.get(i) else {
-                continue;
-            };
-            let state_change = current_state_key != Some(batch.state_key);
-            let texture_change = current_texture_key != batch.material_texture_key;
-            if state_change || texture_change || batch.occlusion_query.is_some() {
-                flush(&mut run, out);
-            }
-            if state_change {
-                current_state_key = Some(batch.state_key);
-            }
-            if texture_change {
-                current_texture_key = batch.material_texture_key;
-            }
+        group_ranges[group_index] = plan_runs_by_key(
+            batches,
+            indices,
+            dst_base,
+            |batch| (batch.state_key, batch.material_texture_key),
             // Query batches draw individually (begin/end_occlusion_query wraps
             // one draw), so they never join a run.
-            if batch.occlusion_query.is_some() {
-                continue;
-            }
-            match &mut run {
-                Some(open) if open.start as usize + open.len as usize == i => open.len += 1,
-                _ => {
-                    flush(&mut run, out);
-                    run = Some(IndirectRunGpu {
-                        start: i as u32,
-                        len: 1,
-                    });
-                }
-            }
-        }
-        flush(&mut run, out);
-        group_ranges[group_index] = group_start..out.len();
+            |batch| batch.occlusion_query.is_some(),
+            out,
+        );
     }
+}
+
+// Segment a depth-only pass (depth prepass / mesh-blend depth) into runs. Those
+// loops rebind on (path, double_sided, packed_lod) alone - no material textures
+// and no occlusion queries - so their runs coalesce across material changes the
+// main pass has to break on.
+pub(super) fn plan_depth_runs(
+    batches: &[DrawBatch],
+    indices: &[usize],
+    dst_base: u32,
+    out: &mut Vec<IndirectRunGpu>,
+) -> Range<usize> {
+    plan_runs_by_key(
+        batches,
+        indices,
+        dst_base,
+        |batch| (batch.path, batch.double_sided, batch.packed_lod),
+        |_| false,
+        out,
+    )
 }
 
 pub(super) struct CompactDrawBatchesInputs<'a> {

@@ -47,6 +47,26 @@ impl IndirectRunBuilder {
     }
 }
 
+// Issue one planned run out of the GPU-compacted buffer: `run.len` is the
+// max_count, the survivor count sits in the count buffer at the run's
+// destination slot, and the compacted commands start there too.
+#[inline]
+pub(super) fn draw_compacted_run(
+    pass: &mut wgpu::RenderPass<'_>,
+    compact_buffer: &wgpu::Buffer,
+    count_buffer: &wgpu::Buffer,
+    run: IndirectRunGpu,
+) {
+    let slot = u64::from(run.dst_base + run.start);
+    pass.multi_draw_indexed_indirect_count(
+        compact_buffer,
+        slot * std::mem::size_of::<DrawIndexedIndirectGpu>() as u64,
+        count_buffer,
+        slot * std::mem::size_of::<u32>() as u64,
+        run.len,
+    );
+}
+
 impl Gpu3D {
     #[allow(clippy::too_many_arguments)]
     pub fn render_pass(
@@ -251,6 +271,35 @@ impl Gpu3D {
                 (self.multimesh_batches.len() as u32).div_ceil(FRUSTUM_CULL_WORKGROUP_SIZE);
             cull_pass.dispatch_workgroups(batch_groups, 1, 1);
         }
+        // Indirect-count path: plan every consuming pass's state runs (pure CPU
+        // segmentation over draw_batches) and upload the whole plan once, then
+        // compact the culled command buffer per run so each draw submits only
+        // the survivors.
+        self.build_indirect_run_plans(
+            frustum_cull_active
+                && self.multi_draw_indirect_enabled
+                && self.multi_draw_indirect_count_enabled
+                && !self.draw_batches.is_empty(),
+            depth_prepass_active,
+            mesh_blend_depth_active,
+        );
+        self.upload_indirect_run_plan(queue);
+        // The depth prepass and the mesh-blend depth pass read the frustum-only
+        // cull result, so their compaction is encoded here. Hi-z rewrites the
+        // indirect buffer between them and the main pass; when it is off nothing
+        // does, so the main pass's runs ride along in this same dispatch and the
+        // second one is skipped entirely.
+        let early_runs = 0..if hiz_active {
+            self.indirect_run_plan_main.start
+        } else {
+            self.indirect_run_plan.len()
+        };
+        self.encode_indirect_compaction(
+            queue,
+            encoder,
+            INDIRECT_COMPACT_DISPATCH_EARLY,
+            early_runs,
+        );
         if depth_prepass_active {
             let mut prepass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("perro_depth_prepass"),
@@ -269,8 +318,15 @@ impl Gpu3D {
             });
             let mut current_state: Option<(RenderPath3D, bool, bool)> = None;
             prepass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
-            let mut prepass_run =
-                IndirectRunBuilder::new(frustum_cull_active && self.multi_draw_indirect_enabled);
+            // Count mode replaces the coalescing builder: the runs were planned
+            // (and GPU-compacted) up front, so each run is issued at its first
+            // batch and the builder stays disabled.
+            let count_mode = self.multi_draw_indirect_count_prepass_active;
+            let mut prepass_run = IndirectRunBuilder::new(
+                frustum_cull_active && self.multi_draw_indirect_enabled && !count_mode,
+            );
+            let plan_range = self.indirect_run_plan_prepass.clone();
+            let mut plan_cursor = plan_range.start;
             for &i in &self.depth_prepass_batch_indices {
                 let batch = &self.draw_batches[i];
                 let state = (batch.path, batch.double_sided, batch.packed_lod);
@@ -325,7 +381,21 @@ impl Gpu3D {
                     prepass.set_pipeline(pipeline);
                     current_state = Some(state);
                 }
-                if prepass_run.push(&self.indirect_buffer, &mut prepass, i) {
+                if count_mode {
+                    // Only the run's first batch issues; the rest are already
+                    // covered by that call's compacted command range.
+                    if plan_cursor < plan_range.end
+                        && self.indirect_run_plan[plan_cursor].start as usize == i
+                    {
+                        draw_compacted_run(
+                            &mut prepass,
+                            &self.indirect_compact_buffer,
+                            &self.indirect_count_buffer,
+                            self.indirect_run_plan[plan_cursor],
+                        );
+                        plan_cursor += 1;
+                    }
+                } else if prepass_run.push(&self.indirect_buffer, &mut prepass, i) {
                     // absorbed into (or started) a run
                 } else if frustum_cull_active {
                     let offset = (i * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
@@ -390,8 +460,14 @@ impl Gpu3D {
             });
             let mut current_state: Option<(RenderPath3D, bool, bool)> = None;
             blend_prepass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
-            let mut blend_prepass_run =
-                IndirectRunBuilder::new(frustum_cull_active && self.multi_draw_indirect_enabled);
+            // Same count-mode split as the depth prepass (own run plan, own
+            // compacted-buffer region).
+            let count_mode = self.multi_draw_indirect_count_blend_depth_active;
+            let mut blend_prepass_run = IndirectRunBuilder::new(
+                frustum_cull_active && self.multi_draw_indirect_enabled && !count_mode,
+            );
+            let plan_range = self.indirect_run_plan_blend_depth.clone();
+            let mut plan_cursor = plan_range.start;
             for &i in &self.mesh_blend_depth_batch_indices {
                 let batch = &self.draw_batches[i];
                 let state = (batch.path, batch.double_sided, batch.packed_lod);
@@ -448,7 +524,19 @@ impl Gpu3D {
                     blend_prepass.set_pipeline(pipeline);
                     current_state = Some(state);
                 }
-                if blend_prepass_run.push(&self.indirect_buffer, &mut blend_prepass, i) {
+                if count_mode {
+                    if plan_cursor < plan_range.end
+                        && self.indirect_run_plan[plan_cursor].start as usize == i
+                    {
+                        draw_compacted_run(
+                            &mut blend_prepass,
+                            &self.indirect_compact_buffer,
+                            &self.indirect_count_buffer,
+                            self.indirect_run_plan[plan_cursor],
+                        );
+                        plan_cursor += 1;
+                    }
+                } else if blend_prepass_run.push(&self.indirect_buffer, &mut blend_prepass, i) {
                     // absorbed into (or started) a run
                 } else if frustum_cull_active {
                     let offset = (i * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
@@ -521,25 +609,17 @@ impl Gpu3D {
                 }
             }
         }
-        // Indirect-count path: plan the main pass's state runs, then compact the
-        // culled command buffer per run so each draw submits only the survivors.
-        // Encoded here - after every cull pass has written instance_count, before
-        // the main pass reads the compacted buffer.
-        self.multi_draw_indirect_count_active = false;
-        self.indirect_planned_command_count = 0;
-        if frustum_cull_active
-            && self.multi_draw_indirect_enabled
-            && self.multi_draw_indirect_count_enabled
-            && !self.draw_batches.is_empty()
-        {
-            let planned = self.build_indirect_run_plan();
-            self.indirect_planned_command_count = planned;
-            if planned >= INDIRECT_COUNT_MIN_COMMANDS
-                && self.indirect_run_plan.len() as u32 <= INDIRECT_COUNT_MAX_RUNS
-            {
-                self.encode_indirect_compaction(queue, encoder);
-                self.multi_draw_indirect_count_active = true;
-            }
+        // Hi-z rewrote the indirect buffer after the early compaction, so the
+        // main pass's runs are compacted again here - after every cull pass has
+        // written instance_count, before the main pass reads the result.
+        if hiz_active {
+            let main_runs = self.indirect_run_plan_main.clone();
+            self.encode_indirect_compaction(
+                queue,
+                encoder,
+                INDIRECT_COMPACT_DISPATCH_MAIN,
+                main_runs,
+            );
         }
         if render_sky {
             let mut sky_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -722,14 +802,11 @@ impl Gpu3D {
                         if plan_cursor < plan_range.end
                             && self.indirect_run_plan[plan_cursor].start as usize == i
                         {
-                            let planned = self.indirect_run_plan[plan_cursor];
-                            let stride = std::mem::size_of::<DrawIndexedIndirectGpu>() as u64;
-                            pass.multi_draw_indexed_indirect_count(
+                            draw_compacted_run(
+                                &mut pass,
                                 &self.indirect_compact_buffer,
-                                u64::from(planned.start) * stride,
                                 &self.indirect_count_buffer,
-                                u64::from(planned.start) * std::mem::size_of::<u32>() as u64,
-                                planned.len,
+                                self.indirect_run_plan[plan_cursor],
                             );
                             plan_cursor += 1;
                         }
@@ -1258,6 +1335,34 @@ mod tests {
         let mut out = Vec::new();
         shadow_layer_cull(&indices, &batches, &transforms, &frustum, &mut out);
         assert_eq!(out, vec![1], "fully off-view multi-instance batch culled");
+    }
+
+    #[test]
+    fn shadow_layer_cull_emits_no_wasted_commands_to_compact() {
+        // Why the indirect-count path does not extend to the shadow passes: the
+        // per-layer cull runs on the CPU and draw_shadow_batches issues one
+        // direct draw_indexed per surviving batch, so a 70%-culled layer already
+        // submits exactly the survivors. There is no culled-to-zero slot for a
+        // compaction pass to remove - max_count == count by construction.
+        let total = 512usize;
+        let visible = |i: usize| i % 10 >= 7;
+        let batches: Vec<DrawBatch> = (0..total).map(|i| test_batch(i as u32, 1, 1.0)).collect();
+        let off_view = [80.0, 0.0, 0.0];
+        let transforms: Vec<TransformInstanceGpu> = (0..total)
+            .map(|i| translated_instance(if visible(i) { [0.0; 3] } else { off_view }))
+            .collect();
+        let indices: Vec<usize> = (0..total).collect();
+        let mut out = Vec::new();
+        shadow_layer_cull(
+            &indices,
+            &batches,
+            &transforms,
+            &frustum_at([0.0, 0.0, 0.0]),
+            &mut out,
+        );
+        let expected: Vec<usize> = indices.iter().copied().filter(|&i| visible(i)).collect();
+        assert_eq!(out, expected, "survivors only, in draw order");
+        assert_eq!(out.len(), 153, "70% culled");
     }
 
     #[test]

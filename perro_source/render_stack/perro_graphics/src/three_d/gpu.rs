@@ -270,6 +270,20 @@ const INDIRECT_COUNT_MIN_COMMANDS: u32 = 32;
 // wgpu's guaranteed `max_compute_workgroups_per_dimension`. One workgroup per
 // run, so a plan longer than this falls back to plain multi-draw.
 const INDIRECT_COUNT_MAX_RUNS: u32 = 65_535;
+// Passes that consume GPU-compacted commands. Each owns one `indirect_capacity`
+// -wide region of the compacted / count buffers, indexed by source slot, so the
+// depth prepass's compacted commands survive the main pass's compaction of the
+// same slots (post-hi-z) later in the same frame.
+const INDIRECT_COMPACT_REGIONS: usize = 3;
+const INDIRECT_COMPACT_REGION_MAIN: u32 = 0;
+const INDIRECT_COMPACT_REGION_DEPTH_PREPASS: u32 = 1;
+const INDIRECT_COMPACT_REGION_BLEND_DEPTH: u32 = 2;
+// Compaction dispatch slots. The depth prepass / mesh-blend depth pass read the
+// frustum-only cull result, the main pass reads the post-hi-z one, so at most
+// two dispatches (each with its own params buffer + bind group) are needed.
+const INDIRECT_COMPACT_DISPATCHES: usize = 2;
+const INDIRECT_COMPACT_DISPATCH_EARLY: usize = 0;
+const INDIRECT_COMPACT_DISPATCH_MAIN: usize = 1;
 const HIZ_WORKGROUP_SIZE_X: u32 = 8;
 const HIZ_WORKGROUP_SIZE_Y: u32 = 8;
 // SPD downsampler: dst mips written per dispatch (one src read + this many
@@ -724,21 +738,26 @@ struct DrawIndexedIndirectGpu {
 
 /// One CPU-planned state run handed to the indirect-compaction compute pass:
 /// the slot range `[start, start + len)` of the indirect buffer that a single
-/// `multi_draw_indexed_indirect(_count)` call covers.
+/// `multi_draw_indexed_indirect(_count)` call covers. `dst_base` selects the
+/// consuming pass's region of the compacted / count buffers, so runs from
+/// different passes can overlap in source slots and still be compacted by one
+/// dispatch (see `INDIRECT_COMPACT_REGION_*`).
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, PartialEq, Debug)]
 struct IndirectRunGpu {
     start: u32,
     len: u32,
+    dst_base: u32,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
 struct IndirectCompactParamsGpu {
+    // First run of `indirect_run_plan` this dispatch covers.
+    run_offset: u32,
     run_count: u32,
     _pad0: u32,
     _pad1: u32,
-    _pad2: u32,
 }
 
 #[repr(C)]
@@ -1000,14 +1019,34 @@ pub struct Gpu3D {
     // is part of the key because a grown/shrunk buffer is a new allocation.
     uploaded_multimesh_blend_meta: Option<(u64, u32, usize, usize)>,
     uploaded_multimesh_blend_weights: Option<(u64, u32, usize, usize)>,
+    // Custom-material params (vertex modifiers + custom shader params) for dense
+    // multimesh draws get the same tail treatment as the blend rows above: they
+    // stage into their own arena and upload into the tail of the shared
+    // custom-params buffers, right after the rows the regular draws produced.
+    // Interleaving them would tie every multimesh draw param's baked
+    // `custom_params` offset to what the regular draws happened to stage that
+    // frame, which is exactly what used to force those scenes to repack.
+    // Nothing indexes these arenas positionally -- the draw param carries an
+    // explicit header offset and the header carries an explicit value offset --
+    // so a delta rebase is enough to move the tail.
+    staged_multimesh_custom_params_meta: Vec<u32>,
+    staged_multimesh_custom_params_values: Vec<f32>,
+    staged_multimesh_custom_params_dedupe: AHashMap<Vec<u32>, (u32, u32)>,
+    // Start index of every header in the tail meta arena. Entry `i` owns
+    // `[starts[i], starts[i + 1])`, of which `[starts[i] + 2, ..)` are the
+    // param words holding absolute value offsets; the rebase walks it.
+    staged_multimesh_custom_params_entry_starts: Vec<u32>,
+    // Absolute bases the tail is currently rebased onto: the regular arena
+    // lengths of the build that packed it.
+    multimesh_custom_params_meta_base: u32,
+    multimesh_custom_params_values_base: u32,
+    multimesh_custom_params_tail_revision: u64,
+    uploaded_multimesh_custom_params_meta: Option<(u64, u32, usize, usize)>,
+    uploaded_multimesh_custom_params_values: Option<(u64, u32, usize, usize)>,
     // All-or-nothing reuse of the staged multimesh buffers across full
     // rebuilds. See MultiMeshDrawSnapshot.
     multimesh_staging_cache: Vec<MultiMeshDrawSnapshot>,
     multimesh_staging_cache_valid: bool,
-    // Custom-material params are staged into the shared custom-params arena,
-    // which a rebuild refills from the regular draws; the offsets baked into
-    // reused draw params would go stale, so those scenes never reuse.
-    multimesh_staging_cache_custom_params: bool,
     multimesh_staging_cache_camera: [f32; 3],
     // Telemetry: full rebuilds that skipped the multimesh repack.
     multimesh_staging_reuse_count: u64,
@@ -1081,6 +1120,10 @@ pub struct Gpu3D {
     multi_draw_indirect_count_enabled: bool,
     // True while this frame's main pass consumes the compacted buffer.
     multi_draw_indirect_count_active: bool,
+    // Same, for the depth prepass and the mesh-blend depth pass. Both read the
+    // frustum-only cull result, so they share the early compaction dispatch.
+    multi_draw_indirect_count_prepass_active: bool,
+    multi_draw_indirect_count_blend_depth_active: bool,
     frustum_cull_pipeline: wgpu::ComputePipeline,
     frustum_cull_bgl: wgpu::BindGroupLayout,
     frustum_cull_bind_group: wgpu::BindGroup,
@@ -1094,28 +1137,43 @@ pub struct Gpu3D {
     indirect_capacity: usize,
     indirect_staging: Vec<DrawIndexedIndirectGpu>,
     // Indirect-count compaction resources. All three GPU buffers are sized in
-    // lockstep with `indirect_capacity` (slots), so the added footprint is
-    // 20 + 4 + 8 = 32 bytes per indirect slot.
+    // lockstep with `indirect_capacity` (slots) times INDIRECT_COMPACT_REGIONS,
+    // so the added footprint is 3 * (20 + 4 + 12) = 108 bytes per indirect slot.
     indirect_compact_pipeline: wgpu::ComputePipeline,
     indirect_compact_bgl: wgpu::BindGroupLayout,
-    indirect_compact_bind_group: wgpu::BindGroup,
-    indirect_compact_params_buffer: wgpu::Buffer,
-    // Compacted commands: run `r` occupies [r.start, r.start + count).
+    // One per dispatch slot; identical except for the params buffer, because
+    // queue writes all land before the first command of a submission and the
+    // two dispatches need different (run_offset, run_count) pairs.
+    indirect_compact_bind_groups: [wgpu::BindGroup; INDIRECT_COMPACT_DISPATCHES],
+    indirect_compact_params_buffers: [wgpu::Buffer; INDIRECT_COMPACT_DISPATCHES],
+    // Compacted commands: run `r` occupies
+    // [r.dst_base + r.start, r.dst_base + r.start + count).
     indirect_compact_buffer: wgpu::Buffer,
-    // Survivor count per run, stored at index `run.start`.
+    // Survivor count per run, stored at index `r.dst_base + r.start`.
     indirect_count_buffer: wgpu::Buffer,
-    // Run descriptors consumed by the compaction dispatch (one workgroup each).
+    // Run descriptors consumed by the compaction dispatches (one workgroup each).
     indirect_run_buffer: wgpu::Buffer,
-    // CPU-planned runs for the current frame's main pass, plus the per-group
-    // slices ([opaque, alpha, overlay]) into that plan. The render loop walks
-    // the same plan the compute pass compacted, so the two can never diverge.
+    // Slots per compacted/count region, i.e. the multiplier behind a run's
+    // `dst_base`. Tracks `indirect_capacity` while the feature is on.
+    indirect_compact_region_stride: usize,
+    // CPU-planned runs for the current frame, laid out
+    // [depth prepass][mesh-blend depth][main], plus the slice each pass owns
+    // (the main slice is further split into [opaque, alpha, overlay] groups).
+    // Every render loop walks the exact plan the compute pass compacted, so the
+    // two can never diverge.
     indirect_run_plan: Vec<IndirectRunGpu>,
+    indirect_run_plan_prepass: Range<usize>,
+    indirect_run_plan_blend_depth: Range<usize>,
+    indirect_run_plan_main: Range<usize>,
     indirect_run_plan_groups: [Range<usize>; 3],
     last_uploaded_indirect_runs: Vec<IndirectRunGpu>,
-    last_indirect_compact_params: Option<IndirectCompactParamsGpu>,
+    last_indirect_compact_params: [Option<IndirectCompactParamsGpu>; INDIRECT_COMPACT_DISPATCHES],
     // Commands the main pass would submit without compaction (sum of run
     // lengths, i.e. the max_count total). Reported by `indirect_max_count`.
     indirect_planned_command_count: u32,
+    // Same for the depth prepass and the mesh-blend depth pass.
+    indirect_planned_command_count_prepass: u32,
+    indirect_planned_command_count_blend_depth: u32,
     frustum_gpu_inputs_valid: bool,
     last_frustum_params: Option<FrustumCullParamsGpu>,
     last_hiz_params: Option<HizCullParamsGpu>,

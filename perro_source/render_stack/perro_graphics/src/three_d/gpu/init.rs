@@ -895,50 +895,60 @@ impl Gpu3D {
                 compilation_options: Default::default(),
                 cache: None,
             });
-        let indirect_compact_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perro_indirect_compact_params"),
-            size: std::mem::size_of::<IndirectCompactParamsGpu>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        // One params buffer per dispatch slot: queue writes all land before the
+        // first command of a submission, so two dispatches in the same frame
+        // cannot share one uniform buffer.
+        let indirect_compact_params_buffers: [wgpu::Buffer; INDIRECT_COMPACT_DISPATCHES] =
+            std::array::from_fn(|_| {
+                device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("perro_indirect_compact_params"),
+                    size: std::mem::size_of::<IndirectCompactParamsGpu>() as u64,
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                })
+            });
         // Without the feature the compaction pass never runs, so the three
         // buffers stay at one slot: the bind group still needs valid bindings,
-        // but a fallback adapter pays ~32 bytes instead of 32 bytes per slot.
-        let indirect_compact_capacity = if multi_draw_indirect_count_enabled {
+        // but a fallback adapter pays ~36 bytes instead of 108 bytes per slot.
+        let indirect_compact_region_stride = if multi_draw_indirect_count_enabled {
             indirect_capacity
         } else {
             1
         };
+        let indirect_compact_capacity = indirect_compact_region_stride * INDIRECT_COMPACT_REGIONS;
         let indirect_compact_buffer =
             create_indirect_compact_buffer(device, indirect_compact_capacity);
         let indirect_count_buffer = create_indirect_count_buffer(device, indirect_compact_capacity);
         let indirect_run_buffer = create_indirect_run_buffer(device, indirect_compact_capacity);
-        let indirect_compact_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("perro_indirect_compact_bg"),
-            layout: &indirect_compact_bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: indirect_compact_params_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: indirect_run_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: indirect_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: indirect_compact_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: indirect_count_buffer.as_entire_binding(),
-                },
-            ],
-        });
+        let indirect_compact_bind_groups: [wgpu::BindGroup; INDIRECT_COMPACT_DISPATCHES] =
+            std::array::from_fn(|dispatch| {
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("perro_indirect_compact_bg"),
+                    layout: &indirect_compact_bgl,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: indirect_compact_params_buffers[dispatch].as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: indirect_run_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: indirect_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: indirect_compact_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 4,
+                            resource: indirect_count_buffer.as_entire_binding(),
+                        },
+                    ],
+                })
+            });
 
         // Multimesh GPU cull resources (item 1).
         let multimesh_cull_shader = create_multimesh_cull_shader_module(device);
@@ -1564,9 +1574,17 @@ impl Gpu3D {
             multimesh_blend_tail_revision: 0,
             uploaded_multimesh_blend_meta: None,
             uploaded_multimesh_blend_weights: None,
+            staged_multimesh_custom_params_meta: Vec::new(),
+            staged_multimesh_custom_params_values: Vec::new(),
+            staged_multimesh_custom_params_dedupe: AHashMap::new(),
+            staged_multimesh_custom_params_entry_starts: Vec::new(),
+            multimesh_custom_params_meta_base: 0,
+            multimesh_custom_params_values_base: 0,
+            multimesh_custom_params_tail_revision: 0,
+            uploaded_multimesh_custom_params_meta: None,
+            uploaded_multimesh_custom_params_values: None,
             multimesh_staging_cache: Vec::new(),
             multimesh_staging_cache_valid: false,
-            multimesh_staging_cache_custom_params: false,
             multimesh_staging_cache_camera: [0.0; 3],
             multimesh_staging_reuse_count: 0,
             multimesh_cull_pipeline,
@@ -1604,6 +1622,8 @@ impl Gpu3D {
             multi_draw_indirect_enabled,
             multi_draw_indirect_count_enabled,
             multi_draw_indirect_count_active: false,
+            multi_draw_indirect_count_prepass_active: false,
+            multi_draw_indirect_count_blend_depth_active: false,
             frustum_cull_pipeline,
             frustum_cull_bgl,
             frustum_cull_bind_group,
@@ -1618,16 +1638,22 @@ impl Gpu3D {
             indirect_staging: Vec::new(),
             indirect_compact_pipeline,
             indirect_compact_bgl,
-            indirect_compact_bind_group,
-            indirect_compact_params_buffer,
+            indirect_compact_bind_groups,
+            indirect_compact_params_buffers,
             indirect_compact_buffer,
             indirect_count_buffer,
             indirect_run_buffer,
+            indirect_compact_region_stride,
             indirect_run_plan: Vec::new(),
+            indirect_run_plan_prepass: 0..0,
+            indirect_run_plan_blend_depth: 0..0,
+            indirect_run_plan_main: 0..0,
             indirect_run_plan_groups: [0..0, 0..0, 0..0],
             last_uploaded_indirect_runs: Vec::new(),
-            last_indirect_compact_params: None,
+            last_indirect_compact_params: [None; INDIRECT_COMPACT_DISPATCHES],
             indirect_planned_command_count: 0,
+            indirect_planned_command_count_prepass: 0,
+            indirect_planned_command_count_blend_depth: 0,
             frustum_gpu_inputs_valid: false,
             last_frustum_params: None,
             last_hiz_params: None,

@@ -1,14 +1,17 @@
 //! GPU indirect-command compaction (`multi_draw_indexed_indirect_count` path).
 //!
 //! Two halves:
-//! * pure CPU checks that `plan_indirect_runs` segments the main pass into the
-//!   same runs the render loop draws, and
+//! * pure CPU checks that `plan_indirect_runs` / `plan_depth_runs` segment the
+//!   main pass, the depth prepass and the mesh-blend depth pass into the same
+//!   runs their render loops draw, and
 //! * a headless wgpu cull+compact round trip that reads the compacted buffer
-//!   and the per-run counts back and compares them against a CPU reference.
+//!   and the per-run counts back and compares them against a CPU reference,
+//!   including multi-pass plans landing in separate buffer regions.
 //!
 //! GPU tests skip with a note when no adapter is available.
 use super::*;
-use crate::three_d::gpu::culling::plan_indirect_runs;
+use crate::three_d::gpu::culling::{plan_depth_runs, plan_indirect_runs};
+use crate::three_d::gpu::render_pass::draw_compacted_run;
 
 const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
@@ -59,14 +62,23 @@ fn planning_batch(index_start: u32, state_key: u64, texture_slot: u32) -> DrawBa
     }
 }
 
+const TEST_REGION_STRIDE: u32 = 1024;
+
 fn plan(batches: &[DrawBatch], groups: [&[usize]; 3]) -> (Vec<(u32, u32)>, [Range<usize>; 3]) {
     let mut out = Vec::new();
     let mut ranges = [0..0, 0..0, 0..0];
-    plan_indirect_runs(batches, groups, &mut out, &mut ranges);
+    plan_indirect_runs(batches, groups, 0, &mut out, &mut ranges);
     (
         out.into_iter().map(|run| (run.start, run.len)).collect(),
         ranges,
     )
+}
+
+fn plan_depth(batches: &[DrawBatch], indices: &[usize]) -> Vec<(u32, u32)> {
+    let mut out = Vec::new();
+    let range = plan_depth_runs(batches, indices, 0, &mut out);
+    assert_eq!(range, 0..out.len());
+    out.into_iter().map(|run| (run.start, run.len)).collect()
 }
 
 #[test]
@@ -124,6 +136,70 @@ fn run_plan_is_empty_without_batches() {
     let (runs, ranges) = plan(&[], [&[], &[], &[]]);
     assert!(runs.is_empty());
     assert_eq!(ranges, [0..0, 0..0, 0..0]);
+}
+
+#[test]
+fn depth_run_plan_ignores_material_texture_changes() {
+    // The depth prepass binds no material textures, so a texture change that
+    // splits the main pass must NOT split the prepass: one run, not four.
+    let batches: Vec<DrawBatch> = (0..4)
+        .map(|i| planning_batch(i * 10, 10 + u64::from(i), i))
+        .collect();
+    let indices = [0usize, 1, 2, 3];
+    assert_eq!(plan_depth(&batches, &indices), vec![(0, 4)]);
+    // Same batches through the main pass: every batch is its own run.
+    let (main_runs, _) = plan(&batches, [&indices, &[], &[]]);
+    assert_eq!(main_runs, vec![(0, 1), (1, 1), (2, 1), (3, 1)]);
+}
+
+#[test]
+fn depth_run_plan_breaks_on_path_double_sided_packed_lod_and_gaps() {
+    // Exactly the prepass loop's rebind condition, plus slot contiguity.
+    let mut batches: Vec<DrawBatch> = (0..7).map(|i| planning_batch(i * 10, 10, 0)).collect();
+    batches[2].path = RenderPath3D::Skinned;
+    batches[3].double_sided = true;
+    batches[4].double_sided = true;
+    batches[5].packed_lod = true;
+    let indices = [0usize, 1, 2, 3, 4, 6];
+    assert_eq!(
+        plan_depth(&batches, &indices),
+        // 0,1 rigid/single/unpacked; 2 skinned; 3,4 double-sided; 6 back to the
+        // base state but non-contiguous with 4.
+        vec![(0, 2), (2, 1), (3, 2), (6, 1)]
+    );
+}
+
+#[test]
+fn depth_run_plan_covers_every_drawn_batch() {
+    // Count mode issues nothing for batches outside a run, so every index the
+    // prepass walks must belong to exactly one run.
+    let mut batches: Vec<DrawBatch> = (0..32).map(|i| planning_batch(i * 10, 10, i % 3)).collect();
+    for (i, batch) in batches.iter_mut().enumerate() {
+        batch.double_sided = i % 5 == 0;
+        // Occlusion queries never apply to the depth-only passes; set one
+        // anyway to prove the depth planner does not split around it.
+        batch.occlusion_query = (i == 7).then_some(1);
+    }
+    let indices: Vec<usize> = (0..32).collect();
+    let runs = plan_depth(&batches, &indices);
+    let covered: Vec<u32> = runs
+        .iter()
+        .flat_map(|&(start, len)| start..start + len)
+        .collect();
+    assert_eq!(covered, (0..32).collect::<Vec<u32>>());
+}
+
+#[test]
+fn run_plan_regions_keep_passes_apart() {
+    // The prepass and the mesh-blend depth pass share source slots (the blend
+    // set is a subset of the prepass set), so only dst_base separates them.
+    let batches: Vec<DrawBatch> = (0..4).map(|i| planning_batch(i * 10, 10, 0)).collect();
+    let mut out = Vec::new();
+    let prepass = plan_depth_runs(&batches, &[0, 1, 2, 3], TEST_REGION_STRIDE, &mut out);
+    let blend = plan_depth_runs(&batches, &[1, 2], 2 * TEST_REGION_STRIDE, &mut out);
+    assert_eq!((prepass, blend), (0..1, 1..2));
+    assert_eq!((out[0].start, out[0].len, out[0].dst_base), (0, 4, 1024));
+    assert_eq!((out[1].start, out[1].len, out[1].dst_base), (1, 2, 2048));
 }
 
 // ---------------------------------------------------------------- GPU setup
@@ -244,14 +320,36 @@ struct CompactResult {
     counts: Vec<u32>,
 }
 
+impl CompactResult {
+    /// Destination slot of a run: its pass region plus its source slot.
+    #[inline]
+    fn slot(run: IndirectRunGpu) -> usize {
+        (run.dst_base + run.start) as usize
+    }
+}
+
+/// Main-pass (region 0) run, the shape most tests need.
+fn run(start: u32, len: u32) -> IndirectRunGpu {
+    IndirectRunGpu {
+        start,
+        len,
+        dst_base: 0,
+    }
+}
+
+fn runs_of(pairs: &[(u32, u32)]) -> Vec<IndirectRunGpu> {
+    pairs.iter().map(|&(start, len)| run(start, len)).collect()
+}
+
 /// Run the real frustum-cull compute over `visibility`, then the real
-/// compaction compute over `runs`, and read both outputs back.
+/// compaction compute over `runs` (one dispatch, any mix of pass regions), and
+/// read both outputs back.
 fn cull_and_compact(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     gpu: &mut Gpu3D,
     visibility: &[bool],
-    runs: &[(u32, u32)],
+    runs: &[IndirectRunGpu],
 ) -> CompactResult {
     let count = visibility.len();
     gpu.ensure_frustum_cull_capacity(device, count.max(1));
@@ -292,11 +390,11 @@ fn cull_and_compact(
     gpu.last_frustum_params = None;
 
     gpu.indirect_run_plan.clear();
-    gpu.indirect_run_plan.extend(
-        runs.iter()
-            .map(|&(start, len)| IndirectRunGpu { start, len }),
-    );
+    gpu.indirect_run_plan.extend_from_slice(runs);
+    gpu.indirect_run_plan_main = 0..gpu.indirect_run_plan.len();
     gpu.indirect_run_plan_groups = [0..gpu.indirect_run_plan.len(), 0..0, 0..0];
+    gpu.last_uploaded_indirect_runs.clear();
+    gpu.upload_indirect_run_plan(queue);
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("perro_indirect_compact_test"),
@@ -310,21 +408,24 @@ fn cull_and_compact(
         cull.set_bind_group(0, &gpu.frustum_cull_bind_group, &[]);
         cull.dispatch_workgroups((count as u32).div_ceil(FRUSTUM_CULL_WORKGROUP_SIZE), 1, 1);
     }
-    gpu.encode_indirect_compaction(queue, &mut encoder);
+    let plan = 0..gpu.indirect_run_plan.len();
+    gpu.encode_indirect_compaction(queue, &mut encoder, INDIRECT_COMPACT_DISPATCH_EARLY, plan);
     queue.submit([encoder.finish()]);
 
+    // Read every region: runs from different passes land in different ones.
+    let slots = gpu.indirect_compact_region_stride * INDIRECT_COMPACT_REGIONS;
     let stride = std::mem::size_of::<DrawIndexedIndirectGpu>();
     let command_bytes = read_buffer(
         device,
         queue,
         &gpu.indirect_compact_buffer,
-        (count * stride) as u64,
+        (slots * stride) as u64,
     );
     let count_bytes = read_buffer(
         device,
         queue,
         &gpu.indirect_count_buffer,
-        (count * std::mem::size_of::<u32>()) as u64,
+        (slots * std::mem::size_of::<u32>()) as u64,
     );
     CompactResult {
         commands: bytemuck::cast_slice::<u8, DrawIndexedIndirectGpu>(&command_bytes).to_vec(),
@@ -332,38 +433,38 @@ fn cull_and_compact(
     }
 }
 
-/// CPU reference: survivors of each run, in order, keyed by run start.
-fn reference(visibility: &[bool], runs: &[(u32, u32)]) -> Vec<(u32, Vec<u32>)> {
+/// CPU reference: survivors of each run, in order, keyed by destination slot.
+fn reference(visibility: &[bool], runs: &[IndirectRunGpu]) -> Vec<(usize, Vec<u32>)> {
     runs.iter()
-        .map(|&(start, len)| {
-            let survivors = (start..start + len)
+        .map(|&r| {
+            let survivors = (r.start..r.start + r.len)
                 .filter(|&i| visibility[i as usize])
                 // first_instance == source slot index, so it identifies the
                 // command that survived.
                 .collect();
-            (start, survivors)
+            (CompactResult::slot(r), survivors)
         })
         .collect()
 }
 
-fn assert_matches_reference(result: &CompactResult, visibility: &[bool], runs: &[(u32, u32)]) {
-    for (start, expected) in reference(visibility, runs) {
-        let actual_count = result.counts[start as usize];
+fn assert_matches_reference(result: &CompactResult, visibility: &[bool], runs: &[IndirectRunGpu]) {
+    for (slot, expected) in reference(visibility, runs) {
+        let actual_count = result.counts[slot];
         assert_eq!(
             actual_count as usize,
             expected.len(),
-            "run at {start}: survivor count"
+            "run at dst {slot}: survivor count"
         );
         for (offset, source_slot) in expected.iter().enumerate() {
-            let command = result.commands[start as usize + offset];
+            let command = result.commands[slot + offset];
             assert_eq!(
                 command.first_instance, *source_slot,
-                "run at {start}: slot {offset} identity"
+                "run at dst {slot}: slot {offset} identity"
             );
             assert_eq!(
                 command.instance_count,
                 1 + *source_slot,
-                "run at {start}: slot {offset} instance count"
+                "run at dst {slot}: slot {offset} instance count"
             );
             assert_eq!(command.first_index, *source_slot * 6);
             assert_eq!(command.base_vertex, *source_slot as i32);
@@ -382,7 +483,7 @@ fn cull_then_compact_matches_cpu_reference() {
 
         // Case 1: nothing culled.
         let visibility = vec![true; 24];
-        let runs = [(0u32, 10u32), (10, 14)];
+        let runs = runs_of(&[(0, 10), (10, 14)]);
         let result = cull_and_compact(&device, &queue, &mut gpu, &visibility, &runs);
         assert_matches_reference(&result, &visibility, &runs);
         assert_eq!(result.counts[0], 10);
@@ -403,7 +504,7 @@ fn cull_then_compact_matches_cpu_reference() {
 
         // Case 4: single-command runs on both sides of the visibility split.
         let visibility = vec![true, false, true];
-        let runs = [(0u32, 1u32), (1, 1), (2, 1)];
+        let runs = runs_of(&[(0, 1), (1, 1), (2, 1)]);
         let result = cull_and_compact(&device, &queue, &mut gpu, &visibility, &runs);
         assert_matches_reference(&result, &visibility, &runs);
         assert_eq!(result.counts[0], 1);
@@ -425,7 +526,7 @@ fn compaction_preserves_order_across_workgroup_chunks() {
         // pattern that also lands survivors on chunk boundaries.
         let total = 300usize;
         let visibility: Vec<bool> = (0..total).map(|i| i % 7 != 0 && i % 5 != 1).collect();
-        let runs = [(0u32, total as u32)];
+        let runs = runs_of(&[(0, total as u32)]);
         let result = cull_and_compact(&device, &queue, &mut gpu, &visibility, &runs);
         assert_matches_reference(&result, &visibility, &runs);
 
@@ -450,27 +551,74 @@ fn heavily_culled_scene_cuts_submitted_commands() {
             return;
         };
         let mut gpu = new_gpu_3d(&device, &queue, true);
-        // 512 batches, 70% culled, split into 8 state runs of 64.
+        // 512 batches, 70% culled. Three passes over the same culled buffer,
+        // each with its own segmentation and its own compacted-buffer region,
+        // all compacted by one dispatch:
+        //   main         - 8 runs of 64 (breaks on material texture too)
+        //   depth prepass - 2 runs of 256 (no texture breaks, so coarser)
+        //   blend depth   - 1 run of 128 (a subset of the prepass set)
         let total = 512usize;
+        // Region stride tracks the indirect capacity, so size up before reading it.
+        gpu.ensure_frustum_cull_capacity(&device, total);
+        let stride = gpu.indirect_compact_region_stride as u32;
         let visibility: Vec<bool> = (0..total).map(|i| i % 10 >= 7).collect();
-        let runs: Vec<(u32, u32)> = (0..8).map(|r| (r * 64, 64)).collect();
+        let region = |base: u32, pairs: Vec<(u32, u32)>| -> Vec<IndirectRunGpu> {
+            pairs
+                .into_iter()
+                .map(|(start, len)| IndirectRunGpu {
+                    start,
+                    len,
+                    dst_base: base,
+                })
+                .collect()
+        };
+        let main = region(
+            INDIRECT_COMPACT_REGION_MAIN * stride,
+            (0..8).map(|r| (r * 64, 64)).collect(),
+        );
+        let prepass = region(
+            INDIRECT_COMPACT_REGION_DEPTH_PREPASS * stride,
+            (0..2).map(|r| (r * 256, 256)).collect(),
+        );
+        let blend = region(
+            INDIRECT_COMPACT_REGION_BLEND_DEPTH * stride,
+            vec![(64, 128)],
+        );
+        let runs: Vec<IndirectRunGpu> = main
+            .iter()
+            .chain(prepass.iter())
+            .chain(blend.iter())
+            .copied()
+            .collect();
         let result = cull_and_compact(&device, &queue, &mut gpu, &visibility, &runs);
+        // Overlapping source slots must not clobber each other across regions.
         assert_matches_reference(&result, &visibility, &runs);
 
-        let max_count: u32 = runs.iter().map(|(_, len)| *len).sum();
-        let actual: u32 = runs.iter().map(|(start, _)| result.counts[*start as usize]).sum();
         let expected_visible = visibility.iter().filter(|v| **v).count() as u32;
-        assert_eq!(actual, expected_visible);
-        assert_eq!(max_count, total as u32);
-        eprintln!(
-            "[indirect-count] runs={} max_count={max_count} actual={actual} \
-             submitted_commands_saved={} ({:.0}% culled)",
-            runs.len(),
-            max_count - actual,
-            100.0 * f64::from(max_count - actual) / f64::from(max_count),
-        );
-        // The whole point: the GPU frontend walks `actual`, not `max_count`.
-        assert!(actual * 3 < max_count);
+        for (name, pass_runs, expect_all) in [
+            ("main", &main, true),
+            ("depth_prepass", &prepass, true),
+            ("blend_depth", &blend, false),
+        ] {
+            let max_count: u32 = pass_runs.iter().map(|r| r.len).sum();
+            let actual: u32 = pass_runs
+                .iter()
+                .map(|&r| result.counts[CompactResult::slot(r)])
+                .sum();
+            if expect_all {
+                assert_eq!(actual, expected_visible, "{name}: survivor total");
+                assert_eq!(max_count, total as u32, "{name}: max_count");
+            }
+            eprintln!(
+                "[indirect-count] pass={name} runs={} max_count={max_count} actual={actual} \
+                 commands_saved={} ({:.0}% of the walk)",
+                pass_runs.len(),
+                max_count - actual,
+                100.0 * f64::from(max_count - actual) / f64::from(max_count),
+            );
+            // The whole point: the GPU frontend walks `actual`, not `max_count`.
+            assert!(actual * 3 < max_count, "{name}: not enough saved");
+        }
     });
 }
 
@@ -528,9 +676,18 @@ fn count_draw_submits_only_surviving_commands() {
         };
         let mut gpu = new_gpu_3d(&device, &queue, true);
         let visibility = [false, true, false, true];
-        let runs = [(0u32, 4u32)];
+        // Depth-prepass region: proves the region offsets the real prepass draw
+        // uses pass validation (non-zero indirect + count buffer offsets).
+        gpu.ensure_frustum_cull_capacity(&device, visibility.len());
+        let prepass_base =
+            INDIRECT_COMPACT_REGION_DEPTH_PREPASS * gpu.indirect_compact_region_stride as u32;
+        let runs = [IndirectRunGpu {
+            start: 0,
+            len: 4,
+            dst_base: prepass_base,
+        }];
         let compacted = cull_and_compact(&device, &queue, &mut gpu, &visibility, &runs);
-        assert_eq!(compacted.counts[0], 2);
+        assert_eq!(compacted.counts[prepass_base as usize], 2);
 
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("perro_indirect_count_draw_test"),
@@ -606,13 +763,12 @@ fn count_draw_submits_only_surviving_commands() {
             });
             pass.set_pipeline(&pipeline);
             pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            // Exactly the call shape the main pass uses for a run.
-            pass.multi_draw_indexed_indirect_count(
+            // Exactly the call shape a run issues, region offsets included.
+            draw_compacted_run(
+                &mut pass,
                 &gpu.indirect_compact_buffer,
-                0,
                 &gpu.indirect_count_buffer,
-                0,
-                4,
+                runs[0],
             );
         }
         queue.submit([encoder.finish()]);
@@ -675,11 +831,89 @@ fn count_path_stays_off_without_the_feature() {
             eprintln!("skip indirect compaction gate test: no wgpu adapter");
             return;
         };
-        let gpu = new_gpu_3d(&device, &queue, false);
-        // Feature absent: the render pass never plans runs, never dispatches the
-        // compaction pass, and never issues a count draw.
+        let mut gpu = new_gpu_3d(&device, &queue, false);
+        // Feature absent: no pass plans runs, no compaction dispatch is encoded,
+        // and no count draw is issued - every loop keeps the plain multi-draw /
+        // per-batch indirect path.
         assert!(!gpu.multi_draw_indirect_count_enabled);
         assert!(!gpu.multi_draw_indirect_count_active);
+        assert!(!gpu.multi_draw_indirect_count_prepass_active);
+        assert!(!gpu.multi_draw_indirect_count_blend_depth_active);
         assert!(gpu.indirect_run_plan.is_empty());
+        // The compaction buffers stay at their 1-slot-per-region placeholders.
+        assert_eq!(gpu.indirect_compact_region_stride, 1);
+
+        // Planning is a no-op even with the passes marked active: without the
+        // feature every gate short-circuits before a run is emitted.
+        gpu.build_indirect_run_plans(false, true, true);
+        assert!(gpu.indirect_run_plan.is_empty());
+        assert_eq!(gpu.indirect_run_plan_prepass, 0..0);
+        assert_eq!(gpu.indirect_run_plan_blend_depth, 0..0);
+        assert_eq!(gpu.indirect_run_plan_main, 0..0);
+        assert!(!gpu.multi_draw_indirect_count_prepass_active);
+        assert!(!gpu.multi_draw_indirect_count_blend_depth_active);
+        assert!(!gpu.multi_draw_indirect_count_active);
+    });
+}
+
+#[test]
+fn plans_split_by_pass_and_gate_on_min_commands() {
+    pollster::block_on(async {
+        let Some((device, queue)) = test_device().await else {
+            eprintln!("skip indirect compaction plan-split test: no wgpu adapter");
+            return;
+        };
+        let mut gpu = new_gpu_3d(&device, &queue, true);
+        gpu.ensure_frustum_cull_capacity(&device, 128);
+        let stride = gpu.indirect_compact_region_stride as u32;
+
+        // 64 opaque batches; the prepass takes all of them, the mesh-blend depth
+        // pass takes the first 40 (its set is always a prepass subset).
+        gpu.draw_batches = (0..64).map(|i| planning_batch(i * 10, 10, 0)).collect();
+        gpu.opaque_batch_indices = (0..64).collect();
+        gpu.depth_prepass_batch_indices = (0..64).collect();
+        gpu.mesh_blend_depth_batch_indices = (0..40).collect();
+        gpu.build_indirect_run_plans(true, true, true);
+
+        assert!(gpu.multi_draw_indirect_count_prepass_active);
+        assert!(gpu.multi_draw_indirect_count_blend_depth_active);
+        assert!(gpu.multi_draw_indirect_count_active);
+        // Layout: [prepass][blend depth][main], no overlap, nothing orphaned.
+        assert_eq!(gpu.indirect_run_plan_prepass, 0..1);
+        assert_eq!(gpu.indirect_run_plan_blend_depth, 1..2);
+        assert_eq!(gpu.indirect_run_plan_main, 2..3);
+        assert_eq!(gpu.indirect_run_plan_groups[0], 2..3);
+        assert_eq!(gpu.indirect_run_plan.len(), 3);
+        assert_eq!(
+            gpu.indirect_run_plan[0].dst_base,
+            INDIRECT_COMPACT_REGION_DEPTH_PREPASS * stride
+        );
+        assert_eq!(
+            gpu.indirect_run_plan[1].dst_base,
+            INDIRECT_COMPACT_REGION_BLEND_DEPTH * stride
+        );
+        assert_eq!(gpu.indirect_run_plan[2].dst_base, 0);
+        assert_eq!(gpu.indirect_planned_command_count, 64);
+        assert_eq!(gpu.indirect_planned_command_count_prepass, 64);
+        assert_eq!(gpu.indirect_planned_command_count_blend_depth, 40);
+
+        // A pass under the min-command gate is dropped from the plan; the
+        // others keep theirs, and the ranges stay contiguous.
+        gpu.mesh_blend_depth_batch_indices = (0..8).collect();
+        gpu.build_indirect_run_plans(true, true, true);
+        assert!(gpu.multi_draw_indirect_count_prepass_active);
+        assert!(!gpu.multi_draw_indirect_count_blend_depth_active);
+        assert!(gpu.multi_draw_indirect_count_active);
+        assert_eq!(gpu.indirect_run_plan_prepass, 0..1);
+        assert_eq!(gpu.indirect_run_plan_blend_depth, 0..0);
+        assert_eq!(gpu.indirect_run_plan_main, 1..2);
+        assert_eq!(gpu.indirect_run_plan.len(), 2);
+
+        // Inactive passes never enter the plan at all.
+        gpu.build_indirect_run_plans(true, false, false);
+        assert!(!gpu.multi_draw_indirect_count_prepass_active);
+        assert!(!gpu.multi_draw_indirect_count_blend_depth_active);
+        assert_eq!(gpu.indirect_run_plan_main, 0..1);
+        assert_eq!(gpu.indirect_run_plan.len(), 1);
     });
 }
