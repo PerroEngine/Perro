@@ -195,7 +195,25 @@ impl NodeAPI for Runtime {
             self.invalidate_physics_query_sync();
         }
         if matches!(T::RENDERABLE, Renderable::True) {
-            self.mark_needs_rerender(id);
+            // UI payloads are fully fingerprinted by `ui_snapshot`, so a
+            // no-op mutation (script reads through the mut accessor, or
+            // writes identical values every frame) must not defeat the UI
+            // idle gate. Non-UI payloads have no fingerprint; keep the
+            // conservative unconditional mark for them.
+            let ui_unchanged = T::NODE_TYPE.is_a(NodeType::UiNode)
+                && !transform_changed
+                && !visibility_changed
+                && !modulate_changed
+                && match (ui_before.as_ref(), ui_after.as_ref()) {
+                    (Some(before), Some(after)) => {
+                        before.base == after.base && before.payload == after.payload
+                    }
+                    (None, None) => true,
+                    _ => false,
+                };
+            if !ui_unchanged {
+                self.mark_needs_rerender(id);
+            }
         }
         if T::NODE_TYPE == NodeType::Webcam {
             self.mark_camera_stream_users_dirty(id);
@@ -272,6 +290,7 @@ impl NodeAPI for Runtime {
             active_camera_3d_changed,
             active_camera_3d_activated,
             modulate_changed,
+            base_changed,
         ) = {
             // Base kinds (2D/3D) cannot tell physics nodes apart at compile
             // time; keep the conservative full bump for physics nodes and skip
@@ -297,6 +316,19 @@ impl NodeAPI for Runtime {
                 SceneNodeData::Camera3D(camera) if camera.active => Some(camera.transform),
                 _ => None,
             };
+            // Full-base clones for the rerender gate: a canonical-base closure
+            // (T = Node2D/Node3D/UiNode) can only touch these structs, so
+            // full equality proves the mutation was a no-op. Exactly one probe
+            // is Some per node family; the 2D/3D bases are small Copy-content
+            // structs.
+            let canonical_base = matches!(
+                T::BASE_NODE_TYPE,
+                NodeType::Node2D | NodeType::Node3D | NodeType::UiNode
+            );
+            let base_2d_before =
+                canonical_base.then(|| node.with_base_ref::<Node2D, _>(Clone::clone));
+            let base_3d_before =
+                canonical_base.then(|| node.with_base_ref::<Node3D, _>(Clone::clone));
             let ui_before = node.with_base_ref::<UiNode, _>(Clone::clone);
             let value = node.with_base_mut::<T, _>(f)?;
             let after = base_spatial_snapshot(&node.data);
@@ -311,6 +343,19 @@ impl NodeAPI for Runtime {
             let ui_after = node.with_base_ref::<UiNode, _>(Clone::clone);
             let changed = before.transform_2d != after.transform_2d
                 || before.transform_3d != after.transform_3d;
+            let base_changed = if canonical_base {
+                let base_2d_after =
+                    Some(node.with_base_ref::<Node2D, _>(Clone::clone));
+                let base_3d_after =
+                    Some(node.with_base_ref::<Node3D, _>(Clone::clone));
+                base_2d_before != base_2d_after
+                    || base_3d_before != base_3d_after
+                    || ui_before != ui_after
+            } else {
+                // Exact-type dispatch exposes the full payload; no fingerprint
+                // exists, so treat every call as a change.
+                true
+            };
             (
                 value,
                 changed,
@@ -322,10 +367,13 @@ impl NodeAPI for Runtime {
                 before_camera_3d != after_camera_3d,
                 before_camera_3d.is_none() && after_camera_3d.is_some(),
                 before.modulate != after.modulate,
+                base_changed,
             )
         };
 
-        self.mark_needs_rerender(id);
+        if base_changed {
+            self.mark_needs_rerender(id);
+        }
         if concrete_type == NodeType::UiSubView {
             self.invalidate_physics_query_sync();
         }

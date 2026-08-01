@@ -14,7 +14,7 @@ use perro_nodes::{
     UiGrid, UiHLayout, UiLabel, UiNode, UiPanel, UiTextBox, UiTreeList,
 };
 use perro_runtime_api::sub_apis::NodeAPI;
-use perro_structs::{Color, Transform2D, Transform3D, Vector2, Vector3};
+use perro_structs::{BitMask, Color, Transform2D, Transform3D, Vector2, Vector3};
 use perro_ui::UiTreeListItem;
 use std::borrow::Cow;
 
@@ -249,8 +249,9 @@ fn with_node_mut_uilabel_noop_no_ui_flags() {
     <Runtime as NodeAPI>::with_node_mut::<UiLabel, _, _>(&mut runtime, label, |_l| {});
 
     assert_eq!(ui_flags(&runtime, label), 0);
-    // Note: UiLabel is Renderable::True -> rerender flag still fires on no-op.
-    assert!(rerender_set(&runtime, label));
+    // UI payloads are fully fingerprinted: a no-op mutation must not mark
+    // rerender, or per-frame script access defeats the UI idle gate.
+    assert!(!rerender_set(&runtime, label));
 }
 
 // 8. UiButton disabled toggle -> COMMANDS.
@@ -611,17 +612,46 @@ fn with_base_node_mut_node2d_transform_marks_2d_transform() {
 }
 
 #[test]
-fn with_base_node_mut_node2d_noop_sets_rerender_unconditionally() {
+fn with_base_node_mut_node2d_noop_skips_rerender() {
     let mut runtime = Runtime::new();
     let sprite = NodeAPI::create::<Sprite2D>(&mut runtime);
     reset_all(&mut runtime);
 
     <Runtime as NodeAPI>::with_base_node_mut::<Node2D, _, _>(&mut runtime, sprite, |_b| {});
 
-    // with_base_node_mut calls mark_needs_rerender unconditionally.
-    assert!(rerender_set(&runtime, sprite));
+    // A canonical-base closure can only touch the base struct; full base
+    // equality proves the no-op, so the rerender mark is skipped.
+    assert!(!rerender_set(&runtime, sprite));
     assert!(!runtime.dirty.has_transform_dirty(sprite, Spatial::TwoD));
     assert_eq!(transform_flags(&runtime, sprite), 0);
+}
+
+#[test]
+fn with_base_node_mut_node2d_z_index_marks_rerender() {
+    let mut runtime = Runtime::new();
+    let sprite = NodeAPI::create::<Sprite2D>(&mut runtime);
+    reset_all(&mut runtime);
+
+    <Runtime as NodeAPI>::with_base_node_mut::<Node2D, _, _>(&mut runtime, sprite, |b| {
+        b.z_index += 1;
+    });
+
+    // z_index is outside the spatial snapshot; the full-base compare must
+    // still catch it.
+    assert!(rerender_set(&runtime, sprite));
+}
+
+#[test]
+fn with_base_node_mut_node2d_render_layers_marks_rerender() {
+    let mut runtime = Runtime::new();
+    let sprite = NodeAPI::create::<Sprite2D>(&mut runtime);
+    reset_all(&mut runtime);
+
+    <Runtime as NodeAPI>::with_base_node_mut::<Node2D, _, _>(&mut runtime, sprite, |b| {
+        b.render_layers = BitMask::from_bits(0b1);
+    });
+
+    assert!(rerender_set(&runtime, sprite));
 }
 
 // 19. visible toggle via base -> force_rerender subtree.

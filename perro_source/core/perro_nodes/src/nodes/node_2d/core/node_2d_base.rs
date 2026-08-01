@@ -1,7 +1,7 @@
 use perro_structs::{BitMask, NodeModulate, Transform2D};
 use std::ops::{Deref, DerefMut};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Node2D {
     pub transform: Transform2D,
     pub top_level: bool,
