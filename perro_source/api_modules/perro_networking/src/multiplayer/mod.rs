@@ -583,6 +583,14 @@ fn resolve_join_token(token: i64) -> i64 {
 }
 
 fn start_lan_discovery() {
+    {
+        let mut state = lock_state();
+        let token = crate::multiplayer::lan_transport::LAN_JOIN_TOKEN;
+        state.friends.retain(|friend| friend.lobby_id != token);
+        state.join_tokens.retain(|(stored, _)| *stored != token);
+        state.lan_host_addr = None;
+        state.lan_discovery = None;
+    }
     if require_lan_consent().is_err() {
         return;
     }

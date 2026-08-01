@@ -552,8 +552,7 @@ fn steam_close_host_lobby(lobby_id: i64) -> Result<(), String> {
 
     let lobby = steam::LobbyID::from_id(lobby_id.max(0) as u64);
     let joinable = steam::lobbies::set_joinable(lobby, false).map_err(|err| format!("{err:?}"));
-    let started =
-        steam::lobbies::set_data(lobby, "started", "1").map_err(|err| format!("{err:?}"));
+    let started = steam::lobbies::set_data(lobby, "started", "1").map_err(|err| format!("{err:?}"));
     let private =
         steam::lobbies::set_data(lobby, "privacy", "private").map_err(|err| format!("{err:?}"));
     joinable.and(started).and(private)
@@ -751,6 +750,13 @@ fn steam_friend_lobbies() -> Vec<FriendLobbyInfo> {
                 return None;
             }
             if !steam_lobby_has_game_tag(lobby_id) {
+                return None;
+            }
+            let lobby = steam::LobbyID::from_id(lobby_id as u64);
+            let Ok(owner) = steam::lobbies::get_owner(lobby) else {
+                return None;
+            };
+            if owner != friend.id {
                 return None;
             }
             if steam_lobby_privacy(lobby_id).as_deref() != Some("friends") {
