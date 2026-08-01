@@ -22,7 +22,11 @@ pub(crate) const MAX_FRAME_RATE_CAP_FPS: f32 = 1000.0;
 // pathological estimate in check. With 1ms system timer resolution (see
 // timer_resolution.rs) typical overshoot is well under 1ms.
 pub(crate) const MIN_WAKE_HEADROOM: Duration = Duration::from_millis(1);
-pub(crate) const MAX_WAKE_HEADROOM: Duration = Duration::from_millis(4);
+// Never exceed the old fixed 2ms headroom: a loaded machine pushes the
+// overshoot EWMA up, and a bigger headroom means a longer busy-poll tail
+// stealing CPU exactly when the system has none to spare. Wakes that land
+// past the deadline are repaid by the catch-up chain instead.
+pub(crate) const MAX_WAKE_HEADROOM: Duration = Duration::from_millis(2);
 // Safety margin over the average overshoot; late wakes only add jitter (the
 // deadline chain repays them), so the margin stays small.
 const WAKE_HEADROOM_MARGIN: Duration = Duration::from_micros(500);
