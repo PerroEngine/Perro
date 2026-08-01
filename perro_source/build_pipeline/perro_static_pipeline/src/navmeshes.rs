@@ -1,33 +1,19 @@
-use crate::{
-    StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, prune_embedded_dir,
-    res_dir, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn,
-};
+use crate::{ResFileTree, StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, prune_embedded_dir, res_dir, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn};
 use perro_asset_formats::pnav;
-use perro_io::walkdir::collect_file_paths;
 use perro_resource_api::sub_apis::parse_pnav_resource_bytes;
 use std::{collections::HashSet, fmt::Write as _, fs, path::Path};
 
-pub fn generate_static_navmeshes(project_root: &Path) -> Result<(), StaticPipelineError> {
+pub fn generate_static_navmeshes(
+    project_root: &Path,
+    res_tree: &ResFileTree,
+) -> Result<(), StaticPipelineError> {
     let res_dir = res_dir(project_root);
     let static_dir = static_dir(project_root);
     let embedded_navmeshes_dir = embedded_dir(project_root).join("navmeshes");
     fs::create_dir_all(&static_dir)?;
     fs::create_dir_all(&embedded_navmeshes_dir)?;
 
-    let mut navmesh_paths = Vec::<String>::new();
-    if res_dir.exists() {
-        navmesh_paths = collect_file_paths(&res_dir, &res_dir)?
-            .into_iter()
-            .map(|rel| rel.replace('\\', "/"))
-            .filter(|rel| {
-                Path::new(rel)
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case(pnav::EXTENSION))
-            })
-            .collect();
-    }
-    navmesh_paths.sort();
+    let navmesh_paths = res_tree.filter_ext(|ext| ext.eq_ignore_ascii_case(pnav::EXTENSION));
 
     let mut navmeshes = Vec::<(String, String)>::with_capacity(navmesh_paths.len());
     for rel in navmesh_paths {
@@ -155,7 +141,7 @@ mod tests {
             embedded_dir: embedded_dir.clone(),
             asset_prefix: "res://".to_string(),
         }));
-        let result = generate_static_navmeshes(&root);
+        let result = generate_static_navmeshes(&root, &crate::ResFileTree::scan(&root).expect("res scan"));
         set_static_pipeline_overrides(None);
         result.expect("generate static navmeshes");
 
@@ -184,7 +170,7 @@ mod tests {
             embedded_dir,
             asset_prefix: "res://".to_string(),
         }));
-        let result = generate_static_navmeshes(&root);
+        let result = generate_static_navmeshes(&root, &crate::ResFileTree::scan(&root).expect("res scan"));
         set_static_pipeline_overrides(None);
 
         assert!(result.is_err());

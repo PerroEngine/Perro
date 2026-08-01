@@ -1,10 +1,6 @@
 //! Static collision trimesh discovery and PMESH v1 collision packing.
 
-use crate::{
-    CachedSource, SourceCache, StaticPipelineError, asset_prefix, ensure_unique_hashes,
-    is_asset_uri, res_dir, source_stat, static_dir, strip_asset_prefix, write_hash_const,
-    write_if_changed, write_static_lookup_fn,
-};
+use crate::{CachedSource, ResFileTree, SourceCache, StaticPipelineError, asset_prefix, ensure_unique_hashes, is_asset_uri, res_dir, source_stat, static_dir, strip_asset_prefix, write_hash_const, write_if_changed, write_static_lookup_fn};
 use perro_asset_formats::{
     pmesh::{
         EXTENSION as PMESH_EXTENSION, FLAG_INDEX_U16 as PMESH_FLAG_INDEX_U16,
@@ -14,7 +10,7 @@ use perro_asset_formats::{
     },
     source_ext,
 };
-use perro_io::{compress_zlib_best, decompress_zlib_limited, walkdir::collect_file_paths};
+use perro_io::{compress_zlib_best, decompress_zlib_limited};
 use perro_scene::{NodeType, Parser, SceneNodeData, SceneValue};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -23,14 +19,17 @@ use std::{
     path::Path,
 };
 
-pub fn generate_static_collision_trimeshes(project_root: &Path) -> Result<(), StaticPipelineError> {
+pub fn generate_static_collision_trimeshes(
+    project_root: &Path,
+    res_tree: &ResFileTree,
+) -> Result<(), StaticPipelineError> {
     let res_root = res_dir(project_root);
     let static_root = static_dir(project_root);
     let embedded_dir = crate::embedded_dir(project_root).join("collision_trimeshes");
     fs::create_dir_all(&static_root)?;
     fs::create_dir_all(&embedded_dir)?;
 
-    let sources = collect_collision_trimesh_sources(&res_root)?;
+    let sources = collect_collision_trimesh_sources(&res_root, res_tree)?;
     ensure_unique_hashes("collision_trimesh", sources.iter().map(String::as_str))?;
 
     // Cache keyed on the underlying mesh file stat. `.gltf` sources can pull
@@ -152,21 +151,12 @@ pub fn generate_static_collision_trimeshes(project_root: &Path) -> Result<(), St
     Ok(())
 }
 
-fn collect_collision_trimesh_sources(res_root: &Path) -> Result<Vec<String>, StaticPipelineError> {
+fn collect_collision_trimesh_sources(
+    res_root: &Path,
+    res_tree: &ResFileTree,
+) -> Result<Vec<String>, StaticPipelineError> {
     let mut out = BTreeSet::<String>::new();
-    if !res_root.exists() {
-        return Ok(Vec::new());
-    }
-    let mut scene_paths = collect_file_paths(res_root, res_root)?;
-    scene_paths.sort();
-    for rel in scene_paths {
-        if !Path::new(&rel)
-            .extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(|ext| ext.eq_ignore_ascii_case(source_ext::SCENE))
-        {
-            continue;
-        }
+    for rel in res_tree.filter_ext(|ext| ext.eq_ignore_ascii_case(source_ext::SCENE)) {
         let src = fs::read_to_string(res_root.join(&rel))?;
         let scene = std::panic::catch_unwind(|| Parser::new(&src).parse_scene()).map_err(|_| {
             StaticPipelineError::SceneParse(format!(

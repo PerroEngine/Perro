@@ -1,14 +1,10 @@
-use crate::{
-    StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir, write_hash_const,
-    write_static_lookup_fn,
-};
+use crate::{ResFileTree, StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir, write_hash_const, write_static_lookup_fn};
 use perro_animation::{
     AnimationBoneSelector, AnimationEase, AnimationEvent, AnimationEventScope,
     AnimationInterpolation, AnimationKeyMode, AnimationObjectKey, AnimationObjectTrack,
     AnimationParam, AnimationTrackValue,
 };
 use perro_asset_formats::source_ext;
-use perro_io::walkdir::collect_file_paths;
 use perro_scene::NodeField;
 use rayon::prelude::*;
 use std::{borrow::Cow, fmt::Write as _, fs, io, path::Path};
@@ -19,25 +15,15 @@ struct ParsedAnimation {
     clip: perro_animation::AnimationClip,
 }
 
-pub fn generate_static_animations(project_root: &Path) -> Result<(), StaticPipelineError> {
+pub fn generate_static_animations(
+    project_root: &Path,
+    res_tree: &ResFileTree,
+) -> Result<(), StaticPipelineError> {
     let res_dir = res_dir(project_root);
     let static_dir = static_dir(project_root);
     fs::create_dir_all(&static_dir)?;
 
-    let mut anim_paths = Vec::<String>::new();
-    if res_dir.exists() {
-        anim_paths = collect_file_paths(&res_dir, &res_dir)?
-            .into_iter()
-            .map(|rel| rel.replace('\\', "/"))
-            .filter(|rel| {
-                Path::new(rel)
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case(source_ext::ANIMATION))
-            })
-            .collect();
-    }
-    anim_paths.sort();
+    let anim_paths = res_tree.filter_ext(|ext| ext.eq_ignore_ascii_case(source_ext::ANIMATION));
 
     let mut parsed = anim_paths
         .par_iter()
@@ -967,7 +953,7 @@ fps = 24
             .expect("failed to create source parent");
         std::fs::write(&source_abs, TEST_PANIM_SRC).expect("failed to write source panim");
 
-        generate_static_animations(&root).expect("static animation generation should succeed");
+        generate_static_animations(&root, &crate::ResFileTree::scan(&root).expect("res scan")).expect("static animation generation should succeed");
 
         let embedded_abs = root
             .join(".perro")
@@ -1044,7 +1030,7 @@ target_rest Arm.L = (1, 2, 3) | (0, 0, 0.70710677, 0.70710677) | (1, 1, 1)
         )
         .expect("write retarget map");
 
-        generate_static_animations(&root).expect("generate retargeted static animation");
+        generate_static_animations(&root, &crate::ResFileTree::scan(&root).expect("res scan")).expect("generate retargeted static animation");
 
         let generated =
             std::fs::read_to_string(root.join(".perro/project/src/static/animations.rs"))

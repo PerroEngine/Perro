@@ -8,6 +8,7 @@
 //! duration of that callback.
 
 mod macros;
+pub mod nested_vars;
 pub mod script_trait;
 pub use perro_scripting_macros::{State, Variant};
 pub use script_trait::*;

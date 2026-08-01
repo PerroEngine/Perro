@@ -146,12 +146,15 @@ impl BarkPlayer {
         source_hash: u64,
         source: &str,
     ) -> Result<Option<Arc<CachedPcm>>, String> {
-        let cursor = Cursor::new(bytes.clone());
-        let reader = BufReader::new(cursor);
-        let decoder = Decoder::new(reader)
+        // The bytes are already resident, so `Cursor` is the reader; a
+        // `BufReader` on top would copy every block twice.
+        let decoder = Decoder::new(Cursor::new(bytes.clone()))
             .map_err(|err| format!("failed to decode audio `{source}`: {err}"))?;
         let channels = decoder.channels().max(1);
-        let sample_rate = decoder.sample_rate().max(1);
+        // Resample once, here, into the device rate. Cached PCM used to be
+        // stored at its native rate, so every play ran rodio's per-sample rate
+        // converter over the whole clip again.
+        let sample_rate = self.output_sample_rate.max(1);
         let cap = (sample_rate as usize)
             .saturating_mul(channels as usize)
             .saturating_mul(Self::PCM_CACHE_MAX_SECONDS);
@@ -161,13 +164,21 @@ impl BarkPlayer {
         const PCM_PREALLOC_CEILING_SAMPLES: usize = 1 << 21;
         let mut samples: Vec<f32> = Vec::with_capacity(cap.min(PCM_PREALLOC_CEILING_SAMPLES));
         let mut oversized = false;
-        for sample in decoder.convert_samples::<f32>() {
+        let resampled = UniformSourceIterator::<_, f32>::new(
+            decoder.convert_samples::<f32>(),
+            channels,
+            sample_rate,
+        );
+        for sample in resampled {
             if samples.len() >= cap {
                 oversized = true;
                 break;
             }
             samples.push(sample);
         }
+        // Keep whole frames: a rate conversion can end mid-frame, and the
+        // duration/trim math assumes `len % channels == 0`.
+        samples.truncate(samples.len() - samples.len() % channels as usize);
 
         let mut state = self
             .state

@@ -59,10 +59,10 @@ impl BarkPlayer {
             None => None,
         };
         let decoder = if pcm.is_none() {
-            let cursor = Cursor::new(bytes.clone());
-            let reader = BufReader::new(cursor);
+            // Resident bytes: `Cursor` is already the reader, so a `BufReader`
+            // on top just copies every block again.
             Some(
-                Decoder::new(reader)
+                Decoder::new(Cursor::new(bytes.clone()))
                     .map_err(|err| format!("failed to decode audio `{source}`: {err}"))?,
             )
         } else {
@@ -141,9 +141,9 @@ impl BarkPlayer {
             None
         };
         match (pcm, decoder) {
-            (Some(pcm), _) => append_with_trims(
+            (Some(pcm), _) => append_cached_with_trims(
                 &sink,
-                CachedPcmSource::new(pcm),
+                pcm,
                 dsp.clone(),
                 trim_start,
                 play_duration,

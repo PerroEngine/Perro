@@ -1,32 +1,18 @@
-use crate::{
-    StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, prune_embedded_dir,
-    res_dir, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn,
-};
+use crate::{ResFileTree, StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, prune_embedded_dir, res_dir, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn};
 use perro_asset_formats::source_ext;
-use perro_io::walkdir::collect_file_paths;
 use std::{collections::HashSet, fmt::Write as _, fs, path::Path};
 
-pub fn generate_static_shaders(project_root: &Path) -> Result<(), StaticPipelineError> {
+pub fn generate_static_shaders(
+    project_root: &Path,
+    res_tree: &ResFileTree,
+) -> Result<(), StaticPipelineError> {
     let res_dir = res_dir(project_root);
     let static_dir = static_dir(project_root);
     let embedded_shaders_dir = embedded_dir(project_root).join("shaders");
     fs::create_dir_all(&static_dir)?;
     fs::create_dir_all(&embedded_shaders_dir)?;
 
-    let mut shader_paths = Vec::<String>::new();
-    if res_dir.exists() {
-        shader_paths = collect_file_paths(&res_dir, &res_dir)?
-            .into_iter()
-            .map(|rel| rel.replace('\\', "/"))
-            .filter(|rel| {
-                Path::new(rel)
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .is_some_and(|ext| source_ext::contains(source_ext::SHADER, ext))
-            })
-            .collect();
-    }
-    shader_paths.sort();
+    let shader_paths = res_tree.filter_ext(|ext| source_ext::contains(source_ext::SHADER, ext));
 
     let mut shaders = Vec::<(String, String)>::with_capacity(shader_paths.len());
     for rel in shader_paths {
@@ -175,7 +161,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
             embedded_dir: embedded_dir.clone(),
             asset_prefix: "res://".to_string(),
         }));
-        let result = generate_static_shaders(&root);
+        let result = generate_static_shaders(&root, &crate::ResFileTree::scan(&root).expect("res scan"));
         set_static_pipeline_overrides(None);
         result.expect("generate static shaders");
 
@@ -203,7 +189,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
             embedded_dir: root.join("embedded"),
             asset_prefix: "res://".to_string(),
         }));
-        let result = generate_static_shaders(&root);
+        let result = generate_static_shaders(&root, &crate::ResFileTree::scan(&root).expect("res scan"));
         set_static_pipeline_overrides(None);
 
         let err = result.expect_err("broken shader must fail the static build");
@@ -230,7 +216,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
             embedded_dir: root.join("embedded"),
             asset_prefix: "res://".to_string(),
         }));
-        let result = generate_static_shaders(&root);
+        let result = generate_static_shaders(&root, &crate::ResFileTree::scan(&root).expect("res scan"));
         set_static_pipeline_overrides(None);
 
         result.expect("shader with no engine entry fn must not fail the build");

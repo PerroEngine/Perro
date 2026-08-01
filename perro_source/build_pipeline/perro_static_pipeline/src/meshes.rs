@@ -1,9 +1,6 @@
 //! Static render mesh import, LOD build, meshlet packing, and PMESH v1 encode.
 
-use crate::{
-    CachedSource, SourceCache, StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes,
-    res_dir, source_stat, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn,
-};
+use crate::{CachedSource, ResFileTree, SourceCache, StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, source_stat, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn};
 use perro_asset_formats::{
     pmesh::{
         EXTENSION as PMESH_EXTENSION,
@@ -16,7 +13,7 @@ use perro_asset_formats::{
     },
     source_ext,
 };
-use perro_io::{compress_zlib_best, walkdir::collect_file_paths};
+use perro_io::compress_zlib_best;
 use perro_meshlets::{DEFAULT_LOD_TARGET_RATIOS, LodSurfaceRange, LodVertex};
 use perro_structs::UnitVector4;
 use rayon::prelude::*;
@@ -94,6 +91,7 @@ struct MeshAsset {
 
 pub fn generate_static_meshes(
     project_root: &Path,
+    res_tree: &ResFileTree,
     bake_meshlets: bool,
 ) -> Result<(), StaticPipelineError> {
     let res_dir = res_dir(project_root);
@@ -102,20 +100,7 @@ pub fn generate_static_meshes(
     fs::create_dir_all(&static_dir)?;
     fs::create_dir_all(&embedded_meshes_dir)?;
 
-    let mut mesh_paths = Vec::<String>::new();
-    if res_dir.exists() {
-        mesh_paths = collect_file_paths(&res_dir, &res_dir)?
-            .into_iter()
-            .map(|rel| rel.replace('\\', "/"))
-            .filter(|rel| {
-                Path::new(rel)
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .is_some_and(|ext| source_ext::contains(source_ext::MESH_INPUT, ext))
-            })
-            .collect();
-    }
-    mesh_paths.sort();
+    let mesh_paths = res_tree.filter_ext(|ext| source_ext::contains(source_ext::MESH_INPUT, ext));
 
     // Meshlet baking changes the encoded bytes, so it is part of the cache
     // context. `.gltf` sources can reference external buffer files whose

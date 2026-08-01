@@ -1,7 +1,4 @@
-use crate::{
-    CachedSource, SourceCache, StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes,
-    res_dir, source_stat, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn,
-};
+use crate::{CachedSource, ResFileTree, SourceCache, StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, source_stat, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn};
 use perro_asset_formats::{
     pskel::{
         BONE_FLAG_HAS_INV_POS as PSKEL_BONE_FLAG_HAS_INV_POS,
@@ -17,7 +14,7 @@ use perro_asset_formats::{
     },
     source_ext,
 };
-use perro_io::{compress_zlib_best, walkdir::collect_file_paths};
+use perro_io::compress_zlib_best;
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use rayon::prelude::*;
 use std::{
@@ -54,27 +51,17 @@ struct Bone2DLiteral {
     inv_bind: Transform2D,
 }
 
-pub fn generate_static_skeletons(project_root: &Path) -> Result<(), StaticPipelineError> {
+pub fn generate_static_skeletons(
+    project_root: &Path,
+    res_tree: &ResFileTree,
+) -> Result<(), StaticPipelineError> {
     let res_dir = res_dir(project_root);
     let static_dir = static_dir(project_root);
     let embedded_skeletons_dir = embedded_dir(project_root).join("skeletons");
     fs::create_dir_all(&static_dir)?;
     fs::create_dir_all(&embedded_skeletons_dir)?;
 
-    let mut skeleton_paths = Vec::<String>::new();
-    if res_dir.exists() {
-        skeleton_paths = collect_file_paths(&res_dir, &res_dir)?
-            .into_iter()
-            .map(|rel| rel.replace('\\', "/"))
-            .filter(|rel| {
-                Path::new(rel)
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .is_some_and(|ext| source_ext::contains(source_ext::SKELETON_INPUT, ext))
-            })
-            .collect();
-    }
-    skeleton_paths.sort();
+    let skeleton_paths = res_tree.filter_ext(|ext| source_ext::contains(source_ext::SKELETON_INPUT, ext));
 
     // `.gltf` sources can reference external buffers a single-file stat would
     // miss, so they bypass the cache; everything else skips re-encoding when

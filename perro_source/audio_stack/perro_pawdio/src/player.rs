@@ -1,8 +1,9 @@
 use perro_ids::AudioBusID;
 use rodio::buffer::SamplesBuffer;
+use rodio::source::UniformSourceIterator;
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Source, SpatialSink};
 use std::collections::HashMap;
-use std::io::{BufReader, Cursor};
+use std::io::Cursor;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -40,6 +41,10 @@ struct MidiSinkActivation {
 pub struct BarkPlayer {
     _stream: OutputStream,
     handle: OutputStreamHandle,
+    // Device rate the mixer runs at. Cached PCM is resampled into the cache at
+    // this rate once, so repeated plays feed the mixer straight through
+    // instead of running rodio's per-sample rate converter every play.
+    output_sample_rate: u32,
     state: Mutex<AudioState>,
     static_audio_lookup: Option<fn(u64) -> &'static [u8]>,
 }
@@ -58,11 +63,11 @@ impl BarkPlayer {
     const UNRESERVED_TTL_MIN: Duration = Duration::from_millis(250);
 
     pub fn new(static_audio_lookup: Option<fn(u64) -> &'static [u8]>) -> Result<Self, String> {
-        let (stream, handle) = OutputStream::try_default()
-            .map_err(|err| format!("audio output init failed: {err}"))?;
+        let (stream, handle, output_sample_rate) = open_default_output()?;
         Ok(Self {
             _stream: stream,
             handle,
+            output_sample_rate,
             static_audio_lookup,
             state: Mutex::new(AudioState {
                 master_volume: 1.0,
@@ -89,9 +94,9 @@ impl BarkPlayer {
     }
 
     fn decode_duration_from_cached_bytes(bytes: Arc<[u8]>) -> Option<Duration> {
-        let cursor = Cursor::new(bytes);
-        let reader = BufReader::new(cursor);
-        let decoder = Decoder::new(reader).ok()?;
+        // The bytes are already resident: a `Cursor` is the reader, wrapping it
+        // in a `BufReader` just copies every block a second time.
+        let decoder = Decoder::new(Cursor::new(bytes)).ok()?;
         if let Some(duration) = decoder.total_duration() {
             return Some(duration);
         }
@@ -109,8 +114,34 @@ impl BarkPlayer {
     }
 }
 
+// Mirrors `OutputStream::try_default` (default device, then any other output
+// device) but keeps the config it opened with, so the mixer's sample rate is
+// known instead of guessed. rodio can still fall back to another config
+// internally; a wrong guess only costs the resample it would have done anyway.
+fn open_default_output() -> Result<(OutputStream, OutputStreamHandle, u32), String> {
+    use cpal::traits::{DeviceTrait, HostTrait};
+
+    fn open(device: &cpal::Device) -> Option<(OutputStream, OutputStreamHandle, u32)> {
+        let config = device.default_output_config().ok()?;
+        let rate = config.sample_rate().0.max(1);
+        let (stream, handle) = OutputStream::try_from_device_config(device, config).ok()?;
+        Some((stream, handle, rate))
+    }
+
+    let host = cpal::default_host();
+    if let Some(device) = host.default_output_device()
+        && let Some(opened) = open(&device)
+    {
+        return Ok(opened);
+    }
+    host.output_devices()
+        .map_err(|err| format!("audio output init failed: {err}"))?
+        .find_map(|device| open(&device))
+        .ok_or_else(|| "audio output init failed: no usable output device".to_string())
+}
+
 mod cache;
 mod midi_player;
 mod pcm_source;
 mod playback;
-use pcm_source::{CachedPcmSource, append_with_trims};
+use pcm_source::{append_cached_with_trims, append_with_trims};

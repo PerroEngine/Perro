@@ -1,32 +1,18 @@
-use crate::{
-    StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir, write_hash_const,
-    write_static_lookup_fn,
-};
+use crate::{ResFileTree, StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir, write_hash_const, write_static_lookup_fn};
 use perro_asset_formats::source_ext;
-use perro_io::walkdir::collect_file_paths;
 use perro_particle_math::{Op, compile_expression};
 use rayon::prelude::*;
 use std::{collections::HashMap, fmt::Write as _, fs, io, path::Path};
 
-pub fn generate_static_particles(project_root: &Path) -> Result<(), StaticPipelineError> {
+pub fn generate_static_particles(
+    project_root: &Path,
+    res_tree: &ResFileTree,
+) -> Result<(), StaticPipelineError> {
     let res_dir = res_dir(project_root);
     let static_dir = static_dir(project_root);
     fs::create_dir_all(&static_dir)?;
 
-    let mut particle_paths = Vec::<String>::new();
-    if res_dir.exists() {
-        particle_paths = collect_file_paths(&res_dir, &res_dir)?
-            .into_iter()
-            .map(|rel| rel.replace('\\', "/"))
-            .filter(|rel| {
-                Path::new(rel)
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case(source_ext::PARTICLE))
-            })
-            .collect();
-    }
-    particle_paths.sort();
+    let particle_paths = res_tree.filter_ext(|ext| ext.eq_ignore_ascii_case(source_ext::PARTICLE));
 
     let mut particles = particle_paths
         .into_par_iter()

@@ -1,34 +1,19 @@
-use crate::{
-    CachedSource, SourceCache, StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes,
-    res_dir, source_stat, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn,
-};
+use crate::{CachedSource, ResFileTree, SourceCache, StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, source_stat, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn};
 use perro_io::compress_zlib_best;
-use perro_io::walkdir::collect_file_paths;
 use std::{fmt::Write as _, fs, path::Path};
 
-pub fn generate_static_fonts(project_root: &Path) -> Result<(), StaticPipelineError> {
+pub fn generate_static_fonts(
+    project_root: &Path,
+    res_tree: &ResFileTree,
+) -> Result<(), StaticPipelineError> {
     let res = res_dir(project_root);
     let embedded = embedded_dir(project_root).join("fonts");
     let static_dir = static_dir(project_root);
     fs::create_dir_all(&embedded)?;
     fs::create_dir_all(&static_dir)?;
-    let mut fonts = if res.exists() {
-        collect_file_paths(&res, &res)?
-            .into_iter()
-            .map(|rel| rel.replace('\\', "/"))
-            .filter(|rel| {
-                Path::new(rel)
-                    .extension()
-                    .and_then(|v| v.to_str())
-                    .is_some_and(|ext| {
-                        matches!(ext.to_ascii_lowercase().as_str(), "ttf" | "otf" | "ttc")
-                    })
-            })
-            .collect::<Vec<_>>()
-    } else {
-        Vec::new()
-    };
-    fonts.sort();
+    let fonts = res_tree.filter_ext(|ext| {
+        matches!(ext.to_ascii_lowercase().as_str(), "ttf" | "otf" | "ttc")
+    });
     let paths = fonts.iter().map(|rel| asset_uri(rel)).collect::<Vec<_>>();
     ensure_unique_hashes("font", paths.iter().map(String::as_str))?;
     let mut cache = SourceCache::open(&embedded, "fonts");

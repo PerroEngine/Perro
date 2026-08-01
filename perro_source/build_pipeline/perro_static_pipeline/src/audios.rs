@@ -1,14 +1,11 @@
-use crate::{
-    CachedSource, SourceCache, StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes,
-    res_dir, source_stat, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn,
-};
+use crate::{CachedSource, ResFileTree, SourceCache, StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, source_stat, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn};
 use perro_asset_formats::{
     pawdio::{
         EXTENSION as PAWDIO_EXTENSION, FLAG_ZLIB, MAGIC as PAWDIO_MAGIC, VERSION as PAWDIO_VERSION,
     },
     source_ext,
 };
-use perro_io::{compress_zlib_best, walkdir::collect_file_paths};
+use perro_io::compress_zlib_best;
 use rayon::prelude::*;
 use std::{
     fmt::Write as _,
@@ -16,31 +13,21 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub fn generate_static_audios(project_root: &Path) -> Result<(), StaticPipelineError> {
+pub fn generate_static_audios(
+    project_root: &Path,
+    res_tree: &ResFileTree,
+) -> Result<(), StaticPipelineError> {
     let res_dir = res_dir(project_root);
     let static_dir = static_dir(project_root);
     let embedded_audios_dir = embedded_dir(project_root).join("audios");
     fs::create_dir_all(&static_dir)?;
     fs::create_dir_all(&embedded_audios_dir)?;
 
-    let mut audio_paths = Vec::<String>::new();
-    if res_dir.exists() {
-        audio_paths = collect_file_paths(&res_dir, &res_dir)?
-            .into_iter()
-            .map(|rel| rel.replace('\\', "/"))
-            .filter(|rel| {
-                Path::new(rel)
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .is_some_and(|ext| {
-                        source_ext::contains(source_ext::AUDIO, ext)
-                            || source_ext::contains(source_ext::MIDI, ext)
-                            || source_ext::contains(source_ext::SOUNDFONT, ext)
-                    })
-            })
-            .collect();
-    }
-    audio_paths.sort();
+    let audio_paths = res_tree.filter_ext(|ext| {
+        source_ext::contains(source_ext::AUDIO, ext)
+            || source_ext::contains(source_ext::MIDI, ext)
+            || source_ext::contains(source_ext::SOUNDFONT, ext)
+    });
 
     let mut cache = SourceCache::open(&embedded_audios_dir, "audios");
     let mut audios = Vec::<(String, String)>::with_capacity(audio_paths.len());

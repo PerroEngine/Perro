@@ -1006,7 +1006,7 @@ fn generate_var_match_fns(
                 )
             } else {
                 format!(
-                    "if let Ok(v) = value.parse::<{ty}>() {{\n                    state.{field_name} = v;\n                }} else {{\n                    let mut nested_root = perro_api::variant::DeriveVariant::to_variant(&state.{field_name});\n                    if __perro_apply_nested_object(\"{field_name}\", &mut nested_root, value, {schema_fields})\n                        && let Ok(decoded) = nested_root.into_parse::<{ty}>()\n                    {{\n                        state.{field_name} = decoded;\n                    }}\n                }}",
+                    "if let Ok(v) = value.parse::<{ty}>() {{\n                    state.{field_name} = v;\n                }} else {{\n                    let mut nested_root = perro_api::variant::DeriveVariant::to_variant(&state.{field_name});\n                    if perro_api::scripting::nested_vars::apply_nested_object(\"{field_name}\", &mut nested_root, value, {schema_fields})\n                        && let Ok(decoded) = nested_root.into_parse::<{ty}>()\n                    {{\n                        state.{field_name} = decoded;\n                    }}\n                }}",
                     field_name = field.name
                 )
             };
@@ -1039,7 +1039,7 @@ fn generate_var_match_fns(
             let ty = normalize_type(&field.ty);
             let schema_fields = variant_schema_field_names_expr(&ty);
             let assign_block = format!(
-                "if let Ok(v) = value.parse_scene::<{ty}>(resolver) {{\n                    state.{field_name} = v;\n                }} else {{\n                    let mut nested_root = perro_api::variant::DeriveVariant::to_variant(&state.{field_name});\n                    if __perro_apply_nested_object(\"{field_name}\", &mut nested_root, value, {schema_fields})\n                        && let Ok(decoded) = nested_root.into_parse_scene::<{ty}>(resolver)\n                    {{\n                        state.{field_name} = decoded;\n                    }}\n                }}",
+                "if let Ok(v) = value.parse_scene::<{ty}>(resolver) {{\n                    state.{field_name} = v;\n                }} else {{\n                    let mut nested_root = perro_api::variant::DeriveVariant::to_variant(&state.{field_name});\n                    if perro_api::scripting::nested_vars::apply_nested_object(\"{field_name}\", &mut nested_root, value, {schema_fields})\n                        && let Ok(decoded) = nested_root.into_parse_scene::<{ty}>(resolver)\n                    {{\n                        state.{field_name} = decoded;\n                    }}\n                }}",
                 field_name = field.name
             );
             out.push_str(&format!(
@@ -1074,116 +1074,8 @@ fn generate_var_match_fns(
         out.push_str("}\n\n");
     }
 
-    if has_public {
-    out.push_str(
-        "fn __perro_get_nested_by_hash(prefix: &str, value: Variant, var: ScriptMemberID, field_names: &[&str]) -> Option<Variant> {\n",
-    );
-    out.push_str("    match value {\n");
-    out.push_str("        Variant::Object(obj) => {\n");
-    out.push_str("            for (key, child) in obj {\n");
-    out.push_str("                let full = if prefix.is_empty() {\n");
-    out.push_str("                    key.to_string()\n");
-    out.push_str("                } else {\n");
-    out.push_str("                    format!(\"{prefix}.{}\", key.as_ref())\n");
-    out.push_str("                };\n");
-    out.push_str("                if ScriptMemberID::from_string(full.as_str()) == var {\n");
-    out.push_str("                    return Some(child);\n");
-    out.push_str("                }\n");
-    out.push_str("                if let Some(found) = __perro_get_nested_by_hash(full.as_str(), child, var, &[]) {\n");
-    out.push_str("                    return Some(found);\n");
-    out.push_str("                }\n");
-    out.push_str("            }\n");
-    out.push_str("            None\n");
-    out.push_str("        }\n");
-    out.push_str("        Variant::Array(items) => {\n");
-    out.push_str("            for (idx, child) in items.into_iter().enumerate() {\n");
-    out.push_str("                let Some(key) = field_names.get(idx) else { continue; };\n");
-    out.push_str("                let full = if prefix.is_empty() {\n");
-    out.push_str("                    (*key).to_string()\n");
-    out.push_str("                } else {\n");
-    out.push_str("                    format!(\"{prefix}.{}\", key)\n");
-    out.push_str("                };\n");
-    out.push_str("                if ScriptMemberID::from_string(full.as_str()) == var {\n");
-    out.push_str("                    return Some(child);\n");
-    out.push_str("                }\n");
-    out.push_str("                if let Some(found) = __perro_get_nested_by_hash(full.as_str(), child, var, &[]) {\n");
-    out.push_str("                    return Some(found);\n");
-    out.push_str("                }\n");
-    out.push_str("            }\n");
-    out.push_str("            None\n");
-    out.push_str("        }\n");
-    out.push_str("        _ => None,\n");
-    out.push_str("    }\n");
-    out.push_str("}\n\n");
-    }
-
-    out.push_str(
-        "fn __perro_set_nested_by_hash(prefix: &str, value: &mut Variant, var: ScriptMemberID, new_value: &mut Option<Variant>, field_names: &[&str]) -> bool {\n",
-    );
-    out.push_str("    match value {\n");
-    out.push_str("        Variant::Object(obj) => {\n");
-    out.push_str("            for (key, child) in obj {\n");
-    out.push_str("                let full = if prefix.is_empty() {\n");
-    out.push_str("                    key.to_string()\n");
-    out.push_str("                } else {\n");
-    out.push_str("                    format!(\"{prefix}.{}\", key.as_ref())\n");
-    out.push_str("                };\n");
-    out.push_str("                if ScriptMemberID::from_string(full.as_str()) == var {\n");
-    out.push_str("                    if let Some(new_value) = new_value.take() {\n");
-    out.push_str("                        *child = new_value;\n");
-    out.push_str("                        return true;\n");
-    out.push_str("                    }\n");
-    out.push_str("                    return false;\n");
-    out.push_str("                }\n");
-    out.push_str("                if __perro_set_nested_by_hash(full.as_str(), child, var, new_value, &[]) {\n");
-    out.push_str("                    return true;\n");
-    out.push_str("                }\n");
-    out.push_str("            }\n");
-    out.push_str("            false\n");
-    out.push_str("        }\n");
-    out.push_str("        Variant::Array(items) => {\n");
-    out.push_str("            for (idx, child) in items.iter_mut().enumerate() {\n");
-    out.push_str("                let Some(key) = field_names.get(idx) else { continue; };\n");
-    out.push_str("                let full = if prefix.is_empty() {\n");
-    out.push_str("                    (*key).to_string()\n");
-    out.push_str("                } else {\n");
-    out.push_str("                    format!(\"{prefix}.{}\", key)\n");
-    out.push_str("                };\n");
-    out.push_str("                if ScriptMemberID::from_string(full.as_str()) == var {\n");
-    out.push_str("                    if let Some(new_value) = new_value.take() {\n");
-    out.push_str("                        *child = new_value;\n");
-    out.push_str("                        return true;\n");
-    out.push_str("                    }\n");
-    out.push_str("                    return false;\n");
-    out.push_str("                }\n");
-    out.push_str("                if __perro_set_nested_by_hash(full.as_str(), child, var, new_value, &[]) {\n");
-    out.push_str("                    return true;\n");
-    out.push_str("                }\n");
-    out.push_str("            }\n");
-    out.push_str("            false\n");
-    out.push_str("        }\n");
-    out.push_str("        _ => false,\n");
-    out.push_str("    }\n");
-    out.push_str("}\n\n");
-
-    out.push_str(
-        "fn __perro_apply_nested_object(prefix: &str, target: &mut Variant, incoming: Variant, field_names: &[&str]) -> bool {\n",
-    );
-    out.push_str("    let Variant::Object(obj) = incoming else {\n");
-    out.push_str("        return false;\n");
-    out.push_str("    };\n");
-    out.push_str("    let mut changed = false;\n");
-    out.push_str("    for (key, value) in obj {\n");
-    out.push_str("        let full = if prefix.is_empty() {\n");
-    out.push_str("            key.to_string()\n");
-    out.push_str("        } else {\n");
-    out.push_str("            format!(\"{prefix}.{}\", key.as_ref())\n");
-    out.push_str("        };\n");
-    out.push_str("        let mut value = Some(value);\n");
-    out.push_str("        changed |= __perro_set_nested_by_hash(prefix, target, ScriptMemberID::from_string(full.as_str()), &mut value, field_names);\n");
-    out.push_str("    }\n");
-    out.push_str("    changed\n");
-    out.push_str("}\n\n");
+    // The nested-member walkers live in perro_scripting: they name no
+    // per-script type, so emitting them here compiled one copy per script.
 
     if has_public {
         out.push_str(&format!(
@@ -1193,7 +1085,7 @@ fn generate_var_match_fns(
             let ty = normalize_type(&field.ty);
             let schema_fields = variant_schema_field_names_expr(&ty);
             out.push_str(&format!(
-                "    {{\n        let nested_root = perro_api::variant::DeriveVariant::to_variant(&state.{field_name});\n        if let Some(value) = __perro_get_nested_by_hash(\"{field_name}\", nested_root, var, {schema_fields}) {{\n            return Some(value);\n        }}\n    }}\n",
+                "    {{\n        let nested_root = perro_api::variant::DeriveVariant::to_variant(&state.{field_name});\n        if let Some(value) = perro_api::scripting::nested_vars::get_nested_by_hash(\"{field_name}\", nested_root, var, {schema_fields}) {{\n            return Some(value);\n        }}\n    }}\n",
                 field_name = field.name,
                 schema_fields = schema_fields
             ));
@@ -1209,7 +1101,7 @@ fn generate_var_match_fns(
             let ty = normalize_type(&field.ty);
             let schema_fields = variant_schema_field_names_expr(&ty);
             out.push_str(&format!(
-                "    {{\n        let mut nested_root = perro_api::variant::DeriveVariant::to_variant(&state.{field_name});\n        if __perro_set_nested_by_hash(\"{field_name}\", &mut nested_root, var, &mut value, {schema_fields}) {{\n            if let Ok(decoded) = nested_root.into_parse::<{ty}>() {{\n                state.{field_name} = decoded;\n            }}\n            return true;\n        }}\n    }}\n",
+                "    {{\n        let mut nested_root = perro_api::variant::DeriveVariant::to_variant(&state.{field_name});\n        if perro_api::scripting::nested_vars::set_nested_by_hash(\"{field_name}\", &mut nested_root, var, &mut value, {schema_fields}) {{\n            if let Ok(decoded) = nested_root.into_parse::<{ty}>() {{\n                state.{field_name} = decoded;\n            }}\n            return true;\n        }}\n    }}\n",
                 field_name = field.name,
                 ty = ty,
                 schema_fields = schema_fields
@@ -1227,7 +1119,7 @@ fn generate_var_match_fns(
             let ty = normalize_type(&field.ty);
             let schema_fields = variant_schema_field_names_expr(&ty);
             out.push_str(&format!(
-                "    {{\n        let mut nested_root = perro_api::variant::DeriveVariant::to_variant(&state.{field_name});\n        if __perro_set_nested_by_hash(\"{field_name}\", &mut nested_root, var, &mut value, {schema_fields}) {{\n            if let Ok(decoded) = nested_root.into_parse_scene::<{ty}>(resolver) {{\n                state.{field_name} = decoded;\n            }}\n            return true;\n        }}\n    }}\n",
+                "    {{\n        let mut nested_root = perro_api::variant::DeriveVariant::to_variant(&state.{field_name});\n        if perro_api::scripting::nested_vars::set_nested_by_hash(\"{field_name}\", &mut nested_root, var, &mut value, {schema_fields}) {{\n            if let Ok(decoded) = nested_root.into_parse_scene::<{ty}>(resolver) {{\n                state.{field_name} = decoded;\n            }}\n            return true;\n        }}\n    }}\n",
                 field_name = field.name,
                 ty = ty,
                 schema_fields = schema_fields

@@ -1,7 +1,7 @@
 use crate::types::{AudioCompression, AudioEq, SpatialAudioParams};
 use rodio::Source;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 #[derive(Debug)]
@@ -16,6 +16,14 @@ pub(crate) struct DspControl {
     eq_high_gain: AtomicU32,
     compression_threshold: AtomicU32,
     compression_ratio: AtomicU32,
+    // Source layout (`sample_rate << 16 | channels`) published by
+    // `DspSource::new`, so a later wet switch can size delay lines without
+    // reaching into the source. 0 = no source attached yet.
+    layout: AtomicU64,
+    // Delay lines the worker parks for a dry source to install at its next
+    // dry->wet edge. `try_lock` only on the audio thread: it takes, never
+    // blocks and never allocates.
+    pending_wet: Mutex<Option<Box<WetDelays>>>,
 }
 
 impl DspControl {
@@ -31,7 +39,40 @@ impl DspControl {
             eq_high_gain: AtomicU32::new(params.eq.high_gain.to_bits()),
             compression_threshold: AtomicU32::new(params.compression.threshold.to_bits()),
             compression_ratio: AtomicU32::new(params.compression.ratio.to_bits()),
+            layout: AtomicU64::new(0),
+            pending_wet: Mutex::new(None),
         })
+    }
+
+    // Publish the attached source's frame layout (worker thread, in
+    // `DspSource::new`).
+    fn publish_layout(&self, sample_rate: usize, channels: usize) {
+        let packed = ((sample_rate as u64) << 16) | (channels as u64 & 0xffff);
+        self.layout.store(packed, Ordering::Relaxed);
+    }
+
+    // Worker side: park one set of delay lines for a dry source to pick up.
+    // Called on a wet `update_spatial`; the allocation stays off the audio
+    // thread. At most one spare is parked (refilled after each take).
+    fn stage_wet_delays(&self) {
+        let packed = self.layout.load(Ordering::Relaxed);
+        if packed == 0 {
+            return;
+        }
+        let Ok(mut slot) = self.pending_wet.try_lock() else {
+            return;
+        };
+        if slot.is_some() {
+            return;
+        }
+        let sample_rate = (packed >> 16) as usize;
+        let channels = (packed & 0xffff) as usize;
+        *slot = Some(Box::new(WetDelays::new(sample_rate, channels)));
+    }
+
+    // Audio side: take the staged delay lines if any are ready. Never blocks.
+    fn take_wet_delays(&self) -> Option<Box<WetDelays>> {
+        self.pending_wet.try_lock().ok()?.take()
     }
 
     pub(crate) fn update_spatial(&self, params: SpatialAudioParams) {
@@ -65,6 +106,11 @@ impl DspControl {
             params.compression.ratio.max(1.0).to_bits(),
             Ordering::Relaxed,
         );
+        // Dry sources carry no delay lines; stage a set here (worker thread)
+        // so a dry->wet move never allocates on the audio thread.
+        if DspParams::from(params).has_wet() {
+            self.stage_wet_delays();
+        }
     }
 
     fn snapshot(&self) -> DspParams {
@@ -116,7 +162,15 @@ impl DspParams {
             compression: AudioCompression::default(),
         }
     }
+
+    // Any send that routes through a delay line. Below this the wet mix is a
+    // passthrough, so the delay lines are dead weight.
+    pub(crate) fn has_wet(&self) -> bool {
+        self.echo > WET_EPSILON || self.reverb_send > WET_EPSILON || self.reflection > WET_EPSILON
+    }
 }
+
+const WET_EPSILON: f32 = 0.001;
 
 impl From<SpatialAudioParams> for DspParams {
     fn from(value: SpatialAudioParams) -> Self {
@@ -137,6 +191,16 @@ impl From<SpatialAudioParams> for DspParams {
 // source). At 48kHz, 64 samples is sub-2ms, inaudibly coarse for spatial ramps.
 const PARAM_REFRESH_SAMPLES: u32 = 64;
 
+// Per-channel filter state, one allocation instead of four parallel vectors:
+// a mic stream builds a fresh source per packet, so the alloc count matters.
+#[derive(Clone, Copy, Default)]
+struct ChannelState {
+    low: f32,
+    eq_low: f32,
+    eq_high_prev_in: f32,
+    eq_high_prev_out: f32,
+}
+
 pub(crate) struct DspSource<S> {
     input: S,
     control: Arc<DspControl>,
@@ -147,15 +211,12 @@ pub(crate) struct DspSource<S> {
     // Delay lines run only while wet; on a dry->wet transition their buffers
     // hold stale audio, so track wet state to clear them at the edge.
     wet_active: bool,
-    low_state: Vec<f32>,
-    eq_low_state: Vec<f32>,
-    eq_high_prev_in: Vec<f32>,
-    eq_high_prev_out: Vec<f32>,
-    // Always allocated in `new` (off the audio thread). A runtime dry->wet
-    // toggle only clears + processes; it never allocates on the audio thread.
-    echo: DelayLine,
-    reverb_a: DelayLine,
-    reverb_b: DelayLine,
+    channel_state: Vec<ChannelState>,
+    // Only allocated for a request that already asks for wet (in `new`, off
+    // the audio thread) - ~114KiB at 48k stereo that a dry one-shot never
+    // touches. A later dry->wet `update_spatial` has the worker stage a set in
+    // the control; the audio thread takes it at the edge and never allocates.
+    wet: Option<Box<WetDelays>>,
 }
 
 impl<S> DspSource<S>
@@ -165,6 +226,11 @@ where
     pub(crate) fn new(input: S, control: Arc<DspControl>) -> Self {
         let channels = input.channels().max(1) as usize;
         let sample_rate = input.sample_rate().max(1) as usize;
+        control.publish_layout(sample_rate, channels);
+        let wet = control
+            .snapshot()
+            .has_wet()
+            .then(|| Box::new(WetDelays::new(sample_rate, channels)));
         Self {
             input,
             control,
@@ -173,13 +239,8 @@ where
             params: DspParams::dry(),
             param_counter: 0,
             wet_active: false,
-            low_state: vec![0.0; channels],
-            eq_low_state: vec![0.0; channels],
-            eq_high_prev_in: vec![0.0; channels],
-            eq_high_prev_out: vec![0.0; channels],
-            echo: DelayLine::new(delay_len(sample_rate, channels, 0.18), 0.32),
-            reverb_a: DelayLine::new(delay_len(sample_rate, channels, 0.047), 0.62),
-            reverb_b: DelayLine::new(delay_len(sample_rate, channels, 0.071), 0.54),
+            channel_state: vec![ChannelState::default(); channels],
+            wet,
         }
     }
 }
@@ -217,22 +278,28 @@ where
             .clamp(0.0, 1.0);
         // All-dry: the wet mix collapses to a passthrough, so skip the three
         // delay-line read/writes entirely.
-        if echo_wet > 0.001 || reverb_wet > 0.001 {
-            if !self.wet_active {
-                // Dry->wet edge: buffers hold stale audio from the skipped dry
-                // stretch; clear so re-engaging does not burst old signal.
-                self.echo.clear();
-                self.reverb_a.clear();
-                self.reverb_b.clear();
-                self.wet_active = true;
+        if echo_wet > WET_EPSILON || reverb_wet > WET_EPSILON {
+            // Dry source that just turned wet: pick up the lines the worker
+            // staged. Only tried on a param-refresh boundary, and never blocks.
+            if self.wet.is_none() && self.param_counter == 1 {
+                self.wet = self.control.take_wet_delays();
             }
-            let echo_sample = self.echo.process(ch, sample, echo_wet);
-            let reverb_sample = (self.reverb_a.process(ch, sample, reverb_wet)
-                + self.reverb_b.process(ch, sample, reverb_wet))
-                * 0.5;
-            sample = sample * (1.0 - (echo_wet + reverb_wet * 0.5).min(0.45))
-                + echo_sample * echo_wet * 0.45
-                + reverb_sample * reverb_wet * 0.35;
+            if let Some(wet) = self.wet.as_mut() {
+                if !self.wet_active {
+                    // Dry->wet edge: buffers hold stale audio from the skipped
+                    // dry stretch; clear so re-engaging does not burst old
+                    // signal.
+                    wet.clear();
+                    self.wet_active = true;
+                }
+                let echo_sample = wet.echo.process(ch, sample, echo_wet);
+                let reverb_sample = (wet.reverb_a.process(ch, sample, reverb_wet)
+                    + wet.reverb_b.process(ch, sample, reverb_wet))
+                    * 0.5;
+                sample = sample * (1.0 - (echo_wet + reverb_wet * 0.5).min(0.45))
+                    + echo_sample * echo_wet * 0.45
+                    + reverb_sample * reverb_wet * 0.35;
+            }
         } else {
             self.wet_active = false;
         }
@@ -275,24 +342,26 @@ where
     S: Source<Item = f32>,
 {
     fn apply_low_pass(&mut self, ch: usize, sample: f32, amount: f32) -> f32 {
+        let state = &mut self.channel_state[ch];
         if amount <= 0.001 {
-            self.low_state[ch] = sample;
+            state.low = sample;
             return sample;
         }
         let alpha = (1.0 - amount.clamp(0.0, 0.98)).powi(2).max(0.015);
-        self.low_state[ch] += (sample - self.low_state[ch]) * alpha;
-        self.low_state[ch]
+        state.low += (sample - state.low) * alpha;
+        state.low
     }
 
     fn apply_eq(&mut self, ch: usize, sample: f32, eq: AudioEq) -> f32 {
+        let state = &mut self.channel_state[ch];
         let low_alpha = 0.08;
-        self.eq_low_state[ch] += (sample - self.eq_low_state[ch]) * low_alpha;
-        let low = self.eq_low_state[ch];
+        state.eq_low += (sample - state.eq_low) * low_alpha;
+        let low = state.eq_low;
 
         let high_alpha = 0.28;
-        let high = high_alpha * (self.eq_high_prev_out[ch] + sample - self.eq_high_prev_in[ch]);
-        self.eq_high_prev_in[ch] = sample;
-        self.eq_high_prev_out[ch] = high;
+        let high = high_alpha * (state.eq_high_prev_out + sample - state.eq_high_prev_in);
+        state.eq_high_prev_in = sample;
+        state.eq_high_prev_out = high;
 
         let mid = sample - low - high;
         low * eq.low_gain.max(0.0) + mid * eq.mid_gain.max(0.0) + high * eq.high_gain.max(0.0)
@@ -326,6 +395,32 @@ fn delay_len(sample_rate: usize, channels: usize, seconds: f32) -> usize {
         .saturating_mul(channels.max(1))
 }
 
+// The three delay lines a wet mix needs, allocated as one unit so dry
+// playback can skip all of them.
+#[derive(Debug)]
+struct WetDelays {
+    echo: DelayLine,
+    reverb_a: DelayLine,
+    reverb_b: DelayLine,
+}
+
+impl WetDelays {
+    fn new(sample_rate: usize, channels: usize) -> Self {
+        Self {
+            echo: DelayLine::new(delay_len(sample_rate, channels, 0.18), 0.32),
+            reverb_a: DelayLine::new(delay_len(sample_rate, channels, 0.047), 0.62),
+            reverb_b: DelayLine::new(delay_len(sample_rate, channels, 0.071), 0.54),
+        }
+    }
+
+    fn clear(&mut self) {
+        self.echo.clear();
+        self.reverb_a.clear();
+        self.reverb_b.clear();
+    }
+}
+
+#[derive(Debug)]
 struct DelayLine {
     buffer: Vec<f32>,
     index: usize,
@@ -422,26 +517,62 @@ mod tests {
         assert!(sample < 0.7);
     }
 
-    /// Delay lines are allocated once at construction (off the audio thread);
-    /// dry playback stays a passthrough and wet playback mixes immediately
-    /// without any allocation on the render path.
+    /// A dry request carries no delay lines at all; a wet one allocates them
+    /// at construction (off the audio thread) and mixes immediately.
     #[test]
-    fn delay_lines_preallocate_and_keep_dry_passthrough() {
+    fn dry_request_skips_delay_lines_and_stays_passthrough() {
         let source = || TestSource {
             samples: vec![0.25].into_iter(),
             channels: 2,
             rate: 48_000,
         };
         let mut dry = DspSource::new(source(), DspControl::new(DspParams::dry()));
-        assert!(!dry.echo.buffer.is_empty());
+        assert!(dry.wet.is_none());
         assert_eq!(dry.next(), Some(0.25));
 
         let mut wet_params = DspParams::dry();
         wet_params.reverb_send = 0.5;
         let mut wet = DspSource::new(source(), DspControl::new(wet_params));
-        assert!(!wet.echo.buffer.is_empty());
-        assert!(!wet.reverb_a.buffer.is_empty());
-        assert!(!wet.reverb_b.buffer.is_empty());
+        let lines = wet.wet.as_ref().expect("wet request preallocates");
+        assert!(!lines.echo.buffer.is_empty());
+        assert!(!lines.reverb_a.buffer.is_empty());
+        assert!(!lines.reverb_b.buffer.is_empty());
         assert_eq!(wet.next(), Some(0.1875));
+    }
+
+    /// A dry->wet `update_spatial` allocates on the caller (worker) thread and
+    /// hands the lines to the source, which installs them without allocating.
+    #[test]
+    fn dry_to_wet_update_installs_worker_staged_delay_lines() {
+        let control = DspControl::new(DspParams::dry());
+        let mut source = DspSource::new(
+            TestSource {
+                samples: vec![0.25; 256].into_iter(),
+                channels: 2,
+                rate: 48_000,
+            },
+            Arc::clone(&control),
+        );
+        assert!(source.wet.is_none());
+        assert_eq!(source.next(), Some(0.25));
+
+        let mut params = SpatialAudioParams::default();
+        params.reverb_send = 0.5;
+        control.update_spatial(params);
+        assert!(
+            control
+                .pending_wet
+                .lock()
+                .expect("stage slot")
+                .is_some(),
+            "worker stages the delay lines"
+        );
+
+        // The source picks them up at the next param-refresh boundary.
+        for _ in 0..PARAM_REFRESH_SAMPLES * 2 {
+            source.next();
+        }
+        assert!(source.wet.is_some());
+        assert!(control.pending_wet.lock().expect("stage slot").is_none());
     }
 }

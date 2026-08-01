@@ -973,7 +973,11 @@ struct MicStreamMeta {
 /// `AtomicI16`, so reads can race writes without UB or torn values):
 /// - `reserved` is bumped *before* a batch's sample stores, separated by a
 ///   `Release` fence; `written` is published *after* them with a `Release`
-///   store. Both are monotonic totals; slot = total % capacity.
+///   store. Both are monotonic totals; slot = total & (capacity - 1), with
+///   capacity rounded up to a power of two so the per-sample slot math is a
+///   mask instead of a hardware division. `retained` keeps the caller's
+///   `max_seconds` window: it is what readers clamp to, capacity is only the
+///   physical overwrite window.
 /// - Readers `Acquire`-load `written`, copy, then issue an `Acquire` fence and
 ///   re-read `reserved`. Any copied sample the writer may have overwritten in
 ///   the meantime lies below `reserved - capacity` and is discarded. If a
@@ -985,6 +989,9 @@ struct MicStreamMeta {
 #[cfg(not(target_arch = "wasm32"))]
 struct MicRing {
     data: Box<[AtomicI16]>,
+    /// Samples readers may see, i.e. the requested `max_seconds` window.
+    /// `<= data.len()`, which is rounded up to a power of two.
+    retained: usize,
     /// Total samples the writer has started writing (bumped before stores).
     reserved: AtomicUsize,
     /// Total samples fully written and published (bumped after stores).
@@ -998,13 +1005,18 @@ impl MicRing {
     const UNBOUNDED_FALLBACK_CAPACITY: usize = 1 << 16;
 
     fn new(max_samples: usize) -> Self {
-        let capacity = if max_samples == 0 {
+        let retained = if max_samples == 0 {
             Self::UNBOUNDED_FALLBACK_CAPACITY
         } else {
             max_samples
         };
+        // Power-of-two capacity turns the per-sample `total % capacity` into a
+        // mask. Readers still only see the newest `retained` samples, so the
+        // caller's `max_seconds` window is unchanged.
+        let capacity = retained.next_power_of_two();
         Self {
             data: (0..capacity).map(|_| AtomicI16::new(0)).collect(),
+            retained,
             reserved: AtomicUsize::new(0),
             written: AtomicUsize::new(0),
         }
@@ -1015,6 +1027,7 @@ impl MicRing {
     fn empty() -> Self {
         Self {
             data: Box::new([]),
+            retained: 0,
             reserved: AtomicUsize::new(0),
             written: AtomicUsize::new(0),
         }
@@ -1027,11 +1040,12 @@ impl MicRing {
         if capacity == 0 || chunk.is_empty() {
             return;
         }
+        let mask = capacity - 1;
         let end = start.wrapping_add(chunk.len());
         self.reserved.store(end, Ordering::Relaxed);
         std::sync::atomic::fence(Ordering::Release);
         for (offset, sample) in chunk.iter().enumerate() {
-            self.data[(start.wrapping_add(offset)) % capacity].store(*sample, Ordering::Relaxed);
+            self.data[start.wrapping_add(offset) & mask].store(*sample, Ordering::Relaxed);
         }
         self.written.store(end, Ordering::Release);
     }
@@ -1045,10 +1059,11 @@ impl MicRing {
         if capacity == 0 {
             return (Vec::new(), end);
         }
-        let start = from_total.max(end.saturating_sub(capacity)).min(end);
+        let mask = capacity - 1;
+        let start = from_total.max(end.saturating_sub(self.retained)).min(end);
         let mut out = Vec::with_capacity(end - start);
         for total in start..end {
-            out.push(self.data[total % capacity].load(Ordering::Relaxed));
+            out.push(self.data[total & mask].load(Ordering::Relaxed));
         }
         // Validation read: discard any prefix the writer may have overwritten
         // while we copied (see the type-level soundness comment).
@@ -2200,6 +2215,18 @@ mod capture_tests {
         assert!(captured(&shared).is_empty());
         sink.push([300i16, 400]);
         assert_eq!(captured(&shared), vec![250]);
+    }
+
+    /// Capacity rounds up to a power of two for the slot mask, but the
+    /// retained window stays exactly what `max_seconds` asked for.
+    #[test]
+    fn sink_ring_pow2_capacity_keeps_requested_retention() {
+        let (mut sink, shared) = sink(1, 5, MicChannels::Auto);
+        let ring = shared.current_ring().expect("mic ring installed");
+        assert_eq!(ring.data.len(), 8);
+        assert_eq!(ring.retained, 5);
+        sink.push([1i16, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(captured(&shared), vec![3, 4, 5, 6, 7]);
     }
 
     #[test]

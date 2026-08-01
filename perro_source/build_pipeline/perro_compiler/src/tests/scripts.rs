@@ -109,7 +109,11 @@ mod scripts {
         assert!(transpiled.contains("to_variant(&state.person.name)"));
         assert!(transpiled.contains("value.into_parse::<String>()"));
         assert!(transpiled.contains("state.person.name = v"));
-        assert!(transpiled.contains("ScriptMemberID::from_string(full.as_str())"));
+        // The member walkers are called from perro_scripting, not re-emitted.
+        assert!(transpiled.contains("perro_api::scripting::nested_vars::get_nested_by_hash"));
+        assert!(transpiled.contains("perro_api::scripting::nested_vars::set_nested_by_hash"));
+        assert!(!transpiled.contains("fn __perro_get_nested_by_hash"));
+        assert!(!transpiled.contains("fn __perro_set_nested_by_hash"));
     }
 
 

@@ -86,7 +86,11 @@ lifecycle!({});
 "#;
 
         let transpiled = transpile_frontend_script(source, "all_variant_types.rs");
-        assert!(transpiled.contains("__perro_apply_nested_object"));
+        assert!(transpiled.contains("perro_api::scripting::nested_vars::apply_nested_object"));
+        assert!(
+            !transpiled.contains("fn __perro_apply_nested_object"),
+            "nested walkers must be called, not re-emitted per script"
+        );
         assert!(
             transpiled.contains("<ActorRefs as perro_api::variant::VariantSchema>::field_names()")
         );

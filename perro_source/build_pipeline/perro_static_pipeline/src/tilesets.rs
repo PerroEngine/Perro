@@ -1,36 +1,22 @@
-use crate::{
-    StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, prune_embedded_dir,
-    res_dir, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn,
-};
+use crate::{ResFileTree, StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, prune_embedded_dir, res_dir, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn};
 use perro_asset_formats::ptset::{
     EXTENSION as PTSET_EXTENSION, SOURCE_EXTENSION as PTSET_SOURCE_EXTENSION,
 };
-use perro_io::walkdir::collect_file_paths;
 use perro_render_bridge::{encode_tileset_2d_binary, parse_ptileset_source};
 use rayon::prelude::*;
 use std::{fmt::Write as _, fs, io, path::Path};
 
-pub fn generate_static_tilesets(project_root: &Path) -> Result<(), StaticPipelineError> {
+pub fn generate_static_tilesets(
+    project_root: &Path,
+    res_tree: &ResFileTree,
+) -> Result<(), StaticPipelineError> {
     let res_dir = res_dir(project_root);
     let static_dir = static_dir(project_root);
     let embedded_tilesets_dir = embedded_dir(project_root).join("tilesets");
     fs::create_dir_all(&static_dir)?;
     fs::create_dir_all(&embedded_tilesets_dir)?;
 
-    let mut paths = Vec::<String>::new();
-    if res_dir.exists() {
-        paths = collect_file_paths(&res_dir, &res_dir)?
-            .into_iter()
-            .map(|rel| rel.replace('\\', "/"))
-            .filter(|rel| {
-                Path::new(rel)
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case(PTSET_SOURCE_EXTENSION))
-            })
-            .collect();
-    }
-    paths.sort();
+    let paths = res_tree.filter_ext(|ext| ext.eq_ignore_ascii_case(PTSET_SOURCE_EXTENSION));
 
     let mut tilesets = paths
         .into_par_iter()
@@ -160,7 +146,7 @@ mod tests {
             embedded_dir: root.join("embedded"),
             asset_prefix: "res://".to_string(),
         }));
-        generate_static_tilesets(&root).expect("required value must be present");
+        generate_static_tilesets(&root, &crate::ResFileTree::scan(&root).expect("res scan")).expect("required value must be present");
         set_static_pipeline_overrides(None);
 
         let out = fs::read_to_string(static_dir.join("tilesets.rs"))

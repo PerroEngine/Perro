@@ -49,6 +49,10 @@ struct ProjectAssetState {
     // Arc so `resolve_path` detaches the root with a refcount bump instead of
     // deep-cloning name + path buffers on every asset resolve.
     root: Option<Arc<ProjectRoot>>,
+    // Disk root has a `res` subdirectory, probed once at install. Without it
+    // every `res://` resolve stat'd the candidate file just to decide between
+    // `<root>/res/<rel>` and the res-is-the-root layout `<root>/<rel>`.
+    root_has_res_dir: bool,
     archive: Option<Arc<PerroAssetsArchive>>,
     demo: bool,
     // Precompiled at `set_demo_asset_filter`; matched against the split path
@@ -58,6 +62,7 @@ struct ProjectAssetState {
 
 static PROJECT_ASSET_STATE: RwLock<ProjectAssetState> = RwLock::new(ProjectAssetState {
     root: None,
+    root_has_res_dir: false,
     archive: None,
     demo: false,
     demo_excludes: None,
@@ -131,11 +136,17 @@ pub fn try_set_project_root(root: ProjectRoot) -> io::Result<()> {
         }
         ProjectRoot::Disk { .. } => None,
     };
+    // One stat here replaces one per `res://` resolve.
+    let has_res_dir = match &root {
+        ProjectRoot::Disk { root, .. } => root.join("res").is_dir(),
+        ProjectRoot::PerroAssets { .. } => false,
+    };
 
     let mut state = PROJECT_ASSET_STATE
         .write()
         .expect("required value must be present");
     state.root = Some(Arc::new(root));
+    state.root_has_res_dir = has_res_dir;
     state.archive = archive;
     Ok(())
 }
@@ -399,7 +410,7 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
         return ResolvedPath::Disk(PathBuf::from(path));
     }
 
-    let (project_root_opt, demo_excluded) = {
+    let (project_root_opt, root_has_res_dir, demo_excluded) = {
         let state = PROJECT_ASSET_STATE
             .read()
             .expect("required value must be present");
@@ -414,7 +425,7 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
                         .any(|pattern| pattern.matches_segments(&segments))
                 })
             });
-        (state.root.clone(), demo_excluded)
+        (state.root.clone(), state.root_has_res_dir, demo_excluded)
     };
     if demo_excluded {
         return ResolvedPath::Excluded(path.to_string());
@@ -482,11 +493,10 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
     match project_root_opt.as_deref() {
         Some(ProjectRoot::Disk { root, .. }) => {
             if let Some(stripped) = path.strip_prefix("res://") {
-                let primary = root.join("res").join(stripped);
-                if primary.exists() {
-                    ResolvedPath::Disk(primary)
+                if root_has_res_dir {
+                    ResolvedPath::Disk(root.join("res").join(stripped))
                 } else {
-                    // Fallback: if root already points at a res directory, avoid res/res.
+                    // Root already points at a res directory: avoid res/res.
                     ResolvedPath::Disk(root.join(stripped))
                 }
             } else {
@@ -1085,6 +1095,40 @@ mod tests {
             b"RIFF"
         );
         assert!(load_asset("res://textures/missing.png").is_err());
+    }
+
+    /// The `res`-subdir probe runs once at install, so both dev layouts
+    /// resolve without stat'ing per path.
+    #[test]
+    fn resolve_dev_res_path_follows_root_layout_probe() {
+        let _guard = TEST_LOCK.lock().expect("required value must be present");
+        let root = std::env::temp_dir().join(format!(
+            "perro_io_res_root_layout_{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        // Root *is* the res directory: no res/res doubling.
+        fs::create_dir_all(&root).expect("required value must be present");
+        set_project_root(ProjectRoot::Disk {
+            root: root.clone(),
+            name: "Res Root".to_string(),
+        });
+        match resolve_path("res://a/b.txt") {
+            ResolvedPath::Disk(path) => assert_eq!(path, root.join("a/b.txt")),
+            other => panic!("expected disk path, got {other:?}"),
+        }
+
+        // Project root with a res subdir: missing files still resolve under it.
+        fs::create_dir_all(root.join("res")).expect("required value must be present");
+        set_project_root(ProjectRoot::Disk {
+            root: root.clone(),
+            name: "Project Root".to_string(),
+        });
+        match resolve_path("res://a/b.txt") {
+            ResolvedPath::Disk(path) => assert_eq!(path, root.join("res/a/b.txt")),
+            other => panic!("expected disk path, got {other:?}"),
+        }
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
