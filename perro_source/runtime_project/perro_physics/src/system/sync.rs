@@ -1,4 +1,7 @@
 use super::*;
+use super::queries::{
+    flush_removed_colliders_bvh_2d, flush_removed_colliders_bvh_3d,
+};
 
 impl PhysicsSystem {
     pub fn sync_world_2d(
@@ -11,7 +14,6 @@ impl PhysicsSystem {
                 for id in world.body_map.keys().copied() {
                     set_body_handle(id, None);
                 }
-                self.query_pipeline_dirty_2d = true;
             }
             self.world_2d_idle_cached = true;
             return;
@@ -22,6 +24,9 @@ impl PhysicsSystem {
         // idle cache can't see them yet. any rigid touch => force next step;
         // post-step refresh re-derives the true idle state.
         let mut dynamic_mutated = false;
+        // Broad-phase BVH leaves of colliders removed this sync; flushed via
+        // `broad_phase.update` so pre-step queries never hit stale leaves.
+        let mut removed_colliders: Vec<r2::ColliderHandle> = Vec::new();
 
         let next_epoch = self.body_sync_epoch_2d.wrapping_add(1);
         let reset_epochs = next_epoch == 0;
@@ -141,11 +146,22 @@ impl PhysicsSystem {
                 dynamic_mutated |= body.kind == crate::BodyKind::Rigid;
                 for handle in state.colliders.drain(..) {
                     world.collider_owners.remove(&handle);
+                    removed_colliders.push(handle);
                     let _ =
                         world
                             .colliders
                             .remove(handle, &mut world.islands, &mut world.bodies, true);
                 }
+                // Drop removed leaves frm the broad-phase BVH b4 re-inserting:
+                // a fresh collider can reuse a removed slot index, and patch
+                // order (remove aft insert) would evict the new leaf.
+                flush_removed_colliders_bvh_2d(
+                    &mut world.broad_phase,
+                    &world.colliders,
+                    &world.bodies,
+                    &world.integration_parameters,
+                    &mut removed_colliders,
+                );
 
                 for shape in &body.shapes {
                     let Some(mut builder) = collider_builder_2d(shape) else {
@@ -166,6 +182,15 @@ impl PhysicsSystem {
                     );
                     world.collider_owners.insert(handle, body.id);
                     state.colliders.push(handle);
+                    // Make the new collider query-visible b4 the next step.
+                    if let Some(collider) = world.colliders.get(handle) {
+                        let aabb = collider.compute_aabb();
+                        world.broad_phase.set_aabb(
+                            &world.integration_parameters,
+                            handle,
+                            aabb,
+                        );
+                    }
                 }
                 state.shape_signature = body.shape_signature;
             }
@@ -186,6 +211,7 @@ impl PhysicsSystem {
                 dynamic_mutated |= state.kind == crate::BodyKind::Rigid;
                 for handle in &state.colliders {
                     world.collider_owners.remove(handle);
+                    removed_colliders.push(*handle);
                 }
                 let _ = world.bodies.remove(
                     state.handle,
@@ -198,6 +224,13 @@ impl PhysicsSystem {
             }
             set_body_handle(id, None);
         }
+        flush_removed_colliders_bvh_2d(
+            &mut world.broad_phase,
+            &world.colliders,
+            &world.bodies,
+            &world.integration_parameters,
+            &mut removed_colliders,
+        );
         stale.clear();
         self.stale_ids_2d = stale;
         // O(1) idle upkeep: dynamic mutation => force next step (which re-derives
@@ -207,9 +240,7 @@ impl PhysicsSystem {
             self.world_2d_idle_cached = false;
         }
         self.world_2d = Some(world);
-        if mutated {
-            self.query_pipeline_dirty_2d = true;
-        }
+        let _ = mutated;
     }
 
     pub fn sync_world_3d(
@@ -223,7 +254,6 @@ impl PhysicsSystem {
                 for id in world.body_map.keys().copied() {
                     set_body_handle(id, None);
                 }
-                self.query_pipeline_dirty_3d = true;
             }
             self.world_3d_idle_cached = true;
             return;
@@ -231,6 +261,8 @@ impl PhysicsSystem {
         let mut mutated = false;
         // see sync_world_2d: rigid-touch trk 4 O(1) idle-cache upkeep.
         let mut dynamic_mutated = false;
+        // see sync_world_2d removed-collider flush note.
+        let mut removed_colliders: Vec<r3::ColliderHandle> = Vec::new();
 
         let next_epoch = self.body_sync_epoch_3d.wrapping_add(1);
         let reset_epochs = next_epoch == 0;
@@ -365,11 +397,20 @@ impl PhysicsSystem {
                 dynamic_mutated |= body.kind == crate::BodyKind::Rigid;
                 for handle in state.colliders.drain(..) {
                     world.collider_owners.remove(&handle);
+                    removed_colliders.push(handle);
                     let _ =
                         world
                             .colliders
                             .remove(handle, &mut world.islands, &mut world.bodies, true);
                 }
+                // see sync_world_2d: flush removals b4 re-insert (slot reuse).
+                flush_removed_colliders_bvh_3d(
+                    &mut world.broad_phase,
+                    &world.colliders,
+                    &world.bodies,
+                    &world.integration_parameters,
+                    &mut removed_colliders,
+                );
 
                 for shape in &body.shapes {
                     let Some(mut builder) = collider_builder_3d(
@@ -396,6 +437,15 @@ impl PhysicsSystem {
                     );
                     world.collider_owners.insert(handle, body.id);
                     state.colliders.push(handle);
+                    // Make the new collider query-visible b4 the next step.
+                    if let Some(collider) = world.colliders.get(handle) {
+                        let aabb = collider.compute_aabb();
+                        world.broad_phase.set_aabb(
+                            &world.integration_parameters,
+                            handle,
+                            aabb,
+                        );
+                    }
                 }
                 state.shape_signature = body.shape_signature;
             }
@@ -416,6 +466,7 @@ impl PhysicsSystem {
                 dynamic_mutated |= state.kind == crate::BodyKind::Rigid;
                 for handle in &state.colliders {
                     world.collider_owners.remove(handle);
+                    removed_colliders.push(*handle);
                 }
                 let _ = world.bodies.remove(
                     state.handle,
@@ -428,6 +479,13 @@ impl PhysicsSystem {
             }
             set_body_handle(id, None);
         }
+        flush_removed_colliders_bvh_3d(
+            &mut world.broad_phase,
+            &world.colliders,
+            &world.bodies,
+            &world.integration_parameters,
+            &mut removed_colliders,
+        );
         stale.clear();
         self.stale_ids_3d = stale;
         // see sync_world_2d idle-cache note.
@@ -435,9 +493,7 @@ impl PhysicsSystem {
             self.world_3d_idle_cached = false;
         }
         self.world_3d = Some(world);
-        if mutated {
-            self.query_pipeline_dirty_3d = true;
-        }
+        let _ = mutated;
     }
 
     pub fn sync_joints_2d(&mut self, joints: &[crate::JointDesc2D]) {

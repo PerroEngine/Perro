@@ -51,28 +51,30 @@ pub use joints::*;
 pub use shapes::*;
 pub use trimesh::*;
 
+/// Queries borrow the broad-phase BVH, which rapier maintains incrementally
+/// inside `pipeline.step` (insert/update + refit). Out-of-step mutations
+/// (commit_moved_body, sync insert/remove) patch it via `set_aabb`/`update`
+/// instead of the old full O(n log n) rebuild-per-dirty.
 pub fn query_pipeline_2d<'a>(
     world: &'a PhysicsWorld2D,
     filter: r2::QueryFilter<'a>,
 ) -> r2::QueryPipeline<'a> {
-    r2::QueryPipeline {
-        dispatcher: world.narrow_phase.query_dispatcher(),
-        bvh: &world.query_bvh,
-        bodies: &world.bodies,
-        colliders: &world.colliders,
+    world.broad_phase.as_query_pipeline(
+        world.narrow_phase.query_dispatcher(),
+        &world.bodies,
+        &world.colliders,
         filter,
-    }
+    )
 }
 
 pub fn query_pipeline_3d<'a>(
     world: &'a PhysicsWorld3D,
     filter: r3::QueryFilter<'a>,
 ) -> r3::QueryPipeline<'a> {
-    r3::QueryPipeline {
-        dispatcher: world.narrow_phase.query_dispatcher(),
-        bvh: &world.query_bvh,
-        bodies: &world.bodies,
-        colliders: &world.colliders,
+    world.broad_phase.as_query_pipeline(
+        world.narrow_phase.query_dispatcher(),
+        &world.bodies,
+        &world.colliders,
         filter,
-    }
+    )
 }

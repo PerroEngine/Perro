@@ -55,12 +55,10 @@ impl Runtime {
 
     pub(crate) fn prepare_audio_raycast_2d(&mut self) {
         self.ensure_physics_world_synced_2d();
-        self.physics.update_query_pipeline_2d();
     }
 
     pub(crate) fn prepare_audio_raycast_3d(&mut self) {
         self.ensure_physics_world_synced_3d();
-        self.physics.update_query_pipeline_3d();
     }
 
     pub(crate) fn prepared_audio_raycast_2d(

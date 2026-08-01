@@ -17,7 +17,6 @@ impl PhysicsSystem {
         max_distance: f32,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsRayHit2D> {
-        self.update_query_pipeline_2d();
         if max_distance <= 0.0 || !max_distance.is_finite() {
             return None;
         }
@@ -84,7 +83,6 @@ impl PhysicsSystem {
         max_distance: f32,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsRayHit3D> {
-        self.update_query_pipeline_3d();
         if max_distance <= 0.0 || !max_distance.is_finite() {
             return None;
         }
@@ -134,7 +132,6 @@ impl PhysicsSystem {
         max_distance: f32,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsShapeHit2D> {
-        self.update_query_pipeline_2d();
         if max_distance <= 0.0 || !max_distance.is_finite() {
             return None;
         }
@@ -188,7 +185,6 @@ impl PhysicsSystem {
         max_distance: f32,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsShapeHit3D> {
-        self.update_query_pipeline_3d();
         if max_distance <= 0.0 || !max_distance.is_finite() {
             return None;
         }
@@ -241,7 +237,6 @@ impl PhysicsSystem {
         margin: f32,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult2D> {
-        self.update_query_pipeline_2d();
         if !target.x.is_finite() || !target.y.is_finite() {
             return None;
         }
@@ -401,7 +396,6 @@ impl PhysicsSystem {
         margin: f32,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult3D> {
-        self.update_query_pipeline_3d();
         if !target.x.is_finite() || !target.y.is_finite() || !target.z.is_finite() {
             return None;
         }
@@ -585,7 +579,13 @@ impl PhysicsSystem {
         rb.set_position(transform_to_iso2(global), true);
         let woke_dynamic = rb.is_dynamic();
         state.sync_signature = sync_signature;
-        self.query_pipeline_dirty_2d = true;
+        patch_body_colliders_bvh_2d(
+            &world.bodies,
+            &mut world.colliders,
+            &mut world.broad_phase,
+            &world.integration_parameters,
+            state.handle,
+        );
         // O(1) idle upkeep: kinematic/static commit can't chg dynamic sleep, so
         // cached val stay valid. dynamic commit wake the body (! yet in rapier's
         // active set) => force next step; post-step refresh re-derives cache.
@@ -614,7 +614,13 @@ impl PhysicsSystem {
         rb.set_position(transform_to_iso3(global), true);
         let woke_dynamic = rb.is_dynamic();
         state.sync_signature = sync_signature;
-        self.query_pipeline_dirty_3d = true;
+        patch_body_colliders_bvh_3d(
+            &world.bodies,
+            &mut world.colliders,
+            &mut world.broad_phase,
+            &world.integration_parameters,
+            state.handle,
+        );
         // see commit_moved_body_2d idle-cache note.
         if woke_dynamic {
             self.world_3d_idle_cached = false;
@@ -728,38 +734,93 @@ impl PhysicsSystem {
         }
     }
 
-    pub fn update_query_pipeline_2d(&mut self) {
-        if !self.query_pipeline_dirty_2d {
-            return;
-        }
-        if let Some(world) = self.world_2d.as_mut() {
-            world.query_bvh = rapier2d::parry::partitioning::Bvh::from_iter(
-                rapier2d::parry::partitioning::BvhBuildStrategy::default(),
-                world.colliders.iter().filter_map(|(handle, collider)| {
-                    collider
-                        .is_enabled()
-                        .then_some((handle.into_raw_parts().0 as usize, collider.compute_aabb()))
-                }),
-            );
-        }
-        self.query_pipeline_dirty_2d = false;
-    }
+}
 
-    pub fn update_query_pipeline_3d(&mut self) {
-        if !self.query_pipeline_dirty_3d {
-            return;
-        }
-        if let Some(world) = self.world_3d.as_mut() {
-            world.query_bvh = rapier3d::parry::partitioning::Bvh::from_iter(
-                rapier3d::parry::partitioning::BvhBuildStrategy::default(),
-                world.colliders.iter().filter_map(|(handle, collider)| {
-                    collider
-                        .is_enabled()
-                        .then_some((handle.into_raw_parts().0 as usize, collider.compute_aabb()))
-                }),
-            );
-        }
-        self.query_pipeline_dirty_3d = false;
+/// Propagate a just-moved body's pose to its colliders + patch their leaves in
+/// the broad-phase BVH (O(k log n)). Replaces the old dirty-flag full-tree
+/// rebuild, which re-ran O(n log n) per moved body per query batch — up to
+/// ~5x per character per frame via move_and_slide.
+pub(crate) fn patch_body_colliders_bvh_2d(
+    bodies: &r2::RigidBodySet,
+    colliders: &mut r2::ColliderSet,
+    broad_phase: &mut r2::DefaultBroadPhase,
+    params: &r2::IntegrationParameters,
+    handle: r2::RigidBodyHandle,
+) {
+    let Some(rb) = bodies.get(handle) else {
+        return;
+    };
+    let pose = *rb.position();
+    for &collider_handle in rb.colliders() {
+        let Some(collider) = colliders.get_mut(collider_handle) else {
+            continue;
+        };
+        let rel = collider
+            .position_wrt_parent()
+            .copied()
+            .unwrap_or_else(r2::Pose::identity);
+        collider.set_position(pose * rel);
+        let aabb = collider.compute_aabb();
+        broad_phase.set_aabb(params, collider_handle, aabb);
+    }
+}
+
+/// Flush removed-collider leaves out of the broad-phase BVH so pre-step
+/// queries never resolve stale (or slot-reused) leaves. No-op when empty.
+pub(crate) fn flush_removed_colliders_bvh_2d(
+    broad_phase: &mut r2::DefaultBroadPhase,
+    colliders: &r2::ColliderSet,
+    bodies: &r2::RigidBodySet,
+    params: &r2::IntegrationParameters,
+    removed: &mut Vec<r2::ColliderHandle>,
+) {
+    if removed.is_empty() {
+        return;
+    }
+    let mut events = Vec::new();
+    broad_phase.update(params, colliders, bodies, &[], removed, &mut events);
+    removed.clear();
+}
+
+/// 3d twin of [`flush_removed_colliders_bvh_2d`].
+pub(crate) fn flush_removed_colliders_bvh_3d(
+    broad_phase: &mut r3::DefaultBroadPhase,
+    colliders: &r3::ColliderSet,
+    bodies: &r3::RigidBodySet,
+    params: &r3::IntegrationParameters,
+    removed: &mut Vec<r3::ColliderHandle>,
+) {
+    if removed.is_empty() {
+        return;
+    }
+    let mut events = Vec::new();
+    broad_phase.update(params, colliders, bodies, &[], removed, &mut events);
+    removed.clear();
+}
+
+/// 3d twin of [`patch_body_colliders_bvh_2d`].
+pub(crate) fn patch_body_colliders_bvh_3d(
+    bodies: &r3::RigidBodySet,
+    colliders: &mut r3::ColliderSet,
+    broad_phase: &mut r3::DefaultBroadPhase,
+    params: &r3::IntegrationParameters,
+    handle: r3::RigidBodyHandle,
+) {
+    let Some(rb) = bodies.get(handle) else {
+        return;
+    };
+    let pose = *rb.position();
+    for &collider_handle in rb.colliders() {
+        let Some(collider) = colliders.get_mut(collider_handle) else {
+            continue;
+        };
+        let rel = collider
+            .position_wrt_parent()
+            .copied()
+            .unwrap_or_else(r3::Pose::identity);
+        collider.set_position(pose * rel);
+        let aabb = collider.compute_aabb();
+        broad_phase.set_aabb(params, collider_handle, aabb);
     }
 }
 
@@ -878,7 +939,13 @@ mod recovery_tests {
             .get_mut(handle)
             .expect("test or bench setup must succeed");
         rb.set_position(r2::Pose::translation(pos.x, pos.y), true);
-        system.query_pipeline_dirty_2d = true;
+        patch_body_colliders_bvh_2d(
+            &world.bodies,
+            &mut world.colliders,
+            &mut world.broad_phase,
+            &world.integration_parameters,
+            handle,
+        );
     }
 
     fn body_teleport_3d(system: &mut PhysicsSystem, id: NodeID, pos: Vector3) {
@@ -896,7 +963,13 @@ mod recovery_tests {
             .get_mut(handle)
             .expect("test or bench setup must succeed");
         rb.set_position(r3::Pose::translation(pos.x, pos.y, pos.z), true);
-        system.query_pipeline_dirty_3d = true;
+        patch_body_colliders_bvh_3d(
+            &world.bodies,
+            &mut world.colliders,
+            &mut world.broad_phase,
+            &world.integration_parameters,
+            handle,
+        );
     }
 
     // ---- 2D ----
