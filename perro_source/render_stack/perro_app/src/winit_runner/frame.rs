@@ -16,6 +16,14 @@ impl<B: GraphicsBackend> RunnerState<B> {
         self.app.runtime.load_boot_scene_if_pending();
         self.frame_index = self.frame_index.saturating_add(1);
         let frame_index = self.frame_index;
+        // Unattended capture stop. Exits through the normal path so the timing
+        // CSV writer drops (and drains its buffer) like a window close.
+        if let Some(limit) = self.exit_after_frames
+            && frame_index > limit
+        {
+            self.request_exit(event_loop, AppExitResult::event_loop_exit());
+            return;
+        }
         let frame_start = now;
         let frame_delta = frame_start.duration_since(self.last_frame_start);
         self.last_frame_start = frame_start;

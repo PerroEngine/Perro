@@ -275,6 +275,23 @@ pub struct DrawFrameTiming {
     pub shadow_multimesh_batch_draws: u32,
     pub shadow_multimesh_instance_draws: u64,
     pub shadow_multimesh_culled_layers: u32,
+    /// Camera streams / sub-views present in the frame state this frame.
+    pub stream_count: u32,
+    /// Streams that actually encoded passes; the rest hit the per-stream idle
+    /// skip and re-composite their previous target texture.
+    pub stream_renders: u32,
+    /// CPU wall time in the whole camera-stream encode loop (prepare + encode
+    /// for every stream), measured around the loop in `draw_frame`.
+    pub gpu_stream_encode: Duration,
+    /// Sum of `width * height` over the streams that rendered this frame.
+    pub stream_pixels: u64,
+    /// Per-stream `Gpu3D` counters, summed over the streams that rendered.
+    /// The main-view fields above deliberately exclude these.
+    pub stream_draw_calls_3d: u32,
+    pub stream_draw_batches_3d: u32,
+    pub stream_draw_triangles_3d: u64,
+    pub stream_render_passes: u32,
+    pub stream_shadow_layer_renders: u32,
     pub gpu_total: Duration,
     pub total: Duration,
     pub idle_clear: bool,

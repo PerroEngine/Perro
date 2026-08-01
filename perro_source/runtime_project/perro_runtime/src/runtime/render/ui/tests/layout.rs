@@ -1258,7 +1258,13 @@ mod layout {
             })
             .expect("nested sub view stream state");
         // Rect is (480, 270) -- half the 960x540 basis, not half the raw
-        // 960x1080 target -- and auto resolution doubles it.
-        assert_eq!(resolution, [960, 540]);
+        // 960x1080 target. That rect is already in OWNER TARGET px, so auto
+        // resolution must NOT double it again: the owner's own 320x180 -> 960
+        // basis oversample is divided back out first (capped at
+        // AUTO_RESOLUTION_SCALE), leaving the nested target 1:1 with the
+        // footprint it composites into. Doubling here is the nested
+        // supersample-compounding bug (4x px @ depth 1, 16x @ depth 2).
+        // 480x270 then takes the usual long-axis bucket round-up to 512x288.
+        assert_eq!(resolution, [512, 288]);
     }
 }

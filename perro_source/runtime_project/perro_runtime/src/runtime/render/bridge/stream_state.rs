@@ -56,6 +56,38 @@ fn auto_resolution_target(size: [f32; 2]) -> [u32; 2] {
     out
 }
 
+/// How much a sub-view target oversamples its own on-screen rect, as ONE
+/// uniform factor.
+///
+/// Uniform, not per-axis: nested rects resolve against the owner's aspect-FIT
+/// basis (the biggest rect-aspect box inside the target), whose scale is the
+/// min over axes. A per-axis factor would skew the nested target's aspect and
+/// letterbox it whenever the owner's target aspect != its rect aspect.
+///
+/// Capped at `AUTO_RESOLUTION_SCALE` so a nested target never lands BELOW the
+/// footprint it occupies in the owner target. Past 2x the owner already
+/// supersamples harder than the auto rule asks for, and the owner's own
+/// downsample carries the quality; dropping under 1:1 there would be visibly
+/// softer than the surface it composites into.
+///
+/// Degenerate rects (0 / NaN / sub-px) carry no usable ratio -> 1.0 (no
+/// divide), never an inf that would collapse a nested target to 1px.
+fn sub_view_supersample_factor(target: [u32; 2], logical: [f32; 2]) -> f32 {
+    let axis = |target_px: u32, logical_px: f32| {
+        if logical_px >= 1.0 {
+            let factor = target_px as f32 / logical_px;
+            factor.is_finite().then_some(factor)
+        } else {
+            None
+        }
+    };
+    match (axis(target[0], logical[0]), axis(target[1], logical[1])) {
+        (Some(x), Some(y)) => x.min(y).clamp(1.0, AUTO_RESOLUTION_SCALE),
+        (Some(v), None) | (None, Some(v)) => v.clamp(1.0, AUTO_RESOLUTION_SCALE),
+        (None, None) => 1.0,
+    }
+}
+
 /// Relative aspect difference btw two target sizes.
 fn auto_resolution_aspect_drift(held: [u32; 2], want: [u32; 2]) -> f32 {
     let aspect = |size: [u32; 2]| size[0] as f32 / size[1].max(1) as f32;
@@ -149,7 +181,20 @@ impl Runtime {
         self.compute_ui_rect(node, root, computed, scales, auto)
     }
 
-    fn prepare_nested_sub_views(&mut self, owner: NodeID, owner_resolution: [u32; 2]) {
+    /// `owner_supersample` = owner target px / owner on-screen logical px,
+    /// uniform + capped (see `sub_view_supersample_factor`). Nested rects come
+    /// out of `nested_ui_sub_view_rect` in the OWNER
+    /// TARGET's pixel space, which already carries the owner's supersample.
+    /// Feeding that straight to `auto_resolution_target` would apply
+    /// `AUTO_RESOLUTION_SCALE` a 2nd time and compound per nesting level (4x px
+    /// @ depth 1, 16x @ depth 2). Divide it back out so each level supersamples
+    /// exactly once against its true on-screen size.
+    fn prepare_nested_sub_views(
+        &mut self,
+        owner: NodeID,
+        owner_resolution: [u32; 2],
+        owner_supersample: f32,
+    ) {
         let mut members = self.render_ui.acquire_node_vec();
         self.fill_world_members(owner, &mut members);
         // take-pattern scratch: recursion (views nested in views) takes empty
@@ -173,7 +218,15 @@ impl Runtime {
                             &mut scales,
                             &mut auto,
                         )
-                        .map(|rect| [rect.size.x, rect.size.y])
+                        // owner-target px -> on-screen logical px.
+                        .map(|rect| {
+                            [
+                                rect.size.x / owner_supersample,
+                                rect.size.y / owner_supersample,
+                            ]
+                        })
+                        // Fallback rects come from the MAIN ui layout pass, which
+                        // is already logical screen space: no divide.
                         .or_else(|| {
                             self.render_ui
                                 .retained_rects
@@ -598,7 +651,15 @@ impl Runtime {
 
         let resolution = self.sub_view_resolution(view_node, view, auto_size);
 
-        self.prepare_nested_sub_views(view_node, resolution);
+        // How much this target oversamples its own on-screen rect. Auto res is
+        // ~AUTO_RESOLUTION_SCALE (bucketing drifts it); an explicit `resolution`
+        // is whatever the author picked. No known logical size (SubView2D /
+        // SubView3D render targets) => the target IS the logical size, 1.0.
+        let owner_supersample = match auto_size {
+            Some(size) => sub_view_supersample_factor(resolution, size),
+            None => 1.0,
+        };
+        self.prepare_nested_sub_views(view_node, resolution, owner_supersample);
         self.camera_stream_node_scratch = self.world_members_arc(view_node);
         // root inverses once per refresh; shared by the camera pick + the
         // fused member walk (was 1 inverse per member per collector).
@@ -973,5 +1034,68 @@ mod stream_retention_tests {
                 .expect("test or bench setup must succeed");
             assert_eq!(state.resolution, first);
         }
+    }
+
+    /// `sub_view_supersample_factor` divides the owner's oversample back out of
+    /// a nested rect. Without it `AUTO_RESOLUTION_SCALE` compounds per nesting
+    /// level (measured: 3 levels each 0.5x its parent all landed on 1920x1080
+    /// instead of 1920x1080 / 960x540 / 512x288).
+    #[test]
+    fn sub_view_supersample_factor_divides_owner_oversample_back_out() {
+        // auto res: target is AUTO_RESOLUTION_SCALE x the on-screen rect.
+        assert_eq!(sub_view_supersample_factor([1920, 1080], [960.0, 540.0]), 2.0);
+        // 1:1 target adds no oversample to divide out.
+        assert_eq!(sub_view_supersample_factor([960, 540], [960.0, 540.0]), 1.0);
+        // Past 2x the cap holds, so a nested target never drops below the
+        // footprint it occupies in the owner target.
+        assert_eq!(sub_view_supersample_factor([3840, 2160], [960.0, 540.0]), 2.0);
+        // Owner target aspect != rect aspect: uniform min-axis factor, so the
+        // nested target keeps its aspect instead of letterboxing.
+        assert_eq!(sub_view_supersample_factor([960, 1080], [320.0, 180.0]), 2.0);
+        assert_eq!(sub_view_supersample_factor([480, 1080], [320.0, 180.0]), 1.5);
+        // Degenerate logical sizes must not produce inf/NaN (would collapse a
+        // nested target to 1px) -> neutral 1.0.
+        assert_eq!(sub_view_supersample_factor([1920, 1080], [0.0, 0.0]), 1.0);
+        assert_eq!(
+            sub_view_supersample_factor([1920, 1080], [f32::NAN, f32::NAN]),
+            1.0
+        );
+        assert_eq!(sub_view_supersample_factor([1920, 1080], [-5.0, -5.0]), 1.0);
+        // One usable axis still yields a factor.
+        assert_eq!(sub_view_supersample_factor([1920, 1080], [960.0, 0.0]), 2.0);
+        // Never scales a nested rect UP.
+        assert_eq!(sub_view_supersample_factor([64, 64], [1024.0, 1024.0]), 1.0);
+    }
+
+    /// End-to-end shape of the fix: a level-N rect arrives in owner-target px,
+    /// and dividing by the owner factor before `auto_resolution_target` keeps
+    /// each level supersampling exactly once. Mirrors sv_nested.scn (each level
+    /// half its parent on both axes) at a 1920x1080 window.
+    #[test]
+    fn nested_auto_resolution_halves_per_level_instead_of_compounding() {
+        // depth 0: rect is real screen px.
+        let l1 = auto_resolution_target([960.0, 540.0]);
+        assert_eq!(l1, [1920, 1080]);
+
+        // depth 1: rect measured in the L1 TARGET = 960x540 target px.
+        let f1 = sub_view_supersample_factor(l1, [960.0, 540.0]);
+        assert_eq!(f1, 2.0);
+        let l2 = auto_resolution_target([960.0 / f1, 540.0 / f1]);
+        assert_eq!(l2, [960, 540]);
+
+        // depth 2: rect measured in the L2 target = 480x270 target px.
+        let f2 = sub_view_supersample_factor(l2, [480.0, 270.0]);
+        let l3 = auto_resolution_target([480.0 / f2, 270.0 / f2]);
+        // 240x135 * 2 = 480x270, long axis buckets up to 512.
+        assert_eq!(l3, [512, 288]);
+
+        // the whole point: strictly shrinking, not 3x the same target.
+        assert!(l3[0] < l2[0] && l2[0] < l1[0]);
+        let total: u64 = [l1, l2, l3]
+            .iter()
+            .map(|r| u64::from(r[0]) * u64::from(r[1]))
+            .sum();
+        // compounding cost 3 x 1920x1080 = 6_220_800 px.
+        assert_eq!(total, 2_739_456);
     }
 }

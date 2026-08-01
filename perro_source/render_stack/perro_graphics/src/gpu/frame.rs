@@ -661,6 +661,8 @@ impl Gpu {
             b: CLEAR_B,
             a: 1.0,
         });
+        timing.stream_count = camera_streams.len().min(u32::MAX as usize) as u32;
+        let stream_loop_start = Instant::now();
         for (node, stream) in camera_streams {
             let stream_reentered = !self.camera_stream_content_revisions.contains_key(node);
             // per-stream idle skip: unchanged state + nothing animating inside
@@ -687,6 +689,10 @@ impl Gpu {
                 continue;
             }
             rendered_stream_textures.push(stream.output_texture);
+            timing.stream_renders = timing.stream_renders.saturating_add(1);
+            timing.stream_pixels = timing.stream_pixels.saturating_add(
+                u64::from(stream.resolution[0].max(1)) * u64::from(stream.resolution[1].max(1)),
+            );
             // revision update only on render: idle streams skip the content
             // compare entirely; the compare against last-RENDERED content is
             // exactly what the prepare paths below need.
@@ -1075,6 +1081,26 @@ impl Gpu {
                         // main view may write them.
                         None,
                     );
+                    // Same harvest the main view does after submit, but per
+                    // stream and summed: `render_pass` resets these at entry, so
+                    // read them here while this stream's pass is the last one
+                    // encoded on its own `Gpu3D`.
+                    timing.stream_draw_calls_3d = timing
+                        .stream_draw_calls_3d
+                        .saturating_add(stream_3d.draw_call_count());
+                    timing.stream_draw_batches_3d = timing
+                        .stream_draw_batches_3d
+                        .saturating_add(stream_3d.draw_batch_count());
+                    timing.stream_draw_triangles_3d = timing
+                        .stream_draw_triangles_3d
+                        .saturating_add(stream_3d.triangle_count());
+                    let stream_counters = stream_3d.pass_counters();
+                    timing.stream_render_passes = timing
+                        .stream_render_passes
+                        .saturating_add(stream_counters.render_passes);
+                    timing.stream_shadow_layer_renders = timing
+                        .stream_shadow_layer_renders
+                        .saturating_add(stream_counters.shadow_layer_renders);
                     if !stream.point_particles_3d.is_empty() {
                         let particles = camera_stream_cache_entry(
                             &mut self.camera_stream_particles_3d,
@@ -1344,6 +1370,7 @@ impl Gpu {
                 }
             }
         }
+        timing.gpu_stream_encode = stream_loop_start.elapsed();
         // Per-stream processors idle-release like the main post. Their chains
         // sit behind the stream idle skip and several early-outs, so tick every
         // live entry once per frame instead of at each skip site; ping targets

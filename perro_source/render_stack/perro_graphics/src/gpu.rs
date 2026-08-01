@@ -1248,6 +1248,17 @@ pub struct RenderGpuTiming {
     pub shadow_multimesh_batch_draws: u32,
     pub shadow_multimesh_instance_draws: u64,
     pub shadow_multimesh_culled_layers: u32,
+    /// Camera-stream / sub-view work this frame. Kept out of the main-view
+    /// fields above so a stream never inflates main-scene numbers.
+    pub stream_count: u32,
+    pub stream_renders: u32,
+    pub gpu_stream_encode: Duration,
+    pub stream_pixels: u64,
+    pub stream_draw_calls_3d: u32,
+    pub stream_draw_batches_3d: u32,
+    pub stream_draw_triangles_3d: u64,
+    pub stream_render_passes: u32,
+    pub stream_shadow_layer_renders: u32,
     pub total: Duration,
     pub presented: bool,
 }

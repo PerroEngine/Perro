@@ -213,7 +213,10 @@ const TIMING_CSV_HEADER: &str = concat!(
     "mesh_blend_seam_passes,mesh_blend_scene_copies,mesh_blend_copy_pixels,",
     "mesh_blend_source_depth_passes,mesh_blend_source_depth_reuses,water_depth_copies,",
     "water_depth_clears,shadow_layer_renders,shadow_multimesh_batch_draws,",
-    "shadow_multimesh_instance_draws,shadow_multimesh_culled_layers",
+    "shadow_multimesh_instance_draws,shadow_multimesh_culled_layers,",
+    "stream_count,stream_renders,gpu_stream_encode_us,stream_pixels,",
+    "stream_draw_calls_3d,stream_draw_batches_3d,stream_draw_triangles_3d,",
+    "stream_render_passes,stream_shadow_layer_renders",
 );
 
 impl TimingCsvWriter {
@@ -286,7 +289,7 @@ impl TimingCsvWriter {
             draw.total.as_micros(),
             if draw.idle_clear { 1 } else { 0 },
         );
-        let _ = writeln!(
+        let _ = write!(
             out,
             ",{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
             draw.draw_calls_2d,
@@ -324,6 +327,19 @@ impl TimingCsvWriter {
             draw.shadow_multimesh_batch_draws,
             draw.shadow_multimesh_instance_draws,
             draw.shadow_multimesh_culled_layers,
+        );
+        let _ = writeln!(
+            out,
+            ",{},{},{},{},{},{},{},{},{}",
+            draw.stream_count,
+            draw.stream_renders,
+            draw.gpu_stream_encode.as_micros(),
+            draw.stream_pixels,
+            draw.stream_draw_calls_3d,
+            draw.stream_draw_batches_3d,
+            draw.stream_draw_triangles_3d,
+            draw.stream_render_passes,
+            draw.stream_shadow_layer_renders,
         );
     }
 }
@@ -875,6 +891,10 @@ struct RunnerState<B: GraphicsBackend> {
     preloaded_images: PreloadedProjectImages,
     startup_splash: StartupSplashState,
     exit_result: Option<AppExitResult>,
+    /// `PERRO_EXIT_AFTER_FRAMES=N` closes the app cleanly after N presented
+    /// frames. Unattended capture only: a kill would drop the buffered
+    /// `PERRO_TIMING_CSV` tail, a clean exit drains it.
+    exit_after_frames: Option<u64>,
 }
 
 mod frame;

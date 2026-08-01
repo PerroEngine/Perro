@@ -257,6 +257,19 @@ impl Gpu {
                 || target.depth_view.is_some() != needs_post_depth
         });
         if recreate {
+            // PERRO_STREAM_LOG=1 prints the target size a stream/sub-view
+            // actually allocates. Sizes come from the runtime's auto-resolution
+            // rule, so this is the only place the resolved number is visible.
+            #[cfg(not(target_arch = "wasm32"))]
+            if std::env::var("PERRO_STREAM_LOG").is_ok() {
+                eprintln!(
+                    "[perro][gfx] stream target node={} size={}x{} px={}",
+                    node.as_u64(),
+                    resolution[0],
+                    resolution[1],
+                    u64::from(resolution[0]) * u64::from(resolution[1]),
+                );
+            }
             self.next_camera_stream_post_view_key =
                 next_nonzero_generation(self.next_camera_stream_post_view_key);
             let post_view_key = self

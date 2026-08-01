@@ -72,6 +72,10 @@ impl<B: GraphicsBackend> RunnerState<B> {
             preloaded_images,
             startup_splash,
             exit_result: None,
+            exit_after_frames: std::env::var("PERRO_EXIT_AFTER_FRAMES")
+                .ok()
+                .and_then(|raw| raw.trim().parse::<u64>().ok())
+                .filter(|frames| *frames > 0),
         }
     }
 

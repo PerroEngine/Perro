@@ -1,0 +1,183 @@
+$root = @NestedBench
+
+# Nested sub-view resolution probe. Three UiSubView levels, each sized at
+# half its parent on both axes, each with auto (0,0) resolution. Run with
+# PERRO_STREAM_LOG=1 and compare the three logged target sizes: a correct
+# auto-resolution rule halves the target per level, a compounding one does
+# not.
+
+[NestedBench]
+    [Node3D]
+        position = (0.0, 0.0, 0.0)
+    [/Node3D]
+[/NestedBench]
+
+[MainCamera]
+parent = @NestedBench
+    [Camera3D]
+        active = true
+        perspective_fov_y_degrees = 62.0
+        [Node3D]
+            position = (0.0, 3.0, 9.0)
+            rotation_deg = (-14.0, 0.0, 0.0)
+        [/Node3D]
+    [/Camera3D]
+[/MainCamera]
+
+[MainAmbient]
+parent = @NestedBench
+    [AmbientLight3D]
+        color = (0.62, 0.68, 0.82)
+        intensity = 0.45
+    [/AmbientLight3D]
+[/MainAmbient]
+
+[MainCube]
+parent = @NestedBench
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = {
+            type = "standard",
+            base_color_factor = (0.55, 0.35, 0.25, 1.0),
+            roughness_factor = 0.6,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
+        [Node3D]
+            position = (0.0, 0.0, 0.0)
+        [/Node3D]
+    [/MeshInstance3D]
+[/MainCube]
+
+[ui_root]
+parent = @NestedBench
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (1.0, 1.0)
+        style = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+        padding = 0.0
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiPanel]
+[/ui_root]
+
+[view_l1]
+parent = @ui_root
+    [UiSubView]
+        anchor = "top_left"
+        size_ratio = (0.5, 0.5)
+        resolution = (0, 0)
+        aspect_mode = "stretch"
+        background = "#101820FF"
+        view_position = (0.0, 3.0, 9.0)
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiSubView]
+[/view_l1]
+
+[l1_ambient]
+parent = @view_l1
+    [AmbientLight3D]
+        color = (0.70, 0.62, 0.55)
+        intensity = 0.55
+    [/AmbientLight3D]
+[/l1_ambient]
+
+[l1_cube]
+parent = @view_l1
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = {
+            type = "standard",
+            base_color_factor = (0.25, 0.55, 0.35, 1.0),
+            roughness_factor = 0.6,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
+        [Node3D]
+            position = (0.0, 0.0, 0.0)
+        [/Node3D]
+    [/MeshInstance3D]
+[/l1_cube]
+
+[view_l2]
+parent = @view_l1
+    [UiSubView]
+        anchor = "top_left"
+        size_ratio = (0.5, 0.5)
+        resolution = (0, 0)
+        aspect_mode = "stretch"
+        background = "#182028FF"
+        view_position = (0.0, 3.0, 9.0)
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiSubView]
+[/view_l2]
+
+[l2_ambient]
+parent = @view_l2
+    [AmbientLight3D]
+        color = (0.55, 0.62, 0.75)
+        intensity = 0.55
+    [/AmbientLight3D]
+[/l2_ambient]
+
+[l2_cube]
+parent = @view_l2
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = {
+            type = "standard",
+            base_color_factor = (0.35, 0.35, 0.65, 1.0),
+            roughness_factor = 0.6,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
+        [Node3D]
+            position = (0.0, 0.0, 0.0)
+        [/Node3D]
+    [/MeshInstance3D]
+[/l2_cube]
+
+[view_l3]
+parent = @view_l2
+    [UiSubView]
+        anchor = "top_left"
+        size_ratio = (0.5, 0.5)
+        resolution = (0, 0)
+        aspect_mode = "stretch"
+        background = "#202830FF"
+        view_position = (0.0, 3.0, 9.0)
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiSubView]
+[/view_l3]
+
+[l3_ambient]
+parent = @view_l3
+    [AmbientLight3D]
+        color = (0.75, 0.70, 0.55)
+        intensity = 0.55
+    [/AmbientLight3D]
+[/l3_ambient]
+
+[l3_cube]
+parent = @view_l3
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = {
+            type = "standard",
+            base_color_factor = (0.65, 0.55, 0.25, 1.0),
+            roughness_factor = 0.6,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
+        [Node3D]
+            position = (0.0, 0.0, 0.0)
+        [/Node3D]
+    [/MeshInstance3D]
+[/l3_cube]
