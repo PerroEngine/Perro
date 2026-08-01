@@ -44,7 +44,7 @@ async fn test_device() -> Option<(wgpu::Device, wgpu::Queue)> {
         .ok()
 }
 
-fn new_gpu_3d(device: &wgpu::Device, queue: &wgpu::Queue) -> Gpu3D {
+fn new_gpu_3d(device: &wgpu::Device, queue: &wgpu::Queue, arena: &SharedMeshArena) -> Gpu3D {
     let cache = PipelineRegistryCache::new();
     let pipelines = cache.get_or_create(device, COLOR_FORMAT, 1);
     Gpu3D::new(
@@ -68,6 +68,7 @@ fn new_gpu_3d(device: &wgpu::Device, queue: &wgpu::Queue) -> Gpu3D {
             shadow_pcf_high: false,
         },
         pipelines,
+        arena,
     )
 }
 
@@ -269,6 +270,7 @@ struct Harness {
     gpu: Gpu3D,
     resources: ResourceStore,
     shared_textures: SharedTextureStore,
+    mesh_arena: SharedMeshArena,
     lighting: Lighting3DState,
     revision: u64,
     /// Supplied by the custom-material test so its shader resolves (and its
@@ -286,6 +288,8 @@ impl Harness {
             Prepare3D {
                 resources: &self.resources,
                 shared_textures: &mut self.shared_textures,
+                mesh_arena: &mut self.mesh_arena,
+                mesh_arena_compact_allowed: true,
                 camera: Camera3DState::default(),
                 lighting: &self.lighting,
                 draws,
@@ -316,7 +320,8 @@ fn multimesh_staging_reuse_matches_full_repack_and_is_cheaper() {
             eprintln!("skip multimesh staging reuse test: no wgpu adapter");
             return;
         };
-        let gpu = new_gpu_3d(&device, &queue);
+        let mesh_arena = SharedMeshArena::new(&device, false, false);
+        let gpu = new_gpu_3d(&device, &queue, &mesh_arena);
         let mut resources = ResourceStore::new();
         let mesh = resources.create_mesh("__prepare_test_mesh__", true);
         let material =
@@ -327,6 +332,7 @@ fn multimesh_staging_reuse_matches_full_repack_and_is_cheaper() {
             gpu,
             resources,
             shared_textures: SharedTextureStore::default(),
+            mesh_arena,
             lighting: Lighting3DState::default(),
             revision: 0,
             static_shader_lookup: None,
@@ -454,7 +460,8 @@ fn multimesh_custom_param_staging_reuse_matches_full_repack_and_is_cheaper() {
             eprintln!("skip multimesh custom-param staging reuse test: no wgpu adapter");
             return;
         };
-        let gpu = new_gpu_3d(&device, &queue);
+        let mesh_arena = SharedMeshArena::new(&device, false, false);
+        let gpu = new_gpu_3d(&device, &queue, &mesh_arena);
         let mut resources = ResourceStore::new();
         let mesh = resources.create_mesh("__prepare_custom_test_mesh__", true);
         let dense_material = resources.create_material(
@@ -481,6 +488,7 @@ fn multimesh_custom_param_staging_reuse_matches_full_repack_and_is_cheaper() {
             gpu,
             resources,
             shared_textures: SharedTextureStore::default(),
+            mesh_arena,
             lighting: Lighting3DState::default(),
             revision: 0,
             static_shader_lookup: Some(test_custom_shader),
@@ -655,6 +663,7 @@ fn upload_harness(
 ) -> (Harness, MeshID, MaterialID) {
     let cache = PipelineRegistryCache::new();
     let pipelines = cache.get_or_create(&device, COLOR_FORMAT, 1);
+    let mesh_arena = SharedMeshArena::new(&device, false, false);
     let gpu = Gpu3D::new(
         &device,
         &queue,
@@ -676,6 +685,7 @@ fn upload_harness(
             shadow_pcf_high: false,
         },
         pipelines,
+        &mesh_arena,
     );
     let mut resources = ResourceStore::new();
     let mesh = resources.create_mesh("__upload_gate_test_mesh__", true);
@@ -688,6 +698,7 @@ fn upload_harness(
             gpu,
             resources,
             shared_textures: SharedTextureStore::default(),
+            mesh_arena,
             lighting: Lighting3DState::default(),
             revision: 0,
             static_shader_lookup: None,

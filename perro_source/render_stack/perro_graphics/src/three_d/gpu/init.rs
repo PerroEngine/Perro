@@ -202,12 +202,16 @@ fn create_multimesh_cull_bind_group(
 }
 
 impl Gpu3D {
-    pub fn new(
+    /// `mesh_arena` is the process-wide shared mesh arena: the new view mirrors
+    /// its buffer handles instead of allocating (and re-uploading the builtin
+    /// prefix into) a private arena set of its own.
+    pub(crate) fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         color_format: wgpu::TextureFormat,
         config: Gpu3DConfig,
         pipelines: Arc<PipelineRegistry>,
+        mesh_arena: &SharedMeshArena,
     ) -> Self {
         debug_assert_eq!(pipelines.color_format(), color_format);
         debug_assert_eq!(pipelines.sample_count(), config.sample_count.max(1));
@@ -216,7 +220,8 @@ impl Gpu3D {
             width,
             height,
             meshlets_enabled,
-            dev_meshlets,
+            // Decode-time only; the shared mesh arena owns this decision now.
+            dev_meshlets: _,
             meshlet_debug_view,
             occlusion_culling,
             ssao,
@@ -228,6 +233,17 @@ impl Gpu3D {
             shadow_pcf_high,
         } = config;
         let (gpu_occlusion_enabled, cpu_occlusion_enabled) = occlusion_flags(occlusion_culling);
+        // Shared mesh arena handles. Two of them (blend-shape deltas, packed-LOD
+        // params) are bind group entries, so they must be in hand before the
+        // camera / shadow / multimesh bind groups below are created.
+        let mesh_arena_handles = mesh_arena.handles();
+        let vertex_buffer = mesh_arena_handles.vertex_buffer.clone();
+        let rigid_vertex_buffer = mesh_arena_handles.rigid_vertex_buffer.clone();
+        let index_buffer = mesh_arena_handles.index_buffer.clone();
+        let packed_lod_vertex_buffer = mesh_arena_handles.packed_lod_vertex_buffer.clone();
+        let packed_lod_index_buffer = mesh_arena_handles.packed_lod_index_buffer.clone();
+        let packed_lod_param_buffer = mesh_arena_handles.packed_lod_param_buffer.clone();
+        let blend_shape_delta_buffer = mesh_arena_handles.blend_shape_delta_buffer.clone();
         let (shadow_map_size, shadow_spot_map_size, shadow_point_map_size) =
             default_shadow_map_sizes();
         let shadow_caster_debug_view = std::env::var_os("PERRO_DEBUG_SHADOW_CASTERS").is_some()
@@ -327,13 +343,6 @@ impl Gpu3D {
                 | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
-        let blend_shape_delta_capacity = 1usize;
-        let blend_shape_delta_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perro_blend_shape_deltas"),
-            size: std::mem::size_of::<BlendShapeDeltaGpu>() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
         let blend_shape_weight_capacity = 1usize;
         let blend_shape_weight_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_blend_shape_weights"),
@@ -347,15 +356,6 @@ impl Gpu3D {
         let blend_shape_instance_meta_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_blend_shape_instance_meta"),
             size: std::mem::size_of::<BlendShapeInstanceMetaGpu>() as u64,
-            usage: wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-        let packed_lod_param_capacity = 1usize;
-        let packed_lod_param_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perro_packed_lod_params"),
-            size: std::mem::size_of::<PackedLodParamGpu>() as u64,
             usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::COPY_SRC,
@@ -645,59 +645,6 @@ impl Gpu3D {
         // resolution the first prepare that actually stages a mesh blend.
         let (mesh_blend_mask_texture, mesh_blend_mask_view) =
             mesh_blend_screen::create_mesh_blend_mask_texture(device, 1, 1);
-        let (vertices, indices, builtin_mesh_ranges, builtin_meshlets) =
-            build_builtin_mesh_buffer();
-        let builtin_mesh_bounds =
-            compute_builtin_mesh_bounds(&vertices, &indices, &builtin_mesh_ranges);
-        let skinned_vertices: Vec<SkinnedMeshVertex> =
-            vertices.iter().map(pack_skinned_mesh_vertex).collect();
-        let rigid_vertices: Vec<RigidMeshVertex> =
-            vertices.iter().map(pack_rigid_mesh_vertex).collect();
-        let builtin_vertex_len = vertices.len();
-        let builtin_index_len = indices.len();
-        let vertex_capacity = vertices.len().max(1);
-        let rigid_vertex_capacity = rigid_vertices.len().max(1);
-        let index_capacity = indices.len().max(1);
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("perro_builtin_mesh_vertices"),
-            contents: bytemuck::cast_slice(&skinned_vertices),
-            usage: wgpu::BufferUsages::VERTEX
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::COPY_SRC,
-        });
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("perro_builtin_mesh_indices"),
-            contents: bytemuck::cast_slice(&indices),
-            usage: wgpu::BufferUsages::INDEX
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::COPY_SRC,
-        });
-        let rigid_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("perro_builtin_mesh_vertices_rigid"),
-            contents: bytemuck::cast_slice(&rigid_vertices),
-            usage: wgpu::BufferUsages::VERTEX
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::COPY_SRC,
-        });
-        let packed_lod_vertex_capacity = 1usize;
-        let packed_lod_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perro_packed_lod_vertices_rigid"),
-            size: std::mem::size_of::<PackedRigidLodVertex>() as u64,
-            usage: wgpu::BufferUsages::VERTEX
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-        let packed_lod_index_capacity = 1usize;
-        let packed_lod_index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perro_packed_lod_indices"),
-            size: std::mem::size_of::<u32>() as u64,
-            usage: wgpu::BufferUsages::INDEX
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-
         let instance_transform_capacity = 256usize;
         let instance_transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_mesh_instance_transforms"),
@@ -1538,9 +1485,6 @@ impl Gpu3D {
             skinned_instance_meta_capacity,
             staged_skinned_instance_meta: Vec::new(),
             blend_shape_delta_buffer,
-            blend_shape_delta_capacity,
-            blend_shape_delta_len: 0,
-            blend_shape_delta_scratch: Vec::new(),
             blend_shape_weight_buffer,
             blend_shape_weight_capacity,
             staged_blend_shape_weights: Vec::new(),
@@ -1548,8 +1492,6 @@ impl Gpu3D {
             blend_shape_instance_meta_capacity,
             staged_blend_shape_instance_meta: Vec::new(),
             packed_lod_param_buffer,
-            packed_lod_param_capacity,
-            packed_lod_params: Vec::new(),
             decal_buffer,
             decal_buffer_capacity,
             decal_texture,
@@ -1728,27 +1670,15 @@ impl Gpu3D {
             last_sky: None,
             last_sky_time_seconds: -1.0,
             sky_enabled: false,
-            mesh_vertex_len: builtin_vertex_len,
-            rigid_vertex_len: builtin_vertex_len,
-            packed_lod_vertex_len: 0,
-            mesh_index_len: builtin_index_len,
-            packed_lod_index_len: 0,
-            builtin_vertex_len,
             vertex_buffer,
             rigid_vertex_buffer,
             packed_lod_vertex_buffer,
             index_buffer,
             packed_lod_index_buffer,
-            vertex_capacity,
-            rigid_vertex_capacity,
-            packed_lod_vertex_capacity,
-            index_capacity,
-            packed_lod_index_capacity,
-            builtin_mesh_ranges,
-            builtin_mesh_bounds,
-            builtin_meshlets,
+            mesh_arena_buffer_generation: mesh_arena_handles.buffer_generation,
+            mesh_arena_bind_generation: mesh_arena_handles.bind_generation,
+            mesh_arena_layout_generation: mesh_arena_handles.layout_generation,
             shrink: Gpu3DShrink::default(),
-            custom_mesh_ranges: AHashMap::new(),
             depth_texture,
             depth_view,
             depth_prepass_texture,
@@ -1797,7 +1727,6 @@ impl Gpu3D {
             sample_count,
             occlusion_mode: occlusion_culling,
             meshlets_enabled,
-            dev_meshlets,
             meshlet_debug_view,
             shadow_caster_debug_view,
             disable_meshlet_shadows,
@@ -1830,7 +1759,6 @@ impl Gpu3D {
             multimesh_bind_group_generation: 1,
             shadow_layer_shrink: shadows::ShadowLayerShrink::default(),
             decal_layer_shrink: shadows::LayerShrinkTracker::default(),
-            mesh_compact_requested: false,
             perf_counters: RenderPerfCounters::default(),
             pass_counters: PassCounters::default(),
             mesh_blend_seam_region: SeamRegion::default(),

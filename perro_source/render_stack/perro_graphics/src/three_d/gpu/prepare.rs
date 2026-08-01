@@ -299,6 +299,8 @@ impl Gpu3D {
         let Prepare3D {
             resources,
             shared_textures,
+            mesh_arena,
+            mesh_arena_compact_allowed,
             camera,
             lighting,
             draws,
@@ -312,9 +314,12 @@ impl Gpu3D {
             static_mesh_lookup,
             static_shader_lookup,
         } = frame;
-        self.custom_mesh_ranges
-            .retain(|mesh_id, _| resources.has_mesh(*mesh_id));
-        let compacted_mesh_storage = self.compact_custom_mesh_storage_if_needed(device);
+        mesh_arena.retain_live_meshes(resources);
+        mesh_arena.compact_if_needed(device, mesh_arena_compact_allowed);
+        // Adopt whatever the shared arena looks like now: another view may have
+        // grown (new handles) or compacted (every resolved range died, so this
+        // view's retained batches are stale) it since this view last prepared.
+        let compacted_mesh_storage = self.sync_mesh_arena(device, mesh_arena);
         let force_full_rebuild = force_full_rebuild || compacted_mesh_storage;
         self.resize(device, width, height);
         self.ensure_material_fallback_texture(device, queue, shared_textures);
@@ -974,16 +979,16 @@ impl Gpu3D {
         self.indirect_staging.clear();
         let mut total_meshlets = 0usize;
         let frustum = extract_frustum_planes(view_proj);
-        let Some(default_mesh) = self.resolve_builtin_mesh_asset("__cube__") else {
+        let Some(default_mesh) = mesh_arena.resolve_builtin_mesh_asset("__cube__") else {
             return;
         };
         // Hoisted once per prepare: the per-draw arms below hand out
         // references instead of rebuilding these builtin assets per draw.
-        let quad_mesh = self.resolve_builtin_mesh_asset("__quad__");
-        let cylinder_mesh = self.resolve_builtin_mesh_asset("__cylinder__");
-        // Cache moved out of self so resolve_mesh_range can return `&` into it
-        // while the loop keeps calling `&mut self` methods; restored below.
-        let mut custom_mesh_ranges = std::mem::take(&mut self.custom_mesh_ranges);
+        let quad_mesh = mesh_arena.resolve_builtin_mesh_asset("__quad__");
+        let cylinder_mesh = mesh_arena.resolve_builtin_mesh_asset("__cylinder__");
+        // Cache moved out of the arena so resolve_mesh_range can return `&` into
+        // it while the loop keeps calling `&mut` methods; restored below.
+        let mut custom_mesh_ranges = std::mem::take(&mut mesh_arena.custom_mesh_ranges);
         let mut debug_points_start: Option<u32> = None;
         let mut debug_points_count: u32 = 0;
         let mut debug_points_double_sided = false;
@@ -1051,7 +1056,7 @@ impl Gpu3D {
                     .as_ref()
                     .is_some_and(|skeleton| !skeleton.matrices.is_empty());
             let mesh_asset: &MeshAssetRange = match draw.kind {
-                Draw3DKind::Mesh(mesh_id) => self
+                Draw3DKind::Mesh(mesh_id) => mesh_arena
                     .resolve_mesh_range(
                         &mut custom_mesh_ranges,
                         device,
@@ -1913,7 +1918,11 @@ impl Gpu3D {
             .push(self.staged_skeletons.len() as u32);
         self.last_draw_blend_meta_bounds
             .push(self.staged_blend_shape_instance_meta.len() as u32);
-        self.custom_mesh_ranges = custom_mesh_ranges;
+        mesh_arena.custom_mesh_ranges = custom_mesh_ranges;
+        // The resolve loop above may have grown the arena (new mesh uploads).
+        // Re-adopt the handles before anything binds them this frame; a bind
+        // group facing move also rebuilds this view's camera bind groups here.
+        self.sync_mesh_arena(device, mesh_arena);
         self.mesh_blend_scratch = mesh_blends;
         self.surface_entries_scratch = surface_entries;
         if !multimesh_reuse {
@@ -2001,7 +2010,7 @@ impl Gpu3D {
         if let Some(instance_start) = debug_edges_start
             && debug_edges_count > 0
         {
-            let debug_edge_mesh = self
+            let debug_edge_mesh = mesh_arena
                 .resolve_builtin_mesh_asset("__cylinder__")
                 .unwrap_or_else(|| default_mesh.clone());
             let material_kind = MaterialPipelineKind::Standard;

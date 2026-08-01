@@ -295,6 +295,9 @@ impl Gpu {
         let camera_stream_tonemap = CameraStreamTonemap::new(&device, render_format);
         let present_scene_bind_group = present.create_bind_group(&device, post.scene_view());
         let gpu_timer = timestamp_query_enabled.then(|| GpuTimestampTimer::new(&device, &queue));
+        // Built once here (the builtin mesh prefix is uploaded exactly once for
+        // the whole process); every Gpu3D mirrors its handles.
+        let mesh_arena = SharedMeshArena::new(&device, cfg.meshlets_enabled, cfg.dev_meshlets);
 
         Ok(Self {
             window_handle: window,
@@ -327,6 +330,7 @@ impl Gpu {
             present_scene_bind_group,
             present_intermediate_bind_group: None,
             shared_textures: SharedTextureStore::default(),
+            mesh_arena,
             shared_texture_frame_counter: 0,
             pipeline_registries: PipelineRegistryCache::new(),
             two_d: None,

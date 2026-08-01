@@ -128,38 +128,6 @@ impl Gpu3D {
         self.rebuild_camera_bind_groups(device);
     }
 
-    pub(in super::super) fn ensure_packed_lod_param_capacity(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        needed: usize,
-    ) {
-        if needed <= self.packed_lod_param_capacity {
-            return;
-        }
-        let mut new_capacity = self.packed_lod_param_capacity.max(1);
-        while new_capacity < needed {
-            new_capacity *= 2;
-        }
-        self.packed_lod_param_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perro_packed_lod_params"),
-            size: (new_capacity * std::mem::size_of::<PackedLodParamGpu>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE
-                    | wgpu::BufferUsages::COPY_DST
-                    | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-        if !self.packed_lod_params.is_empty() {
-            queue.write_buffer(
-                &self.packed_lod_param_buffer,
-                0,
-                bytemuck::cast_slice(&self.packed_lod_params),
-            );
-        }
-        self.packed_lod_param_capacity = new_capacity;
-        self.rebuild_camera_bind_groups(device);
-    }
-
     pub(in super::super) fn ensure_multimesh_instance_capacity(
         &mut self,
         device: &wgpu::Device,
@@ -810,22 +778,8 @@ impl Gpu3D {
     /// groups referencing a shrunk buffer are rebuilt below.
     pub fn shrink_tick(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         use crate::gpu_shrink::shrink_buffer_preserving;
-        // Mesh arena lengths are authoritative retained content. The rigid and
-        // skinned arenas grow independently, so they shrink independently too:
-        // a scene that stopped drawing skinned meshes gives the 48B arena back
-        // without dragging the rigid one down with it.
-        self.shrink.mesh_vertices.note_used(self.rigid_vertex_len);
-        self.shrink.skinned_vertices.note_used(self.mesh_vertex_len);
-        self.shrink.mesh_indices.note_used(self.mesh_index_len);
-        self.shrink
-            .packed_lod_vertices
-            .note_used(self.packed_lod_vertex_len);
-        self.shrink
-            .packed_lod_indices
-            .note_used(self.packed_lod_index_len);
-        self.shrink
-            .blend_shape_deltas
-            .note_used(self.blend_shape_delta_len);
+        // The mesh arenas are shared by every view, so they shrink once in
+        // `SharedMeshArena::shrink_tick`, not here.
         // Retained CPU mirrors are the authoritative live lengths for the
         // bind-group-facing storage buffers below.
         // Both custom-param arenas carry the multimesh tail after the regular
@@ -844,9 +798,6 @@ impl Gpu3D {
         self.shrink.blend_shape_instance_meta.note_used(
             self.staged_blend_shape_instance_meta.len() + self.staged_multimesh_blend_meta.len(),
         );
-        self.shrink
-            .packed_lod_params
-            .note_used(self.packed_lod_params.len());
         self.shrink.decals.note_used(self.decal_count as usize);
         self.shrink.frustum_cull_items.note_used(
             self.frustum_cull_static_staging
@@ -860,82 +811,6 @@ impl Gpu3D {
         let storage_usage = wgpu::BufferUsages::STORAGE
             | wgpu::BufferUsages::COPY_DST
             | wgpu::BufferUsages::COPY_SRC;
-
-        if let Some(new_cap) = self
-            .shrink
-            .skinned_vertices
-            .tick(self.vertex_capacity, 1024)
-        {
-            self.vertex_buffer = shrink_buffer_preserving(
-                device,
-                queue,
-                &self.vertex_buffer,
-                "perro_mesh_vertices",
-                (new_cap * std::mem::size_of::<SkinnedMeshVertex>()) as u64,
-                vertex_usage,
-            );
-            self.vertex_capacity = new_cap;
-        }
-        if let Some(new_cap) = self
-            .shrink
-            .mesh_vertices
-            .tick(self.rigid_vertex_capacity, 1024)
-        {
-            self.rigid_vertex_buffer = shrink_buffer_preserving(
-                device,
-                queue,
-                &self.rigid_vertex_buffer,
-                "perro_mesh_vertices_rigid",
-                (new_cap * std::mem::size_of::<RigidMeshVertex>()) as u64,
-                vertex_usage,
-            );
-            self.rigid_vertex_capacity = new_cap;
-        }
-        if let Some(new_cap) = self.shrink.mesh_indices.tick(self.index_capacity, 1024) {
-            self.index_buffer = shrink_buffer_preserving(
-                device,
-                queue,
-                &self.index_buffer,
-                "perro_mesh_indices",
-                (new_cap * std::mem::size_of::<u32>()) as u64,
-                wgpu::BufferUsages::INDEX
-                    | wgpu::BufferUsages::COPY_DST
-                    | wgpu::BufferUsages::COPY_SRC,
-            );
-            self.index_capacity = new_cap;
-        }
-        if let Some(new_cap) = self
-            .shrink
-            .packed_lod_vertices
-            .tick(self.packed_lod_vertex_capacity, 256)
-        {
-            self.packed_lod_vertex_buffer = shrink_buffer_preserving(
-                device,
-                queue,
-                &self.packed_lod_vertex_buffer,
-                "perro_packed_lod_vertices_rigid",
-                (new_cap * std::mem::size_of::<PackedRigidLodVertex>()) as u64,
-                vertex_usage,
-            );
-            self.packed_lod_vertex_capacity = new_cap;
-        }
-        if let Some(new_cap) = self
-            .shrink
-            .packed_lod_indices
-            .tick(self.packed_lod_index_capacity, 256)
-        {
-            self.packed_lod_index_buffer = shrink_buffer_preserving(
-                device,
-                queue,
-                &self.packed_lod_index_buffer,
-                "perro_packed_lod_indices",
-                (new_cap * std::mem::size_of::<u32>()) as u64,
-                wgpu::BufferUsages::INDEX
-                    | wgpu::BufferUsages::COPY_DST
-                    | wgpu::BufferUsages::COPY_SRC,
-            );
-            self.packed_lod_index_capacity = new_cap;
-        }
 
         if let Some(new_cap) = self
             .shrink
@@ -985,22 +860,6 @@ impl Gpu3D {
 
         // Buffers below feed bind groups; rebuild them once at the end.
         let mut rebuild_camera = false;
-        if let Some(new_cap) = self
-            .shrink
-            .blend_shape_deltas
-            .tick(self.blend_shape_delta_capacity, 64)
-        {
-            self.blend_shape_delta_buffer = shrink_buffer_preserving(
-                device,
-                queue,
-                &self.blend_shape_delta_buffer,
-                "perro_blend_shape_deltas",
-                (new_cap * std::mem::size_of::<BlendShapeDeltaGpu>()) as u64,
-                storage_usage,
-            );
-            self.blend_shape_delta_capacity = new_cap;
-            rebuild_camera = true;
-        }
         if let Some(new_cap) = self.shrink.skeletons.tick(self.skeleton_capacity, 64) {
             self.skeleton_buffer = shrink_buffer_preserving(
                 device,
@@ -1167,22 +1026,6 @@ impl Gpu3D {
                 storage_usage,
             );
             self.blend_shape_instance_meta_capacity = new_cap;
-            rebuild_camera = true;
-        }
-        if let Some(new_cap) = self
-            .shrink
-            .packed_lod_params
-            .tick(self.packed_lod_param_capacity, 64)
-        {
-            self.packed_lod_param_buffer = shrink_buffer_preserving(
-                device,
-                queue,
-                &self.packed_lod_param_buffer,
-                "perro_packed_lod_params",
-                (new_cap * std::mem::size_of::<PackedLodParamGpu>()) as u64,
-                storage_usage,
-            );
-            self.packed_lod_param_capacity = new_cap;
             rebuild_camera = true;
         }
         if let Some(new_cap) = self.shrink.decals.tick(self.decal_buffer_capacity, 8) {

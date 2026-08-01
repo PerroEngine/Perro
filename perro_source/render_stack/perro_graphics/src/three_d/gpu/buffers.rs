@@ -125,6 +125,10 @@ mod capacities;
 mod materials;
 #[path = "buffers/mesh.rs"]
 mod mesh;
+#[path = "buffers/mesh_arena.rs"]
+mod mesh_arena;
+
+pub(crate) use mesh_arena::SharedMeshArena;
 #[path = "buffers/occlusion.rs"]
 mod occlusion;
 

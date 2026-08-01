@@ -279,6 +279,7 @@ impl Gpu {
                         self.render_format,
                         self.sample_count,
                     ),
+                    &self.mesh_arena,
                 ));
             }
             if self.water.is_none() {
@@ -370,6 +371,7 @@ impl Gpu {
                         self.render_format,
                         self.sample_count,
                     ),
+                    &self.mesh_arena,
                 ));
             }
             if needs_3d_particles_path && self.point_particles_3d.is_none() {
@@ -410,6 +412,11 @@ impl Gpu {
                     Prepare3D {
                         resources,
                         shared_textures: &mut self.shared_textures,
+                        mesh_arena: &mut self.mesh_arena,
+                        // The main view prepares before the camera-stream loop,
+                        // so it is the only one allowed to consume the GC tick's
+                        // arena compaction request.
+                        mesh_arena_compact_allowed: true,
                         camera: camera_3d.clone(),
                         lighting: lighting_3d,
                         draws: draws_3d,
@@ -936,6 +943,7 @@ impl Gpu {
                                         self.render_format,
                                         1,
                                     ),
+                                    &self.mesh_arena,
                                 );
                                 // Camera streams render into their own targets;
                                 // the seam pass only wires up the main scene.
@@ -1012,6 +1020,7 @@ impl Gpu {
                                     self.render_format,
                                     1,
                                 ),
+                                &self.mesh_arena,
                             );
                             // Camera streams render into their own targets; the seam
                             // pass only wires up the main scene.
@@ -1047,6 +1056,8 @@ impl Gpu {
                         Prepare3D {
                             resources,
                             shared_textures: &mut self.shared_textures,
+                            mesh_arena: &mut self.mesh_arena,
+                            mesh_arena_compact_allowed: false,
                             camera: camera.clone(),
                             lighting: &stream_lighting,
                             draws: &self.camera_stream_draws_scratch,
@@ -1899,6 +1910,10 @@ impl Gpu {
     pub fn shrink_gpu_buffers_tick(&mut self) {
         let device = self.device.clone();
         let queue = self.queue.clone();
+        // Shared by every Gpu3D, so it shrinks and raises its compaction
+        // request exactly once; views adopt the result at their next prepare.
+        self.mesh_arena.shrink_tick(&device, &queue);
+        self.mesh_arena.reclaim_tick();
         if let Some(three_d) = self.three_d.as_mut() {
             three_d.shrink_tick(&device, &queue);
             three_d.reclaim_memory_tick(&device);

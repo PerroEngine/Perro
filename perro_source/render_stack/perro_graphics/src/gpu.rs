@@ -4,7 +4,10 @@ use crate::{
     resources::ResourceStore,
     shared_textures::SharedTextureStore,
     three_d::{
-        gpu::{Gpu3D, Gpu3DConfig, PipelineRegistryCache, Prepare3D, Prepare3DStepTiming},
+        gpu::{
+            Gpu3D, Gpu3DConfig, PipelineRegistryCache, Prepare3D, Prepare3DStepTiming,
+            SharedMeshArena,
+        },
         particles::gpu::{GpuPointParticles3D, PreparePointParticles3D},
         renderer::{DenseMultiMeshDraw3D, Draw3DInstance, Draw3DKind, Lighting3DState},
     },
@@ -721,6 +724,11 @@ pub struct Gpu {
     // One texel upload per (source, color space, mips) shared by every
     // consumer cache below; consumers keep handles + their own bind groups.
     shared_textures: SharedTextureStore,
+    // One mesh vertex/index arena set shared by the main Gpu3D and every
+    // camera-stream Gpu3D: a custom mesh drawn in N views is decoded and
+    // uploaded once, not N times. Views mirror its buffer handles and compare
+    // its generations at prepare (see three_d/gpu/buffers/mesh_arena.rs).
+    mesh_arena: SharedMeshArena,
     // One lazily-built pipeline registry per (format, sample count); the main
     // Gpu3D and camera-stream Gpu3Ds share pipelines through it (see
     // three_d/gpu/pipeline_registry.rs).

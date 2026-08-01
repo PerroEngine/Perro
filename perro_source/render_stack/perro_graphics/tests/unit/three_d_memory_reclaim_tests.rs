@@ -1,6 +1,6 @@
-//! GPU memory reclamation driven by the periodic GC tick
-//! (`Gpu3D::reclaim_memory_tick`): mesh-arena compaction, shadow-atlas shrink
-//! and decal texture-array shrink.
+//! GPU memory reclamation: shared-mesh-arena compaction (once for every view),
+//! plus the per-view shadow-atlas and decal texture-array shrinks driven by the
+//! periodic GC tick (`Gpu3D::reclaim_memory_tick`).
 //!
 //! Runs against a headless wgpu device; skipped with a note when no adapter is
 //! available.
@@ -39,7 +39,11 @@ async fn test_device() -> Option<(wgpu::Device, wgpu::Queue)> {
         .ok()
 }
 
-fn new_gpu_3d(device: &wgpu::Device, queue: &wgpu::Queue) -> Gpu3D {
+fn new_arena(device: &wgpu::Device) -> SharedMeshArena {
+    SharedMeshArena::new(device, false, false)
+}
+
+fn new_gpu_3d(device: &wgpu::Device, queue: &wgpu::Queue, arena: &SharedMeshArena) -> Gpu3D {
     let cache = PipelineRegistryCache::new();
     let pipelines = cache.get_or_create(device, COLOR_FORMAT, 1);
     Gpu3D::new(
@@ -63,6 +67,7 @@ fn new_gpu_3d(device: &wgpu::Device, queue: &wgpu::Queue) -> Gpu3D {
             shadow_pcf_high: false,
         },
         pipelines,
+        arena,
     )
 }
 
@@ -115,13 +120,13 @@ fn dead_mesh_ranges_trigger_arena_compaction_from_the_gc_tick() {
         eprintln!("no wgpu adapter; skipping mesh arena compaction test");
         return;
     };
-    let mut gpu = new_gpu_3d(&device, &queue);
-    let builtin_vertices = gpu.memory_report().rigid_arena_vertices;
+    let mut arena = new_arena(&device);
+    let builtin_vertices = arena.memory_report().rigid_arena_vertices;
 
     // Three custom meshes resolved into the rigid arena (what prepare's
     // resolve_mesh_range does on a scene load with no skeletons in sight).
     for index in 0..3u32 {
-        let range = gpu
+        let range = arena
             .append_mesh_data(
                 &device,
                 &queue,
@@ -130,10 +135,11 @@ fn dead_mesh_ranges_trigger_arena_compaction_from_the_gc_tick() {
                 false,
             )
             .expect("append_mesh_data");
-        gpu.custom_mesh_ranges
+        arena
+            .custom_mesh_ranges
             .insert(MeshID::from_parts(index + 1, 1), rigid_entry(range));
     }
-    let grown = gpu.memory_report();
+    let grown = arena.memory_report();
     assert_eq!(
         grown.rigid_arena_vertices,
         builtin_vertices + 3 * TEST_MESH_VERTICES
@@ -143,23 +149,24 @@ fn dead_mesh_ranges_trigger_arena_compaction_from_the_gc_tick() {
     assert_eq!(grown.mesh_arena_live_vertices, grown.mesh_arena_vertices);
     assert!(!grown.mesh_compact_requested);
     // A full arena never asks for compaction.
-    gpu.reclaim_memory_tick(&device);
-    assert!(!gpu.memory_report().mesh_compact_requested);
+    arena.reclaim_tick();
+    assert!(!arena.memory_report().mesh_compact_requested);
 
     // Scene switch: the resources are gone, so prepare's
     // `custom_mesh_ranges.retain(has_mesh)` drops their ranges. The bytes stay
     // stranded in the append-only arena.
-    gpu.custom_mesh_ranges
+    arena
+        .custom_mesh_ranges
         .retain(|mesh_id, _| *mesh_id == MeshID::from_parts(1, 1));
-    let stranded = gpu.memory_report();
+    let stranded = arena.memory_report();
     assert_eq!(
         stranded.mesh_arena_live_vertices,
         2 * builtin_vertices + TEST_MESH_VERTICES
     );
     assert!(stranded.mesh_arena_bytes > stranded.mesh_arena_live_bytes * 2);
 
-    gpu.reclaim_memory_tick(&device);
-    let requested = gpu.memory_report();
+    arena.reclaim_tick();
+    let requested = arena.memory_report();
     assert!(
         requested.mesh_compact_requested,
         "GC tick must request compaction once under half the arena is live"
@@ -169,13 +176,13 @@ fn dead_mesh_ranges_trigger_arena_compaction_from_the_gc_tick() {
 
     // What prepare does at the top of the frame; `true` becomes
     // `force_full_rebuild`, which re-resolves every live mesh.
-    assert!(gpu.compact_custom_mesh_storage_if_needed(&device));
-    let compacted = gpu.memory_report();
+    assert!(arena.compact_if_needed(&device, true));
+    let compacted = arena.memory_report();
     assert_eq!(compacted.rigid_arena_vertices, builtin_vertices);
     assert_eq!(compacted.skinned_arena_vertices, builtin_vertices);
     assert_eq!(compacted.mesh_arena_live_vertices, 2 * builtin_vertices);
     assert!(!compacted.mesh_compact_requested);
-    assert!(gpu.custom_mesh_ranges.is_empty());
+    assert!(arena.custom_mesh_ranges.is_empty());
     eprintln!("mesh arena vertices: {} -> {} (live {} -> {}), bytes {} -> {}",
         stranded.mesh_arena_vertices,
         compacted.mesh_arena_vertices,
@@ -187,8 +194,8 @@ fn dead_mesh_ranges_trigger_arena_compaction_from_the_gc_tick() {
 
     // A second request with nothing appended past the builtin prefix is a
     // no-op: no pointless full rebuild.
-    gpu.mesh_compact_requested = true;
-    assert!(!gpu.compact_custom_mesh_storage_if_needed(&device));
+    arena.request_compact();
+    assert!(!arena.compact_if_needed(&device, true));
 }
 
 /// The split-arena win: rigid-only meshes stay out of the 48B/vertex skinned
@@ -201,8 +208,8 @@ fn rigid_only_meshes_stay_out_of_the_skinned_arena() {
         eprintln!("no wgpu adapter; skipping mesh arena split test");
         return;
     };
-    let mut gpu = new_gpu_3d(&device, &queue);
-    let base = gpu.memory_report();
+    let mut arena = new_arena(&device);
+    let base = arena.memory_report();
     let builtin_vertices = base.rigid_arena_vertices;
     assert_eq!(base.skinned_arena_vertices, builtin_vertices);
 
@@ -212,7 +219,7 @@ fn rigid_only_meshes_stay_out_of_the_skinned_arena() {
     const SKINNED_VERTICES: usize = 50_000;
 
     for index in 0..RIGID_MESHES {
-        let range = gpu
+        let range = arena
             .append_mesh_data(
                 &device,
                 &queue,
@@ -221,11 +228,12 @@ fn rigid_only_meshes_stay_out_of_the_skinned_arena() {
                 false,
             )
             .expect("append rigid mesh");
-        gpu.custom_mesh_ranges
+        arena
+            .custom_mesh_ranges
             .insert(MeshID::from_parts(index as u32 + 1, 1), rigid_entry(range));
     }
     for index in 0..SKINNED_MESHES {
-        let range = gpu
+        let range = arena
             .append_mesh_data(
                 &device,
                 &queue,
@@ -234,7 +242,7 @@ fn rigid_only_meshes_stay_out_of_the_skinned_arena() {
                 true,
             )
             .expect("append skinned mesh");
-        gpu.custom_mesh_ranges.insert(
+        arena.custom_mesh_ranges.insert(
             MeshID::from_parts((RIGID_MESHES + index) as u32 + 1, 1),
             MeshAssetEntry {
                 revision: 0,
@@ -244,7 +252,7 @@ fn rigid_only_meshes_stay_out_of_the_skinned_arena() {
         );
     }
 
-    let report = gpu.memory_report();
+    let report = arena.memory_report();
     let rigid_custom = RIGID_MESHES * RIGID_VERTICES;
     let skinned_custom = SKINNED_MESHES * SKINNED_VERTICES;
     assert_eq!(
@@ -276,11 +284,11 @@ fn rigid_only_meshes_stay_out_of_the_skinned_arena() {
     // A mesh drawn on both paths occupies both arenas, each with its own index
     // block -- the case the split has to keep correct, not just small.
     let both_id = MeshID::from_parts(9_000, 1);
-    let index_len_before = gpu.memory_report().mesh_index_len;
-    let rigid = gpu
+    let index_len_before = arena.memory_report().mesh_index_len;
+    let rigid = arena
         .append_mesh_data(&device, &queue, "test://both", decoded_mesh(1_024), false)
         .expect("append rigid variant");
-    let skinned = gpu
+    let skinned = arena
         .append_mesh_data(&device, &queue, "test://both", decoded_mesh(1_024), true)
         .expect("append skinned variant");
     assert_ne!(
@@ -290,11 +298,11 @@ fn rigid_only_meshes_stay_out_of_the_skinned_arena() {
     assert_eq!(rigid.full.base_vertex, 0);
     assert_eq!(skinned.full.base_vertex, 0);
     assert_eq!(
-        gpu.memory_report().mesh_index_len,
+        arena.memory_report().mesh_index_len,
         index_len_before + 2 * 1_024,
         "the skinned variant duplicates the index block, not the vertex data"
     );
-    gpu.custom_mesh_ranges.insert(
+    arena.custom_mesh_ranges.insert(
         both_id,
         MeshAssetEntry {
             revision: 0,
@@ -302,7 +310,7 @@ fn rigid_only_meshes_stay_out_of_the_skinned_arena() {
             skinned: Some(skinned),
         },
     );
-    let both = gpu.memory_report();
+    let both = arena.memory_report();
     assert_eq!(both.rigid_arena_vertices, builtin_vertices + rigid_custom + 1_024);
     assert_eq!(
         both.skinned_arena_vertices,
@@ -311,13 +319,113 @@ fn rigid_only_meshes_stay_out_of_the_skinned_arena() {
     assert_eq!(both.mesh_arena_live_vertices, both.mesh_arena_vertices);
 }
 
+/// Mem audit #4: the main view and two camera streams draw the same custom mesh
+/// through ONE arena set. Before this, each `Gpu3D` owned private arenas, so the
+/// same 100k-vertex mesh was decoded and uploaded once per view.
+#[test]
+fn one_mesh_arena_serves_the_main_view_and_two_camera_streams() {
+    let Some((device, queue)) = pollster::block_on(test_device()) else {
+        eprintln!("no wgpu adapter; skipping shared mesh arena test");
+        return;
+    };
+    const VERTICES: usize = 100_000;
+    const RIGID_STRIDE: usize = 36;
+
+    let mut arena = new_arena(&device);
+    let base = arena.memory_report();
+    // Main view + two camera-stream views, all mirroring the one arena.
+    let mut views = [
+        new_gpu_3d(&device, &queue, &arena),
+        new_gpu_3d(&device, &queue, &arena),
+        new_gpu_3d(&device, &queue, &arena),
+    ];
+    // The builtin prefix is uploaded once at arena init, not once per view.
+    assert_eq!(arena.memory_report(), base);
+
+    // The main view's prepare resolves the mesh first: one decode, one upload.
+    let mesh_id = MeshID::from_parts(1, 1);
+    let range = arena
+        .append_mesh_data(
+            &device,
+            &queue,
+            "test://shared_mesh",
+            decoded_mesh(VERTICES),
+            false,
+        )
+        .expect("append shared mesh");
+    arena.custom_mesh_ranges.insert(mesh_id, rigid_entry(range));
+
+    // Both streams then resolve the same mesh id. `resolve_mesh_range` reads the
+    // shared `custom_mesh_ranges`, so its hit path returns without appending.
+    for view in 0..2 {
+        assert!(
+            arena
+                .custom_mesh_ranges
+                .get(&mesh_id)
+                .and_then(|entry| entry.variant(false))
+                .is_some(),
+            "stream view {view} must hit the shared resolved range"
+        );
+    }
+
+    let shared = arena.memory_report();
+    let shared_bytes = shared.rigid_arena_bytes - base.rigid_arena_bytes;
+    let private_bytes = 3 * VERTICES * RIGID_STRIDE;
+    assert_eq!(
+        shared.rigid_arena_vertices,
+        base.rigid_arena_vertices + VERTICES,
+        "the mesh is appended once, not once per view"
+    );
+    assert_eq!(shared_bytes, VERTICES * RIGID_STRIDE);
+    eprintln!(
+        "3 views x {VERTICES}-vertex mesh: {private_bytes} B private arenas -> \
+         {shared_bytes} B shared ({}x)",
+        private_bytes / shared_bytes.max(1)
+    );
+
+    // Growth in one view is visible to the others with no re-upload: after the
+    // sync every view binds the arena's current allocations.
+    for view in views.iter_mut() {
+        assert!(
+            !view.sync_mesh_arena(&device, &arena),
+            "a plain growth is not a layout change"
+        );
+        for (mine, theirs) in view
+            .mesh_arena_buffer_ids()
+            .into_iter()
+            .zip(arena.arena_buffer_ids())
+        {
+            assert!(mine == theirs, "view must bind the arena's current buffer");
+        }
+    }
+
+    // Compaction invalidates every resolved range, so it must force a full
+    // rebuild in ALL views, not just the one that ran it.
+    arena.request_compact();
+    assert!(arena.compact_if_needed(&device, true));
+    for (index, view) in views.iter_mut().enumerate() {
+        assert!(
+            view.sync_mesh_arena(&device, &arena),
+            "compaction must force a full rebuild in view {index}"
+        );
+    }
+    // ...and exactly once: a second sync at the same generation is a no-op.
+    for view in views.iter_mut() {
+        assert!(!view.sync_mesh_arena(&device, &arena));
+    }
+    let compacted = arena.memory_report();
+    assert_eq!(compacted.rigid_arena_vertices, base.rigid_arena_vertices);
+    assert!(arena.custom_mesh_ranges.is_empty());
+}
+
 #[test]
 fn point_shadow_layers_return_to_baseline_after_lights_leave() {
     let Some((device, queue)) = pollster::block_on(test_device()) else {
         eprintln!("no wgpu adapter; skipping shadow atlas shrink test");
         return;
     };
-    let mut gpu = new_gpu_3d(&device, &queue);
+    let arena = new_arena(&device);
+    let mut gpu = new_gpu_3d(&device, &queue, &arena);
     let camera = Camera3DState::default();
     assert_eq!(gpu.memory_report().point_shadow_layers_allocated, 0);
 
@@ -365,7 +473,8 @@ fn decal_texture_array_shrinks_to_the_live_layer_count() {
         eprintln!("no wgpu adapter; skipping decal array shrink test");
         return;
     };
-    let mut gpu = new_gpu_3d(&device, &queue);
+    let arena = new_arena(&device);
+    let mut gpu = new_gpu_3d(&device, &queue, &arena);
 
     // Stand in for a decal-heavy scene that grew the array to 16 layers.
     let (texture, view) = create_decal_texture_array(&device, 16);

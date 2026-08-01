@@ -231,6 +231,9 @@ async fn test_device() -> Option<(wgpu::Device, wgpu::Queue)> {
 fn new_gpu_3d(device: &wgpu::Device, queue: &wgpu::Queue, count_enabled: bool) -> Gpu3D {
     let cache = PipelineRegistryCache::new();
     let pipelines = cache.get_or_create(device, COLOR_FORMAT, 1);
+    // These tests never prepare, so the view only needs the arena's handles
+    // (refcounted, so they outlive the local arena).
+    let mesh_arena = SharedMeshArena::new(device, false, false);
     Gpu3D::new(
         device,
         queue,
@@ -252,6 +255,7 @@ fn new_gpu_3d(device: &wgpu::Device, queue: &wgpu::Queue, count_enabled: bool) -
             shadow_pcf_high: false,
         },
         pipelines,
+        &mesh_arena,
     )
 }
 

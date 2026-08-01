@@ -244,6 +244,8 @@ use camera::*;
 // the 3D prepare uses; re-exported so present-time code never re-derives it.
 pub(crate) use camera::compute_view_proj_mat;
 pub(crate) use pipeline_registry::{PipelineRegistry, PipelineRegistryCache};
+// Shared mesh arena: one arena set for the main view + every camera stream.
+pub(crate) use buffers::SharedMeshArena;
 use decals::{create_decal_buffer, create_decal_texture_array};
 use init::{
     create_indirect_compact_buffer, create_indirect_count_buffer, create_indirect_run_buffer,
@@ -860,14 +862,9 @@ struct ShadowUniform {
 /// one per grow-only buffer family that participates in shrinking.
 #[derive(Default)]
 struct Gpu3DShrink {
-    // Rigid arena (`rigid_vertex_buffer`); the skinned arena tracks separately
-    // so a scene that stops drawing skinned meshes can give those bytes back.
-    mesh_vertices: ShrinkTracker,
-    skinned_vertices: ShrinkTracker,
-    mesh_indices: ShrinkTracker,
-    packed_lod_vertices: ShrinkTracker,
-    packed_lod_indices: ShrinkTracker,
-    blend_shape_deltas: ShrinkTracker,
+    // The mesh-arena families (rigid/skinned vertices, indices, packed LODs,
+    // packed-LOD params, blend-shape deltas) are tracked once by
+    // `SharedMeshArena`, not per view.
     instance_transforms: ShrinkTracker,
     rigid_instance_meta: ShrinkTracker,
     skinned_instance_meta: ShrinkTracker,
@@ -879,7 +876,6 @@ struct Gpu3DShrink {
     custom_params_values: ShrinkTracker,
     blend_shape_weights: ShrinkTracker,
     blend_shape_instance_meta: ShrinkTracker,
-    packed_lod_params: ShrinkTracker,
     decals: ShrinkTracker,
     // One tracker for the frustum-cull item triple (static + dynamic +
     // indirect); ensure_frustum_cull_capacity grows them in lockstep.
@@ -1034,20 +1030,18 @@ pub struct Gpu3D {
     skinned_instance_meta_buffer: wgpu::Buffer,
     skinned_instance_meta_capacity: usize,
     staged_skinned_instance_meta: Vec<SkinnedInstanceMetaGpu>,
+    // Mirror of `SharedMeshArena::blend_shape_delta_buffer`; refreshed by
+    // `sync_mesh_arena` (it is a bind group entry, so a move also rebuilds the
+    // camera bind groups).
     blend_shape_delta_buffer: wgpu::Buffer,
-    blend_shape_delta_capacity: usize,
-    blend_shape_delta_len: usize,
-    // Reused per-mesh upload staging; cleared after each upload.
-    blend_shape_delta_scratch: Vec<BlendShapeDeltaGpu>,
     blend_shape_weight_buffer: wgpu::Buffer,
     blend_shape_weight_capacity: usize,
     staged_blend_shape_weights: Vec<f32>,
     blend_shape_instance_meta_buffer: wgpu::Buffer,
     blend_shape_instance_meta_capacity: usize,
     staged_blend_shape_instance_meta: Vec<BlendShapeInstanceMetaGpu>,
+    // Mirror of `SharedMeshArena::packed_lod_param_buffer` (bind group entry).
     packed_lod_param_buffer: wgpu::Buffer,
-    packed_lod_param_capacity: usize,
-    packed_lod_params: Vec<PackedLodParamGpu>,
     decal_buffer: wgpu::Buffer,
     decal_buffer_capacity: usize,
     decal_texture: wgpu::Texture,
@@ -1391,33 +1385,22 @@ pub struct Gpu3D {
     sky_enabled: bool,
     // Usage trackers for the periodic buffer-shrink pass (crate::gpu_shrink).
     shrink: Gpu3DShrink,
-    // Element counts of the GPU mesh arenas (no CPU mirrors are retained; the
-    // buffers are append-only and grown via copy_buffer_to_buffer).
-    // `mesh_vertex_len` is the SKINNED arena (48B/vertex, `vertex_buffer`) and
-    // `rigid_vertex_len` the rigid one (36B/vertex, `rigid_vertex_buffer`).
-    // They share only the builtin prefix; past it each has its own cursor and a
-    // mesh lands in whichever arena its draw path binds (see `MeshAssetEntry`).
-    mesh_vertex_len: usize,
-    rigid_vertex_len: usize,
-    packed_lod_vertex_len: usize,
-    mesh_index_len: usize,
-    packed_lod_index_len: usize,
-    // Vertex count of the builtin-mesh prefix; compaction truncates back to it.
-    builtin_vertex_len: usize,
+    // Mirrors of the shared mesh arena's buffer handles (wgpu buffers are
+    // internally refcounted, so these are refcount bumps, not allocations).
+    // The arena data, lengths, capacities, builtin prefix and resolved-range
+    // map all live in `SharedMeshArena`; `sync_mesh_arena` refreshes these
+    // handles whenever the arena reallocates anything.
     vertex_buffer: wgpu::Buffer,
     rigid_vertex_buffer: wgpu::Buffer,
     packed_lod_vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     packed_lod_index_buffer: wgpu::Buffer,
-    vertex_capacity: usize,
-    rigid_vertex_capacity: usize,
-    packed_lod_vertex_capacity: usize,
-    index_capacity: usize,
-    packed_lod_index_capacity: usize,
-    builtin_mesh_ranges: AHashMap<&'static str, MeshRange>,
-    builtin_mesh_bounds: AHashMap<&'static str, ([f32; 3], f32)>,
-    builtin_meshlets: AHashMap<&'static str, Arc<[MeshletRange]>>,
-    custom_mesh_ranges: AHashMap<MeshID, MeshAssetEntry>,
+    // Last arena generations this view adopted. `buffer` = any handle moved,
+    // `bind` = a bind-group-facing handle moved, `layout` = the arena compacted
+    // (every resolved range died, so this view must fully rebuild its batches).
+    mesh_arena_buffer_generation: u64,
+    mesh_arena_bind_generation: u64,
+    mesh_arena_layout_generation: u64,
     // At sample_count == 1 these alias depth_prepass_texture/_view (same
     // Depth32Float data); MSAA keeps a separate multisampled target.
     depth_texture: wgpu::Texture,
@@ -1490,7 +1473,6 @@ pub struct Gpu3D {
     sample_count: u32,
     occlusion_mode: OcclusionCullingMode,
     meshlets_enabled: bool,
-    dev_meshlets: bool,
     meshlet_debug_view: bool,
     shadow_caster_debug_view: bool,
     disable_meshlet_shadows: bool,
@@ -1529,11 +1511,10 @@ pub struct Gpu3D {
     multimesh_bind_group_generation: u32,
     // GPU memory reclamation (see `reclaim_memory_tick` in
     // gpu/buffers/mesh.rs). Layer high-water trackers for the two grow-only
-    // texture arrays, plus the deferred mesh-arena compaction request a GC tick
-    // raises and the next prepare consumes.
+    // texture arrays. The mesh-arena compaction request lives on the shared
+    // arena, since one compaction invalidates every view at once.
     shadow_layer_shrink: shadows::ShadowLayerShrink,
     decal_layer_shrink: shadows::LayerShrinkTracker,
-    mesh_compact_requested: bool,
     perf_counters: RenderPerfCounters,
     pass_counters: PassCounters,
     // Seam-pass gate for the next `mesh_blend_screen_pass`, decided in
@@ -1546,6 +1527,11 @@ pub struct Gpu3D {
 pub struct Prepare3D<'a> {
     pub resources: &'a ResourceStore,
     pub(crate) shared_textures: &'a mut SharedTextureStore,
+    pub(crate) mesh_arena: &'a mut SharedMeshArena,
+    /// Whether this view may consume the GC tick's mesh-arena compaction
+    /// request. True for the main 3D view only -- see
+    /// `SharedMeshArena::compact_if_needed`.
+    pub(crate) mesh_arena_compact_allowed: bool,
     pub camera: Camera3DState,
     pub lighting: &'a Lighting3DState,
     pub draws: &'a [Draw3DInstance],
