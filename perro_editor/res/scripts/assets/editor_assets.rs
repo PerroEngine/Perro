@@ -2054,8 +2054,14 @@ pub fn default_scene_text(name: &str) -> String {
 }
 
 pub fn default_script_text() -> String {
-    "use perro_api::prelude::*;\n\nlifecycle!({\n    fn on_init(&self, _ctx: &mut ScriptContext<'_, API>) {\n    }\n});\n"
-        .to_string()
+    // The script compiler detects lifecycle blocks with a raw text scan that
+    // does not skip string literals, so the macro name is spliced in instead of
+    // written out: a literal `lifecycle!({` here makes the compiler emit a
+    // ScriptBehavior impl for this (script-less) module.
+    format!(
+        "use perro_api::prelude::*;\n\n{}!({{\n    fn on_init(&self, _ctx: &mut ScriptContext<'_, API>) {{\n    }}\n}});\n",
+        "lifecycle"
+    )
 }
 
 pub fn default_material_pmat() -> String {

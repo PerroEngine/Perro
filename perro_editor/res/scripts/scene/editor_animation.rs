@@ -1755,10 +1755,10 @@ pub fn choose_inspector_picker_row<API: ScriptAPI + ?Sized>(
             let Ok(row_idx) = field.parse::<usize>() else {
                 return false;
             };
-            let rows = if picker_kind.starts_with("value_") {
+            let rows: std::sync::Arc<[InspectorValueRow]> = if picker_kind.starts_with("value_") {
                 inspector_display_rows_for_node(state, node)
             } else {
-                inspector_script_var_rows_for_node(state, node)
+                inspector_script_var_rows_for_node(state, node).into()
             };
             let Some(row) = rows.get(row_idx) else {
                 return false;
@@ -2350,7 +2350,9 @@ fn node_exists<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, id: u6
 // text. Recreates the player after preview rebuilds and rebuilds the clip
 // whenever the text changed.
 pub fn ensure_anim_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
-    let request = with_state!(ctx.run, EditorState, ctx.id, |state| {
+    // Phase 1: cheap scalar reads only. The common frame bails here, so the
+    // clip text clone below never runs.
+    let gate = with_state!(ctx.run, EditorState, ctx.id, |state| {
         if !state.anim_drawer_open || state.anim_doc_text.is_empty() || state.preview_root == 0 {
             return None;
         }
@@ -2361,18 +2363,26 @@ pub fn ensure_anim_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
             state.preview_root,
             state.anim_preview_player,
             state.anim_clip_dirty,
-            state.anim_preview_clip,
-            state.anim_doc_text.clone(),
-            state.anim_playhead,
         ))
-    }).unwrap_or_default();
-    let Some((root, player, clip_dirty, old_clip, text, playhead)) = request else {
+    })
+    .flatten();
+    let Some((root, player, clip_dirty)) = gate else {
         return;
     };
     let player_alive = node_exists(ctx, player);
     if player_alive && !clip_dirty {
         return;
     }
+    // Phase 2: rebuild is really happening, so pay for the text.
+    let request = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        (
+            state.anim_preview_clip,
+            state.anim_doc_text.clone(),
+            state.anim_playhead,
+        )
+    })
+    .unwrap_or_default();
+    let (old_clip, text, playhead) = request;
     let player_id = if player_alive {
         NodeID::from_u64(player)
     } else {

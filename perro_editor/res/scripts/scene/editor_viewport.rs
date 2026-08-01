@@ -76,7 +76,7 @@ pub fn reset_active_viewport_zoom<API: ScriptAPI + ?Sized>(ctx: &mut ScriptConte
         }
     });
     apply_freecam_2d(ctx);
-    apply_viewport_canvas(ctx);
+    reapply_viewport_canvas(ctx);
     refresh_status(ctx);
 }
 
@@ -2794,16 +2794,56 @@ pub fn editor_cursor_icon<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
     let Some(pointer) = viewport_pointer(ctx) else {
         return CursorIcon::Default;
     };
-    if let Some(handle) = pick_resize_handle(ctx, pointer) {
-        return resize_cursor_icon(handle);
+
+    // Picks walk the whole ui tree; skip them when nothing they read moved.
+    let hit = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        let same = state.cursor_memo_valid
+            && state.cursor_memo_x == pointer.uv.x
+            && state.cursor_memo_y == pointer.uv.y
+            && state.cursor_memo_key == state.selected_key
+            && state.cursor_memo_tool == state.viewport_tool
+            && state.cursor_memo_doc_len == state.doc_text.len()
+            && state.cursor_memo_doc_ptr == state.doc_text.as_ptr() as u64;
+        if same {
+            Some(state.cursor_memo_icon.clone())
+        } else {
+            None
+        }
+    })
+    .flatten();
+    if let Some(icon) = hit {
+        return memo_cursor_icon(&icon);
     }
-    if pick_rotation_zone(ctx, pointer).is_some() {
-        return CursorIcon::AllResize;
+
+    let icon = if let Some(handle) = pick_resize_handle(ctx, pointer) {
+        handle
+    } else if pick_rotation_zone(ctx, pointer).is_some() {
+        "rotate"
+    } else if pick_preview_ui(ctx).is_some() {
+        "grab"
+    } else {
+        ""
+    };
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.cursor_memo_valid = true;
+        state.cursor_memo_x = pointer.uv.x;
+        state.cursor_memo_y = pointer.uv.y;
+        state.cursor_memo_key = state.selected_key;
+        state.cursor_memo_tool = state.viewport_tool.clone();
+        state.cursor_memo_doc_len = state.doc_text.len();
+        state.cursor_memo_doc_ptr = state.doc_text.as_ptr() as u64;
+        state.cursor_memo_icon = icon.to_string();
+    });
+    memo_cursor_icon(icon)
+}
+
+fn memo_cursor_icon(icon: &str) -> CursorIcon {
+    match icon {
+        "" => CursorIcon::Default,
+        "grab" => CursorIcon::Grab,
+        "rotate" => CursorIcon::AllResize,
+        handle => resize_cursor_icon(handle),
     }
-    if pick_preview_ui(ctx).is_some() {
-        return CursorIcon::Grab;
-    }
-    CursorIcon::Default
 }
 
 pub fn resize_cursor_icon(handle: &str) -> CursorIcon {
@@ -3053,13 +3093,15 @@ pub fn rotate_doc_ui_node<API: ScriptAPI + ?Sized>(
 
 pub fn pick_preview_ui<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) -> Option<u32> {
     let pointer = viewport_pointer(ctx)?;
-    let doc_text = with_state!(ctx.run, EditorState, ctx.id, |state| {
-        state.doc_text.clone()
-    }).unwrap_or_default();
-    if doc_text.is_empty() {
-        return None;
-    }
-    let doc = cached_scene_doc_shared(&doc_text);
+    // Borrow the doc text in place: cloning the whole scene document per pick
+    // dwarfed the hit test itself.
+    let doc = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        if state.doc_text.is_empty() {
+            return None;
+        }
+        Some(cached_scene_doc_shared(&state.doc_text))
+    })
+    .flatten()?;
     let point = Vector2::new(pointer.uv.x, 1.0 - pointer.uv.y);
     pick_doc_ui_node(&doc, point)
 }
@@ -3068,12 +3110,11 @@ pub fn pick_resize_handle<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     pointer: ViewportPointer,
 ) -> Option<&'static str> {
-    let (doc_text, selected) = with_state!(ctx.run, EditorState, ctx.id, |state| {
-        (state.doc_text.clone(), state.selected_key)
-    }).unwrap_or_default();
-    let key = selected?;
-    let doc = cached_scene_doc_shared(&doc_text);
-    let rect = doc_ui_rect(&doc, key)?;
+    let rect = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        let key = state.selected_key?;
+        doc_ui_rect(&cached_scene_doc_shared(&state.doc_text), key)
+    })
+    .flatten()?;
     let point = Vector2::new(pointer.uv.x, 1.0 - pointer.uv.y);
     resize_handles(rect)
         .into_iter()
@@ -3087,12 +3128,11 @@ pub fn pick_rotation_zone<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     pointer: ViewportPointer,
 ) -> Option<&'static str> {
-    let (doc_text, selected) = with_state!(ctx.run, EditorState, ctx.id, |state| {
-        (state.doc_text.clone(), state.selected_key)
-    }).unwrap_or_default();
-    let key = selected?;
-    let doc = cached_scene_doc_shared(&doc_text);
-    let rect = doc_ui_rect(&doc, key)?;
+    let rect = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        let key = state.selected_key?;
+        doc_ui_rect(&cached_scene_doc_shared(&state.doc_text), key)
+    })
+    .flatten()?;
     let point = Vector2::new(pointer.uv.x, 1.0 - pointer.uv.y);
     let min = rect.center - rect.size * 0.5;
     let max = rect.center + rect.size * 0.5;

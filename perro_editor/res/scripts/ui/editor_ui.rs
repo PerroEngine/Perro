@@ -33,7 +33,7 @@ use std::borrow::Cow;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 #[derive(Clone)]
 struct CachedFilteredFiles {
@@ -310,6 +310,7 @@ fn refresh_chrome_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
     }
     apply_script_reload_popup(ctx, view.script_schema_reloading);
     set_label(ctx, "viewport_label", &view.viewport);
+    clear_viewport_label_memo(ctx);
     set_ui_display(ctx, "command_palette_scrim", view.command_palette_open);
     set_ui_display(ctx, "command_palette_panel", view.command_palette_open);
     set_text_box(ctx, "command_palette_filter_box", &view.command_palette_filter);
@@ -1128,6 +1129,7 @@ fn refresh_status_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
     set_label(ctx, "status_bar", &view.status);
     set_label(ctx, "log_text", &view.log);
     set_label(ctx, "viewport_label", &view.viewport);
+    clear_viewport_label_memo(ctx);
     apply_script_reload_popup(ctx, view.script_schema_reloading);
 }
 
@@ -1185,6 +1187,7 @@ pub fn refresh_status<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>)
     set_label(ctx, "status_bar", &status);
     set_label(ctx, "log_text", &log);
     set_label(ctx, "viewport_label", &viewport);
+    clear_viewport_label_memo(ctx);
     apply_script_reload_popup(ctx, script_reloading);
 }
 
@@ -1216,9 +1219,9 @@ pub fn set_all_inspector_sections<API: ScriptAPI + ?Sized>(
             let Some(key) = state.selected_key else { return Vec::new() };
             let Some(node) = cached_scene_node(&state.doc_text, key) else { return Vec::new() };
             inspector_display_rows_for_node(state, &node)
-                .into_iter()
+                .iter()
                 .filter(|row| row.source == "section")
-                .map(|row| row.path_key)
+                .map(|row| row.path_key.clone())
                 .collect::<Vec<_>>()
         }).unwrap_or_default();
         let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
@@ -1646,7 +1649,7 @@ pub struct InspectorViewData {
     transform_fields: Vec<&'static str>,
     script: String,
     vars_text: String,
-    script_vars: Vec<InspectorValueRow>,
+    script_vars: Arc<[InspectorValueRow]>,
     collapsed_sections: Vec<String>,
 }
 
@@ -1677,7 +1680,7 @@ impl Default for InspectorViewData {
             transform_fields: Vec::new(),
             script: "Script  -".to_string(),
             vars_text: String::new(),
-            script_vars: Vec::new(),
+            script_vars: Arc::from([] as [InspectorValueRow; 0]),
             collapsed_sections: Vec::new(),
         }
     }
@@ -1777,7 +1780,7 @@ impl InspectorViewData {
 pub fn inspector_visible_rows_for_node(
     _state: &EditorState,
     node: &perro_api::scene::SceneNodeEntry,
-) -> Vec<InspectorValueRow> {
+) -> Arc<[InspectorValueRow]> {
     inspector_display_rows_for_node(_state, node)
 }
 
@@ -2628,10 +2631,10 @@ fn inspector_enum_picker_entries(state: &EditorState) -> Vec<InspectorPickerEntr
     let Some(node) = cached_scene_node(&state.doc_text, key) else {
         return Vec::new();
     };
-    let rows = if state.inspector_picker_kind == "value_enum" {
+    let rows: Arc<[InspectorValueRow]> = if state.inspector_picker_kind == "value_enum" {
         inspector_visible_rows_for_node(state, &node)
     } else {
-        inspector_script_var_rows_for_node(state, &node)
+        inspector_script_var_rows_for_node(state, &node).into()
     };
     let Some(row) = rows.get(row_idx).cloned() else {
         return Vec::new();
@@ -2694,10 +2697,10 @@ fn inspector_picker_node_ref_types(state: &EditorState) -> Vec<String> {
     let Some(node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
         return Vec::new();
     };
-    let rows = if state.inspector_picker_kind.starts_with("value_") {
+    let rows: Arc<[InspectorValueRow]> = if state.inspector_picker_kind.starts_with("value_") {
         inspector_visible_rows_for_node(state, node)
     } else {
-        inspector_script_var_rows_for_node(state, node)
+        inspector_script_var_rows_for_node(state, node).into()
     };
     rows.get(row_idx)
         .and_then(|row| node_ref_types_from_kind(&row.kind))
@@ -4216,7 +4219,7 @@ fn ensure_script_reload_popup<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
         node.layout.size = UiVector2::ratio(1.0, 1.0);
         node.transform.position = UiVector2::percent(50.0, 50.0);
         node.transform.pivot = UiVector2::percent(50.0, 50.0);
-        node.text = Cow::Borrowed("Reloading scripts");
+        node.text = "Reloading scripts".into();
         node.text_size_ratio = 0.36;
         node.color = Color::from_hex(theme::TEXT).unwrap_or(node.color);
         node.visible = false;
@@ -4236,6 +4239,29 @@ pub fn set_label<API: ScriptAPI + ?Sized>(
             }
         });
     }
+}
+
+/// `viewport_label` is rewritten every frame by the freecam updates. The memo
+/// holds the text that path last wrote; refresh paths clear it (see
+/// [`clear_viewport_label_memo`]) so the freecam text is re-asserted once.
+pub fn set_viewport_label<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, text: &str) {
+    let write = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        if state.viewport_label_text == text {
+            return false;
+        }
+        state.viewport_label_text = text.to_string();
+        true
+    })
+    .unwrap_or(true);
+    if write {
+        set_label(ctx, "viewport_label", text);
+    }
+}
+
+pub fn clear_viewport_label_memo<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.viewport_label_text.clear();
+    });
 }
 
 pub fn set_text_box<API: ScriptAPI + ?Sized>(
@@ -4643,7 +4669,7 @@ pub fn apply_viewport_mode<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
     set_panel_display(ctx, "viewport_canvas_overlay", mode == "UI" || mode == "2D");
     set_panel_display(ctx, "canvas_origin_x", mode == "2D");
     set_panel_display(ctx, "canvas_origin_y", mode == "2D");
-    apply_viewport_canvas(ctx);
+    reapply_viewport_canvas(ctx);
 }
 
 pub fn apply_editor_gizmos<API: ScriptAPI + ?Sized>(
@@ -4873,34 +4899,79 @@ pub fn set_panel_size<API: ScriptAPI + ?Sized>(
     }
 }
 
+const CANVAS_V_LINES: [&str; 9] = [
+    "canvas_v_0", "canvas_v_1", "canvas_v_2", "canvas_v_3", "canvas_v_4", "canvas_v_5",
+    "canvas_v_6", "canvas_v_7", "canvas_v_8",
+];
+const CANVAS_H_LINES: [&str; 9] = [
+    "canvas_h_0", "canvas_h_1", "canvas_h_2", "canvas_h_3", "canvas_h_4", "canvas_h_5",
+    "canvas_h_6", "canvas_h_7", "canvas_h_8",
+];
+
+/// Drops the [`apply_viewport_canvas`] memo. Call after the editor ui shell or
+/// the viewport panels get rebuilt: the fresh nodes carry no canvas state.
+pub fn invalidate_viewport_canvas<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.canvas_memo_valid = false;
+    });
+}
+
+/// Forced variant for rebuild paths.
+pub fn reapply_viewport_canvas<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    invalidate_viewport_canvas(ctx);
+    apply_viewport_canvas(ctx);
+}
+
 pub fn apply_viewport_canvas<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
-    let (mode, pan_x, pan_y, zoom, layout) = with_state!(ctx.run, EditorState, ctx.id, |state| {
-        if state.viewport_mode == "2D" {
-            let zoom = state.cam2_zoom.max(0.05);
+    let window_aspect = viewport_window_aspect(ctx);
+    // Runs every frame in UI + 2D mode. Compare the inputs first so an idle
+    // frame skips ~20 node lookups and the per-line name formatting.
+    let (mode, pan_x, pan_y, zoom, layout, unchanged) =
+        with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+            let (pan_x, pan_y, zoom) = if state.viewport_mode == "2D" {
+                let zoom = state.cam2_zoom.max(0.05);
+                (-state.cam2_x * zoom / 960.0, state.cam2_y * zoom / 540.0, zoom)
+            } else {
+                (0.0, 0.0, state.ui_canvas_zoom.max(0.25))
+            };
+            let layout_key = (state.bottom_dock_open as u32)
+                | ((state.anim_drawer_open as u32) << 1)
+                | ((state.distraction_free as u32) << 2);
+            let unchanged = state.canvas_memo_valid
+                && state.canvas_memo_mode == state.viewport_mode
+                && state.canvas_memo_pan_x == pan_x
+                && state.canvas_memo_pan_y == pan_y
+                && state.canvas_memo_zoom == zoom
+                && state.canvas_memo_layout == layout_key
+                && state.canvas_memo_aspect == window_aspect;
+            if !unchanged {
+                state.canvas_memo_valid = true;
+                state.canvas_memo_mode = state.viewport_mode.clone();
+                state.canvas_memo_pan_x = pan_x;
+                state.canvas_memo_pan_y = pan_y;
+                state.canvas_memo_zoom = zoom;
+                state.canvas_memo_layout = layout_key;
+                state.canvas_memo_aspect = window_aspect;
+            }
             (
                 state.viewport_mode.clone(),
-                -state.cam2_x * zoom / 960.0,
-                state.cam2_y * zoom / 540.0,
+                pan_x,
+                pan_y,
                 zoom,
                 editor_layout(state),
+                unchanged,
             )
-        } else {
-            (
-                state.viewport_mode.clone(),
-                0.0,
-                0.0,
-                state.ui_canvas_zoom.max(0.25),
-                editor_layout(state),
-            )
-        }
-    }).unwrap_or_default();
+        })
+        .unwrap_or_default();
+    if unchanged {
+        return;
+    }
     let show = mode == "UI" || mode == "2D";
     set_panel_display(ctx, "viewport_canvas_overlay", show);
     if !show {
         return;
     }
 
-    let window_aspect = viewport_window_aspect(ctx);
     let (canvas_w, canvas_h) = if mode == "UI" {
         ui_canvas_size_ratio(window_aspect, zoom, layout)
     } else {
@@ -4919,14 +4990,14 @@ pub fn apply_viewport_canvas<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
         let offset = (i as f32 - 4.0) * spacing;
         set_canvas_line(
             ctx,
-            &format!("canvas_v_{i}"),
+            CANVAS_V_LINES[i],
             true,
             wrap_grid_offset(offset + pan_x, spacing),
             false,
         );
         set_canvas_line(
             ctx,
-            &format!("canvas_h_{i}"),
+            CANVAS_H_LINES[i],
             false,
             wrap_grid_offset(offset + pan_y, spacing),
             false,

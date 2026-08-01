@@ -40,7 +40,15 @@ pub fn cached_scene_doc_shared(text: &str) -> Arc<SceneDoc> {
     let Ok(mut guard) = cache.lock() else {
         return Arc::new(SceneDoc::parse(text));
     };
-    if let Some(idx) = guard.iter().position(|cached| cached.text == text) {
+    // Hot entry sits at the back (LRU push), so scan back-to-front and reject
+    // on length before the full string compare.
+    if let Some(idx) = guard
+        .iter()
+        .rposition(|cached| cached.text.len() == text.len() && cached.text == text)
+    {
+        if idx + 1 == guard.len() {
+            return guard[idx].doc.clone();
+        }
         let cached = guard.remove(idx);
         let doc = cached.doc.clone();
         guard.push(cached);
@@ -57,7 +65,10 @@ pub fn cached_scene_doc_shared(text: &str) -> Arc<SceneDoc> {
 pub fn store_scene_doc_cache(text: &str, doc: &SceneDoc) {
     let cache = ACTIVE_SCENE_DOC_CACHE.get_or_init(|| Mutex::new(Vec::new()));
     if let Ok(mut guard) = cache.lock() {
-        if let Some(idx) = guard.iter().position(|cached| cached.text == text) {
+        if let Some(idx) = guard
+            .iter()
+            .rposition(|cached| cached.text.len() == text.len() && cached.text == text)
+        {
             guard.remove(idx);
         }
         guard.push(CachedSceneDoc::new(text.to_string(), Arc::new(doc.clone())));
@@ -103,7 +114,13 @@ pub fn cached_scene_node(text: &str, key: u32) -> Option<SceneNodeEntry> {
             .find(|node| node.key.as_u32() == key)
             .cloned();
     };
-    if let Some(idx) = guard.iter().position(|cached| cached.text == text) {
+    if let Some(idx) = guard
+        .iter()
+        .rposition(|cached| cached.text.len() == text.len() && cached.text == text)
+    {
+        if idx + 1 == guard.len() {
+            return guard[idx].node(key);
+        }
         let cached = guard.remove(idx);
         let node = cached.node(key);
         guard.push(cached);
@@ -569,6 +586,25 @@ pub struct EditorState {
     pub output_hide_info: bool,
     pub output_hide_warn: bool,
     pub output_hide_error: bool,
+    // Per-frame memos. `update_editor_cursor` and `apply_viewport_canvas` run
+    // every frame from `on_update`; these hold the inputs of the last real
+    // evaluation so an unchanged frame costs a few compares.
+    pub cursor_memo_valid: bool,
+    pub cursor_memo_x: f32,
+    pub cursor_memo_y: f32,
+    pub cursor_memo_key: Option<u32>,
+    pub cursor_memo_tool: String,
+    pub cursor_memo_doc_len: usize,
+    pub cursor_memo_doc_ptr: u64,
+    pub cursor_memo_icon: String,
+    pub canvas_memo_valid: bool,
+    pub canvas_memo_mode: String,
+    pub canvas_memo_pan_x: f32,
+    pub canvas_memo_pan_y: f32,
+    pub canvas_memo_zoom: f32,
+    pub canvas_memo_layout: u32,
+    pub canvas_memo_aspect: f32,
+    pub viewport_label_text: String,
 }
 
 lifecycle!({

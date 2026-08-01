@@ -139,7 +139,7 @@ fn ensure_inspector_default_button<API: ScriptAPI + ?Sized>(
     });
     let _ = with_node_mut!(ctx.run, UiLabel, label, |node| {
         node.layout.size = UiVector2::ratio(1.0, 1.0);
-        node.text = Cow::Borrowed("R");
+        node.text = "R".into();
         node.text_size_ratio = 0.42;
         node.color = Color::from_hex(theme::REVERT_TEXT).unwrap_or(node.color);
         node.input_enabled = false;

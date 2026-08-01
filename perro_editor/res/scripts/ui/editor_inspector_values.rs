@@ -9,7 +9,9 @@ use perro_api::prelude::*;
 use perro_api::scene::{Parser, SceneDoc, SceneFieldName, SceneKey, SceneValue, SceneValueKey};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::collections::hash_map::DefaultHasher;
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::UNIX_EPOCH;
@@ -23,8 +25,8 @@ static INSPECTOR_ROW_CACHE: OnceLock<Mutex<Option<CachedInspectorRows>>> = OnceL
 
 #[derive(Clone)]
 struct CachedInspectorRows {
-    key: String,
-    rows: Vec<InspectorValueRow>,
+    key: u64,
+    rows: Arc<[InspectorValueRow]>,
 }
 
 #[derive(Clone)]
@@ -289,7 +291,7 @@ pub fn inspector_value_rows_for_node(
 pub fn inspector_display_rows_for_node(
     state: &EditorState,
     node: &perro_api::scene::SceneNodeEntry,
-) -> Vec<InspectorValueRow> {
+) -> Arc<[InspectorValueRow]> {
     let cache_key = inspector_row_cache_key(state, node);
     let cache = INSPECTOR_ROW_CACHE.get_or_init(|| Mutex::new(None));
     if let Ok(cache) = cache.lock()
@@ -330,6 +332,7 @@ pub fn inspector_display_rows_for_node(
     } else {
         filter_inspector_rows(&rows, &state.inspector_filter)
     };
+    let rows: Arc<[InspectorValueRow]> = rows.into();
     if let Ok(mut cache) = cache.lock() {
         *cache = Some(CachedInspectorRows {
             key: cache_key,
@@ -429,17 +432,18 @@ fn apply_collapsed_inspector_sections(
     out
 }
 
-fn inspector_row_cache_key(state: &EditorState, node: &perro_api::scene::SceneNodeEntry) -> String {
-    format!(
-        "{}\n{}\n{}\n{}\n{}\n{}\n{}",
-        node.key.as_u32(),
-        state.inspector_expanded_paths.join("\n"),
-        state.inspector_rotation_mode,
-        state.inspector_collapsed_sections.join("\n"),
-        state.inspector_filter,
-        state.inspector_modified_only,
-        state.doc_text
-    )
+// Hashed, not formatted: the old key embedded a copy of the whole scene
+// document on every inspector row query.
+fn inspector_row_cache_key(state: &EditorState, node: &perro_api::scene::SceneNodeEntry) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    node.key.as_u32().hash(&mut hasher);
+    state.inspector_expanded_paths.hash(&mut hasher);
+    state.inspector_rotation_mode.hash(&mut hasher);
+    state.inspector_collapsed_sections.hash(&mut hasher);
+    state.inspector_filter.hash(&mut hasher);
+    state.inspector_modified_only.hash(&mut hasher);
+    state.doc_text.hash(&mut hasher);
+    hasher.finish()
 }
 
 fn grouped_scene_value_rows_for_node(

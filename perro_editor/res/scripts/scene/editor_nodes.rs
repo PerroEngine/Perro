@@ -501,7 +501,7 @@ pub fn toggle_distraction_free<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
         state.distraction_free = !state.distraction_free;
     });
     refresh_all(ctx);
-    apply_viewport_canvas(ctx);
+    reapply_viewport_canvas(ctx);
 }
 
 pub fn open_selected_node_asset_ref<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {

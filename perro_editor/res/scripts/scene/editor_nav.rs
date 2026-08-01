@@ -70,27 +70,30 @@ pub fn update_freecam<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>)
         Vector2::ZERO
     };
 
-    let mut label = String::new();
-    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        let speed = if key_down!(ctx.ipt, KeyCode::ControlLeft) {
-            18.0
-        } else {
-            7.0
-        };
-        let rotation = Quaternion::from_euler_xyz(state.cam_pitch, state.cam_yaw, 0.0);
-        let right = rotation.rotate_vector3(Vector3::new(1.0, 0.0, 0.0));
-        let forward = rotation.rotate_vector3(Vector3::new(0.0, 0.0, -1.0));
-        let up = Vector3::new(0.0, 1.0, 0.0);
-        let movement = (right * dx) + (up * dy) + (forward * -dz);
-        state.cam_x += movement.x * speed * dt;
-        state.cam_y += movement.y * speed * dt;
-        state.cam_z += movement.z * speed * dt;
-        state.cam_yaw -= mouse.x * 0.0025;
-        state.cam_pitch = (state.cam_pitch + mouse.y * 0.0025).clamp(-1.4, 1.4);
-        label = "3D Perspective".to_string();
-    });
-    apply_freecam(ctx);
-    set_label(ctx, "viewport_label", &label);
+    // Zero input means the camera state cannot change: skip the node writes.
+    // Rebuild paths call `apply_freecam` themselves.
+    let moved = dx != 0.0 || dy != 0.0 || dz != 0.0 || mouse.x != 0.0 || mouse.y != 0.0;
+    if moved {
+        let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+            let speed = if key_down!(ctx.ipt, KeyCode::ControlLeft) {
+                18.0
+            } else {
+                7.0
+            };
+            let rotation = Quaternion::from_euler_xyz(state.cam_pitch, state.cam_yaw, 0.0);
+            let right = rotation.rotate_vector3(Vector3::new(1.0, 0.0, 0.0));
+            let forward = rotation.rotate_vector3(Vector3::new(0.0, 0.0, -1.0));
+            let up = Vector3::new(0.0, 1.0, 0.0);
+            let movement = (right * dx) + (up * dy) + (forward * -dz);
+            state.cam_x += movement.x * speed * dt;
+            state.cam_y += movement.y * speed * dt;
+            state.cam_z += movement.z * speed * dt;
+            state.cam_yaw -= mouse.x * 0.0025;
+            state.cam_pitch = (state.cam_pitch + mouse.y * 0.0025).clamp(-1.4, 1.4);
+        });
+        apply_freecam(ctx);
+    }
+    set_viewport_label(ctx, "3D Perspective");
 }
 
 pub fn update_editor_shortcuts<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
@@ -1301,26 +1304,45 @@ pub fn update_freecam_2d<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, AP
     } else {
         0.0
     };
-    let mut label = String::new();
-    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        if state.cam2_zoom <= 0.001 {
+    let moved = dx != 0.0
+        || dy != 0.0
+        || mouse.x != 0.0
+        || mouse.y != 0.0
+        || zoom_dir != 0.0
+        || wheel.abs() > 0.001;
+    let label = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let reset = state.cam2_zoom <= 0.001;
+        if reset {
             state.cam2_zoom = 1.0;
         }
-        let speed = 480.0 / state.cam2_zoom.max(0.001);
-        state.cam2_x += dx * speed * dt;
-        state.cam2_y += dy * speed * dt;
-        state.cam2_x -= mouse.x / state.cam2_zoom.max(0.001);
-        state.cam2_y += mouse.y / state.cam2_zoom.max(0.001);
-        if zoom_dir != 0.0 || wheel.abs() > 0.001 {
-            let key_zoom = zoom_dir * 1.8 * dt;
-            let wheel_zoom = wheel * 0.12;
-            state.cam2_zoom = (state.cam2_zoom * (1.0 + key_zoom + wheel_zoom)).clamp(0.05, 40.0);
+        if moved {
+            let speed = 480.0 / state.cam2_zoom.max(0.001);
+            state.cam2_x += dx * speed * dt;
+            state.cam2_y += dy * speed * dt;
+            state.cam2_x -= mouse.x / state.cam2_zoom.max(0.001);
+            state.cam2_y += mouse.y / state.cam2_zoom.max(0.001);
+            if zoom_dir != 0.0 || wheel.abs() > 0.001 {
+                let key_zoom = zoom_dir * 1.8 * dt;
+                let wheel_zoom = wheel * 0.12;
+                state.cam2_zoom =
+                    (state.cam2_zoom * (1.0 + key_zoom + wheel_zoom)).clamp(0.05, 40.0);
+            }
         }
-        label = format!("2D  {:.0}%", state.cam2_zoom * 100.0);
-    });
-    apply_freecam_2d(ctx);
+        // Label only tracks zoom; skip the format when it cannot have changed.
+        if moved || reset || state.viewport_label_text.is_empty() {
+            format!("2D  {:.0}%", state.cam2_zoom * 100.0)
+        } else {
+            String::new()
+        }
+    })
+    .unwrap_or_default();
+    if moved {
+        apply_freecam_2d(ctx);
+    }
     apply_viewport_canvas(ctx);
-    set_label(ctx, "viewport_label", &label);
+    if !label.is_empty() {
+        set_viewport_label(ctx, &label);
+    }
 }
 
 pub fn update_ui_canvas<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
@@ -1332,20 +1354,28 @@ pub fn update_ui_canvas<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API
     }
     let inside = viewport_pointer(ctx).is_some();
     let wheel = if inside { mouse_wheel!(ctx.ipt).y } else { 0.0 };
-    let mut label = String::new();
-    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        if state.ui_canvas_zoom <= 0.001 {
+    let zoomed = wheel.abs() > 0.001;
+    let label = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let reset = state.ui_canvas_zoom <= 0.001;
+        if reset {
             state.ui_canvas_zoom = 1.0;
         }
         state.ui_canvas_x = 0.0;
         state.ui_canvas_y = 0.0;
-        if wheel.abs() > 0.001 {
+        if zoomed {
             state.ui_canvas_zoom = (state.ui_canvas_zoom * (1.0 + wheel * 0.12)).clamp(0.25, 12.0);
         }
-        label = format!("UI Canvas  {:.0}%", state.ui_canvas_zoom * 100.0);
-    });
+        if zoomed || reset || state.viewport_label_text.is_empty() {
+            format!("UI Canvas  {:.0}%", state.ui_canvas_zoom * 100.0)
+        } else {
+            String::new()
+        }
+    })
+    .unwrap_or_default();
     apply_viewport_canvas(ctx);
-    set_label(ctx, "viewport_label", &label);
+    if !label.is_empty() {
+        set_viewport_label(ctx, &label);
+    }
 }
 
 pub fn reset_freecam(state: &mut EditorState) {
@@ -1450,7 +1480,7 @@ pub fn frame_selected_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
     if framed {
         apply_freecam(ctx);
         apply_freecam_2d(ctx);
-        apply_viewport_canvas(ctx);
+        reapply_viewport_canvas(ctx);
     }
     refresh_all(ctx);
 }
