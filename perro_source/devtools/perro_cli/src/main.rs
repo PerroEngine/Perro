@@ -180,6 +180,7 @@ const BUILD: &[FlagSpec] = &[
 const DLC: &[FlagSpec] = &[value("--name"), value("--path")];
 const DEV: &[FlagSpec] = &[
     value("--path"),
+    value("--scene"),
     value("--target"),
     switch("--timings"),
     switch("--profile"),
@@ -202,7 +203,7 @@ const MEM_PROFILE: &[FlagSpec] = &[
     switch("--release"),
     optional_value("--csv"),
 ];
-const SPEC: &[FlagSpec] = &[value("--path"), value("--target-fps")];
+const SPEC: &[FlagSpec] = &[value("--path"), value("--scene"), value("--target-fps")];
 const FLAMEGRAPH: &[FlagSpec] = &[value("--path"), switch("--profile"), switch("--root")];
 const FORMAT: &[FlagSpec] = &[value("--path"), switch("--dedup")];
 const TARGETS: &[FlagSpec] = &[value("--host")];
@@ -302,7 +303,7 @@ fn print_usage() {
         "  perro_cli dlc --name <dlc_name> [--path <project_dir>] # build one runtime-loadable DLC package"
     );
     eprintln!(
-        "  perro_cli dev [--path <project_dir>] [--target native|web|android] [--headless] [--demo] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]      # build scripts + run dev runner, web server, or android app"
+        "  perro_cli dev [--path <project_dir>] [--scene res://path.scn] [--target native|web|android] [--headless] [--demo] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]      # build scripts + run dev runner, web server, or android app"
     );
     eprintln!(
         "  perro_cli bench [--path <project_dir>] [--script <hash>] [--method <name>] [--var <name>] [-- <criterion_args>]    # criterion bench scripts"
@@ -311,7 +312,7 @@ fn print_usage() {
         "  perro_cli mem-profile [--path <project_dir>] [--release] [--csv [csv_name]]    # run dev runner + process memory samples"
     );
     eprintln!(
-        "  perro_cli spec [--path <project_dir>] [--target-fps <fps>]    # run release spec capture + write estimate report"
+        "  perro_cli spec [--path <project_dir>] [--scene res://path.scn] [--target-fps <fps>]    # run release spec capture + write estimate report"
     );
     eprintln!(
         "  perro_cli flamegraph [--path <project_dir>] [--profile] [--root]    # run cargo flamegraph for dev runner (auto-installs tool if missing)"
@@ -353,6 +354,22 @@ fn parse_flag_value(args: &[String], flag: &str) -> Option<String> {
     args.get(idx + 1)
         .filter(|value| value.as_str() != "--" && !value.starts_with('-'))
         .cloned()
+}
+
+/// `--scene res://path.scn` boot override, forwarded to the runner as
+/// `PERRO_BOOT_SCENE`. Same `res://` rule the project.toml `main_scene` key
+/// enforces, checked here so a typo fails before a build instead of after it.
+fn parse_boot_scene_flag(args: &[String]) -> Result<Option<String>, String> {
+    let Some(raw) = parse_flag_value(args, "--scene") else {
+        return Ok(None);
+    };
+    let scene = raw.trim().to_string();
+    if !scene.starts_with("res://") || scene.len() <= "res://".len() {
+        return Err(format!(
+            "`--scene` needs a `res://` scene path (got `{scene}`)"
+        ));
+    }
+    Ok(Some(scene))
 }
 
 fn parse_optional_flag_value(args: &[String], flag: &str) -> Option<Option<String>> {

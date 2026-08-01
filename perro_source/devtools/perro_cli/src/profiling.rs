@@ -5,8 +5,8 @@ use crate::vscode::{
     update_project_vscode_linked_projects, update_workspace_vscode_linked_projects,
 };
 use crate::{
-    log_done, log_note, log_step, parse_flag_value, parse_optional_flag_value, resolve_local_path,
-    workspace_root,
+    log_done, log_note, log_step, parse_boot_scene_flag, parse_flag_value,
+    parse_optional_flag_value, resolve_local_path, workspace_root,
 };
 use perro_compiler::{ScriptsBuildProfile, compile_scripts_with_profile};
 use perro_project::{ensure_source_overrides, load_project_toml};
@@ -139,6 +139,7 @@ pub(crate) fn spec_command(args: &[String], cwd: &Path) -> Result<(), String> {
     if !target_fps.is_finite() || target_fps <= 0.0 {
         return Err("--target-fps must be > 0".to_string());
     }
+    let boot_scene = parse_boot_scene_flag(args)?;
 
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
@@ -204,14 +205,19 @@ pub(crate) fn spec_command(args: &[String], cwd: &Path) -> Result<(), String> {
         copy_steam_runtime_library(&target_dir, "release", &target_dir.join("release"))?;
     }
     log_note("Run Test Path; Close Game To Build Report");
-    let status = Command::new(&runner_path)
+    let mut run_cmd = Command::new(&runner_path);
+    run_cmd
         .arg("--path")
         .arg(project_dir.to_string_lossy().to_string())
         .current_dir(&project_dir)
         .env("PERRO_MEM_PROFILE", "1")
         .env("PERRO_MEM_PROFILE_CSV", &samples_path)
         .env("PERRO_TIMING_CSV", &frames_path)
-        .env("PERRO_SPEC_MARKERS", &markers_path)
+        .env("PERRO_SPEC_MARKERS", &markers_path);
+    if let Some(scene) = &boot_scene {
+        run_cmd.env("PERRO_BOOT_SCENE", scene);
+    }
+    let status = run_cmd
         .status()
         .map_err(|err| format!("failed to launch spec runner: {err}"))?;
     if !status.success() {

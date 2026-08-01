@@ -6,8 +6,8 @@ use crate::vscode::{
     update_project_vscode_linked_projects, update_workspace_vscode_linked_projects,
 };
 use crate::{
-    find_project_root, log_done, log_note, log_step, parse_flag_value, parse_optional_flag_value,
-    resolve_local_path, workspace_root,
+    find_project_root, log_done, log_note, log_step, parse_boot_scene_flag, parse_flag_value,
+    parse_optional_flag_value, resolve_local_path, workspace_root,
 };
 use perro_compiler::{
     ProjectBuildOptions, ProjectBuildTarget, ScriptsBuildProfile, WebOutputDir, compile_dlc_bundle,
@@ -218,6 +218,7 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let ui_profile = args.iter().any(|a| a == "--ui-profile");
     let release = args.iter().any(|a| a == "--release");
     let demo = args.iter().any(|a| a == "--demo");
+    let boot_scene = parse_boot_scene_flag(args)?;
     let csv_profile_name = parse_optional_flag_value(args, "--csv-profile")
         .map(|raw| PathBuf::from(raw.unwrap_or_else(|| "profiling.csv".to_string())));
     let profile = profile_requested || csv_profile_name.is_some();
@@ -359,6 +360,9 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     }
     if demo {
         run_cmd.env("PERRO_DEMO", "1");
+    }
+    if let Some(scene) = &boot_scene {
+        run_cmd.env("PERRO_BOOT_SCENE", scene);
     }
     if let Some(path) = &csv_profile_path {
         run_cmd.env("PERRO_PROFILE_CSV", path.to_string_lossy().to_string());

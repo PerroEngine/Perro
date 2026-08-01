@@ -309,6 +309,13 @@ impl<B: GraphicsBackend> RunnerState<B> {
             .as_ref()
             .map(|timing| timing.active)
             .unwrap_or(Duration::ZERO);
+        #[cfg(feature = "profile_heavy")]
+        let draw_frame_timing = present_timing.draw.unwrap_or_default();
+        #[cfg(not(feature = "profile_heavy"))]
+        let draw_frame_timing = present_timing
+            .as_ref()
+            .and_then(|timing| timing.draw)
+            .unwrap_or_default();
         let active_work_duration = work_duration.saturating_sub(present_wait_duration);
         let measured_frame_duration = active_work_duration
             .saturating_add(idle_duration)
@@ -377,6 +384,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 fixed_accum_after_us: Duration::from_secs_f32(self.fixed_accumulator).as_micros(),
                 fixed_catchup_dropped,
                 timestamp_ms: unix_timestamp_ms(),
+                draw: draw_frame_timing,
             });
         }
         #[cfg(feature = "profile_heavy")]

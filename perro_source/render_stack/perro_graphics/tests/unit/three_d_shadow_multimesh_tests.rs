@@ -341,6 +341,7 @@ impl ShadowHarness {
             false,
             &camera,
             false,
+            None,
         );
         let submission = self.queue.submit(Some(encoder.finish()));
         let _ = self.device.poll(wgpu::PollType::Wait {

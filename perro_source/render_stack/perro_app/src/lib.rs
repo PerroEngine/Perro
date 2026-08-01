@@ -1,4 +1,4 @@
-use perro_graphics::GraphicsBackend;
+use perro_graphics::{DrawFrameTiming, GraphicsBackend};
 use perro_input_api::{
     GamepadAxis, GamepadButton, GamepadRumbleRequest, JoyConButton, JoyConIndicatorRequest,
     JoyConRumbleRequest, KeyCode, MouseButton, MouseMode, PlayerBinding, PlayerState,
@@ -25,6 +25,10 @@ pub struct PresentTiming {
     pub gpu_present: Duration,
     pub active: Duration,
     pub total: Duration,
+    /// Full per-phase draw breakdown, ungated: it is one `Copy` of a
+    /// plain-old-data struct the backend already filled in, and the frame CSV
+    /// needs it without the `profile_heavy` build.
+    pub draw: Option<DrawFrameTiming>,
     #[cfg(feature = "profile_heavy")]
     pub extract_2d: Duration,
     #[cfg(feature = "profile_heavy")]
@@ -603,8 +607,6 @@ impl<B: GraphicsBackend> App<B> {
             .map(|timing| timing.gpu_acquire + timing.gpu_submit_queue_main + timing.gpu_present)
             .unwrap_or(draw_frame_duration);
         let active = total_start.elapsed().saturating_sub(gpu_present);
-        #[cfg(not(feature = "profile_heavy"))]
-        let _ = &draw_timing;
         #[cfg(feature = "profile_heavy")]
         let graphics_profile = self.graphics.profile_snapshot();
         self.runtime.clear_dirty_flags();
@@ -626,6 +628,7 @@ impl<B: GraphicsBackend> App<B> {
             gpu_present,
             active,
             total: total_start.elapsed(),
+            draw: draw_timing,
             #[cfg(feature = "profile_heavy")]
             extract_2d,
             #[cfg(feature = "profile_heavy")]

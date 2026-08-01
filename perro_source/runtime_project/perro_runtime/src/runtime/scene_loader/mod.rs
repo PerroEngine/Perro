@@ -29,6 +29,27 @@ pub(crate) mod prepare;
 use merge::merge_prepared_scene;
 use prepare::{load_runtime_scene_from_disk, prepare_scene_with_loader_and_styles};
 
+/// `PERRO_BOOT_SCENE=res://...` replaces the project's main scene for one run.
+/// Set by `perro dev --scene` / `perro spec --scene`; read once at boot, so it
+/// costs nothing per frame.
+fn boot_scene_override() -> Option<String> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        None
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let raw = std::env::var("PERRO_BOOT_SCENE").ok()?;
+        let scene = raw.trim();
+        if scene.starts_with("res://") && scene.len() > "res://".len() {
+            Some(scene.to_string())
+        } else {
+            eprintln!("[perro][runtime] ignoring PERRO_BOOT_SCENE=`{scene}` (needs res:// path)");
+            None
+        }
+    }
+}
+
 #[cfg(feature = "bench")]
 pub fn bench_prepare_scene(scene: &Scene) -> Result<(usize, usize), String> {
     let prepared = prepare_scene_with_loader_and_styles(
@@ -444,6 +465,12 @@ impl Runtime {
             if let Some((href, route_scene)) = self.initial_route_scene() {
                 route_href = Some(href);
                 scene_path = route_scene;
+            }
+            // Boot-scene override (`perro dev --scene`): profiling runs need to
+            // start inside a heavy scene instead of the project menu. Wins over
+            // the web route so an explicit flag is never silently ignored.
+            if let Some(override_scene) = boot_scene_override() {
+                scene_path = override_scene;
             }
             (
                 project.root.clone(),

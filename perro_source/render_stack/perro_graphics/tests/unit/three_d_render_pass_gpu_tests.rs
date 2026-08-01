@@ -184,7 +184,7 @@ fn sky_draws_inside_the_mesh_pass_and_costs_no_extra_pass() {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("perro_render_pass_test_sky_encoder"),
         });
-        gpu.render_pass(&queue, &mut encoder, &view, clear, false, &camera, true);
+        gpu.render_pass(&queue, &mut encoder, &view, clear, false, &camera, true, None);
         let with_sky = gpu.pass_counters;
         queue.submit([encoder.finish()]);
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
@@ -197,7 +197,7 @@ fn sky_draws_inside_the_mesh_pass_and_costs_no_extra_pass() {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("perro_render_pass_test_no_sky_encoder"),
         });
-        gpu.render_pass(&queue, &mut encoder, &view, clear, false, &camera, false);
+        gpu.render_pass(&queue, &mut encoder, &view, clear, false, &camera, false, None);
         let without_sky = gpu.pass_counters;
         queue.submit([encoder.finish()]);
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
@@ -215,7 +215,7 @@ fn sky_draws_inside_the_mesh_pass_and_costs_no_extra_pass() {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("perro_render_pass_test_sky_pixel_encoder"),
         });
-        gpu.render_pass(&queue, &mut encoder, &view, clear, false, &camera, true);
+        gpu.render_pass(&queue, &mut encoder, &view, clear, false, &camera, true, None);
         queue.submit([encoder.finish()]);
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
         assert_eq!(
@@ -518,7 +518,7 @@ fn mesh_blend_sources_sharing_a_receiver_set_share_one_depth_pass() {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("perro_render_pass_test_blend_depth_encoder"),
         });
-        gpu.render_pass(&queue, &mut encoder, &view, clear, false, &camera, false);
+        gpu.render_pass(&queue, &mut encoder, &view, clear, false, &camera, false, None);
         let counters = gpu.pass_counters;
         queue.submit([encoder.finish()]);
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
@@ -537,7 +537,7 @@ fn mesh_blend_sources_sharing_a_receiver_set_share_one_depth_pass() {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("perro_render_pass_test_blend_depth_seed_encoder"),
         });
-        gpu.render_pass(&queue, &mut encoder, &view, clear, false, &camera, false);
+        gpu.render_pass(&queue, &mut encoder, &view, clear, false, &camera, false, None);
         let counters = gpu.pass_counters;
         queue.submit([encoder.finish()]);
         let _ = device.poll(wgpu::PollType::wait_indefinitely());

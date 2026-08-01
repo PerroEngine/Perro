@@ -3,7 +3,7 @@
 use crate::App;
 #[cfg(not(target_arch = "wasm32"))]
 use image_helpers::{PreloadedProjectImages, preload_project_images};
-use perro_graphics::GraphicsBackend;
+use perro_graphics::{DrawFrameTiming, GraphicsBackend};
 use perro_ids::TextureID;
 use perro_input_api::MouseMode;
 use perro_render_bridge::{
@@ -182,11 +182,39 @@ struct CsvFrameSample {
     fixed_accum_after_us: u128,
     fixed_catchup_dropped: bool,
     timestamp_ms: u128,
+    /// Per-phase draw breakdown for this frame. All-zero when the frame was not
+    /// sampled (no `present_timed`) or the backend took an idle-clear path.
+    draw: DrawFrameTiming,
 }
 
 struct TimingCsvWriter {
     file: std::io::BufWriter<fs::File>,
 }
+
+// Column names are parsed by tooling (`perro_cli spec`, external scripts): keep
+// them stable, and append rather than reorder when adding.
+const TIMING_CSV_HEADER: &str = concat!(
+    "frame,phase,warmup,sampled,frame_delta_us,idle_before_frame_us,simulation_us,",
+    "render_active_us,work_active_us,present_wait_us,fixed_steps,fixed_step_us,",
+    "fixed_accum_before_us,fixed_accum_after_us,fixed_catchup_dropped,timestamp_ms,",
+    "draw_process_commands_us,draw_prepare_cpu_us,gpu_prepare_2d_us,gpu_prepare_3d_us,",
+    "gpu_prepare_particles_3d_us,gpu_prepare_3d_frustum_us,gpu_prepare_3d_hiz_us,",
+    "gpu_prepare_3d_indirect_us,gpu_prepare_3d_cull_inputs_us,gpu_acquire_us,",
+    "gpu_acquire_surface_us,gpu_acquire_view_us,gpu_encode_main_us,gpu_submit_main_us,",
+    "gpu_submit_finish_main_us,gpu_submit_queue_main_us,gpu_post_process_us,",
+    "gpu_accessibility_us,gpu_present_us,gpu_timestamp_main_us,gpu_timestamp_water_us,",
+    "gpu_timestamp_shadow_us,gpu_total_us,draw_total_us,idle_clear,",
+    "draw_calls_2d,draw_calls_3d,sprite_batches_2d,sprite_bind_group_switches_2d,",
+    "draw_batches_3d,pipeline_compiles_3d,pipeline_warms_pending_3d,pipeline_switches_3d,",
+    "texture_bind_group_switches_3d,draw_instances_3d,draw_triangles_3d,draw_material_refs_3d,",
+    "skip_prepare_2d,skip_prepare_3d,skip_prepare_particles_3d,skip_prepare_3d_frustum,",
+    "skip_prepare_3d_hiz,skip_prepare_3d_indirect,skip_prepare_3d_cull_inputs,",
+    "skip_render_3d,skip_render_2d,scene_passes_encoded,scene_render_passes,sky_draws,",
+    "mesh_blend_seam_passes,mesh_blend_scene_copies,mesh_blend_copy_pixels,",
+    "mesh_blend_source_depth_passes,mesh_blend_source_depth_reuses,water_depth_copies,",
+    "water_depth_clears,shadow_layer_renders,shadow_multimesh_batch_draws,",
+    "shadow_multimesh_instance_draws,shadow_multimesh_culled_layers",
+);
 
 impl TimingCsvWriter {
     fn from_env() -> Option<Self> {
@@ -197,16 +225,19 @@ impl TimingCsvWriter {
             .open(path)
             .ok()?;
         let mut file = std::io::BufWriter::with_capacity(256 * 1024, file);
-        let _ = writeln!(
-            file,
-            "frame,phase,warmup,sampled,frame_delta_us,idle_before_frame_us,simulation_us,render_active_us,work_active_us,present_wait_us,fixed_steps,fixed_step_us,fixed_accum_before_us,fixed_accum_after_us,fixed_catchup_dropped,timestamp_ms"
-        );
+        let _ = writeln!(file, "{TIMING_CSV_HEADER}");
         Some(Self { file })
     }
 
     fn write(&mut self, sample: CsvFrameSample) {
-        let _ = writeln!(
-            self.file,
+        // No per-frame flush: the 256KB BufWriter drains on drop.
+        Self::write_row(&mut self.file, sample);
+    }
+
+    fn write_row<W: std::io::Write>(out: &mut W, sample: CsvFrameSample) {
+        let draw = &sample.draw;
+        let _ = write!(
+            out,
             "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
             sample.frame_index,
             sample.phase,
@@ -224,6 +255,75 @@ impl TimingCsvWriter {
             sample.fixed_accum_after_us,
             if sample.fixed_catchup_dropped { 1 } else { 0 },
             sample.timestamp_ms
+        );
+        // Split across three calls purely for readability; the row is one line.
+        let _ = write!(
+            out,
+            ",{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            draw.process_commands.as_micros(),
+            draw.prepare_cpu.as_micros(),
+            draw.gpu_prepare_2d.as_micros(),
+            draw.gpu_prepare_3d.as_micros(),
+            draw.gpu_prepare_particles_3d.as_micros(),
+            draw.gpu_prepare_3d_frustum.as_micros(),
+            draw.gpu_prepare_3d_hiz.as_micros(),
+            draw.gpu_prepare_3d_indirect.as_micros(),
+            draw.gpu_prepare_3d_cull_inputs.as_micros(),
+            draw.gpu_acquire.as_micros(),
+            draw.gpu_acquire_surface.as_micros(),
+            draw.gpu_acquire_view.as_micros(),
+            draw.gpu_encode_main.as_micros(),
+            draw.gpu_submit_main.as_micros(),
+            draw.gpu_submit_finish_main.as_micros(),
+            draw.gpu_submit_queue_main.as_micros(),
+            draw.gpu_post_process.as_micros(),
+            draw.gpu_accessibility.as_micros(),
+            draw.gpu_present.as_micros(),
+            draw.gpu_timestamp_main.as_micros(),
+            draw.gpu_timestamp_water.as_micros(),
+            draw.gpu_timestamp_shadow.as_micros(),
+            draw.gpu_total.as_micros(),
+            draw.total.as_micros(),
+            if draw.idle_clear { 1 } else { 0 },
+        );
+        let _ = writeln!(
+            out,
+            ",{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            draw.draw_calls_2d,
+            draw.draw_calls_3d,
+            draw.sprite_batches_2d,
+            draw.sprite_bind_group_switches_2d,
+            draw.draw_batches_3d,
+            draw.pipeline_compiles_3d,
+            draw.pipeline_warms_pending_3d,
+            draw.pipeline_switches_3d,
+            draw.texture_bind_group_switches_3d,
+            draw.draw_instances_3d,
+            draw.draw_triangles_3d,
+            draw.draw_material_refs_3d,
+            draw.skip_prepare_2d,
+            draw.skip_prepare_3d,
+            draw.skip_prepare_particles_3d,
+            draw.skip_prepare_3d_frustum,
+            draw.skip_prepare_3d_hiz,
+            draw.skip_prepare_3d_indirect,
+            draw.skip_prepare_3d_cull_inputs,
+            draw.skip_render_3d,
+            draw.skip_render_2d,
+            draw.scene_passes_encoded,
+            draw.scene_render_passes,
+            draw.sky_draws,
+            draw.mesh_blend_seam_passes,
+            draw.mesh_blend_scene_copies,
+            draw.mesh_blend_copy_pixels,
+            draw.mesh_blend_source_depth_passes,
+            draw.mesh_blend_source_depth_reuses,
+            draw.water_depth_copies,
+            draw.water_depth_clears,
+            draw.shadow_layer_renders,
+            draw.shadow_multimesh_batch_draws,
+            draw.shadow_multimesh_instance_draws,
+            draw.shadow_multimesh_culled_layers,
         );
     }
 }
@@ -1237,3 +1337,23 @@ fn center_position(
 
 #[cfg(test)]
 mod fixed_step_tests;
+
+#[cfg(test)]
+mod timing_csv_tests {
+    use super::{CsvFrameSample, TIMING_CSV_HEADER, TimingCsvWriter};
+
+    // Tooling parses this file positionally; a row that drifts from the header
+    // silently mislabels every column after the drift.
+    #[test]
+    fn row_column_count_matches_header() {
+        let mut out = Vec::new();
+        TimingCsvWriter::write_row(&mut out, CsvFrameSample::default());
+        let row = String::from_utf8(out).expect("row is utf8");
+        let row = row.trim_end();
+        assert_eq!(
+            row.split(',').count(),
+            TIMING_CSV_HEADER.split(',').count(),
+            "row: {row}"
+        );
+    }
+}

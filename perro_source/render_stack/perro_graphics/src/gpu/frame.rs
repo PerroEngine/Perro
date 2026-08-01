@@ -9,6 +9,7 @@ impl Gpu {
             timer.poll(&self.device);
             timing.gpu_timestamp_main = timer.last_main;
             timing.gpu_timestamp_water = timer.last_water;
+            timing.gpu_timestamp_shadow = timer.last_shadow;
         }
         let RenderFrame {
             resources,
@@ -1070,6 +1071,9 @@ impl Gpu {
                         false,
                         camera,
                         !stream.transparent_background,
+                        // Streams share the main view's query slots; only the
+                        // main view may write them.
+                        None,
                     );
                     if !stream.point_particles_3d.is_empty() {
                         let particles = camera_stream_cache_entry(
@@ -1455,6 +1459,13 @@ impl Gpu {
             timer.write_water_start(&mut encoder);
             timer.write_water_end(&mut encoder);
         }
+        // Shadow timestamps follow the same paired-every-frame rule as water;
+        // the 3D view writes them around its shadow block, and the fallback
+        // below covers the frames it never runs.
+        let shadow_slots = (gpu_timer_active)
+            .then(|| self.gpu_timer.as_ref().map(GpuTimestampTimer::shadow_slots))
+            .flatten();
+        let mut shadow_timestamps_written = false;
         // ---- scene chain: everything that writes the retained scene texture.
         // Skipped wholesale on a retained-scene frame; `scene_passes_encoded`
         // stays 0 there, which is what the fast-path tests assert on.
@@ -1471,7 +1482,9 @@ impl Gpu {
                     depth_prepass_needed,
                     &camera_3d,
                     true,
+                    shadow_slots,
                 );
+                shadow_timestamps_written = three_d.shadow_timestamps_written();
                 // Seam pass runs on the resolved offscreen scene texture, before
                 // particles/water/2D draw on top.
                 if blend_screen_active && !direct_present && self.sample_count == 1 {
@@ -1616,6 +1629,12 @@ impl Gpu {
             }
         }
         // ---- end scene chain.
+        if !shadow_timestamps_written
+            && gpu_timer_active
+            && let Some(timer) = self.gpu_timer.as_ref()
+        {
+            timer.write_shadow_pair(&mut encoder);
+        }
         timing.encode_main = encode_start.elapsed();
 
         let post_start = Instant::now();
@@ -1887,6 +1906,29 @@ impl Gpu {
             timing.draw_batches_3d = three_d.draw_batch_count();
             timing.pipeline_switches_3d = three_d.pipeline_switch_count();
             timing.texture_bind_group_switches_3d = three_d.texture_bind_group_switch_count();
+        }
+        // Pass/triangle counters only mean anything on a frame that re-encoded:
+        // `render_pass` resets them at entry, so a fast-path frame still holds
+        // the last encoded frame's numbers. Report zero there instead of a
+        // stale repeat -- `skip_render_3d` already flags the frame.
+        if !scene_fast_path
+            && let Some(three_d) = self.three_d.as_ref()
+        {
+            timing.draw_triangles_3d = three_d.triangle_count();
+            let counters = three_d.pass_counters();
+            timing.scene_render_passes = counters.render_passes;
+            timing.sky_draws = counters.sky_draws;
+            timing.mesh_blend_seam_passes = counters.mesh_blend_seam_passes;
+            timing.mesh_blend_scene_copies = counters.mesh_blend_scene_copies;
+            timing.mesh_blend_copy_pixels = counters.mesh_blend_copy_pixels;
+            timing.mesh_blend_source_depth_passes = counters.mesh_blend_source_depth_passes;
+            timing.mesh_blend_source_depth_reuses = counters.mesh_blend_source_depth_reuses;
+            timing.water_depth_copies = counters.water_depth_copies;
+            timing.water_depth_clears = counters.water_depth_clears;
+            timing.shadow_layer_renders = counters.shadow_layer_renders;
+            timing.shadow_multimesh_batch_draws = counters.shadow_multimesh_batch_draws;
+            timing.shadow_multimesh_instance_draws = counters.shadow_multimesh_instance_draws;
+            timing.shadow_multimesh_culled_layers = counters.shadow_multimesh_culled_layers;
         }
         let present_start = Instant::now();
         if let Some(frame) = frame {

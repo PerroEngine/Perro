@@ -20,6 +20,23 @@ impl Gpu3D {
         self.perf_counters.texture_bind_group_switches
     }
 
+    /// Triangles the last main mesh pass submitted. Upper bound: batches that
+    /// draw indirect still count their full CPU-side instance range.
+    #[inline]
+    pub fn triangle_count(&self) -> u64 {
+        self.perf_counters.triangles
+    }
+
+    #[inline]
+    pub(crate) fn pass_counters(&self) -> PassCounters {
+        self.pass_counters
+    }
+
+    #[inline]
+    pub(crate) fn shadow_timestamps_written(&self) -> bool {
+        self.shadow_timestamps_written
+    }
+
     /// True while the last main pass drew from the GPU-compacted indirect
     /// buffer via `multi_draw_indexed_indirect_count`.
     #[inline]

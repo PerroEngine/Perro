@@ -1,5 +1,5 @@
-use super::*;
 use super::stream_3d::finish_stream_lighting_3d;
+use super::*;
 use crate::runtime::world_state::AutoResolutionState;
 
 /// Supersample 4 auto (0) sub-view resolutions. Display DPI never reaches the
@@ -364,12 +364,8 @@ impl Runtime {
             lanes.lighting_3d = finish_stream_lighting_3d(out);
         }
         {
-            let mut retained = retain.then(|| {
-                self.stream_retention
-                    .lanes
-                    .entry(stream_node)
-                    .or_default()
-            });
+            let mut retained =
+                retain.then(|| self.stream_retention.lanes.entry(stream_node).or_default());
             if let Some(out) = out_2d.as_ref() {
                 lanes.sprites_2d = retained_arc_lane(
                     retained.as_deref_mut().map(|lanes| &mut lanes.sprites_2d),
@@ -401,10 +397,8 @@ impl Runtime {
                         .map(|lanes| &mut lanes.point_particles_3d),
                     &out.particles,
                 );
-                lanes.waters_3d = retained_arc_lane(
-                    retained.map(|lanes| &mut lanes.waters_3d),
-                    &out.waters,
-                );
+                lanes.waters_3d =
+                    retained_arc_lane(retained.map(|lanes| &mut lanes.waters_3d), &out.waters);
             }
         }
         if let Some(out) = out_2d.take() {

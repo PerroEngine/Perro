@@ -330,7 +330,8 @@ impl Runtime {
             })
         {
             let mut surfaces_scratch = std::mem::take(&mut out.surfaces);
-            let resolved = self.resolve_render_mesh_assets_scratch(node, mesh, &mut surfaces_scratch);
+            let resolved =
+                self.resolve_render_mesh_assets_scratch(node, mesh, &mut surfaces_scratch);
             out.surfaces = surfaces_scratch;
             let Some((mesh, surfaces)) = resolved else {
                 return;
@@ -663,10 +664,7 @@ impl Runtime {
                         prewarm,
                         lifetime_min,
                         lifetime_max,
-                        alive_budget: derived_particle_budget_3d(
-                            spawn_rate.max(0.0),
-                            lifetime_max,
-                        ),
+                        alive_budget: derived_particle_budget_3d(spawn_rate.max(0.0), lifetime_max),
                         emission_rate: spawn_rate.max(0.0),
                         speed_min: profile.speed_min.max(0.0),
                         speed_max: profile.speed_max.max(profile.speed_min.max(0.0)),
@@ -697,8 +695,7 @@ impl Runtime {
                     .unwrap_or(local_transform)
                     .to_mat4()
                     .to_cols_array_2d();
-                let coastline_shapes =
-                    self.collect_water_coastline_shapes_3d(&water, water_global);
+                let coastline_shapes = self.collect_water_coastline_shapes_3d(&water, water_global);
                 let queries = self.collect_water_queries_3d(node);
                 let impacts = self.collect_water_impacts_3d(node, &water, water_global);
                 let links = self.collect_water_links_3d(node, &water);

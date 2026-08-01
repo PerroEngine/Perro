@@ -68,7 +68,7 @@ Build and run:
 ```powershell
 perro check [--path <project_dir>]
 perro test [--path <project_dir>] [-- <cargo_test_args>]
-perro dev [--path <project_dir>] [--target native|web|android] [--headless] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]
+perro dev [--path <project_dir>] [--scene res://path.scn] [--target native|web|android] [--headless] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]
 perro build [--path <project_dir>] [--target native|web|android] [--triple <rust_target> | --universal-macos] [--headless] [--profile] [--console]
 perro targets [--host windows|linux|macos]
 perro dlc --name <dlc_name> [--path <project_dir>]
@@ -189,7 +189,7 @@ perro test --path D:\GameProjects\MyGame -- player_state_tests
 Command:
 
 ```powershell
-perro dev --path <project_dir> [--target native|web|android] [--headless] [--demo] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]
+perro dev --path <project_dir> [--scene res://path.scn] [--target native|web|android] [--headless] [--demo] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]
 ```
 
 What it does:
@@ -203,6 +203,7 @@ What it does:
 Flags:
 
 - `--target native|web|android`: selects native runner, browser wasm bundle, or Android app target. Default `native`.
+- `--scene res://path.scn`: boots this scene instead of the project's `main_scene`. Forwarded to the runner as `PERRO_BOOT_SCENE`. Use it to profile a heavy scene directly instead of landing on the project menu.
 - `--headless`: runs the native `perro_headless` dev path with no window, input, or GPU render loop. Native only; rejected with `--target web` or `--target android`, and cannot combine with `--timings` or `--ui-profile`.
 - `--demo`: applies `[demo]` config overrides, skips excluded scripts/assets/scenes, strips tagged node trees, and enables `demo_exclude!`.
 - `--timings`: prints lightweight native timing averages: sim, gfx, delta, fps.
@@ -767,13 +768,22 @@ Flags:
 ### `spec`
 
 ```text
-perro spec --path <project_dir> [--target-fps <fps>]
+perro spec --path <project_dir> [--scene res://path.scn] [--target-fps <fps>]
 ```
 
 Runs the project in release mode and records frame data plus bounded memory
 summaries until the game closes. It writes `report.json`, `report.md`,
 `steam.txt`, `frames.csv`, `samples.csv`, and `markers.jsonl` under
 `.output/profiling/spec/`.
+
+`--scene res://path.scn` boots straight into that scene instead of the project's
+`main_scene`, so a capture profiles gameplay rather than the start menu.
+
+`frames.csv` carries one row per frame with the full per-phase draw breakdown:
+CPU phases, GPU prepare/acquire/encode/submit/present spans, GPU timestamp
+spans for the main encoder, the water sim, and the shadow depth block, plus
+draw-call, batch, triangle and pass-structure counters. The header row names
+every column.
 
 Add test-path markers in scripts:
 

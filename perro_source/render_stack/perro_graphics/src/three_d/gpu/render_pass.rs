@@ -92,6 +92,7 @@ impl Gpu3D {
         depth_prepass_needed: bool,
         camera: &Camera3DState,
         render_sky: bool,
+        shadow_timestamps: Option<ShadowTimestampSlots<'_>>,
     ) {
         // Idle-reclaim liveness (see `note_stream_gc_tick`): set here, not at
         // the call site, so a camera stream that stops encoding cannot drift
@@ -100,7 +101,9 @@ impl Gpu3D {
         self.perf_counters.pipeline_switches = 0;
         self.perf_counters.texture_bind_group_switches = 0;
         self.perf_counters.camera_bind_group_switches = 0;
+        self.perf_counters.triangles = 0;
         self.pass_counters = PassCounters::default();
+        self.shadow_timestamps_written = false;
         let frustum_cull_active = self.should_run_frustum_cull();
         let hiz_active = self.should_run_hiz_occlusion(frustum_cull_active);
         let multimesh_cull_active = self.should_run_multimesh_cull();
@@ -144,7 +147,7 @@ impl Gpu3D {
             || (self.shadow_pass_enabled && self.has_shadow_casters);
         if !has_any_work {
             self.pass_counters.render_passes += 1;
-            let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("perro_mesh_clear_only_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: color_view,
@@ -160,6 +163,13 @@ impl Gpu3D {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+            drop(clear_pass);
+            // No shadow work on this path, but the pair still has to be written.
+            if let Some(slots) = shadow_timestamps {
+                encoder.write_timestamp(slots.query_set, slots.begin);
+                encoder.write_timestamp(slots.query_set, slots.end);
+                self.shadow_timestamps_written = true;
+            }
             return;
         }
         // Per-layer multimesh instance cull for the shadow depth passes. Each
@@ -171,6 +181,9 @@ impl Gpu3D {
             && self.should_run_multimesh_shadow_cull();
         if self.multimesh_shadow_cull_active {
             self.multimesh_shadow_identity_uploaded_len = 0;
+        }
+        if let Some(slots) = shadow_timestamps {
+            encoder.write_timestamp(slots.query_set, slots.begin);
         }
         if self.shadow_pass_enabled && self.has_shadow_casters {
             if self.ray_shadow_enabled {
@@ -279,6 +292,10 @@ impl Gpu3D {
                     *valid = true;
                 }
             }
+        }
+        if let Some(slots) = shadow_timestamps {
+            encoder.write_timestamp(slots.query_set, slots.end);
+            self.shadow_timestamps_written = true;
         }
         if frustum_cull_active {
             let mut cull_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -739,6 +756,7 @@ impl Gpu3D {
             let mut pipeline_switches: u32 = 0;
             let mut camera_bind_group_switches: u32 = 0;
             let mut texture_bind_group_switches: u32 = 0;
+            let mut triangles: u64 = 0;
             // Vertex buffer 1 is the same instance-transform buffer for every
             // batch; set once here and re-set only after the multimesh draw
             // (which binds its own instance buffer to slot 1).
@@ -767,6 +785,10 @@ impl Gpu3D {
                 let mut plan_cursor = plan_range.start;
                 for &i in batch_indices.iter() {
                     let batch = &self.draw_batches[i];
+                    // One mul-add per batch, not per draw: the batch list is
+                    // already walked here, so no extra iteration is added.
+                    triangles += u64::from(batch.mesh.index_count / 3)
+                        * u64::from(batch.instance_count);
                     let state_change = current_state_key != Some(batch.state_key);
                     let texture_change = current_texture_key != batch.material_texture_key;
                     // Any state/texture switch or query batch ends the current run.
@@ -898,6 +920,7 @@ impl Gpu3D {
                 .perf_counters
                 .texture_bind_group_switches
                 .saturating_add(texture_bind_group_switches);
+            self.perf_counters.triangles = self.perf_counters.triangles.saturating_add(triangles);
         }
 
         // Every source needs its receiver set's depth in `mesh_blend_depth_view`

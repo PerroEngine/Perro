@@ -615,8 +615,7 @@ impl NodeAPI for Runtime {
                         // per-frame reparent (bone attach/socket) stays cheap.
                         #[cfg(debug_assertions)]
                         {
-                            let local_mat =
-                                inverse_basis_mat4(parent_global) * global.to_mat4();
+                            let local_mat = inverse_basis_mat4(parent_global) * global.to_mat4();
                             // Detect affine shear (or other non-TRS artifacts) that cannot be
                             // represented exactly by Transform3D's TRS fields.
                             let reconstructed = local.to_mat4();

@@ -1602,6 +1602,10 @@ pub struct Gpu3D {
     idle_gc_ticks: u32,
     perf_counters: RenderPerfCounters,
     pass_counters: PassCounters,
+    // Set by `render_pass` when it wrote the shadow timestamp pair it was
+    // handed. `Gpu::render` writes the degenerate pair itself when this stays
+    // false (fast path, or no 3D view at all).
+    shadow_timestamps_written: bool,
     // Seam-pass gate for the next `mesh_blend_screen_pass`, decided in
     // `render_pass` where the camera (and therefore the frustum / projection)
     // is in hand. Defaults to Full so a seam encode without a preceding
@@ -1699,48 +1703,63 @@ struct RenderPerfCounters {
     texture_bind_group_switches: u32,
     camera_bind_group_switches: u32,
     draw_batches: u32,
+    // Triangles the main mesh pass submits (index_count/3 x instance_count,
+    // summed over every batch it walks). GPU-culled batches still count their
+    // full instance range, so this is an upper bound, not a rasterized count.
+    triangles: u64,
 }
 
 // Pass-structure counters. Written every frame by `render_pass` /
-// `mesh_blend_screen_pass` and read by the render-pass structure tests; they
-// are deliberately not part of the shipping stats surface, so outside `cfg(test)`
-// nothing reads them.
+// `mesh_blend_screen_pass`, read by the render-pass structure tests and by
+// `Gpu::render`, which folds them into `RenderGpuTiming` for the frame CSV.
+// Main-view only: camera streams own separate `Gpu3D` instances with their own
+// counters.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[allow(dead_code)]
-struct PassCounters {
+pub(crate) struct PassCounters {
     // Render passes `render_pass` encodes for this frame.
-    render_passes: u32,
+    pub(crate) render_passes: u32,
     // Sky fullscreen triangles drawn inside the mesh pass.
-    sky_draws: u32,
+    pub(crate) sky_draws: u32,
     // Seam passes and scene-color copies `mesh_blend_screen_pass` encodes.
-    mesh_blend_seam_passes: u32,
-    mesh_blend_scene_copies: u32,
+    pub(crate) mesh_blend_seam_passes: u32,
+    pub(crate) mesh_blend_scene_copies: u32,
     // Pixels covered by the seam scene copy (0 when the copy is skipped).
-    mesh_blend_copy_pixels: u32,
+    pub(crate) mesh_blend_copy_pixels: u32,
     // Per-source receiver depth passes the vertex mesh-blend loop encodes, and
     // the sources that reused depth already resident in the shared target
     // (an earlier source's pass, or the frame's global blend-depth pass).
-    mesh_blend_source_depth_passes: u32,
-    mesh_blend_source_depth_reuses: u32,
+    pub(crate) mesh_blend_source_depth_passes: u32,
+    pub(crate) mesh_blend_source_depth_reuses: u32,
     // Full-res scene-depth copies encoded for the 3D water pass.
-    water_depth_copies: u32,
+    pub(crate) water_depth_copies: u32,
     // Depth clears encoded for the 3D water pass's private depth target (the
     // copy's replacement at 1 sample).
-    water_depth_clears: u32,
+    pub(crate) water_depth_clears: u32,
     // Shadow depth layers actually re-rendered this frame (cached-valid layers
     // are skipped and do not count).
-    shadow_layer_renders: u32,
+    pub(crate) shadow_layer_renders: u32,
     // Multimesh caster instances submitted across every shadow layer this
     // frame. Direct-draw layers count the whole surviving batch; per-layer
     // GPU-culled layers count the indirect cap, so the CPU-visible number is
     // the upper bound either way -- `shadow_multimesh_culled_layers` says which
     // layers went through the compute cull.
-    shadow_multimesh_instance_draws: u64,
+    pub(crate) shadow_multimesh_instance_draws: u64,
     // Multimesh batches submitted across every shadow layer this frame.
-    shadow_multimesh_batch_draws: u32,
+    pub(crate) shadow_multimesh_batch_draws: u32,
     // Shadow layers whose multimesh casters went through the per-layer GPU
     // instance cull (indirect draws) instead of the identity full-batch draw.
-    shadow_multimesh_culled_layers: u32,
+    pub(crate) shadow_multimesh_culled_layers: u32,
+}
+
+// Encoder-level GPU timestamp slots bracketing the shadow depth block. Both
+// indices are written on every armed frame - the timer resolves the whole query
+// set in one range, so a slot left unwritten resolves to garbage - hence the
+// degenerate pair on frames that render no shadow layer.
+#[derive(Clone, Copy)]
+pub struct ShadowTimestampSlots<'a> {
+    pub(crate) query_set: &'a wgpu::QuerySet,
+    pub(crate) begin: u32,
+    pub(crate) end: u32,
 }
 
 // Screen region the mesh-blend seam pass has to touch this frame.

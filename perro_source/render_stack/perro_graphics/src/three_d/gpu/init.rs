@@ -1829,6 +1829,7 @@ impl Gpu3D {
             idle_gc_ticks: 0,
             perf_counters: RenderPerfCounters::default(),
             pass_counters: PassCounters::default(),
+            shadow_timestamps_written: false,
             mesh_blend_seam_region: SeamRegion::default(),
             custom_pipelines: AHashMap::new(),
             custom_pipelines_rigid: AHashMap::new(),

@@ -349,7 +349,11 @@ impl<B: GraphicsBackend> RunnerState<B> {
         }
         #[cfg(not(any(feature = "profile_heavy", feature = "ui_profile", feature = "fps")))]
         {
-            self.frame_index == 1
+            // PERRO_TIMING_CSV forces every frame: a strided sample writes rows
+            // whose timing columns are all zero, which is useless to a profiling
+            // run. Runtime-gated, so a normal run keeps the 1-in-20 stride.
+            self.timing_csv.is_some()
+                || self.frame_index == 1
                 || self
                     .frame_index
                     .is_multiple_of(LOG_TIMING_SAMPLE_STRIDE as u64)

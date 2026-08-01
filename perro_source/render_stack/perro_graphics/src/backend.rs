@@ -217,6 +217,10 @@ pub struct DrawFrameTiming {
     pub gpu_present: Duration,
     pub gpu_timestamp_main: Duration,
     pub gpu_timestamp_water: Duration,
+    /// GPU time between the encoder-level timestamps bracketing the shadow
+    /// depth block. Zero on adapters without TIMESTAMP_QUERY, and on frames
+    /// where the readback of an earlier frame was still in flight.
+    pub gpu_timestamp_shadow: Duration,
     pub draw_calls_2d: u32,
     pub draw_calls_3d: u32,
     pub sprite_batches_2d: u32,
@@ -233,6 +237,10 @@ pub struct DrawFrameTiming {
     pub pipeline_switches_3d: u32,
     pub texture_bind_group_switches_3d: u32,
     pub draw_instances_3d: u32,
+    /// Triangles the main mesh pass submitted (index_count/3 x instance_count
+    /// per batch). Upper bound: GPU-culled batches count their full CPU-side
+    /// instance range, and camera streams are not included.
+    pub draw_triangles_3d: u64,
     pub draw_material_refs_3d: u32,
     pub skip_prepare_2d: u32,
     pub skip_prepare_3d: u32,
@@ -250,6 +258,23 @@ pub struct DrawFrameTiming {
     /// Present/tonemap, post, UI and the late overlay are never counted here
     /// because they run on every frame.
     pub scene_passes_encoded: u32,
+    /// Main-view `Gpu3D` pass-structure counters for this frame. Camera streams
+    /// keep their own and are not folded in.
+    pub scene_render_passes: u32,
+    pub sky_draws: u32,
+    pub mesh_blend_seam_passes: u32,
+    pub mesh_blend_scene_copies: u32,
+    pub mesh_blend_copy_pixels: u32,
+    pub mesh_blend_source_depth_passes: u32,
+    pub mesh_blend_source_depth_reuses: u32,
+    pub water_depth_copies: u32,
+    pub water_depth_clears: u32,
+    /// Shadow depth layers re-rendered this frame; cached-valid layers are
+    /// skipped and do not count.
+    pub shadow_layer_renders: u32,
+    pub shadow_multimesh_batch_draws: u32,
+    pub shadow_multimesh_instance_draws: u64,
+    pub shadow_multimesh_culled_layers: u32,
     pub gpu_total: Duration,
     pub total: Duration,
     pub idle_clear: bool,

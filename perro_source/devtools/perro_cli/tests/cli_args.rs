@@ -45,3 +45,12 @@ fn targets_shows_selected_dev_os_matrix() {
     assert!(stdout.contains("Windows x64         READY"));
     assert!(stdout.contains("macOS universal     NO"));
 }
+
+#[test]
+fn scene_flag_rejects_non_res_path() {
+    let output = perro(&["dev", "--scene", "levels/arena.scn"]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(!output.status.success());
+    assert!(stderr.contains("`--scene` needs a `res://` scene path"));
+}

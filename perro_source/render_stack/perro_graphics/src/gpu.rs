@@ -6,7 +6,7 @@ use crate::{
     three_d::{
         gpu::{
             Gpu3D, Gpu3DConfig, PipelineRegistryCache, Prepare3D, Prepare3DStepTiming,
-            SharedMeshArena,
+            ShadowTimestampSlots, SharedMeshArena,
         },
         particles::gpu::{GpuPointParticles3D, PreparePointParticles3D},
         renderer::{DenseMultiMeshDraw3D, Draw3DInstance, Draw3DKind, Lighting3DState},
@@ -568,10 +568,17 @@ struct GpuTimestampTimer {
     pending_rx: Option<mpsc::Receiver<Result<(), wgpu::BufferAsyncError>>>,
     last_main: Duration,
     last_water: Duration,
+    last_shadow: Duration,
 }
 
 impl GpuTimestampTimer {
-    const QUERY_COUNT: u32 = 4;
+    // Slots 0/1 main, 2/3 water, 4/5 shadow. `write_end_and_resolve` resolves
+    // the whole range, so every slot must be written exactly once per armed
+    // frame: writing one twice is a wgpu `UsedTwice` error, leaving one unwritten
+    // resolves garbage.
+    const SHADOW_BEGIN: u32 = 4;
+    const SHADOW_END: u32 = 5;
+    const QUERY_COUNT: u32 = 6;
     const BUFFER_SIZE: u64 = Self::QUERY_COUNT as u64 * std::mem::size_of::<u64>() as u64;
 
     fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
@@ -600,6 +607,7 @@ impl GpuTimestampTimer {
             pending_rx: None,
             last_main: Duration::ZERO,
             last_water: Duration::ZERO,
+            last_shadow: Duration::ZERO,
         }
     }
 
@@ -628,6 +636,11 @@ impl GpuTimestampTimer {
                     let nanos = (timestamps[3] - timestamps[2]) as f64
                         * f64::from(self.timestamp_period_ns);
                     self.last_water = Duration::from_nanos(nanos.max(0.0) as u64);
+                }
+                if timestamps.len() >= 6 && timestamps[5] >= timestamps[4] {
+                    let nanos = (timestamps[5] - timestamps[4]) as f64
+                        * f64::from(self.timestamp_period_ns);
+                    self.last_shadow = Duration::from_nanos(nanos.max(0.0) as u64);
                 }
                 drop(data);
                 self.readback_buffer.unmap();
@@ -658,6 +671,21 @@ impl GpuTimestampTimer {
 
     fn write_water_end(&self, encoder: &mut wgpu::CommandEncoder) {
         encoder.write_timestamp(&self.query_set, 3);
+    }
+
+    fn shadow_slots(&self) -> ShadowTimestampSlots<'_> {
+        ShadowTimestampSlots {
+            query_set: &self.query_set,
+            begin: Self::SHADOW_BEGIN,
+            end: Self::SHADOW_END,
+        }
+    }
+
+    // Fallback for frames whose 3D view never encoded the pair (fast path, or
+    // no 3D view at all).
+    fn write_shadow_pair(&self, encoder: &mut wgpu::CommandEncoder) {
+        encoder.write_timestamp(&self.query_set, Self::SHADOW_BEGIN);
+        encoder.write_timestamp(&self.query_set, Self::SHADOW_END);
     }
 
     fn write_end_and_resolve(&self, encoder: &mut wgpu::CommandEncoder) {
@@ -1181,6 +1209,7 @@ pub struct RenderGpuTiming {
     pub present: Duration,
     pub gpu_timestamp_main: Duration,
     pub gpu_timestamp_water: Duration,
+    pub gpu_timestamp_shadow: Duration,
     pub draw_calls_2d: u32,
     pub draw_calls_3d: u32,
     pub sprite_batches_2d: u32,
@@ -1188,6 +1217,7 @@ pub struct RenderGpuTiming {
     pub draw_batches_3d: u32,
     pub pipeline_switches_3d: u32,
     pub texture_bind_group_switches_3d: u32,
+    pub draw_triangles_3d: u64,
     pub skip_prepare_2d: u32,
     pub skip_prepare_3d: u32,
     pub skip_prepare_particles_3d: u32,
@@ -1203,6 +1233,21 @@ pub struct RenderGpuTiming {
     /// Scene-building passes handed to the encoder this frame. 0 on a fast
     /// path frame; present/post/UI/late-overlay passes are not counted.
     pub scene_passes_encoded: u32,
+    /// Main-view `Gpu3D` pass-structure counters for this frame. Camera streams
+    /// own separate `Gpu3D` instances and are not folded in.
+    pub scene_render_passes: u32,
+    pub sky_draws: u32,
+    pub mesh_blend_seam_passes: u32,
+    pub mesh_blend_scene_copies: u32,
+    pub mesh_blend_copy_pixels: u32,
+    pub mesh_blend_source_depth_passes: u32,
+    pub mesh_blend_source_depth_reuses: u32,
+    pub water_depth_copies: u32,
+    pub water_depth_clears: u32,
+    pub shadow_layer_renders: u32,
+    pub shadow_multimesh_batch_draws: u32,
+    pub shadow_multimesh_instance_draws: u64,
+    pub shadow_multimesh_culled_layers: u32,
     pub total: Duration,
     pub presented: bool,
 }
