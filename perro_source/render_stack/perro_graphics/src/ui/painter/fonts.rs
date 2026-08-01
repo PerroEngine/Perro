@@ -62,6 +62,18 @@ pub(super) const HARFBUZZ_FAMILY_CACHE_LIMIT: usize = 16;
 /// uses. Past it `TextureAtlas` wraps its cursor and overwrites live glyphs.
 pub(super) const HARFBUZZ_ATLAS_REBUILD_FILL: f32 = 0.8;
 
+/// Fill ratio under which the atlas counts as idle. The atlas only ever grows
+/// (height doubling), so a one-off CJK burst at 3x raster scale leaves a
+/// 4096x2048 image — 32 MiB of pixels plus a same-size GPU texture — retained
+/// for the rest of the process at a few percent fill.
+pub(super) const HARFBUZZ_ATLAS_IDLE_FILL: f32 = 0.25;
+
+/// Consecutive idle passes before the atlas is rebuilt small. Passes are UI
+/// primitive rebuilds, not frames, so this is deliberately long: the shrink
+/// drops every cached glyph and shaped run, and re-rastering them costs more
+/// than the memory does over a short lull.
+pub(super) const HARFBUZZ_ATLAS_IDLE_PASSES: u32 = 300;
+
 /// Raster sizes below this snap to a half-point grid, above it to whole
 /// points. Animated / fit_content sizes otherwise mint one bitmap per pixel
 /// of size change.
@@ -81,6 +93,14 @@ pub(super) struct HarfBuzzAtlas {
     /// Bumped on every rebuild so callers holding baked UVs can tell that
     /// their glyph pixels moved.
     generation: u64,
+    /// Consecutive `begin_pass` calls that found the atlas below
+    /// `HARFBUZZ_ATLAS_IDLE_FILL`; drives the idle shrink.
+    idle_passes: u32,
+    /// A rebuild dropped a live atlas and nothing has re-rastered yet. Drives
+    /// the `textures_delta.free` that releases the GPU copy: dropping the CPU
+    /// image alone leaves the texture allocated until a `set` replaces it,
+    /// which never comes if the text that grew the atlas is gone for good.
+    released: bool,
 }
 
 impl HarfBuzzAtlas {
@@ -91,6 +111,8 @@ impl HarfBuzzAtlas {
             runs: AHashMap::new(),
             family_order: Vec::new(),
             generation: 0,
+            idle_passes: 0,
+            released: false,
         }
     }
 
@@ -112,22 +134,76 @@ impl HarfBuzzAtlas {
     /// glyphs, which leaves the cached UVs pointing at other glyphs' pixels
     /// for good. Dropping the glyph map here is also what bounds it — the
     /// live glyphs re-raster on the next pass, the dead ones don't.
+    ///
+    /// The same rebuild also runs from the other end: growth is one-way, so an
+    /// atlas blown up by a text-heavy burst would otherwise hold its peak
+    /// height (and the matching GPU texture) forever. Once the fill has stayed
+    /// under `HARFBUZZ_ATLAS_IDLE_FILL` for `HARFBUZZ_ATLAS_IDLE_PASSES` in a
+    /// row, drop it and let the live glyphs re-raster into a small one.
     pub(super) fn begin_pass(&mut self) {
-        let full = self
-            .atlas
-            .as_ref()
-            .is_some_and(|atlas| atlas.fill_ratio() > HARFBUZZ_ATLAS_REBUILD_FILL);
-        if !full {
+        let Some(atlas) = self.atlas.as_ref() else {
+            self.idle_passes = 0;
+            return;
+        };
+        let fill = atlas.fill_ratio();
+        if fill > HARFBUZZ_ATLAS_REBUILD_FILL {
+            self.rebuild();
             return;
         }
+        if fill >= HARFBUZZ_ATLAS_IDLE_FILL {
+            self.idle_passes = 0;
+            return;
+        }
+        self.idle_passes += 1;
+        if self.idle_passes < HARFBUZZ_ATLAS_IDLE_PASSES {
+            return;
+        }
+        // Hysteresis: paying a full re-raster to land on the same height (or
+        // one step down from an already-small atlas) would just oscillate.
+        if self.idle_shrink_target().is_none() {
+            self.idle_passes = 0;
+            return;
+        }
+        self.rebuild();
+    }
+
+    /// Height the atlas would settle at if rebuilt now, or `None` when that is
+    /// not at least half the current height. `fill_ratio` is the used fraction
+    /// of the height, and a rebuilt atlas doubles up from
+    /// `UI_HARFBUZZ_ATLAS_INITIAL_HEIGHT`, so this is the floor of what a
+    /// shrink can win — the glyph map is dropped too, and only glyphs the UI
+    /// still asks for come back.
+    fn idle_shrink_target(&self) -> Option<usize> {
+        let atlas = self.atlas.as_ref()?;
+        let height = atlas.size()[1];
+        let used_rows = (atlas.fill_ratio() * height as f32).ceil().max(1.0) as usize;
+        let mut target = UI_HARFBUZZ_ATLAS_INITIAL_HEIGHT;
+        while target < used_rows {
+            target *= 2;
+        }
+        (target <= height / 2).then_some(target)
+    }
+
+    /// Drop the atlas and everything keyed to its placement. The next glyph
+    /// lookup rebuilds it from the initial height.
+    fn rebuild(&mut self) {
         self.atlas = None;
         self.glyphs.clear();
         self.invalidate_runs();
         self.generation = self.generation.wrapping_add(1);
+        self.idle_passes = 0;
+        self.released = true;
     }
 
     pub(super) fn take_delta(&mut self) -> Option<epaint::ImageDelta> {
         self.atlas.as_mut()?.take_delta()
+    }
+
+    /// True once per rebuild, for the caller to turn into a texture free. Read
+    /// it after `take_delta`: a delta means glyphs already re-rastered and the
+    /// `set` replaces the GPU texture on its own.
+    pub(super) fn take_released(&mut self) -> bool {
+        std::mem::take(&mut self.released)
     }
 
     /// Font set changed (resource font registered): cached runs may resolve
@@ -240,6 +316,25 @@ impl HarfBuzzAtlas {
             atlas.allocate((512, 64));
         }
         self.atlas = Some(atlas);
+    }
+
+    /// Swap in an atlas of a chosen height holding `used_rows` of content, so
+    /// a test can pose the exact fill ratio it wants — a tall atlas at a few
+    /// percent fill is what a text-heavy burst leaves behind.
+    #[cfg(test)]
+    pub(super) fn set_atlas_for_test(&mut self, height: usize, used_rows: usize) {
+        let mut atlas = TextureAtlas::new([1024, height], AlphaFromCoverage::default());
+        if used_rows > 0 {
+            atlas.allocate((1, used_rows));
+        }
+        self.atlas = Some(atlas);
+    }
+
+    /// Retained pixels of the CPU image; the GPU texture mirrors it.
+    #[cfg(test)]
+    pub(super) fn retained_pixels(&self) -> usize {
+        let size = self.size();
+        size[0] * size[1]
     }
 }
 

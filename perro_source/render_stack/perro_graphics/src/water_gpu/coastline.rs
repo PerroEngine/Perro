@@ -8,7 +8,11 @@ fn coastline_static_signature_2d(width: usize, height: usize, water: &Water2DSta
     height.hash(&mut hasher);
     water.size[0].to_bits().hash(&mut hasher);
     water.size[1].to_bits().hash(&mut hasher);
-    water.coastline_foam_width.max(0.001).to_bits().hash(&mut hasher);
+    water
+        .coastline_foam_width
+        .max(0.001)
+        .to_bits()
+        .hash(&mut hasher);
     water
         .coastline_cutoff_softness
         .max(0.001)
@@ -334,7 +338,11 @@ fn coastline_static_signature_3d(width: usize, height: usize, water: &Water3DSta
     height.hash(&mut hasher);
     water.size[0].to_bits().hash(&mut hasher);
     water.size[1].to_bits().hash(&mut hasher);
-    water.coastline_foam_width.max(0.001).to_bits().hash(&mut hasher);
+    water
+        .coastline_foam_width
+        .max(0.001)
+        .to_bits()
+        .hash(&mut hasher);
     water
         .coastline_cutoff_softness
         .max(0.001)

@@ -49,14 +49,42 @@ const SMOOTH_MAX_DISTANCE: f32 = 32.0;
 /// Subtexture slot per ortho pattern; slots encode the shader-side
 /// `round(4 * edge_value)` for edge values 0, 0.25, 0.75, 1.0 -> 0, 1, 3, 4.
 const EDGES_ORTHO: [(usize, usize); 16] = [
-    (0, 0), (3, 0), (0, 3), (3, 3), (1, 0), (4, 0), (1, 3), (4, 3),
-    (0, 1), (3, 1), (0, 4), (3, 4), (1, 1), (4, 1), (1, 4), (4, 4),
+    (0, 0),
+    (3, 0),
+    (0, 3),
+    (3, 3),
+    (1, 0),
+    (4, 0),
+    (1, 3),
+    (4, 3),
+    (0, 1),
+    (3, 1),
+    (0, 4),
+    (3, 4),
+    (1, 1),
+    (4, 1),
+    (1, 4),
+    (4, 4),
 ];
 
 /// Subtexture slot per diag pattern (edge values 0..3 map 1:1).
 const EDGES_DIAG: [(usize, usize); 16] = [
-    (0, 0), (1, 0), (0, 2), (1, 2), (2, 0), (3, 0), (2, 2), (3, 2),
-    (0, 1), (1, 1), (0, 3), (1, 3), (2, 1), (3, 1), (2, 3), (3, 3),
+    (0, 0),
+    (1, 0),
+    (0, 2),
+    (1, 2),
+    (2, 0),
+    (3, 0),
+    (2, 2),
+    (3, 2),
+    (0, 1),
+    (1, 1),
+    (0, 3),
+    (1, 3),
+    (2, 1),
+    (3, 1),
+    (2, 3),
+    (3, 3),
 ];
 
 fn quantize(v: f32) -> u8 {
@@ -75,8 +103,7 @@ fn generate_area_tex() -> Vec<u8> {
                 // texel (left, right) stores the area at pixel distances
                 // (left^2, right^2); the shader indexes with sqrt(distance)
                 // and bilinear filtering interpolates in between.
-                let (a0, a1) =
-                    area_ortho(pattern, (left * left) as f32, (right * right) as f32);
+                let (a0, a1) = area_ortho(pattern, (left * left) as f32, (right * right) as f32);
                 let x = e1 * SIZE_ORTHO + left;
                 let y = e2 * SIZE_ORTHO + right;
                 let i = (y * w + x) * 2;
@@ -118,15 +145,22 @@ fn area_under(p1: [f32; 2], p2: [f32; 2], x: f32) -> (f32, f32) {
         return (0.0, 0.0);
     }
 
-    let is_trapezoid =
-        y1.signum() == y2.signum() || y1.abs() < 1e-4 || y2.abs() < 1e-4;
+    let is_trapezoid = y1.signum() == y2.signum() || y1.abs() < 1e-4 || y2.abs() < 1e-4;
     if is_trapezoid {
         let a = (y1 + y2) / 2.0;
-        if a < 0.0 { (a.abs(), 0.0) } else { (0.0, a.abs()) }
+        if a < 0.0 {
+            (a.abs(), 0.0)
+        } else {
+            (0.0, a.abs())
+        }
     } else {
         // The line crosses zero inside the column: two triangles.
         let xi = -p1[1] * d[0] / d[1] + p1[0];
-        let a1 = if xi > p1[0] { y1 * xi.fract() / 2.0 } else { 0.0 };
+        let a1 = if xi > p1[0] {
+            y1 * xi.fract() / 2.0
+        } else {
+            0.0
+        };
         let a2 = if xi < p2[0] {
             y2 * (1.0 - xi.fract()) / 2.0
         } else {
@@ -145,9 +179,8 @@ fn area_under(p1: [f32; 2], p2: [f32; 2], x: f32) -> (f32, f32) {
 /// sqrt-shaped response for short lines.
 fn smooth_area(d: f32, a1: (f32, f32), a2: (f32, f32)) -> ((f32, f32), (f32, f32)) {
     let sqrt_pair = |a: (f32, f32)| ((a.0 * 2.0).sqrt() * 0.5, (a.1 * 2.0).sqrt() * 0.5);
-    let lerp_pair = |b: (f32, f32), a: (f32, f32), p: f32| {
-        (b.0 + (a.0 - b.0) * p, b.1 + (a.1 - b.1) * p)
-    };
+    let lerp_pair =
+        |b: (f32, f32), a: (f32, f32), p: f32| (b.0 + (a.0 - b.0) * p, b.1 + (a.1 - b.1) * p);
     let b1 = sqrt_pair(a1);
     let b2 = sqrt_pair(a2);
     let p = (d / SMOOTH_MAX_DISTANCE).clamp(0.0, 1.0);
@@ -356,10 +389,7 @@ mod tests {
     #[test]
     fn area_tex_dimensions_and_known_texels() {
         let tex = area_tex_bytes();
-        assert_eq!(
-            tex.len(),
-            (AREA_TEX_WIDTH * AREA_TEX_HEIGHT * 2) as usize
-        );
+        assert_eq!(tex.len(), (AREA_TEX_WIDTH * AREA_TEX_HEIGHT * 2) as usize);
 
         // Ortho pattern 1 (slot (3, 0)), distances (0, 0): the reference
         // areaortho returns (0.125, 0.0) -> bytes (32, 0) at texel (48, 0).
@@ -389,10 +419,7 @@ mod tests {
     #[test]
     fn search_tex_dimensions_and_values() {
         let tex = search_tex_bytes();
-        assert_eq!(
-            tex.len(),
-            (SEARCH_TEX_WIDTH * SEARCH_TEX_HEIGHT) as usize
-        );
+        assert_eq!(tex.len(), (SEARCH_TEX_WIDTH * SEARCH_TEX_HEIGHT) as usize);
         // Step counts are 0, 1 or 2, stored as n * 127.
         assert!(tex.iter().all(|&b| b == 0 || b == 127 || b == 254));
         assert!(tex.contains(&127));

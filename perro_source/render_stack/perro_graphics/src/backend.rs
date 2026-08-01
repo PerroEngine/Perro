@@ -189,6 +189,15 @@ pub struct DrawFrameTiming {
     pub skip_prepare_3d_hiz: u32,
     pub skip_prepare_3d_indirect: u32,
     pub skip_prepare_3d_cull_inputs: u32,
+    /// 1 when the retained-scene fast path skipped the entire 3D scene chain
+    /// this frame (depth prepass, culling, mesh pass, seam, particles, water).
+    pub skip_render_3d: u32,
+    /// 1 when the same fast path skipped the 2D scene pass.
+    pub skip_render_2d: u32,
+    /// Scene-building passes encoded this frame; 0 on a fast-path frame.
+    /// Present/tonemap, post, UI and the late overlay are never counted here
+    /// because they run on every frame.
+    pub scene_passes_encoded: u32,
     pub gpu_total: Duration,
     pub total: Duration,
     pub idle_clear: bool,

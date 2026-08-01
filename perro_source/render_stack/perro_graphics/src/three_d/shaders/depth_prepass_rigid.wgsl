@@ -39,8 +39,8 @@ struct VertexOutput {
 }
 
 struct BlendShapeDelta {
-    position_delta: vec4<f32>,
-    normal_delta: vec4<f32>,
+    position_delta: vec3<f32>,
+    packed_normal_delta: u32,
 }
 
 struct BlendShapeInstance {
@@ -50,6 +50,18 @@ struct BlendShapeInstance {
 
 fn unpack_unorm8(packed: u32, shift: u32) -> f32 {
     return f32((packed >> shift) & 0xffu) / 255.0;
+}
+
+// Mirrors pack_blend_normal_delta (three_d/gpu.rs). The depth shaders keep
+// their own namespace, so this is a local copy of the shared_3d helper.
+fn unpack_blend_normal_delta(packed: u32) -> vec3<f32> {
+    let scale = 2.0 * exp2(2.0 * f32(packed >> 30u));
+    let lanes = vec3<f32>(
+        f32(bitcast<i32>(packed << 22u) >> 22u),
+        f32(bitcast<i32>(packed << 12u) >> 22u),
+        f32(bitcast<i32>(packed << 2u) >> 22u),
+    );
+    return max(lanes / 511.0, vec3<f32>(-1.0)) * scale;
 }
 
 fn apply_blend_shapes(v: VertexInput, vertex_index: u32, instance_index: u32) -> VertexInput {
@@ -68,7 +80,7 @@ fn apply_blend_shapes(v: VertexInput, vertex_index: u32, instance_index: u32) ->
         let weight = clamp(blend_shape_weights[blend_meta.weight_range.x + i], 0.0, 1.0);
         let delta = blend_shape_deltas[blend_meta.shape_range.x + i * blend_meta.shape_range.w + local_vertex];
         pos = pos + delta.position_delta.xyz * weight;
-        normal = normal + delta.normal_delta.xyz * weight;
+        normal = normal + unpack_blend_normal_delta(delta.packed_normal_delta) * weight;
     }
     return VertexInput(pos, vec4<f32>(normalize(normal), 0.0));
 }

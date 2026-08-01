@@ -82,6 +82,7 @@ impl Gpu {
         if !output_changed {
             return self.hdr_status;
         }
+        self.invalidate_retained_scene();
 
         self.config.format = selection.format;
         self.config.color_space = selection.color_space;
@@ -92,6 +93,8 @@ impl Gpu {
         self.surface_view_format = selection.view_format;
         self.surface.configure(&self.device, &self.config);
         self.present = PresentProcessor::new(&self.device, self.surface_view_format);
+        self.present
+            .set_output_size(self.config.width, self.config.height);
         // The rebuilt processor starts with every AA stage off; re-apply the
         // config + sample-count gates so FXAA/SMAA/TAA survive output changes.
         self.present
@@ -285,6 +288,7 @@ impl Gpu {
         );
         let post = PostProcessor::new(&device, &queue, render_format, render_width, render_height);
         let mut present = PresentProcessor::new(&device, surface_view_format);
+        present.set_output_size(width, height);
         present.set_fxaa_active(cfg.fxaa && sample_count == 1);
         present.set_smaa_active(cfg.smaa && sample_count == 1);
         present.set_taa_active(cfg.taa && sample_count == 1);
@@ -355,6 +359,8 @@ impl Gpu {
             last_prepare_3d_decals_revision: u64::MAX,
             last_prepare_3d_width: render_width,
             last_prepare_3d_height: render_height,
+            retained_scene_valid: false,
+            retained_scene_key: RetainedSceneKey::default(),
             meshlets_enabled: cfg.meshlets_enabled,
             dev_meshlets: cfg.dev_meshlets,
             meshlet_debug_view: cfg.meshlet_debug_view,
@@ -368,6 +374,14 @@ impl Gpu {
             gpu_timer,
             virtual_size_2d: [1920.0, 1080.0],
         })
+    }
+
+    /// Drop the retained-scene fast path: the next frame re-encodes the whole
+    /// scene chain. Called from every mutation that can change the rendered
+    /// image without going through a per-frame dirty bit or content revision
+    /// (texture invalidation / stream writes / target teardown / resize).
+    pub(crate) fn invalidate_retained_scene(&mut self) {
+        self.retained_scene_valid = false;
     }
 
     /// Project virtual canvas used for the 2D aspect-fit world-to-pixel rule
@@ -398,6 +412,7 @@ impl Gpu {
         if width == 0 || height == 0 {
             return;
         }
+        self.invalidate_retained_scene();
         let mode = self.hdr_status.requested;
         self.set_hdr_mode(mode);
         if self.config.width == width && self.config.height == height {
@@ -406,6 +421,10 @@ impl Gpu {
         self.config.width = width;
         self.config.height = height;
         self.surface.configure(&self.device, &self.config);
+        // Push before the render-size early-out: the swapchain can change size
+        // while the capped render size stays put, and the TAA merged-resolve
+        // gate compares the two.
+        self.present.set_output_size(width, height);
         let (render_width, render_height) = capped_render_size_with_pixel_limit(
             width,
             height,
@@ -465,6 +484,7 @@ impl Gpu {
         if sample_count == self.sample_count {
             return;
         }
+        self.invalidate_retained_scene();
         self.sample_count = sample_count;
         // FXAA/SMAA/TAA never stack on MSAA: the passes follow the live sample
         // count (e.g. the 2D->3D latch turning MSAA on drops the resources).
@@ -481,8 +501,11 @@ impl Gpu {
         if let Some(three_d) = self.three_d.as_mut() {
             three_d.set_sample_count(
                 &self.device,
-                self.pipeline_registries
-                    .get_or_create(&self.device, self.render_format, sample_count),
+                self.pipeline_registries.get_or_create(
+                    &self.device,
+                    self.render_format,
+                    sample_count,
+                ),
                 self.render_width,
                 self.render_height,
             );

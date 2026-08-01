@@ -61,6 +61,7 @@ impl Gpu {
             ui_revision,
             animated_stream_nodes,
             changed_stream_nodes,
+            scene_continuous_updates,
         } = frame;
         let rect_draw_count = upload_2d.draw_count as u32;
         // Keep window alive for the full surface lifetime.
@@ -145,6 +146,11 @@ impl Gpu {
         }
         self.camera_stream_content_revisions
             .retain(|node, _| camera_streams.iter().any(|(active, _)| active == node));
+        // Any stream that (re)binds a target or re-renders one can change a
+        // texture the main scene samples, so it blocks the retained-scene fast
+        // path for this frame. Set conservatively: a stream that passes the
+        // idle gate counts as rendered even if a later early-out skips it.
+        let mut streams_rendered = false;
         for (node, stream) in camera_streams {
             if !camera_stream_uses_render_target(stream) {
                 continue;
@@ -174,6 +180,7 @@ impl Gpu {
                 continue;
             };
             if needs_external_binding {
+                streams_rendered = true;
                 let texture_id = stream.output_texture;
                 let view_2d = target.view.clone();
                 let view_ui = target.view.clone();
@@ -681,6 +688,7 @@ impl Gpu {
             if stream_can_idle {
                 continue;
             }
+            streams_rendered = true;
             // revision update only on render: idle streams skip the content
             // compare entirely; the compare against last-RENDERED content is
             // exactly what the prepare paths below need.
@@ -1339,6 +1347,75 @@ impl Gpu {
         for post in self.camera_stream_post.values_mut() {
             post.note_frame(&self.device);
         }
+
+        // Retained-scene fast path. `post.scene_view()` (and the scene depth
+        // target) survive across frames, so a frame that provably reproduces
+        // the same scene image can leave the whole scene chain out of the
+        // encoder and present the retained texture. Present/tonemap, the post
+        // chain, UI and the late overlay always still run: the swapchain image
+        // is new every frame (concern 1).
+        //
+        // Under MSAA the scene texture is the RESOLVE target of the mesh/2D
+        // passes and `present_scene_bind_group` samples exactly it, so the
+        // retained pixels are the resolved ones (concern 3).
+        //
+        // `post_stage_count` counts the stages that ping-pong scene <->
+        // intermediate. One stage reads the scene and writes the intermediate;
+        // two or more write BACK into the scene texture, destroying the very
+        // pixels the fast path retains, so the gate rejects that case.
+        let post_stage_count = u32::from(camera_post_enabled)
+            + u32::from(global_post_enabled)
+            + u32::from(accessibility_enabled);
+        // Same rule the per-stream idle gate uses: an unpaused sky advances its
+        // time uniform, and a custom sky shader may read the frame globals even
+        // while the sky clock is paused. `scene_continuous_updates` (from the
+        // backend) covers the unpaused case and animated draw materials; the
+        // shader case is only visible here.
+        let sky_animating = lighting_3d
+            .sky
+            .as_ref()
+            .is_some_and(|sky| !sky.time.paused || !sky.shaders.is_empty());
+        let retained_scene_key = RetainedSceneKey {
+            render_width: self.render_width,
+            render_height: self.render_height,
+            sample_count: self.sample_count,
+            post_view_generation: self.post_view_generation,
+            clear_color: [clear_color.r, clear_color.g, clear_color.b, clear_color.a],
+            depth_prepass_needed,
+            blend_screen_active,
+            post_stage_count,
+        };
+        let scene_fast_path = scene_fast_path_allowed(&SceneFastPathSignals {
+            retained_scene_valid: self.retained_scene_valid,
+            retained_key_matches: self.retained_scene_key == retained_scene_key,
+            did_prepare_3d,
+            three_d_content_changed,
+            three_d_dirty,
+            did_prepare_2d,
+            two_d_scene_changed: needs_2d_prepare && has_2d_content,
+            taa_active: taa_run || self.present.taa_active(),
+            needs_water,
+            needs_particles: needs_3d_particles_path,
+            scene_continuous_updates: scene_continuous_updates || sky_animating,
+            streams_rendered,
+            decals_texture_pending,
+            post_stage_count,
+            camera_image_saves_pending: !self.camera_image_save_requests.is_empty(),
+        });
+        // Cleared BEFORE the encode: a frame that renders the scene but then
+        // fails to acquire a surface returns without submitting, so its passes
+        // never execute. Leaving the flag set there would present the older
+        // retained image forever (concern 2). Re-set only after submit.
+        if scene_fast_path {
+            timing.skip_render_3d = 1;
+            timing.skip_render_2d = 1;
+        } else {
+            self.retained_scene_valid = false;
+        }
+
+        // Water timestamps stay paired every frame so the GPU timer never
+        // reads an unwritten query slot. `encode` is a no-op while the water
+        // sim holds no active bodies, and the fast path requires no water.
         if let Some(water) = self.water.as_ref() {
             if gpu_timer_active && let Some(timer) = self.gpu_timer.as_ref() {
                 timer.write_water_start(&mut encoder);
@@ -1351,97 +1428,134 @@ impl Gpu {
             timer.write_water_start(&mut encoder);
             timer.write_water_end(&mut encoder);
         }
-        let clear_in_water_pass =
-            self.three_d.is_none() && self.two_d.is_some() && !waters_2d.is_empty();
-        if let Some(three_d) = self.three_d.as_mut() {
-            three_d.render_pass(
-                &self.queue,
-                &mut encoder,
-                color_view,
-                clear_color,
-                depth_prepass_needed,
-                &camera_3d,
-                true,
-            );
-            // Seam pass runs on the resolved offscreen scene texture, before
-            // particles/water/2D draw on top.
-            if blend_screen_active && !direct_present && self.sample_count == 1 {
-                three_d.mesh_blend_screen_pass(
-                    &self.device,
+        // ---- scene chain: everything that writes the retained scene texture.
+        // Skipped wholesale on a retained-scene frame; `scene_passes_encoded`
+        // stays 0 there, which is what the fast-path tests assert on.
+        if !scene_fast_path {
+            let clear_in_water_pass =
+                self.three_d.is_none() && self.two_d.is_some() && !waters_2d.is_empty();
+            if let Some(three_d) = self.three_d.as_mut() {
+                timing.scene_passes_encoded += 1;
+                three_d.render_pass(
+                    &self.queue,
                     &mut encoder,
-                    self.post.scene_texture(),
-                    &scene_view,
+                    color_view,
+                    clear_color,
+                    depth_prepass_needed,
+                    &camera_3d,
+                    true,
                 );
-            }
-            if let Some(point_particles_3d_gpu) = self.point_particles_3d.as_mut() {
-                point_particles_3d_gpu.render_pass(&mut encoder, color_view, three_d.depth_view());
-            }
-            if let Some(water) = self.water.as_mut() {
-                let clear_water_depth = draws_3d.is_empty()
-                    && point_particles_3d.is_empty()
-                    && lighting_3d.sky.is_none();
-                let water_depth_view = if waters_3d.is_empty() {
-                    // No 3D water: nothing attaches this view (chunk and flip
-                    // passes are gated on 3D water counts).
-                    three_d.release_water_depth();
-                    three_d.depth_view().clone()
-                } else {
-                    // Promote the lazily allocated refraction copy target
-                    // before the capture that fills it.
-                    water.set_scene_color_size(
+                // Seam pass runs on the resolved offscreen scene texture, before
+                // particles/water/2D draw on top.
+                if blend_screen_active && !direct_present && self.sample_count == 1 {
+                    timing.scene_passes_encoded += 1;
+                    three_d.mesh_blend_screen_pass(
                         &self.device,
-                        three_d.depth_prepass_view(),
-                        self.render_width,
-                        self.render_height,
+                        &mut encoder,
+                        self.post.scene_texture(),
+                        &scene_view,
                     );
-                    // At 1x this is a scene-depth copy: water samples the
-                    // prepass view while depth-testing, and the scene depth
-                    // target aliases the prepass texture.
-                    three_d.water_depth_attachment(&self.device, &mut encoder)
-                };
-                water.capture_scene_color(&self.device, &mut encoder, color_view);
-                water.render_3d(
-                    &mut encoder,
-                    color_view,
-                    &water_depth_view,
-                    three_d.water_camera_bind_group(),
-                    clear_water_depth,
-                );
+                }
+                if let Some(point_particles_3d_gpu) = self.point_particles_3d.as_mut() {
+                    timing.scene_passes_encoded += 1;
+                    point_particles_3d_gpu.render_pass(
+                        &mut encoder,
+                        color_view,
+                        three_d.depth_view(),
+                    );
+                }
+                if let Some(water) = self.water.as_mut() {
+                    timing.scene_passes_encoded += 1;
+                    let clear_water_depth = draws_3d.is_empty()
+                        && point_particles_3d.is_empty()
+                        && lighting_3d.sky.is_none();
+                    let water_depth_view = if waters_3d.is_empty() {
+                        // No 3D water: nothing attaches this view (chunk and flip
+                        // passes are gated on 3D water counts).
+                        three_d.release_water_depth();
+                        three_d.depth_view().clone()
+                    } else {
+                        // Promote the lazily allocated refraction copy target
+                        // before the capture that fills it.
+                        water.set_scene_color_size(
+                            &self.device,
+                            three_d.depth_prepass_view(),
+                            self.render_width,
+                            self.render_height,
+                        );
+                        // At 1x this is a scene-depth copy: water samples the
+                        // prepass view while depth-testing, and the scene depth
+                        // target aliases the prepass texture.
+                        three_d.water_depth_attachment(&self.device, &mut encoder)
+                    };
+                    water.capture_scene_color(&self.device, &mut encoder, color_view);
+                    water.render_3d(
+                        &mut encoder,
+                        color_view,
+                        &water_depth_view,
+                        three_d.water_camera_bind_group(),
+                        clear_water_depth,
+                    );
+                }
+            } else if !clear_in_water_pass {
+                timing.scene_passes_encoded += 1;
+                let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("perro_clear_pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: color_view,
+                        resolve_target: resolve_view,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(clear_color),
+                            store: wgpu::StoreOp::Store,
+                        },
+                        depth_slice: None,
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
             }
-        } else if !clear_in_water_pass {
-            let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("perro_clear_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: color_view,
-                    resolve_target: resolve_view,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(clear_color),
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-        }
-        if let Some(two_d) = self.two_d.as_ref() {
-            let two_d_draws = two_d.draw_call_count(rect_draw_count) > 0;
-            if let Some(water) = self.water.as_ref() {
-                water.render_2d(
-                    &mut encoder,
-                    color_view,
-                    (!two_d_draws).then_some(resolve_view).flatten(),
-                    two_d.camera_bind_group(),
-                    clear_in_water_pass.then_some(clear_color),
-                );
-            }
-            if two_d_draws {
-                two_d.render_pass(&mut encoder, color_view, resolve_view, rect_draw_count);
-            } else if waters_2d.is_empty()
-                && let Some(resolve_target) = resolve_view
-            {
+            if let Some(two_d) = self.two_d.as_ref() {
+                let two_d_draws = two_d.draw_call_count(rect_draw_count) > 0;
+                if let Some(water) = self.water.as_ref() {
+                    timing.scene_passes_encoded += 1;
+                    water.render_2d(
+                        &mut encoder,
+                        color_view,
+                        (!two_d_draws).then_some(resolve_view).flatten(),
+                        two_d.camera_bind_group(),
+                        clear_in_water_pass.then_some(clear_color),
+                    );
+                }
+                if two_d_draws {
+                    timing.scene_passes_encoded += 1;
+                    two_d.render_pass(&mut encoder, color_view, resolve_view, rect_draw_count);
+                } else if waters_2d.is_empty()
+                    && let Some(resolve_target) = resolve_view
+                {
+                    timing.scene_passes_encoded += 1;
+                    let _resolve_only_pass =
+                        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                            label: Some("perro_msaa_resolve_only_pass"),
+                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                view: color_view,
+                                resolve_target: Some(resolve_target),
+                                ops: wgpu::Operations {
+                                    load: wgpu::LoadOp::Load,
+                                    store: wgpu::StoreOp::Store,
+                                },
+                                depth_slice: None,
+                            })],
+                            depth_stencil_attachment: None,
+                            timestamp_writes: None,
+                            occlusion_query_set: None,
+                            multiview_mask: None,
+                        });
+                }
+            } else if let Some(resolve_target) = resolve_view {
+                // No 2D pass still needs one resolve pass on MSAA paths.
+                timing.scene_passes_encoded += 1;
                 let _resolve_only_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("perro_msaa_resolve_only_pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1459,38 +1573,22 @@ impl Gpu {
                     multiview_mask: None,
                 });
             }
-        } else if let Some(resolve_target) = resolve_view {
-            // No 2D pass still needs one resolve pass on MSAA paths.
-            let _resolve_only_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("perro_msaa_resolve_only_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: color_view,
-                    resolve_target: Some(resolve_target),
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
+            if blend_screen_active
+                && !direct_present
+                && !msaa_direct_present
+                && self.sample_count > 1
+                && let Some(three_d) = self.three_d.as_mut()
+            {
+                timing.scene_passes_encoded += 1;
+                three_d.mesh_blend_screen_pass(
+                    &self.device,
+                    &mut encoder,
+                    self.post.scene_texture(),
+                    &scene_view,
+                );
+            }
         }
-        if blend_screen_active
-            && !direct_present
-            && !msaa_direct_present
-            && self.sample_count > 1
-            && let Some(three_d) = self.three_d.as_mut()
-        {
-            three_d.mesh_blend_screen_pass(
-                &self.device,
-                &mut encoder,
-                self.post.scene_texture(),
-                &scene_view,
-            );
-        }
+        // ---- end scene chain.
         timing.encode_main = encode_start.elapsed();
 
         let post_start = Instant::now();
@@ -1754,6 +1852,10 @@ impl Gpu {
         }
         timing.submit_queue_main = submit_queue_start.elapsed();
         timing.submit_main = submit_start.elapsed();
+        // The scene chain (or the retained texture it already produced) is now
+        // on the queue: the retained image describes this key from here on.
+        self.retained_scene_valid = true;
+        self.retained_scene_key = retained_scene_key;
         timing.draw_calls_2d = self
             .two_d
             .as_ref()

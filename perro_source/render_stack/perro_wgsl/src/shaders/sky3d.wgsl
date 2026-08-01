@@ -87,7 +87,10 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {
         vec2<f32>(-1.0,  1.0),
     );
     var out: VsOut;
-    out.pos = vec4<f32>(pos[vi], 0.0, 1.0);
+    // z = 1 (far plane): the sky draws inside the mesh pass after the opaque
+    // geometry with LessEqual + depth writes off, so covered pixels are killed
+    // before the fragment shader runs.
+    out.pos = vec4<f32>(pos[vi], 1.0, 1.0);
     out.uv = out.pos.xy * 0.5 + vec2<f32>(0.5);
     return out;
 }

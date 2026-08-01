@@ -249,6 +249,10 @@ pub(super) fn create_shadow_map_array_texture(
     (texture, array_view, layer_views)
 }
 
+/// Sky is drawn as the last opaque draw of `perro_mesh_pass`, not in a pass of
+/// its own: the fullscreen triangle sits on the far plane (NDC z = 1) and
+/// depth-tests LessEqual with writes off, so every pixel already covered by
+/// opaque geometry is killed before the sky shader runs.
 pub(super) fn create_sky_pipeline(
     device: &wgpu::Device,
     pipeline_layout: &wgpu::PipelineLayout,
@@ -284,7 +288,14 @@ pub(super) fn create_sky_pipeline(
             polygon_mode: wgpu::PolygonMode::Fill,
             conservative: false,
         },
-        depth_stencil: None,
+        depth_stencil: Some(wgpu::DepthStencilState {
+            // Matches the scene depth target the mesh pass attaches.
+            format: crate::scene_depth_format(sample_count.max(1)),
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::LessEqual),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        }),
         multisample: wgpu::MultisampleState {
             count: sample_count,
             mask: !0,

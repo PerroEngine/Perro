@@ -208,7 +208,10 @@ impl CameraStreamTonemap {
             queue.write_buffer(&self.config_buffer, 0, bytemuck::bytes_of(&config));
         }
         let mut cache = self.bind_cache.borrow_mut();
-        let cached = match cache.iter().position(|entry| &entry.input_view == input_view) {
+        let cached = match cache
+            .iter()
+            .position(|entry| &entry.input_view == input_view)
+        {
             Some(index) => index,
             None => {
                 let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {

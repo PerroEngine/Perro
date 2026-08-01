@@ -1825,6 +1825,8 @@ impl Gpu3D {
             decal_layer_shrink: shadows::LayerShrinkTracker::default(),
             mesh_compact_requested: false,
             perf_counters: RenderPerfCounters::default(),
+            pass_counters: PassCounters::default(),
+            mesh_blend_seam_region: SeamRegion::default(),
             custom_pipelines: AHashMap::new(),
             custom_pipelines_rigid: AHashMap::new(),
             custom_pipelines_multimesh: AHashMap::new(),

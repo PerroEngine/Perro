@@ -15,7 +15,12 @@ const MESH_BLEND_ID_PARAM_COUNT: usize = 256;
 // id * 2 + k.
 const MESH_BLEND_ID_PARAM_SLOTS: usize = 2;
 // Ids 1..=127 are sources, 128..=255 receivers (mirrored in the seam shader).
-const RECEIVER_ID_BASE: u32 = 128;
+pub(super) const RECEIVER_ID_BASE: u32 = 128;
+// Farthest a seam fragment can tap from its own pixel: R_PX_MAX (20) times the
+// tap-radius jitter ceiling (0.75 + 0.5), rounded up. Mirrors
+// mesh_blend_screen.wgsl - the two must move together, and the seam scissor /
+// scene-copy rects are grown by it.
+pub(super) const SEAM_TAP_REACH_PX: u32 = 26;
 // Multimesh sources reserve a stride of ids: the mask pass salts each
 // instance (source_instance % 7) onto the batch's base id so same-type
 // instances seam against each other. Stride 8 leaves one spare id and keeps
@@ -649,13 +654,18 @@ impl Gpu3D {
     // Renders participant blend ids into the mask, depth-tested against the
     // depth prepass so only visible surfaces tag pixels.
     pub(super) fn encode_mesh_blend_mask_pass(
-        &self,
+        &mut self,
         encoder: &mut wgpu::CommandEncoder,
         frustum_cull_active: bool,
     ) {
-        if !self.mesh_blend_screen_active || self.mesh_blend_mask_batch_entries.is_empty() {
+        if !self.mesh_blend_screen_active
+            || self.mesh_blend_mask_batch_entries.is_empty()
+            || self.mesh_blend_seam_region == SeamRegion::Skip
+        {
+            // Nothing the seam pass could read: skip tagging pixels too.
             return;
         }
+        self.pass_counters.render_passes += 1;
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("perro_mesh_blend_mask_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -790,9 +800,16 @@ impl Gpu3D {
         }
     }
 
-    // Fullscreen seam pass: copies the scene color aside, then rewrites it
-    // with cross-blended colors along visible mask boundaries. `scene_texture`
-    // must be the single-sample texture behind `scene_view`.
+    // Seam pass: copies the scene color aside, then rewrites it with
+    // cross-blended colors along visible mask boundaries. `scene_texture` must
+    // be the single-sample texture behind `scene_view`.
+    //
+    // Both the copy and the pass are restricted to the region
+    // `update_mesh_blend_seam_region` computed from the visible blend sources:
+    // nothing at all when they are all off screen, otherwise the scissor covers
+    // every pixel the shader can rewrite (source rects grown by one tap ring)
+    // and the copy covers every pixel those fragments can sample (one more tap
+    // ring out).
     pub fn mesh_blend_screen_pass(
         &mut self,
         device: &wgpu::Device,
@@ -800,13 +817,23 @@ impl Gpu3D {
         scene_texture: &wgpu::Texture,
         scene_view: &wgpu::TextureView,
     ) {
-        if !self.mesh_blend_screen_active {
+        if !self.mesh_blend_screen_active || self.mesh_blend_seam_region == SeamRegion::Skip {
             return;
         }
         let (width, height) = self.depth_size;
         if scene_texture.width() != width || scene_texture.height() != height {
             return;
         }
+        let (scissor, copy_rect) = match self.mesh_blend_seam_region {
+            // Skip handled above; Full copies and scissors the whole target.
+            SeamRegion::Skip | SeamRegion::Full => {
+                ((0, 0, width, height), (0, 0, width, height))
+            }
+            SeamRegion::Rect(x, y, w, h) => (
+                (x, y, w, h),
+                grow_rect(x, y, w, h, SEAM_TAP_REACH_PX, width, height),
+            ),
+        };
         let needs_copy_target = match &self.mesh_blend_scene_copy {
             Some((texture, _)) => {
                 texture.width() != width
@@ -837,15 +864,33 @@ impl Gpu3D {
         let Some((copy_texture, copy_view)) = self.mesh_blend_scene_copy.as_ref() else {
             return;
         };
+        let (copy_x, copy_y, copy_w, copy_h) = copy_rect;
+        let copy_origin = wgpu::Origin3d {
+            x: copy_x,
+            y: copy_y,
+            z: 0,
+        };
         encoder.copy_texture_to_texture(
-            scene_texture.as_image_copy(),
-            copy_texture.as_image_copy(),
+            wgpu::TexelCopyTextureInfo {
+                texture: scene_texture,
+                mip_level: 0,
+                origin: copy_origin,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyTextureInfo {
+                texture: copy_texture,
+                mip_level: 0,
+                origin: copy_origin,
+                aspect: wgpu::TextureAspect::All,
+            },
             wgpu::Extent3d {
-                width,
-                height,
+                width: copy_w,
+                height: copy_h,
                 depth_or_array_layers: 1,
             },
         );
+        self.pass_counters.mesh_blend_scene_copies += 1;
+        self.pass_counters.mesh_blend_copy_pixels = copy_w.saturating_mul(copy_h);
         if self.mesh_blend_seam_bind_group.is_none() {
             self.mesh_blend_seam_bind_group =
                 Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -893,13 +938,35 @@ impl Gpu3D {
             occlusion_query_set: None,
             multiview_mask: None,
         });
+        let (scissor_x, scissor_y, scissor_w, scissor_h) = scissor;
+        pass.set_scissor_rect(scissor_x, scissor_y, scissor_w, scissor_h);
         pass.set_pipeline(self.pipelines.mesh_blend_seam());
         let Some(seam_bind_group) = self.mesh_blend_seam_bind_group.as_ref() else {
             return;
         };
         pass.set_bind_group(0, seam_bind_group, &[]);
         pass.draw(0..3, 0..1);
+        drop(pass);
+        self.pass_counters.mesh_blend_seam_passes += 1;
+        self.pass_counters.render_passes += 1;
     }
+}
+
+// Grow a pixel rect by `margin` on every side, clamped to the target.
+fn grow_rect(
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+    margin: u32,
+    width: u32,
+    height: u32,
+) -> (u32, u32, u32, u32) {
+    let x0 = x.saturating_sub(margin);
+    let y0 = y.saturating_sub(margin);
+    let x1 = x.saturating_add(w).saturating_add(margin).min(width);
+    let y1 = y.saturating_add(h).saturating_add(margin).min(height);
+    (x0, y0, x1.saturating_sub(x0), y1.saturating_sub(y0))
 }
 
 #[cfg(test)]

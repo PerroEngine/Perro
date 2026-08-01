@@ -21,8 +21,14 @@
 //
 // Output: rgb = resolved color, a = current device depth (next frame's
 // disocclusion reference). The target is the other half of the history
-// ping-pong pair; a separate blit pass copies rgb to the swapchain (doing
-// the upscale when the render size is capped).
+// ping-pong pair.
+//
+// Two entry points share the resolve body:
+// - `fs_main`: history only. A separate blit pass then copies rgb to the
+//   swapchain, doing the upscale when the render size is capped.
+// - `fs_main_direct`: MRT, history + swapchain in ONE pass. Used when render
+//   size == output size, where that blit would be a pure copy. Attachment
+//   sizes must match inside a render pass, so this path is exclusive to 1:1.
 
 struct TaaUniform {
     // Inverse of the current frame's unjittered view-proj.
@@ -58,8 +64,7 @@ fn vs_main(@builtin(vertex_index) vid: u32) -> VsOut {
     return out;
 }
 
-@fragment
-fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+fn taa_resolve(in: VsOut) -> vec4<f32> {
     let dims = vec2<i32>(textureDimensions(current_tex));
     let pixel = clamp(vec2<i32>(in.pos.xy), vec2<i32>(0), dims - vec2<i32>(1));
     let current = textureLoad(current_tex, pixel, 0).rgb;
@@ -116,4 +121,26 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
     let resolved = mix(current, clamped, history_weight);
     return vec4<f32>(resolved, depth);
+}
+
+@fragment
+fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+    return taa_resolve(in);
+}
+
+struct TaaDirectOut {
+    // History ping-pong target: rgb = resolved color, a = device depth.
+    @location(0) history: vec4<f32>,
+    // Swapchain target: same rgb, opaque alpha — byte-identical to what the
+    // separate blit pass wrote (`vec4<f32>(src.rgb, 1.0)`).
+    @location(1) present: vec4<f32>,
+};
+
+@fragment
+fn fs_main_direct(in: VsOut) -> TaaDirectOut {
+    let resolved = taa_resolve(in);
+    var out: TaaDirectOut;
+    out.history = resolved;
+    out.present = vec4<f32>(resolved.rgb, 1.0);
+    return out;
 }

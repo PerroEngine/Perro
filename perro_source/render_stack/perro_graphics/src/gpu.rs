@@ -401,7 +401,15 @@ struct PresentProcessor {
     bgl: wgpu::BindGroupLayout,
     pipeline: wgpu::RenderPipeline,
     exposure_bgl: Option<wgpu::BindGroupLayout>,
+    // Auto-exposure luminance reduction, two passes: `exposure_pipeline`
+    // reduces N tiles into per-workgroup partials, `exposure_resolve_pipeline`
+    // folds the partials and runs the temporal adaptation. Both None when the
+    // device cannot run the compute path (manual exposure fallback).
     exposure_pipeline: Option<wgpu::ComputePipeline>,
+    exposure_resolve_pipeline: Option<wgpu::ComputePipeline>,
+    // Pass-1 workgroup count of the last encoded frame (0 = auto-exposure did
+    // not run). Diagnostics/tests only.
+    last_exposure_groups: u32,
     exposure_config_buffer: wgpu::Buffer,
     exposure_state_buffer: wgpu::Buffer,
     exposure_uniform_buffer: wgpu::Buffer,
@@ -423,6 +431,14 @@ struct PresentProcessor {
     // with FXAA/SMAA by construction (one anti_alias mode).
     taa_active: bool,
     taa: Option<TaaResources>,
+    // Swapchain size, pushed by the surface lifecycle. Equal to the render
+    // size unless the render size is capped; the TAA resolve merges its
+    // swapchain write into the resolve pass only in the equal case. [0, 0]
+    // until the lifecycle pushes it (conservative two-pass path).
+    output_size: [u32; 2],
+    // Render passes the last TAA encode emitted (1 = merged MRT resolve,
+    // 2 = resolve + upscale blit). Diagnostics/tests only.
+    last_taa_passes: u32,
 }
 
 /// Lazily allocated FXAA stage: the present pass tonemaps into `target`
@@ -481,6 +497,9 @@ struct SmaaResources {
 /// after a full TAA off/on cycle.
 struct TaaCore {
     resolve_pipeline: wgpu::RenderPipeline,
+    // MRT resolve: history + swapchain in one pass, used when render size ==
+    // output size (the blit would be a pure copy). Shares `resolve_bgl`.
+    resolve_direct_pipeline: wgpu::RenderPipeline,
     resolve_bgl: wgpu::BindGroupLayout,
     blit_pipeline: wgpu::RenderPipeline,
     blit_bgl: wgpu::BindGroupLayout,
@@ -744,6 +763,14 @@ pub struct Gpu {
     last_prepare_3d_decals_revision: u64,
     last_prepare_3d_width: u32,
     last_prepare_3d_height: u32,
+    // Retained-scene fast path: the scene color target (and depth) persist
+    // across frames, so a frame that provably reproduces the same image can
+    // skip encoding the scene chain and present the retained texture.
+    // `retained_scene_valid` is cleared the moment a frame decides to render
+    // the scene (so an aborted frame cannot leave a stale "valid") and set
+    // again only after that frame's command buffer is submitted.
+    retained_scene_valid: bool,
+    retained_scene_key: RetainedSceneKey,
     meshlets_enabled: bool,
     dev_meshlets: bool,
     meshlet_debug_view: bool,
@@ -933,6 +960,113 @@ pub struct RenderFrame<'a> {
     /// in the idle-skip gate; anything absent here is unchanged by
     /// construction.
     pub changed_stream_nodes: &'a ahash::AHashSet<NodeID>,
+    /// scene content that animates without any command traffic: an unpaused
+    /// sky, or a retained draw whose custom shader reads the frame globals.
+    /// The backend already computes this to decide whether an idle frame may
+    /// be dropped entirely; the retained-scene fast path needs the same answer
+    /// (a frame with no commands still has to re-render an animating scene).
+    pub scene_continuous_updates: bool,
+}
+
+/// Identity of the retained scene texture: everything outside per-frame
+/// content that decides whether the pixels still describe the current frame.
+/// Any mismatch forces a full scene encode.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct RetainedSceneKey {
+    pub render_width: u32,
+    pub render_height: u32,
+    pub sample_count: u32,
+    /// bumped by `Gpu::resize` (recreates the scene texture) and by
+    /// `set_smoothing_samples` (MSAA target + resolve shape change).
+    pub post_view_generation: u64,
+    /// sky/2D clear color: the only scene input that is read straight out of
+    /// the frame state and never routed through a prepare.
+    pub clear_color: [f64; 4],
+    /// The depth prepass is requested per frame (3D water, depth-reading post,
+    /// depth-tested UI primitives) and is NOT covered by the 3D dirty bits: a
+    /// UI Label3D appearing over a static scene would otherwise depth-test
+    /// against a prepass that never ran.
+    pub depth_prepass_needed: bool,
+    /// Screen-space mesh-blend seam pass state.
+    pub blend_screen_active: bool,
+    /// Post / accessibility stages; a chain edit changes what the present pass
+    /// reads, so the scene has to be re-established once.
+    pub post_stage_count: u32,
+}
+
+/// Inputs of the retained-scene fast path. Split out as a plain struct so the
+/// gate is a pure function that can be unit-tested without a GPU: every field
+/// is "true = a reason this frame might differ from the retained one", except
+/// the two retained-validity fields.
+///
+/// Conservative by construction: an uncertain signal must be reported as
+/// changed. A missed fast-path frame costs one redundant encode; a wrong skip
+/// freezes the image.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct SceneFastPathSignals {
+    /// the last submitted frame encoded the full scene chain and nothing has
+    /// invalidated the retained texture since.
+    pub retained_scene_valid: bool,
+    /// retained key == this frame's key (size / samples / post generation /
+    /// clear color).
+    pub retained_key_matches: bool,
+    /// the 3D prepare ran this frame (uniforms, culling inputs, buffers moved).
+    pub did_prepare_3d: bool,
+    /// tracked 3D content delta vs the last prepare (camera, lighting, draws,
+    /// decals, render size).
+    pub three_d_content_changed: bool,
+    /// DIRTY_3D / DIRTY_CAMERA_3D / DIRTY_LIGHTS_3D / DIRTY_RESOURCES.
+    pub three_d_dirty: bool,
+    pub did_prepare_2d: bool,
+    /// The 2D scene pass inputs moved: DIRTY_2D / DIRTY_CAMERA_2D / rect
+    /// upload / resources / redraw, AND there is 2D content to draw. The
+    /// "and content" half matters: every UI command raises DIRTY_2D, and a UI
+    /// change alone cannot alter the 2D scene pass (UI composites onto the
+    /// swapchain, after the scene texture).
+    pub two_d_scene_changed: bool,
+    /// TAA is converging over jittered frames; a "static" frame still changes
+    /// the image, so the fast path never runs with TAA on.
+    pub taa_active: bool,
+    /// any 2D or 3D water this frame (the sim advances every frame).
+    pub needs_water: bool,
+    /// any 3D point-particle emitter path this frame.
+    pub needs_particles: bool,
+    /// unpaused sky or frame-global-reading custom material.
+    pub scene_continuous_updates: bool,
+    /// at least one camera stream re-rendered its target this frame; the main
+    /// scene may sample that texture.
+    pub streams_rendered: bool,
+    /// a decal texture is still decoding and must be retried next frame.
+    pub decals_texture_pending: bool,
+    /// post / accessibility stages that ping-pong scene <-> intermediate.
+    /// Two or more stages write the retained scene texture, which destroys it.
+    pub post_stage_count: u32,
+    /// a camera image save copies out of a stream target this frame.
+    pub camera_image_saves_pending: bool,
+}
+
+/// Pure gate for the retained-scene fast path (see `SceneFastPathSignals`).
+/// True => the scene-building passes (depth prepass, cull, mesh, seam, 3D
+/// particles, water, 2D) may be left out of this frame's encoder; the retained
+/// scene texture already holds a pixel-identical image. Present/tonemap, post,
+/// UI and the late overlay always still run: the swapchain image is new every
+/// frame.
+pub(crate) fn scene_fast_path_allowed(signals: &SceneFastPathSignals) -> bool {
+    signals.retained_scene_valid
+        && signals.retained_key_matches
+        && !signals.did_prepare_3d
+        && !signals.three_d_content_changed
+        && !signals.three_d_dirty
+        && !signals.did_prepare_2d
+        && !signals.two_d_scene_changed
+        && !signals.taa_active
+        && !signals.needs_water
+        && !signals.needs_particles
+        && !signals.scene_continuous_updates
+        && !signals.streams_rendered
+        && !signals.decals_texture_pending
+        && !signals.camera_image_saves_pending
+        && signals.post_stage_count <= 1
 }
 
 #[inline]
@@ -976,6 +1110,14 @@ pub struct RenderGpuTiming {
     pub skip_prepare_3d_hiz: u32,
     pub skip_prepare_3d_indirect: u32,
     pub skip_prepare_3d_cull_inputs: u32,
+    /// 1 when the retained-scene fast path skipped the whole 3D scene chain
+    /// (depth prepass, culling, mesh pass, seam pass, 3D particles, water).
+    pub skip_render_3d: u32,
+    /// 1 when the same fast path skipped the 2D scene pass.
+    pub skip_render_2d: u32,
+    /// Scene-building passes handed to the encoder this frame. 0 on a fast
+    /// path frame; present/post/UI/late-overlay passes are not counted.
+    pub scene_passes_encoded: u32,
     pub total: Duration,
     pub presented: bool,
 }
@@ -983,6 +1125,10 @@ pub struct RenderGpuTiming {
 mod frame;
 mod lifecycle;
 mod textures;
+
+#[cfg(test)]
+#[path = "../tests/unit/retained_scene_tests.rs"]
+mod retained_scene_tests;
 
 #[cfg(test)]
 mod camera_stream_revision_tests {

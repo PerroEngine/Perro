@@ -429,8 +429,8 @@ fn build_packed_lod_rigid_prelude() -> String {
     );
     let wgsl = packed_lod_replace(
         wgsl,
-        "struct BlendShapeDelta { position_delta: vec4<f32>, normal_delta: vec4<f32>, };",
-        "struct PackedLodParam { pos_min: vec4<f32>, pos_extent: vec4<f32>, uv_min_extent: vec4<f32>, }; struct BlendShapeDelta { position_delta: vec4<f32>, normal_delta: vec4<f32>, };",
+        "struct BlendShapeDelta { position_delta: vec3<f32>, packed_normal_delta: u32, };",
+        "struct PackedLodParam { pos_min: vec4<f32>, pos_extent: vec4<f32>, uv_min_extent: vec4<f32>, }; struct BlendShapeDelta { position_delta: vec3<f32>, packed_normal_delta: u32, };",
     );
     let wgsl = packed_lod_replace(wgsl, "var out_pos = v.pos;", "var out_pos = v.pos.xyz;");
     let wgsl = packed_lod_replace(
@@ -479,8 +479,8 @@ fn build_packed_lod_depth_rigid_wgsl() -> String {
     );
     let wgsl = packed_lod_replace(
         wgsl,
-        "struct BlendShapeDelta { position_delta: vec4<f32>, normal_delta: vec4<f32>, }",
-        "struct PackedLodParam { pos_min: vec4<f32>, pos_extent: vec4<f32>, uv_min_extent: vec4<f32>, } struct BlendShapeDelta { position_delta: vec4<f32>, normal_delta: vec4<f32>, }",
+        "struct BlendShapeDelta { position_delta: vec3<f32>, packed_normal_delta: u32, }",
+        "struct PackedLodParam { pos_min: vec4<f32>, pos_extent: vec4<f32>, uv_min_extent: vec4<f32>, } struct BlendShapeDelta { position_delta: vec3<f32>, packed_normal_delta: u32, }",
     );
     let wgsl = packed_lod_replace(wgsl, "var pos = v.pos;", "var pos = v.pos.xyz;");
     let wgsl = packed_lod_replace(
@@ -1570,6 +1570,78 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             Some(72),
             "cull scale_bits offset"
         );
+    }
+
+    // BlendShapeDelta is copied into every shader that reads morph targets and
+    // is byte-mirrored by BlendShapeDeltaGpu (three_d/gpu.rs, 16 bytes). A
+    // stride drift in any copy makes every target past the first read the
+    // previous target's deltas, so a face rig melts instead of animating.
+    #[test]
+    fn blend_shape_delta_layout_matches_cpu_stride() {
+        fn delta_layout(wgsl: &str, label: &str) -> (Vec<(String, u32)>, u32) {
+            let module = naga::front::wgsl::parse_str(wgsl)
+                .unwrap_or_else(|err| panic!("{label}: {err}"));
+            for (_, ty) in module.types.iter() {
+                if ty.name.as_deref() == Some("BlendShapeDelta")
+                    && let naga::TypeInner::Struct { members, span } = &ty.inner
+                {
+                    let fields = members
+                        .iter()
+                        .map(|m| (m.name.clone().unwrap_or_default(), m.offset))
+                        .collect();
+                    return (fields, *span);
+                }
+            }
+            panic!("{label}: BlendShapeDelta struct not found");
+        }
+        let material = regular::MATERIAL_STANDARD_WGSL;
+        let sources = [
+            (
+                "prelude",
+                build_material_shader_with_prelude(regular::prelude_wgsl(), material),
+            ),
+            (
+                "prelude rigid",
+                build_material_shader_with_prelude(regular::prelude_rigid_wgsl(), material),
+            ),
+            (
+                "prelude skinned",
+                build_material_shader_with_prelude(regular::prelude_skinned_wgsl(), material),
+            ),
+            (
+                "prelude rigid packed lod",
+                build_material_shader_with_prelude(&build_packed_lod_rigid_prelude(), material),
+            ),
+            (
+                "multimesh",
+                sanitize_reserved_meta_identifier(regular::multimesh_wgsl()),
+            ),
+            ("depth prepass", regular::DEPTH_PREPASS_WGSL.to_string()),
+            (
+                "depth prepass rigid",
+                regular::DEPTH_PREPASS_RIGID_WGSL.to_string(),
+            ),
+            (
+                "depth prepass rigid packed lod",
+                build_packed_lod_depth_rigid_wgsl(),
+            ),
+            (
+                "depth prepass skinned",
+                regular::DEPTH_PREPASS_SKINNED_WGSL.to_string(),
+            ),
+        ];
+        for (label, wgsl) in &sources {
+            let (fields, span) = delta_layout(wgsl, label);
+            assert_eq!(span, 16, "{label}: blend delta span");
+            assert_eq!(
+                fields
+                    .iter()
+                    .find(|(name, _)| name == "packed_normal_delta")
+                    .map(|(_, offset)| *offset),
+                Some(12),
+                "{label}: packed normal offset"
+            );
+        }
     }
 
     #[test]

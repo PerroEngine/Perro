@@ -194,8 +194,8 @@ struct InstanceInput {
 };
 
 struct BlendShapeDelta {
-    position_delta: vec4<f32>,
-    normal_delta: vec4<f32>,
+    position_delta: vec3<f32>,
+    packed_normal_delta: u32,
 };
 
 struct BlendShapeInstance {
@@ -324,7 +324,7 @@ fn perro_apply_blend_shapes(v: VertexInput, inst: InstanceInput, vertex_index: u
         let weight = clamp(blend_shape_weights[blend_meta.weight_range.x + i], 0.0, 1.0);
         let delta = blend_shape_deltas[blend_meta.shape_range.x + i * blend_meta.shape_range.w + local_vertex];
         out_pos = out_pos + delta.position_delta.xyz * weight;
-        out_normal = out_normal + delta.normal_delta.xyz * weight;
+        out_normal = out_normal + perro_unpack_blend_normal_delta(delta.packed_normal_delta) * weight;
     }
     return VertexInput(out_pos, vec4<f32>(normalize(out_normal), 0.0), v.uv, v.paint_uv);
 }

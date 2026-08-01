@@ -339,13 +339,18 @@ impl Gpu3D {
                                     v.position_delta[0],
                                     v.position_delta[1],
                                     v.position_delta[2],
-                                    0.0,
                                 ]
                             })
-                            .unwrap_or([0.0; 4]),
-                        normal_delta: vertex
-                            .map(|v| [v.normal_delta[0], v.normal_delta[1], v.normal_delta[2], 0.0])
-                            .unwrap_or([0.0; 4]),
+                            .unwrap_or([0.0; 3]),
+                        packed_normal_delta: vertex
+                            .map(|v| {
+                                pack_blend_normal_delta([
+                                    v.normal_delta[0],
+                                    v.normal_delta[1],
+                                    v.normal_delta[2],
+                                ])
+                            })
+                            .unwrap_or(0),
                     });
                 }
             }

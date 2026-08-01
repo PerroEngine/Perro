@@ -57,8 +57,8 @@ struct VertexOutput {
 }
 
 struct BlendShapeDelta {
-    position_delta: vec4<f32>,
-    normal_delta: vec4<f32>,
+    position_delta: vec3<f32>,
+    packed_normal_delta: u32,
 }
 
 struct BlendShapeInstance {

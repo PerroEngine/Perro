@@ -59,14 +59,14 @@ impl PerroGraphics {
         }
         let cache = &mut self.custom_shader_animated_cache;
         let lookup = self.static_shader_lookup;
-        let animated = self
-            .renderer_3d
-            .any_retained_custom_material_where(&self.resources, |shader_path| {
-                let key = perro_ids::string_to_u64(shader_path);
-                *cache
-                    .entry(key)
-                    .or_insert_with(|| custom_shader_reads_frame_globals(shader_path, lookup))
-            });
+        let animated =
+            self.renderer_3d
+                .any_retained_custom_material_where(&self.resources, |shader_path| {
+                    let key = perro_ids::string_to_u64(shader_path);
+                    *cache
+                        .entry(key)
+                        .or_insert_with(|| custom_shader_reads_frame_globals(shader_path, lookup))
+                });
         self.retained_animated_material_memo = Some((draws_revision, material_revision, animated));
         animated
     }
@@ -645,6 +645,7 @@ impl PerroGraphics {
                 static_shader_lookup: self.static_shader_lookup,
                 animated_stream_nodes: &animated_streams,
                 changed_stream_nodes: &self.camera_stream_states_changed,
+                scene_continuous_updates: has_continuous_updates,
             });
             let mut water_samples = Vec::new();
             gpu.drain_water_samples(&mut water_samples);
@@ -707,6 +708,9 @@ impl PerroGraphics {
             skip_prepare_3d_hiz: gpu_timing.skip_prepare_3d_hiz,
             skip_prepare_3d_indirect: gpu_timing.skip_prepare_3d_indirect,
             skip_prepare_3d_cull_inputs: gpu_timing.skip_prepare_3d_cull_inputs,
+            skip_render_3d: gpu_timing.skip_render_3d,
+            skip_render_2d: gpu_timing.skip_render_2d,
+            scene_passes_encoded: gpu_timing.scene_passes_encoded,
             gpu_total: gpu_timing.total,
             total: total_start.elapsed(),
             idle_clear: false,

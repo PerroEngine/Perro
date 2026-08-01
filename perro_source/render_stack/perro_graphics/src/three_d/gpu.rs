@@ -593,11 +593,63 @@ struct MultiMeshDrawParamGpu {
 // (the cull shader keeps its own copy); all three must stay 96 bytes.
 const _: () = assert!(std::mem::size_of::<MultiMeshDrawParamGpu>() == 96);
 
+/// One morph-target delta for one vertex. The arena is `targets * vertices`
+/// entries per mesh, so a face rig runs to tens of MB: position keeps full f32
+/// (offsets are unbounded world units) while the normal delta packs into a
+/// single u32, halving the stride from 32 to 16 bytes.
+///
+/// Byte-mirrored by `BlendShapeDelta` in prelude_3d.wgsl, multimesh.wgsl and
+/// the three depth-prepass shaders; all of them must stay 16 bytes.
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct BlendShapeDeltaGpu {
-    position_delta: [f32; 4],
-    normal_delta: [f32; 4],
+    position_delta: [f32; 3],
+    packed_normal_delta: u32,
+}
+
+const _: () = assert!(std::mem::size_of::<BlendShapeDeltaGpu>() == 16);
+
+/// Component range selected by the 2-bit exponent in a packed normal delta.
+/// Morph normal deltas are `target_normal - base_normal`, so `|c| <= 2` covers
+/// every unit-normal pair; the wider steps only exist so authored outliers
+/// lose precision instead of clipping.
+const BLEND_NORMAL_DELTA_SCALES: [f32; 4] = [2.0, 8.0, 32.0, 128.0];
+
+/// snorm10 per lane + a 2-bit shared exponent. Mirrored by
+/// `perro_unpack_blend_normal_delta` (shared_3d.wgsl) and by the
+/// `unpack_blend_normal_delta` copy each depth-prepass shader carries.
+#[inline]
+fn pack_blend_normal_delta(delta: [f32; 3]) -> u32 {
+    let magnitude = delta
+        .iter()
+        .fold(0.0f32, |widest, component| widest.max(component.abs()));
+    let mut exponent = 0usize;
+    while exponent + 1 < BLEND_NORMAL_DELTA_SCALES.len()
+        && magnitude > BLEND_NORMAL_DELTA_SCALES[exponent]
+    {
+        exponent += 1;
+    }
+    let scale = BLEND_NORMAL_DELTA_SCALES[exponent];
+    let mut packed = (exponent as u32) << 30;
+    for (lane, component) in delta.iter().enumerate() {
+        // NaN clamps to NaN and casts to 0, matching the zeroed default.
+        let quantized = ((component / scale).clamp(-1.0, 1.0) * 511.0).round() as i32;
+        packed |= ((quantized as u32) & 0x3ff) << (lane as u32 * 10);
+    }
+    packed
+}
+
+#[cfg(test)]
+#[inline]
+fn unpack_blend_normal_delta(packed: u32) -> [f32; 3] {
+    let scale = BLEND_NORMAL_DELTA_SCALES[(packed >> 30) as usize];
+    let mut delta = [0.0f32; 3];
+    for (lane, component) in delta.iter_mut().enumerate() {
+        let bits = (packed >> (lane as u32 * 10)) & 0x3ff;
+        let signed = ((bits << 22) as i32) >> 22;
+        *component = (signed as f32 / 511.0).max(-1.0) * scale;
+    }
+    delta
 }
 
 #[repr(C)]
@@ -1451,6 +1503,12 @@ pub struct Gpu3D {
     decal_layer_shrink: shadows::LayerShrinkTracker,
     mesh_compact_requested: bool,
     perf_counters: RenderPerfCounters,
+    pass_counters: PassCounters,
+    // Seam-pass gate for the next `mesh_blend_screen_pass`, decided in
+    // `render_pass` where the camera (and therefore the frustum / projection)
+    // is in hand. Defaults to Full so a seam encode without a preceding
+    // render_pass keeps the old unconditional behavior.
+    mesh_blend_seam_region: SeamRegion,
 }
 
 pub struct Prepare3D<'a> {
@@ -1534,6 +1592,42 @@ struct RenderPerfCounters {
     texture_bind_group_switches: u32,
     camera_bind_group_switches: u32,
     draw_batches: u32,
+}
+
+// Pass-structure counters. Written every frame by `render_pass` /
+// `mesh_blend_screen_pass` and read by the render-pass structure tests; they
+// are deliberately not part of the shipping stats surface, so outside `cfg(test)`
+// nothing reads them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[allow(dead_code)]
+struct PassCounters {
+    // Render passes `render_pass` encodes for this frame.
+    render_passes: u32,
+    // Sky fullscreen triangles drawn inside the mesh pass.
+    sky_draws: u32,
+    // Seam passes and scene-color copies `mesh_blend_screen_pass` encodes.
+    mesh_blend_seam_passes: u32,
+    mesh_blend_scene_copies: u32,
+    // Pixels covered by the seam scene copy (0 when the copy is skipped).
+    mesh_blend_copy_pixels: u32,
+    // Full-res scene-depth copies encoded for the 3D water pass.
+    water_depth_copies: u32,
+}
+
+// Screen region the mesh-blend seam pass has to touch this frame.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum SeamRegion {
+    // No blend source is on screen: the seam pass (and its scene copy) is a
+    // no-op and gets skipped entirely.
+    Skip,
+    // Rect math degenerated (participant behind the camera, no usable bound,
+    // huge instance counts): copy and scissor the whole target. Also the
+    // default, so a seam encode without a preceding render_pass keeps the old
+    // unconditional behavior.
+    #[default]
+    Full,
+    // Copy + scissor restricted to this pixel rect (x, y, width, height).
+    Rect(u32, u32, u32, u32),
 }
 
 #[derive(Clone, Copy)]
@@ -1745,11 +1839,13 @@ const BUILTIN_VARIANT_PIPELINE_CAP: usize = 128;
 #[cfg(test)]
 mod tests {
     use super::{
-        DrawBatch, DrawBatchPush, MATERIAL_TEXTURE_NONE, MaterialInstanceGpu, MaterialPipelineKind,
-        MaterialTextureKey, MultiMeshDrawParamGpu, MultiMeshInstanceGpu, PackedLodParamGpu,
-        PackedRigidLodVertex, RenderBatchKind, RenderPath3D, RigidInstanceMetaGpu, RigidMeshVertex,
+        BLEND_NORMAL_DELTA_SCALES, BlendShapeDeltaGpu, DrawBatch, DrawBatchPush,
+        MATERIAL_TEXTURE_NONE, MaterialInstanceGpu, MaterialPipelineKind, MaterialTextureKey,
+        MultiMeshDrawParamGpu, MultiMeshInstanceGpu, PackedLodParamGpu, PackedRigidLodVertex,
+        RenderBatchKind, RenderPath3D, RigidInstanceMetaGpu, RigidMeshVertex,
         SkinnedInstanceMetaGpu, SkinnedMeshVertex, camera, compare_draw_batch_keys,
-        draw_batch_state_key, push_draw_batch, render_state_key,
+        draw_batch_state_key, pack_blend_normal_delta, push_draw_batch, render_state_key,
+        unpack_blend_normal_delta,
     };
     use glam::{Mat4, Quat, Vec3, Vec4};
     use perro_asset_formats::pmesh::{
@@ -1792,6 +1888,76 @@ mod tests {
         )
     }
 
+    // Morph normal deltas are `target_normal - base_normal`, so the whole
+    // range a unit-normal pair can produce is [-2, 2]; the packed lane keeps
+    // snorm10 precision over exactly that range and falls back to wider
+    // exponent steps for authored outliers instead of clipping them.
+    #[test]
+    fn blend_normal_delta_pack_round_trips_within_tolerance() {
+        let mut seed = 0x5eed_1234u32;
+        let mut worst = 0.0f32;
+        for _ in 0..20_000 {
+            let delta = next_vec3(&mut seed, -2.0, 2.0).to_array();
+            let restored = unpack_blend_normal_delta(pack_blend_normal_delta(delta));
+            for (packed, exact) in restored.iter().zip(delta.iter()) {
+                worst = worst.max((packed - exact).abs());
+            }
+        }
+        // Half a snorm10 step at the base scale: 2.0 / (2 * 511).
+        let bound = BLEND_NORMAL_DELTA_SCALES[0] / 1022.0;
+        assert!(
+            worst <= bound + 1.0e-6,
+            "max error {worst} over |delta| <= 2 exceeds {bound}"
+        );
+
+        // Zero stays exactly zero: absent per-vertex deltas pack to 0 bits and
+        // must not nudge the base normal.
+        assert_eq!(pack_blend_normal_delta([0.0; 3]), 0);
+        assert_eq!(unpack_blend_normal_delta(0), [0.0; 3]);
+
+        // Exponent escalation: each step keeps half-a-step accuracy at its own
+        // scale rather than clamping the component away.
+        for (magnitude, scale) in [
+            (2.0f32, BLEND_NORMAL_DELTA_SCALES[0]),
+            (5.0, BLEND_NORMAL_DELTA_SCALES[1]),
+            (20.0, BLEND_NORMAL_DELTA_SCALES[2]),
+            (100.0, BLEND_NORMAL_DELTA_SCALES[3]),
+        ] {
+            for signed in [magnitude, -magnitude] {
+                let delta = [signed, signed * 0.5, -signed * 0.25];
+                let restored = unpack_blend_normal_delta(pack_blend_normal_delta(delta));
+                for (packed, exact) in restored.iter().zip(delta.iter()) {
+                    assert!(
+                        (packed - exact).abs() <= scale / 1022.0 + 1.0e-4,
+                        "|{signed}| lane error {} exceeds scale {scale}",
+                        (packed - exact).abs()
+                    );
+                }
+            }
+        }
+
+        // Past the widest step components saturate instead of wrapping.
+        let clamped = unpack_blend_normal_delta(pack_blend_normal_delta([900.0, -900.0, 0.0]));
+        let top = BLEND_NORMAL_DELTA_SCALES[3];
+        assert!((clamped[0] - top).abs() <= 1.0e-3);
+        assert!((clamped[1] + top).abs() <= 1.0e-3);
+
+        // NaN/inf inputs must not produce garbage magnitudes.
+        let degenerate = unpack_blend_normal_delta(pack_blend_normal_delta([f32::NAN, 0.0, 0.0]));
+        assert!(degenerate.iter().all(|c| c.is_finite()));
+    }
+
+    // A 50k-vertex head with 20 morph targets: 1M delta entries. The 32-byte
+    // layout cost 32 MiB of arena (CPU scratch + GPU storage); 16 bytes halves
+    // it, and the ratio is what the packing exists for.
+    #[test]
+    fn blend_delta_arena_halves_for_a_face_rig() {
+        let entries = 50_000usize * 20;
+        let bytes = entries * std::mem::size_of::<BlendShapeDeltaGpu>();
+        assert_eq!(bytes, 16_000_000, "packed arena bytes");
+        assert_eq!(entries * 32, 32_000_000, "unpacked arena bytes");
+    }
+
     #[test]
     fn packed_gpu_layouts_keep_expected_sizes() {
         assert_eq!(std::mem::size_of::<RigidMeshVertex>(), 36);
@@ -1803,6 +1969,12 @@ mod tests {
         assert_eq!(std::mem::size_of::<MaterialInstanceGpu>(), 20);
         assert_eq!(std::mem::size_of::<RigidInstanceMetaGpu>(), 32);
         assert_eq!(std::mem::size_of::<SkinnedInstanceMetaGpu>(), 36);
+        assert_eq!(std::mem::size_of::<BlendShapeDeltaGpu>(), 16);
+        assert_eq!(
+            std::mem::offset_of!(BlendShapeDeltaGpu, packed_normal_delta),
+            12,
+            "blend delta packed normal offset"
+        );
         assert_eq!(
             std::mem::offset_of!(RigidMeshVertex, normal),
             12,

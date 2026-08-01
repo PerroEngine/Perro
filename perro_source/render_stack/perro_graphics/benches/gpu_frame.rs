@@ -60,6 +60,11 @@ struct TimingSum {
     draw_calls_3d: u64,
     draw_instances_3d: u64,
     presented: u64,
+    // Retained-scene fast path: frames whose scene chain was skipped entirely,
+    // and the scene-building passes actually encoded. A static case should
+    // trend toward skip_render_3d == frames and scene_passes == 0.
+    skip_render_3d: u64,
+    scene_passes: u64,
     frames: u64,
     total_samples: Vec<Duration>,
     prepare_cpu_samples: Vec<Duration>,
@@ -92,6 +97,8 @@ impl TimingSum {
         self.draw_calls_3d += u64::from(timing.draw_calls_3d);
         self.draw_instances_3d += u64::from(timing.draw_instances_3d);
         self.presented += u64::from(!timing.idle_clear);
+        self.skip_render_3d += u64::from(timing.skip_render_3d);
+        self.scene_passes += u64::from(timing.scene_passes_encoded);
         self.frames += 1;
     }
 
@@ -129,7 +136,7 @@ impl TimingSum {
     fn print(&self, name: &str) {
         let frames = self.frames.max(1);
         println!(
-            "{name:32} total={:>6}us wait={:>6}us gpuq={:>6}us water={:>5}us cpu_prep={:>5}us gpu2d={:>5}us gpu3d={:>5}us acquire={:>5}us encode={:>5}us submit={:>5}us post={:>5}us present={:>5}us dc2d={:>3} dc3d={:>3} inst3d={:>7} gpuq_med={:>8.1}us gpuq_p95={:>8.1}us cpu_med={:>7.1}us cpu_p95={:>7.1}us enc_med={:>7.1}us enc_p95={:>7.1}us pipe_med={:>3} pipe_p95={:>3}",
+            "{name:32} total={:>6}us wait={:>6}us gpuq={:>6}us water={:>5}us cpu_prep={:>5}us gpu2d={:>5}us gpu3d={:>5}us acquire={:>5}us encode={:>5}us submit={:>5}us post={:>5}us present={:>5}us dc2d={:>3} dc3d={:>3} inst3d={:>7} skip3d={:>3}/{:<3} scene_pass={:>3} gpuq_med={:>8.1}us gpuq_p95={:>8.1}us cpu_med={:>7.1}us cpu_p95={:>7.1}us enc_med={:>7.1}us enc_p95={:>7.1}us pipe_med={:>3} pipe_p95={:>3}",
             Self::avg_us(self.total, frames),
             Self::avg_us(self.wait_idle, frames),
             Self::avg_us(self.gpu_main, frames),
@@ -145,6 +152,9 @@ impl TimingSum {
             self.draw_calls_2d / frames,
             self.draw_calls_3d / frames,
             self.draw_instances_3d / frames,
+            self.skip_render_3d,
+            frames,
+            self.scene_passes / frames,
             Self::percentile_us(&self.gpu_main_samples, 0.5),
             Self::percentile_us(&self.gpu_main_samples, 0.95),
             Self::percentile_us(&self.prepare_cpu_samples, 0.5),
@@ -172,14 +182,14 @@ impl TimingSum {
         if write_header {
             writeln!(
                 file,
-                "case,frames,total_us,wait_us,gpu_main_us,gpu_water_us,cpu_prepare_us,gpu_2d_us,gpu_3d_us,encode_us,submit_us,present_us,draw_calls_2d,draw_calls_3d,instances_3d,gpu_main_median_us,gpu_main_p95_us,cpu_prepare_median_us,cpu_prepare_p95_us,encode_median_us,encode_p95_us,pipeline_switches_median,pipeline_switches_p95"
+                "case,frames,total_us,wait_us,gpu_main_us,gpu_water_us,cpu_prepare_us,gpu_2d_us,gpu_3d_us,encode_us,submit_us,present_us,draw_calls_2d,draw_calls_3d,instances_3d,skip_render_3d_frames,scene_passes_per_frame,gpu_main_median_us,gpu_main_p95_us,cpu_prepare_median_us,cpu_prepare_p95_us,encode_median_us,encode_p95_us,pipeline_switches_median,pipeline_switches_p95"
             )
             .expect("write gpu bench csv header");
         }
         let frames = self.frames.max(1);
         writeln!(
             file,
-            "{name},{frames},{},{},{},{},{},{},{},{},{},{},{},{},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{},{}",
+            "{name},{frames},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{},{}",
             Self::avg_us(self.total, frames),
             Self::avg_us(self.wait_idle, frames),
             Self::avg_us(self.gpu_main, frames),
@@ -193,6 +203,8 @@ impl TimingSum {
             self.draw_calls_2d / frames,
             self.draw_calls_3d / frames,
             self.draw_instances_3d / frames,
+            self.skip_render_3d,
+            self.scene_passes / frames,
             Self::percentile_us(&self.gpu_main_samples, 0.5),
             Self::percentile_us(&self.gpu_main_samples, 0.95),
             Self::percentile_us(&self.prepare_cpu_samples, 0.5),

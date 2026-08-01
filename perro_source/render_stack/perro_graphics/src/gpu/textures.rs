@@ -8,6 +8,7 @@ pub(crate) fn camera_stream_texture_source(node: NodeID) -> String {
 
 impl Gpu {
     pub fn remove_camera_stream(&mut self, node: NodeID, output_texture: perro_ids::TextureID) {
+        self.invalidate_retained_scene();
         // no target => the stream rendered straight into a source texture
         // (webcam passthrough) that no consumer bound externally.
         let had_target = self.camera_stream_targets.remove(&node).is_some();
@@ -53,6 +54,7 @@ impl Gpu {
     }
 
     pub fn invalidate_custom_material_pipelines(&mut self) {
+        self.invalidate_retained_scene();
         if let Some(three_d) = self.three_d.as_mut() {
             three_d.invalidate_custom_pipelines();
         }
@@ -62,6 +64,7 @@ impl Gpu {
     }
 
     pub fn invalidate_texture(&mut self, texture: perro_ids::TextureID, source: Option<&str>) {
+        self.invalidate_retained_scene();
         // Drop the shared upload first; the per-consumer fan-out below drops
         // the handles + bind groups, so the next demand re-uploads once.
         if let Some(source) = source {
@@ -95,6 +98,7 @@ impl Gpu {
     // cache, so rebuilds use a single-level (no-mip) texture that supports the
     // per-frame in-place base upload.
     pub fn set_stream_texture(&mut self, texture: perro_ids::TextureID, is_stream: bool) {
+        self.invalidate_retained_scene();
         if let Some(two_d) = self.two_d.as_mut() {
             two_d.set_stream_texture(texture, is_stream);
         }
@@ -127,6 +131,10 @@ impl Gpu {
         height: u32,
         rgba: &[u8],
     ) {
+        // Webcam / video frames land straight in the texels of a texture the
+        // scene may sample, with no dirty bit and no revision bump. The
+        // retained scene can no longer be trusted to match.
+        self.invalidate_retained_scene();
         let queue = &self.queue;
         // Shared fast path: resident stream uploads are single shared textures,
         // so one base-level write refreshes every consumer's bind group at

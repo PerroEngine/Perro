@@ -67,6 +67,20 @@ pub(super) fn draw_compacted_run(
     );
 }
 
+// Sky as an in-pass draw: one fullscreen triangle on the far plane. The
+// pipeline depth-tests LessEqual with writes off (see create_sky_pipeline), so
+// it only shades pixels the opaque geometry left at depth 1.
+fn draw_sky<'a>(gpu: &'a Gpu3D, pass: &mut wgpu::RenderPass<'a>) {
+    let sky_pipeline = gpu
+        .active_sky_pipeline_key
+        .as_ref()
+        .and_then(|key| gpu.custom_sky_pipelines.get(key))
+        .unwrap_or_else(|| gpu.pipelines.sky());
+    pass.set_pipeline(sky_pipeline);
+    pass.set_bind_group(0, &gpu.sky_bind_group, &[]);
+    pass.draw(0..3, 0..1);
+}
+
 impl Gpu3D {
     #[allow(clippy::too_many_arguments)]
     pub fn render_pass(
@@ -82,6 +96,7 @@ impl Gpu3D {
         self.perf_counters.pipeline_switches = 0;
         self.perf_counters.texture_bind_group_switches = 0;
         self.perf_counters.camera_bind_group_switches = 0;
+        self.pass_counters = PassCounters::default();
         let frustum_cull_active = self.should_run_frustum_cull();
         let hiz_active = self.should_run_hiz_occlusion(frustum_cull_active);
         let multimesh_cull_active = self.should_run_multimesh_cull();
@@ -124,6 +139,7 @@ impl Gpu3D {
             || hiz_active
             || (self.shadow_pass_enabled && self.has_shadow_casters);
         if !has_any_work {
+            self.pass_counters.render_passes += 1;
             let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("perro_mesh_clear_only_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -155,6 +171,7 @@ impl Gpu3D {
                         continue;
                     }
                     self.compute_shadow_cull(cascade);
+                    self.pass_counters.render_passes += 1;
                     let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                         label: Some("perro_ray_shadow3d_pass"),
                         color_attachments: &[],
@@ -186,6 +203,7 @@ impl Gpu3D {
                     continue;
                 }
                 self.compute_shadow_cull(flat);
+                self.pass_counters.render_passes += 1;
                 let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("perro_spot_shadow3d_pass"),
                     color_attachments: &[],
@@ -219,6 +237,7 @@ impl Gpu3D {
                     continue;
                 }
                 self.compute_shadow_cull(flat);
+                self.pass_counters.render_passes += 1;
                 let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("perro_point_shadow3d_pass"),
                     color_attachments: &[],
@@ -301,6 +320,7 @@ impl Gpu3D {
             early_runs,
         );
         if depth_prepass_active {
+            self.pass_counters.render_passes += 1;
             let mut prepass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("perro_depth_prepass"),
                 color_attachments: &[],
@@ -439,10 +459,16 @@ impl Gpu3D {
                 },
             );
         }
+        // Decide the seam stage's screen region before the mask pass: both the
+        // mask pass and the later seam pass (+ its full-res scene copy) are
+        // pure work for the seam shader, so an all-off-screen source set drops
+        // every one of them.
+        self.update_mesh_blend_seam_region(camera);
         if depth_prepass_active {
             self.encode_mesh_blend_mask_pass(encoder, frustum_cull_active);
         }
         if mesh_blend_depth_active {
+            self.pass_counters.render_passes += 1;
             let mut blend_prepass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("perro_mesh_blend_depth_pass"),
                 color_attachments: &[],
@@ -621,38 +647,15 @@ impl Gpu3D {
                 main_runs,
             );
         }
-        if render_sky {
-            let mut sky_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("perro_sky3d_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: color_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(clear_color),
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            let sky_pipeline = self
-                .active_sky_pipeline_key
-                .as_ref()
-                .and_then(|key| self.custom_sky_pipelines.get(key))
-                .unwrap_or_else(|| self.pipelines.sky());
-            sky_pass.set_pipeline(sky_pipeline);
-            sky_pass.set_bind_group(0, &self.sky_bind_group, &[]);
-            sky_pass.draw(0..3, 0..1);
-            drop(sky_pass);
-        }
-        let color_load = if render_sky {
-            wgpu::LoadOp::Load
-        } else {
-            wgpu::LoadOp::Clear(clear_color)
-        };
+        // Sky used to own a fullscreen pass of its own that cleared the color
+        // target; the mesh pass then reloaded it. It now draws as the last
+        // opaque draw *inside* the mesh pass (far plane, LessEqual, no depth
+        // write), so the mesh pass owns the Clear: one pass less per frame, and
+        // early-z kills every sky fragment sitting behind opaque geometry
+        // instead of shading it and overdrawing it. Nothing else can leave the
+        // color target unwritten - `has_any_work` is true whenever `render_sky`
+        // is, so the mesh pass below always runs and always draws the sky.
+        self.pass_counters.sky_draws = u32::from(render_sky);
         // Bound here (not earlier) so the shadow section can still take &mut self
         // for the per-layer cull; the query set is only read by the main pass.
         let query_set = if query_count > 0 {
@@ -660,13 +663,14 @@ impl Gpu3D {
         } else {
             None
         };
+        self.pass_counters.render_passes += 1;
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("perro_mesh_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: color_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: color_load,
+                    load: wgpu::LoadOp::Clear(clear_color),
                     store: wgpu::StoreOp::Store,
                 },
                 depth_slice: None,
@@ -688,12 +692,20 @@ impl Gpu3D {
             multiview_mask: None,
         });
         if self.draw_batches.is_empty() && self.multimesh_batches.is_empty() {
+            if render_sky {
+                draw_sky(self, &mut pass);
+            }
             drop(pass);
         } else {
             if !self.draw_batches.is_empty() {
                 let Some(fallback_material_bind_group) =
                     self.fallback_material_texture_bind_group()
                 else {
+                    // No fallback material: nothing can draw, but the sky still
+                    // has to fill the frame (it used to have its own pass).
+                    if render_sky {
+                        draw_sky(self, &mut pass);
+                    }
                     return;
                 };
                 pass.set_bind_group(1, fallback_material_bind_group, &[]);
@@ -828,6 +840,27 @@ impl Gpu3D {
                 current_texture_key = MaterialTextureKey::empty();
                 if group_index == 0 {
                     draw_multimesh_batches(self, &mut pass);
+                    // Sky goes between the opaque groups and the alpha /
+                    // overlay groups: after it, depth-covered pixels are gone
+                    // and transparents still composite over it exactly as they
+                    // did when sky owned the clear.
+                    if render_sky {
+                        draw_sky(self, &mut pass);
+                        // The sky layout only declares group 0, so groups 1..3
+                        // are dropped when the next mesh pipeline binds. Group 0
+                        // comes back with the next batch's state change; 1..3
+                        // are restored here. Group 1 is restored to the fallback
+                        // rather than left to the next batch's texture change,
+                        // which does not fire for a batch whose texture key
+                        // already equals the reset key.
+                        if !self.draw_batches.is_empty()
+                            && let Some(fallback) = self.fallback_material_texture_bind_group()
+                        {
+                            pass.set_bind_group(1, fallback, &[]);
+                            pass.set_bind_group(2, &self.shadow_bind_group, &[]);
+                            pass.set_bind_group(3, &self.ibl_bind_group, &[]);
+                        }
+                    }
                     // Restore slot 1 after the multimesh draw rebinds it.
                     pass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
                 }
@@ -847,7 +880,12 @@ impl Gpu3D {
                 .saturating_add(texture_bind_group_switches);
         }
 
-        for &(source_i, ref receiver_range) in &self.mesh_blend_source_receivers {
+        // Indexed (not iterated by reference) so the per-source pass counters
+        // can be written between the two passes without holding a borrow of
+        // `mesh_blend_source_receivers` across them.
+        for source_slot in 0..self.mesh_blend_source_receivers.len() {
+            let (source_i, receiver_range) = self.mesh_blend_source_receivers[source_slot].clone();
+            self.pass_counters.render_passes += 2;
             let source_batch = &self.draw_batches[source_i];
             let mut blend_prepass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("perro_mesh_blend_source_depth_pass"),
@@ -866,7 +904,7 @@ impl Gpu3D {
             });
             let mut current_state: Option<(RenderPath3D, bool, bool)> = None;
             blend_prepass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
-            for &target_i in &self.mesh_blend_receiver_indices[receiver_range.clone()] {
+            for &target_i in &self.mesh_blend_receiver_indices[receiver_range] {
                 let target_batch = &self.draw_batches[target_i];
                 let state = (
                     target_batch.path,
@@ -1047,6 +1085,18 @@ impl Gpu3D {
     /// attach the same texture. Water therefore depth-tests against a lazily
     /// allocated copy of the scene depth, refreshed here each frame it is
     /// requested. MSAA returns the separate main depth target directly.
+    ///
+    /// Attaching the prepass view read-only instead (WebGPU allows sampling a
+    /// depth texture bound with `depth_ops: None` in the same pass) would drop
+    /// the copy, but it also forces `depth_write_enabled: false` on everything
+    /// in the pass - and the water surface relies on its writes: the 3D water
+    /// pipeline is alpha-blended with a top-surface alpha that reaches 1.0, and
+    /// the wave-displaced chunk grid is drawn unsorted, so without a depth
+    /// buffer a far crest overwrites a near one at grazing angles. The
+    /// flip-splash pass that follows also depth-tests (LessEqual, writes off)
+    /// against those writes to sit behind the surface. The copy stays until the
+    /// surface gets a private depth target plus a shader-side scene-depth
+    /// reject; `PassCounters::water_depth_copies` tracks the cost.
     pub fn water_depth_attachment(
         &mut self,
         device: &wgpu::Device,
@@ -1093,7 +1143,9 @@ impl Gpu3D {
                 depth_or_array_layers: 1,
             },
         );
-        view.clone()
+        let view = view.clone();
+        self.pass_counters.water_depth_copies += 1;
+        view
     }
 
     /// Drop the lazily allocated water scene-depth copy once no 3D water
@@ -1209,6 +1261,224 @@ impl Gpu3D {
         self.mesh_blend_prev_spheres.extend_from_slice(&spheres);
         self.mesh_blend_batch_spheres_scratch = spheres;
     }
+
+    // Screen region the mesh-blend seam stage has to touch this frame.
+    //
+    // The seam shader only rewrites a pixel when one side of the mask boundary
+    // it finds is a *source* id (receiver-receiver boundaries are explicitly
+    // skipped), so when every blend source is off screen the mask pass, the
+    // full-res scene copy and the fullscreen seam pass all produce an identical
+    // image and are dropped. When sources are visible, the union of their
+    // projected rects (grown by the seam tap reach) bounds every pixel the pass
+    // can change, and the copy only has to cover what those pixels sample.
+    //
+    // Conservative by construction: anything without a usable bound - a
+    // participant crossing the camera plane, a sentinel-radius batch, an
+    // instance count too dense to bound cheaply - forces the full-screen path,
+    // which is exactly the old behavior.
+    pub(super) fn update_mesh_blend_seam_region(&mut self, camera: &Camera3DState) {
+        if !self.mesh_blend_screen_active || self.mesh_blend_mask_batch_entries.is_empty() {
+            self.mesh_blend_seam_region = SeamRegion::Skip;
+            return;
+        }
+        let (width, height) = self.depth_size;
+        if width == 0 || height == 0 {
+            self.mesh_blend_seam_region = SeamRegion::Full;
+            return;
+        }
+        let view_proj = compute_view_proj_mat(camera, width, height);
+        let frustum = extract_frustum_planes(view_proj);
+        let mut any_visible = false;
+        let mut unbounded = false;
+        let mut bounds: Option<[f32; 4]> = None;
+        for entry in &self.mesh_blend_mask_batch_entries {
+            let sphere = match *entry {
+                MeshBlendMaskEntry::Draw { batch_index, id } => {
+                    if id >= super::mesh_blend_screen::RECEIVER_ID_BASE {
+                        continue;
+                    }
+                    let batch = &self.draw_batches[batch_index];
+                    if batch.instance_count > SEAM_GATE_MAX_INSTANCES {
+                        None
+                    } else {
+                        batch_merged_world_sphere(batch, &self.staged_instance_transforms)
+                    }
+                }
+                MeshBlendMaskEntry::MultiMesh { batch_index, id } => {
+                    if id >= super::mesh_blend_screen::RECEIVER_ID_BASE {
+                        continue;
+                    }
+                    multimesh_batch_world_sphere(
+                        &self.multimesh_batches[batch_index],
+                        &self.staged_multimesh_instances,
+                        &self.staged_multimesh_draw_params,
+                    )
+                }
+            };
+            let Some((center, radius)) = sphere else {
+                any_visible = true;
+                unbounded = true;
+                continue;
+            };
+            if !sphere_in_frustum(center, radius, &frustum) {
+                continue;
+            }
+            any_visible = true;
+            match sphere_screen_bounds(view_proj, center, radius, width, height) {
+                Some(rect) => {
+                    bounds = Some(match bounds {
+                        Some(current) => union_bounds(current, rect),
+                        None => rect,
+                    });
+                }
+                None => unbounded = true,
+            }
+        }
+        self.mesh_blend_seam_region = if !any_visible {
+            SeamRegion::Skip
+        } else if unbounded {
+            SeamRegion::Full
+        } else {
+            match bounds {
+                Some(rect) => seam_region_from_bounds(rect, width, height),
+                None => SeamRegion::Full,
+            }
+        };
+    }
+}
+
+// Instance ceiling for the CPU seam gate. Bounding a batch is O(instances), so
+// anything denser skips the gate and takes the unconditional full-screen path
+// rather than paying a per-frame scan.
+const SEAM_GATE_MAX_INSTANCES: u32 = 4096;
+
+// Merged world sphere over a multimesh batch's instances. Mirrors
+// instance_world_sphere in multimesh_cull.wgsl (instance-local center pushed
+// through the draw model row; radius scaled by the max instance axis, the draw
+// scale and the model's max column scale). None when the batch is denser than
+// the gate ceiling, the instance/draw ranges do not line up, or any value is
+// non-finite - the caller then treats it as unbounded.
+fn multimesh_batch_world_sphere(
+    batch: &MultiMeshBatch,
+    instances: &[MultiMeshInstanceGpu],
+    draw_params: &[MultiMeshDrawParamGpu],
+) -> Option<(Vec3, f32)> {
+    if batch.instance_count == 0 || batch.instance_count > SEAM_GATE_MAX_INSTANCES {
+        return None;
+    }
+    if !batch.mesh_local_radius.is_finite() || batch.mesh_local_radius >= 1.0e8 {
+        return None;
+    }
+    let start = batch.instance_start as usize;
+    let end = start.checked_add(batch.instance_count as usize)?;
+    if end > instances.len() {
+        return None;
+    }
+    let mut merged: Option<(Vec3, f32)> = None;
+    for inst in &instances[start..end] {
+        let draw = draw_params.get(inst.draw_id as usize)?;
+        let row_0 = Vec4::from_array(draw.model_row_0);
+        let row_1 = Vec4::from_array(draw.model_row_1);
+        let row_2 = Vec4::from_array(draw.model_row_2);
+        let local = Vec4::new(inst.position[0], inst.position[1], inst.position[2], 1.0);
+        let center = Vec3::new(row_0.dot(local), row_1.dot(local), row_2.dot(local));
+        let draw_scale = f32::from_bits(draw.scale_bits);
+        let inst_scale = inst.scale[0].max(inst.scale[1]).max(inst.scale[2]) * draw_scale;
+        let model_scale = row_0
+            .truncate()
+            .length_squared()
+            .max(row_1.truncate().length_squared())
+            .max(row_2.truncate().length_squared())
+            .max(1.0e-12)
+            .sqrt();
+        let radius = batch.mesh_local_radius * inst_scale.max(0.0) * model_scale;
+        if !center.is_finite() || !radius.is_finite() {
+            return None;
+        }
+        merged = Some(match merged {
+            Some(current) => enclose_spheres(current, (center, radius)),
+            None => (center, radius),
+        });
+    }
+    merged.filter(|(center, radius)| center.is_finite() && radius.is_finite() && *radius < 1.0e8)
+}
+
+// Pixel-space bounds [min_x, min_y, max_x, max_y] of a world sphere, from the
+// eight corners of its AABB. None when any corner sits on or behind the camera
+// plane: the perspective divide folds there and a 2D rect stops bounding the
+// projection.
+fn sphere_screen_bounds(
+    view_proj: Mat4,
+    center: Vec3,
+    radius: f32,
+    width: u32,
+    height: u32,
+) -> Option<[f32; 4]> {
+    let r = radius.max(0.0);
+    let (w, h) = (width as f32, height as f32);
+    let mut out = [f32::MAX, f32::MAX, f32::MIN, f32::MIN];
+    for corner in 0..8u32 {
+        let offset = Vec3::new(
+            if corner & 1 == 0 { -r } else { r },
+            if corner & 2 == 0 { -r } else { r },
+            if corner & 4 == 0 { -r } else { r },
+        );
+        let clip = view_proj * (center + offset).extend(1.0);
+        if !clip.is_finite() || clip.w <= 1.0e-4 {
+            return None;
+        }
+        let ndc_x = clip.x / clip.w;
+        let ndc_y = clip.y / clip.w;
+        // Screen y runs down; the seam shader uses the same flip when it turns
+        // a pixel coord back into NDC.
+        let px = (ndc_x * 0.5 + 0.5) * w;
+        let py = (0.5 - ndc_y * 0.5) * h;
+        if !px.is_finite() || !py.is_finite() {
+            return None;
+        }
+        out[0] = out[0].min(px);
+        out[1] = out[1].min(py);
+        out[2] = out[2].max(px);
+        out[3] = out[3].max(py);
+    }
+    Some(out)
+}
+
+#[inline]
+fn union_bounds(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+    [
+        a[0].min(b[0]),
+        a[1].min(b[1]),
+        a[2].max(b[2]),
+        a[3].max(b[3]),
+    ]
+}
+
+// Grow the source bounds by the seam tap reach (every pixel the seam pass can
+// rewrite lies within one tap ring of a source pixel), snap outwards to whole
+// pixels and clamp to the target.
+fn seam_region_from_bounds(bounds: [f32; 4], width: u32, height: u32) -> SeamRegion {
+    let reach = super::mesh_blend_screen::SEAM_TAP_REACH_PX as f32;
+    let min_x = (bounds[0] - reach).floor();
+    let min_y = (bounds[1] - reach).floor();
+    let max_x = (bounds[2] + reach).ceil();
+    let max_y = (bounds[3] + reach).ceil();
+    if !min_x.is_finite() || !min_y.is_finite() || !max_x.is_finite() || !max_y.is_finite() {
+        return SeamRegion::Full;
+    }
+    let x0 = min_x.clamp(0.0, width as f32) as u32;
+    let y0 = min_y.clamp(0.0, height as f32) as u32;
+    let x1 = max_x.clamp(0.0, width as f32) as u32;
+    let y1 = max_y.clamp(0.0, height as f32) as u32;
+    if x1 <= x0 || y1 <= y0 {
+        // Sphere passed the frustum test but bounds nothing on screen; take the
+        // safe path rather than trusting the degenerate rect.
+        return SeamRegion::Full;
+    }
+    if x0 == 0 && y0 == 0 && x1 == width && y1 == height {
+        return SeamRegion::Full;
+    }
+    SeamRegion::Rect(x0, y0, x1 - x0, y1 - y0)
 }
 
 // A batch is blend-relevant if it can be a mesh-blend source or a valid receiver
@@ -1222,6 +1492,10 @@ use mesh_blend::*;
 #[path = "render_pass/shadows.rs"]
 mod shadows;
 use shadows::*;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/three_d_render_pass_gpu_tests.rs"]
+mod render_pass_gpu_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1244,7 +1518,11 @@ mod tests {
         }
     }
 
-    fn test_batch(instance_start: u32, instance_count: u32, local_radius: f32) -> DrawBatch {
+    pub(super) fn test_batch(
+        instance_start: u32,
+        instance_count: u32,
+        local_radius: f32,
+    ) -> DrawBatch {
         let material_kind = MaterialPipelineKind::Standard;
         let state_key =
             draw_batch_state_key(RenderPath3D::Rigid, false, false, 0, false, &material_kind);

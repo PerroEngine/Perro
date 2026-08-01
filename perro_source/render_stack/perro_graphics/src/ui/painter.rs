@@ -656,9 +656,15 @@ impl EpaintUiPainter {
                 .push((epaint::TextureId::default(), delta));
         }
         if let Some(delta) = self.harfbuzz_atlas.take_delta() {
+            self.harfbuzz_atlas.take_released();
             self.textures_delta
                 .set
                 .push((UI_HARFBUZZ_TEXTURE_ID, delta));
+        } else if self.harfbuzz_atlas.take_released() {
+            // Rebuilt with nothing re-rastered into it: no `set` is coming to
+            // replace the GPU texture, so release it explicitly or the peak
+            // size stays resident for the rest of the process.
+            self.textures_delta.free.push(UI_HARFBUZZ_TEXTURE_ID);
         }
         self.paint_revision = revision;
         self.last_viewport = viewport;
@@ -1204,6 +1210,93 @@ mod tests {
             .expect("required value must be present");
         assert!(alloc.uv_max.y <= 1.0 && alloc.uv_max.x <= 1.0);
         assert!(atlas.size()[1] < UI_HARFBUZZ_ATLAS_SIZE);
+    }
+
+    // A CJK burst at 3x raster scale doubles the atlas up to 4096x2048 (32 MiB
+    // of pixels, plus the same again on the GPU) and growth is one-way, so
+    // without an idle shrink that peak is retained for the rest of the process
+    // even once the text is gone.
+    #[test]
+    fn harfbuzz_atlas_shrinks_after_idle_passes() {
+        let mut atlas = HarfBuzzAtlas::new();
+        let (font, glyph_id) = test_font_glyph();
+        atlas
+            .glyph(&font, glyph_id, 12.0)
+            .expect("required value must be present");
+        atlas.shape_cached(
+            &default_ui_font_definitions(),
+            FontFamily::Proportional,
+            "hi",
+        );
+        let epoch = atlas.epoch();
+
+        atlas.set_atlas_for_test(2048, 8);
+        let pixels_before = atlas.retained_pixels();
+
+        // Below the idle threshold but not yet past the streak: nothing moves.
+        for _ in 0..HARFBUZZ_ATLAS_IDLE_PASSES - 1 {
+            atlas.begin_pass();
+        }
+        assert_eq!(atlas.size()[1], 2048, "shrank before the streak elapsed");
+
+        atlas.begin_pass();
+        assert_eq!(atlas.size(), [0, 0]);
+        assert_eq!(atlas.glyph_count(), 0);
+        assert_eq!(atlas.family_count(), 0);
+        assert_ne!(atlas.epoch(), epoch);
+
+        // No `set` delta follows a shrink nobody drew into, so the painter has
+        // to free the GPU texture explicitly or only the CPU image is
+        // reclaimed.
+        assert!(atlas.take_delta().is_none());
+        assert!(atlas.take_released(), "shrink must release the gpu texture");
+
+        // Live glyphs re-raster into a fresh small atlas.
+        let alloc = atlas
+            .glyph(&font, glyph_id, 12.0)
+            .expect("required value must be present");
+        assert!(alloc.uv_max.y <= 1.0 && alloc.uv_max.x <= 1.0);
+        assert!(atlas.retained_pixels() * 2 <= pixels_before);
+    }
+
+    // Any pass at or above the idle fill restarts the streak, and an atlas
+    // already at its floor never rebuilds: either one would otherwise turn a
+    // quiet UI into a full re-raster of every live glyph on a loop.
+    #[test]
+    fn harfbuzz_atlas_idle_shrink_does_not_oscillate() {
+        let mut atlas = HarfBuzzAtlas::new();
+
+        // Nothing to win at the floor height: the rebuilt atlas would land on
+        // the same size, so the streak must leave it alone.
+        atlas.set_atlas_for_test(UI_HARFBUZZ_ATLAS_INITIAL_HEIGHT, 8);
+        let epoch = atlas.epoch();
+        for _ in 0..HARFBUZZ_ATLAS_IDLE_PASSES * 2 {
+            atlas.begin_pass();
+        }
+        assert_eq!(atlas.epoch(), epoch, "rebuilt an already-minimal atlas");
+        assert_eq!(atlas.size()[1], UI_HARFBUZZ_ATLAS_INITIAL_HEIGHT);
+
+        // Streak one pass short of firing, then a half-full pass in between.
+        atlas.set_atlas_for_test(2048, 8);
+        for _ in 0..HARFBUZZ_ATLAS_IDLE_PASSES - 1 {
+            atlas.begin_pass();
+        }
+        atlas.set_atlas_for_test(2048, 1024);
+        atlas.begin_pass();
+
+        // Without the reset this next idle pass would be the one that fires.
+        atlas.set_atlas_for_test(2048, 8);
+        atlas.begin_pass();
+        assert_eq!(
+            atlas.size()[1],
+            2048,
+            "busy pass did not restart the idle streak"
+        );
+
+        for _ in 0..HARFBUZZ_ATLAS_IDLE_PASSES - 1 {
+            atlas.begin_pass();
+        }
+        assert_eq!(atlas.size(), [0, 0], "streak did not complete after reset");
     }
 
     #[test]

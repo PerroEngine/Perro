@@ -98,6 +98,18 @@ fn perro_unpack_byte(packed: u32, shift: u32) -> u32 {
     return (packed >> shift) & 0xffu;
 }
 
+// Mirrors pack_blend_normal_delta (three_d/gpu.rs): snorm10 per lane plus a
+// 2-bit shared exponent picking 2 / 8 / 32 / 128 as the component range.
+fn perro_unpack_blend_normal_delta(packed: u32) -> vec3<f32> {
+    let scale = 2.0 * exp2(2.0 * f32(packed >> 30u));
+    let lanes = vec3<f32>(
+        f32(bitcast<i32>(packed << 22u) >> 22u),
+        f32(bitcast<i32>(packed << 12u) >> 22u),
+        f32(bitcast<i32>(packed << 2u) >> 22u),
+    );
+    return max(lanes / 511.0, vec3<f32>(-1.0)) * scale;
+}
+
 fn perro_decode_mesh_blend_params(packed: u32) -> vec4<f32> {
     return vec4<f32>(
         perro_unpack_unorm8(packed, 0u) * 16.0,

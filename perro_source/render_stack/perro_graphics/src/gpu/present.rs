@@ -246,12 +246,56 @@ pub(super) struct PresentExposureSettings {
     pub target_luminance: f32,
 }
 
+/// Auto-exposure reduction workgroup size (both passes).
+pub(super) const EXPOSURE_WORKGROUP_SIZE: u32 = 64;
+/// Upper bound on pass-1 workgroups. Also the partial-sum array length in the
+/// shader, so the two must stay in sync (asserted in the tests below).
+pub(super) const EXPOSURE_MAX_GROUPS: u32 = 512;
+/// Minimum samples a lane folds before another workgroup is worth launching;
+/// keeps tiny render targets on a single group instead of paying launch cost
+/// for a handful of texture loads.
+const EXPOSURE_MIN_SAMPLES_PER_LANE: u32 = 16;
+/// State storage buffer: `vec4 state` + `EXPOSURE_MAX_GROUPS` × `vec2<f32>`
+/// partials. Partials live in the SAME buffer as the state on purpose — the
+/// auto-exposure path then still needs only ONE storage binding, so devices
+/// with a 1-storage-buffer budget keep it.
+pub(super) const EXPOSURE_STATE_BUFFER_SIZE: u64 = 16 + (EXPOSURE_MAX_GROUPS as u64) * 8;
+
+/// Sub-sampling stride for the luminance reduction: every `stride`-th texel in
+/// both axes. 4 above ~2 MP keeps the load count roughly constant across
+/// resolutions.
+pub(super) fn exposure_sample_stride(dimensions: [u32; 2]) -> u32 {
+    let pixels = u64::from(dimensions[0]) * u64::from(dimensions[1]);
+    if pixels > 2_000_000 { 4 } else { 2 }
+}
+
+/// Pass-1 workgroup count for the current frame. One workgroup per
+/// `EXPOSURE_WORKGROUP_SIZE * EXPOSURE_MIN_SAMPLES_PER_LANE` samples, clamped
+/// to `[1, EXPOSURE_MAX_GROUPS]`; pass 2 then folds that many partials with a
+/// single workgroup.
+pub(super) fn exposure_dispatch_groups(dimensions: [u32; 2], sample_stride: u32) -> u32 {
+    let stride = sample_stride.max(1);
+    let sample_width = dimensions[0].max(1).div_ceil(stride);
+    let sample_height = dimensions[1].max(1).div_ceil(stride);
+    let total = u64::from(sample_width) * u64::from(sample_height);
+    let per_group = u64::from(EXPOSURE_WORKGROUP_SIZE) * u64::from(EXPOSURE_MIN_SAMPLES_PER_LANE);
+    let groups = total.div_ceil(per_group.max(1));
+    groups.clamp(1, u64::from(EXPOSURE_MAX_GROUPS)) as u32
+}
+
+/// Builds the two auto-exposure compute pipelines (tile reduce + fold/adapt)
+/// sharing one bind group layout, or `None` when the device cannot run them.
 fn create_auto_exposure(
     device: &wgpu::Device,
-) -> (Option<wgpu::BindGroupLayout>, Option<wgpu::ComputePipeline>) {
+) -> (
+    Option<wgpu::BindGroupLayout>,
+    Option<wgpu::ComputePipeline>,
+    Option<wgpu::ComputePipeline>,
+) {
     let auto_supported = device.limits().max_storage_buffers_per_shader_stage > 0
-        && device.limits().max_compute_invocations_per_workgroup >= 64;
-    let (exposure_bgl, exposure_pipeline) = if auto_supported {
+        && device.limits().max_compute_invocations_per_workgroup >= EXPOSURE_WORKGROUP_SIZE
+        && device.limits().max_compute_workgroups_per_dimension >= EXPOSURE_MAX_GROUPS;
+    let (exposure_bgl, exposure_pipeline, exposure_resolve_pipeline) = if auto_supported {
         let exposure_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_exposure_bgl"),
             entries: &[
@@ -283,7 +327,7 @@ fn create_auto_exposure(
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: false },
                         has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(16),
+                        min_binding_size: wgpu::BufferSize::new(EXPOSURE_STATE_BUFFER_SIZE),
                     },
                     count: None,
                 },
@@ -298,19 +342,28 @@ fn create_auto_exposure(
             bind_group_layouts: &[Some(&exposure_bgl)],
             immediate_size: 0,
         });
-        let exposure_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("perro_exposure_pipeline"),
-            layout: Some(&exposure_layout),
-            module: &exposure_shader,
-            entry_point: Some("cs_main"),
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-            cache: None,
-        });
-        (Some(exposure_bgl), Some(exposure_pipeline))
+        let make_pipeline = |label: &str, entry_point: &str| {
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some(label),
+                layout: Some(&exposure_layout),
+                module: &exposure_shader,
+                entry_point: Some(entry_point),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
+            })
+        };
+        (
+            Some(exposure_bgl),
+            Some(make_pipeline("perro_exposure_reduce_pipeline", "cs_reduce")),
+            Some(make_pipeline(
+                "perro_exposure_resolve_pipeline",
+                "cs_resolve",
+            )),
+        )
     } else {
-        (None, None)
+        (None, None, None)
     };
-    (exposure_bgl, exposure_pipeline)
+    (exposure_bgl, exposure_pipeline, exposure_resolve_pipeline)
 }
 
 impl Default for PresentExposureSettings {
@@ -367,7 +420,8 @@ fn finite_or(value: f32, fallback: f32) -> f32 {
 struct ExposureGpuConfig {
     dimensions: [u32; 2],
     sample_stride: u32,
-    _pad0: u32,
+    // Pass-1 workgroup count; pass 2 folds exactly this many partials.
+    group_count: u32,
     delta_seconds: f32,
     compensation: f32,
     min_exposure: f32,
@@ -516,11 +570,26 @@ struct TaaUniformGpu {
     params: [f32; 4],
 }
 
+// Auto-exposure luminance reduction, two passes.
+//
+// Pass 1 (`cs_reduce`, N workgroups): each workgroup folds a strided slice of
+// the sub-sampled pixel grid into one [sum(log2 luma), sample count] partial.
+// Pass 2 (`cs_resolve`, 1 workgroup): folds the N partials and runs the
+// temporal adaptation, writing the exposure state.
+//
+// The two dispatches share one compute pass; WebGPU orders dispatches within
+// a pass with an implicit barrier, so pass 2 sees pass 1's partials.
+//
+// The sample SET is identical to the old single-workgroup loop (global lane
+// index strided by lanes*groups covers [0, total) exactly once); only the
+// SUMMATION ORDER changes, so the average log-luminance can differ in the
+// last f32 ulps. The adaptation math (delta-seconds smoothing, speed_up /
+// speed_down select, clamped target) is byte-for-byte the same.
 const EXPOSURE_WGSL: &str = r#"
 struct ExposureConfig {
     dimensions: vec2<u32>,
     sample_stride: u32,
-    _pad0: u32,
+    group_count: u32,
     delta_seconds: f32,
     compensation: f32,
     min_exposure: f32,
@@ -531,8 +600,11 @@ struct ExposureConfig {
     _pad1: f32,
 };
 
+// Partials share the state buffer so auto-exposure still binds ONE storage
+// buffer; the array length must match EXPOSURE_MAX_GROUPS on the Rust side.
 struct ExposureState {
     value: vec4<f32>,
+    partials: array<vec2<f32>, 512>,
 };
 
 @group(0) @binding(0) var scene_tex: texture_2d<f32>;
@@ -540,30 +612,12 @@ struct ExposureState {
 @group(0) @binding(2) var<storage, read_write> state: ExposureState;
 
 var<workgroup> log_luma_sum: array<f32, 64>;
-var<workgroup> sample_count: array<u32, 64>;
+var<workgroup> sample_count: array<f32, 64>;
 
-@compute @workgroup_size(64)
-fn cs_main(@builtin(local_invocation_index) lane: u32) {
-    let stride = max(cfg.sample_stride, 1u);
-    let sample_width = (cfg.dimensions.x + stride - 1u) / stride;
-    let sample_height = (cfg.dimensions.y + stride - 1u) / stride;
-    let total = sample_width * sample_height;
-    var sum = 0.0;
-    var count = 0u;
-    var index = lane;
-    while index < total {
-        let sample_xy = vec2<u32>(index % sample_width, index / sample_width) * stride;
-        let xy = min(sample_xy, cfg.dimensions - vec2<u32>(1u));
-        let rgb = max(textureLoad(scene_tex, vec2<i32>(xy), 0).rgb, vec3<f32>(0.0));
-        let luma = max(dot(rgb, vec3<f32>(0.2126, 0.7152, 0.0722)), 0.000001);
-        sum += log2(luma);
-        count += 1u;
-        index += 64u;
-    }
-    log_luma_sum[lane] = sum;
-    sample_count[lane] = count;
+// Binary tree fold of the per-lane totals into lane 0. Callers must be in
+// uniform control flow (the barriers below are workgroup-wide).
+fn fold_lane_totals(lane: u32) {
     workgroupBarrier();
-
     var width = 32u;
     while width > 0u {
         if lane < width {
@@ -573,10 +627,61 @@ fn cs_main(@builtin(local_invocation_index) lane: u32) {
         workgroupBarrier();
         width /= 2u;
     }
+}
+
+@compute @workgroup_size(64)
+fn cs_reduce(
+    @builtin(workgroup_id) group: vec3<u32>,
+    @builtin(local_invocation_index) lane: u32,
+) {
+    let stride = max(cfg.sample_stride, 1u);
+    let sample_width = (cfg.dimensions.x + stride - 1u) / stride;
+    let sample_height = (cfg.dimensions.y + stride - 1u) / stride;
+    let total = sample_width * sample_height;
+    // Global lane stride: every lane of every workgroup walks the sample grid
+    // disjointly, so the union is exactly [0, total) — same sample set the
+    // single-workgroup version visited.
+    let lanes = max(cfg.group_count, 1u) * 64u;
+    var sum = 0.0;
+    var count = 0.0;
+    var index = group.x * 64u + lane;
+    while index < total {
+        let sample_xy = vec2<u32>(index % sample_width, index / sample_width) * stride;
+        let xy = min(sample_xy, cfg.dimensions - vec2<u32>(1u));
+        let rgb = max(textureLoad(scene_tex, vec2<i32>(xy), 0).rgb, vec3<f32>(0.0));
+        let luma = max(dot(rgb, vec3<f32>(0.2126, 0.7152, 0.0722)), 0.000001);
+        sum += log2(luma);
+        count += 1.0;
+        index += lanes;
+    }
+    log_luma_sum[lane] = sum;
+    sample_count[lane] = count;
+    fold_lane_totals(lane);
 
     if lane == 0u {
-        let n = max(sample_count[0], 1u);
-        let avg_log_luma = log_luma_sum[0] / f32(n);
+        state.partials[group.x] = vec2<f32>(log_luma_sum[0], sample_count[0]);
+    }
+}
+
+@compute @workgroup_size(64)
+fn cs_resolve(@builtin(local_invocation_index) lane: u32) {
+    let groups = min(max(cfg.group_count, 1u), 512u);
+    var sum = 0.0;
+    var count = 0.0;
+    var index = lane;
+    while index < groups {
+        let partial = state.partials[index];
+        sum += partial.x;
+        count += partial.y;
+        index += 64u;
+    }
+    log_luma_sum[lane] = sum;
+    sample_count[lane] = count;
+    fold_lane_totals(lane);
+
+    if lane == 0u {
+        let n = max(sample_count[0], 1.0);
+        let avg_log_luma = log_luma_sum[0] / n;
         let target_exposure = clamp(
             log2(max(cfg.target_luminance, 0.0001)) - avg_log_luma + cfg.compensation,
             cfg.min_exposure,
@@ -613,7 +718,9 @@ impl PresentProcessor {
         });
         let exposure_state_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_exposure_state"),
-            size: 16,
+            // vec4 state at offset 0 (copied to the tonemap uniform) followed
+            // by the reduction partials; see EXPOSURE_STATE_BUFFER_SIZE.
+            size: EXPOSURE_STATE_BUFFER_SIZE,
             usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_SRC
                 | wgpu::BufferUsages::COPY_DST,
@@ -704,7 +811,8 @@ impl PresentProcessor {
             multiview_mask: None,
             cache: None,
         });
-        let (exposure_bgl, exposure_pipeline) = create_auto_exposure(device);
+        let (exposure_bgl, exposure_pipeline, exposure_resolve_pipeline) =
+            create_auto_exposure(device);
         Self {
             device: device.clone(),
             sampler,
@@ -712,6 +820,8 @@ impl PresentProcessor {
             pipeline,
             exposure_bgl,
             exposure_pipeline,
+            exposure_resolve_pipeline,
+            last_exposure_groups: 0,
             exposure_config_buffer,
             exposure_state_buffer,
             exposure_uniform_buffer,
@@ -724,7 +834,17 @@ impl PresentProcessor {
             smaa: None,
             taa_active: false,
             taa: None,
+            output_size: [0, 0],
+            last_taa_passes: 0,
         }
+    }
+
+    /// Swapchain size in pixels, pushed by the surface lifecycle. The TAA
+    /// resolve merges its swapchain write into the resolve pass only when it
+    /// matches the render size (see `encode_taa`); [0, 0] means "unknown", so
+    /// the conservative two-pass path runs.
+    pub(super) fn set_output_size(&mut self, width: u32, height: u32) {
+        self.output_size = [width.max(1), height.max(1)];
     }
 
     /// Turn the FXAA stage on/off. Off drops the lazily allocated target,
@@ -1124,15 +1244,7 @@ impl PresentProcessor {
                         bind_group: &wgpu::BindGroup| {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some(label),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
+                color_attachments: &[clear_store_attachment(view)],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
@@ -1142,25 +1254,50 @@ impl PresentProcessor {
             pass.set_bind_group(0, bind_group, &[]);
             pass.draw(0..3, 0..1);
         };
-        // Pass 1: reproject + blend into the write half of the history pair
-        // (rgb = resolved color, a = device depth for next frame's reject).
-        run_pass(
-            encoder,
-            "perro_taa_resolve_pass",
-            &taa.history_views[write],
-            &taa.core.resolve_pipeline,
-            &resolve_bind_group,
-        );
-        // Pass 2: blit the fresh history to the swapchain (upscaling when the
-        // render size is capped). Next frame samples it as history — the
-        // ping-pong swap below makes that read side without any copy.
-        run_pass(
-            encoder,
-            "perro_taa_blit_pass",
-            output_view,
-            &taa.core.blit_pipeline,
-            &taa.blit_bind_groups[write],
-        );
+        // 1:1 render/output: the blit would be a pure copy, so resolve writes
+        // history AND the swapchain as MRT in one pass (half the fullscreen
+        // work of the two-pass path). Attachments in a render pass must share
+        // a size, so the upscale case keeps resolve + blit.
+        if self.output_size == taa.size {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("perro_taa_resolve_direct_pass"),
+                color_attachments: &[
+                    clear_store_attachment(&taa.history_views[write]),
+                    clear_store_attachment(output_view),
+                ],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&taa.core.resolve_direct_pipeline);
+            pass.set_bind_group(0, &resolve_bind_group, &[]);
+            pass.draw(0..3, 0..1);
+            drop(pass);
+            self.last_taa_passes = 1;
+        } else {
+            // Pass 1: reproject + blend into the write half of the history
+            // pair (rgb = resolved color, a = device depth for next frame's
+            // reject).
+            run_pass(
+                encoder,
+                "perro_taa_resolve_pass",
+                &taa.history_views[write],
+                &taa.core.resolve_pipeline,
+                &resolve_bind_group,
+            );
+            // Pass 2: blit the fresh history to the swapchain, upscaling to
+            // the capped render size. Next frame samples it as history — the
+            // ping-pong swap below makes that read side without any copy.
+            run_pass(
+                encoder,
+                "perro_taa_blit_pass",
+                output_view,
+                &taa.core.blit_pipeline,
+                &taa.blit_bind_groups[write],
+            );
+            self.last_taa_passes = 2;
+        }
         taa.history_index = write;
         taa.history_valid = true;
     }
@@ -1261,16 +1398,17 @@ impl PresentProcessor {
             queue.write_buffer(&self.output_uniform_buffer, 0, bytemuck::bytes_of(&output));
         }
         if settings.auto_exposure {
-            if let (Some(pipeline), Some(bind_group)) = (
+            if let (Some(reduce_pipeline), Some(resolve_pipeline), Some(bind_group)) = (
                 self.exposure_pipeline.as_ref(),
+                self.exposure_resolve_pipeline.as_ref(),
                 bind_groups.exposure.as_ref(),
             ) {
-                let pixels = u64::from(dimensions[0]) * u64::from(dimensions[1]);
-                let sample_stride = if pixels > 2_000_000 { 4 } else { 2 };
+                let sample_stride = exposure_sample_stride(dimensions);
+                let groups = exposure_dispatch_groups(dimensions, sample_stride);
                 let config = ExposureGpuConfig {
                     dimensions: [dimensions[0].max(1), dimensions[1].max(1)],
                     sample_stride,
-                    _pad0: 0,
+                    group_count: groups,
                     delta_seconds: finite_or(delta_seconds, 0.0).max(0.0),
                     compensation: settings.exposure,
                     min_exposure: settings.min_exposure,
@@ -1285,10 +1423,18 @@ impl PresentProcessor {
                     label: Some("perro_exposure_pass"),
                     timestamp_writes: None,
                 });
-                pass.set_pipeline(pipeline);
                 pass.set_bind_group(0, bind_group, &[]);
+                // Pass 1: `groups` workgroups fold disjoint slices of the
+                // sub-sampled grid into per-group partials.
+                pass.set_pipeline(reduce_pipeline);
+                pass.dispatch_workgroups(groups, 1, 1);
+                // Pass 2: one workgroup folds the partials + adapts the state.
+                // Same compute pass: WebGPU orders dispatches with an implicit
+                // barrier, so no extra pass/sync is needed.
+                pass.set_pipeline(resolve_pipeline);
                 pass.dispatch_workgroups(1, 1, 1);
                 drop(pass);
+                self.last_exposure_groups = groups;
                 encoder.copy_buffer_to_buffer(
                     &self.exposure_state_buffer,
                     0,
@@ -1297,9 +1443,11 @@ impl PresentProcessor {
                     16,
                 );
             } else {
+                self.last_exposure_groups = 0;
                 write_manual_exposure(queue, self, settings.exposure);
             }
         } else {
+            self.last_exposure_groups = 0;
             write_manual_exposure(queue, self, settings.exposure);
         }
         // With FXAA, SMAA or TAA active the tonemap resolves into a
@@ -1687,6 +1835,8 @@ fn create_taa_core(device: &wgpu::Device, output_format: wgpu::TextureFormat) ->
         &resolve_bgl,
         TAA_HISTORY_FORMAT,
     );
+    let resolve_direct_pipeline =
+        create_taa_resolve_direct_pipeline(device, &resolve_bgl, output_format);
     let blit_pipeline = create_smaa_pipeline(
         device,
         "perro_taa_blit_pipeline",
@@ -1696,11 +1846,78 @@ fn create_taa_core(device: &wgpu::Device, output_format: wgpu::TextureFormat) ->
     );
     TaaCore {
         resolve_pipeline,
+        resolve_direct_pipeline,
         resolve_bgl,
         blit_pipeline,
         blit_bgl,
         uniform_buffer,
     }
+}
+
+/// Fullscreen-post color attachment: clear then store, no resolve target.
+fn clear_store_attachment(view: &wgpu::TextureView) -> Option<wgpu::RenderPassColorAttachment<'_>> {
+    Some(wgpu::RenderPassColorAttachment {
+        view,
+        resolve_target: None,
+        ops: wgpu::Operations {
+            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+            store: wgpu::StoreOp::Store,
+        },
+        depth_slice: None,
+    })
+}
+
+/// MRT variant of the resolve pipeline: history (RGBA16F) at location 0 and
+/// the swapchain at location 1, so the 1:1 case skips the copy-only blit.
+/// Target 1 takes the RUNTIME surface view format (like the blit/present
+/// pipelines) and the same REPLACE blend + full write mask the blit used, so
+/// the swapchain bytes are unchanged.
+fn create_taa_resolve_direct_pipeline(
+    device: &wgpu::Device,
+    resolve_bgl: &wgpu::BindGroupLayout,
+    output_format: wgpu::TextureFormat,
+) -> wgpu::RenderPipeline {
+    let label = "perro_taa_resolve_direct_pipeline";
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some(label),
+        source: wgpu::ShaderSource::Wgsl(TAA_WGSL.into()),
+    });
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some(label),
+        bind_group_layouts: &[Some(resolve_bgl)],
+        immediate_size: 0,
+    });
+    let color_target = |format: wgpu::TextureFormat| {
+        Some(wgpu::ColorTargetState {
+            format,
+            blend: Some(wgpu::BlendState::REPLACE),
+            write_mask: wgpu::ColorWrites::ALL,
+        })
+    };
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(label),
+        layout: Some(&layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            buffers: &[],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main_direct"),
+            targets: &[
+                color_target(TAA_HISTORY_FORMAT),
+                color_target(output_format),
+            ],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    })
 }
 
 fn write_manual_exposure(queue: &wgpu::Queue, present: &PresentProcessor, exposure: f32) {
@@ -1862,6 +2079,10 @@ pub(super) fn parse_present_mode_override() -> Option<wgpu::PresentMode> {
 }
 
 #[cfg(test)]
+#[path = "../../tests/unit/present_gpu_tests.rs"]
+mod present_gpu_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -1993,9 +2214,7 @@ mod tests {
         // cost/quality; keep them from silently regressing.
         assert!(SMAA_EDGE_WGSL.contains("point_sampler, uv, 0.0).g;"));
         assert!(SMAA_EDGE_WGSL.contains("const SMAA_THRESHOLD: f32 = 0.1;"));
-        assert!(
-            SMAA_EDGE_WGSL.contains("const SMAA_LOCAL_CONTRAST_ADAPTATION_FACTOR: f32 = 2.0;")
-        );
+        assert!(SMAA_EDGE_WGSL.contains("const SMAA_LOCAL_CONTRAST_ADAPTATION_FACTOR: f32 = 2.0;"));
         // Weights pass early-outs on the zero edges mask (no searches), the
         // blend pass on zero weights (center-color return).
         assert!(SMAA_WEIGHTS_WGSL.contains("if e.g > 0.0 {"));
@@ -2047,18 +2266,55 @@ mod tests {
     }
 
     #[test]
+    fn taa_direct_entry_writes_history_and_swapchain_from_one_resolve() {
+        // The MRT entry must share the resolve body (no forked algorithm) and
+        // must reproduce what the blit wrote to the swapchain: same rgb,
+        // opaque alpha.
+        assert!(TAA_WGSL.contains("fn taa_resolve(in: VsOut) -> vec4<f32> {"));
+        assert!(TAA_WGSL.contains(
+            "fn fs_main(in: VsOut) -> @location(0) vec4<f32> {\n    return taa_resolve(in);"
+        ));
+        assert!(TAA_WGSL.contains("@location(0) history: vec4<f32>"));
+        assert!(TAA_WGSL.contains("@location(1) present: vec4<f32>"));
+        assert!(TAA_WGSL.contains("out.present = vec4<f32>(resolved.rgb, 1.0);"));
+        // Both fragment entry points must validate, not just parse.
+        let module = naga::front::wgsl::parse_str(TAA_WGSL).expect("TAA WGSL parses");
+        let entry_points: Vec<&str> = module
+            .entry_points
+            .iter()
+            .map(|entry| entry.name.as_str())
+            .collect();
+        assert!(entry_points.contains(&"fs_main"));
+        assert!(entry_points.contains(&"fs_main_direct"));
+    }
+
+    #[test]
+    fn exposure_shader_keeps_two_pass_reduction_entry_points() {
+        // The parallel reduction is the whole point of the pass; keep the
+        // entry points, the shared state+partials buffer (one storage binding
+        // budget) and the adaptation math from silently regressing.
+        let module = naga::front::wgsl::parse_str(EXPOSURE_WGSL).expect("exposure WGSL parses");
+        let entry_points: Vec<&str> = module
+            .entry_points
+            .iter()
+            .map(|entry| entry.name.as_str())
+            .collect();
+        assert!(entry_points.contains(&"cs_reduce"));
+        assert!(entry_points.contains(&"cs_resolve"));
+        assert!(EXPOSURE_WGSL.contains("state.partials[group.x] = vec2<f32>"));
+        assert!(EXPOSURE_WGSL.contains("index += lanes;"));
+        assert!(EXPOSURE_WGSL.contains(
+            "let speed = select(cfg.speed_down, cfg.speed_up, target_exposure > state.value.x);"
+        ));
+        assert!(EXPOSURE_WGSL.contains(
+            "let blend = 1.0 - exp(-max(speed, 0.0) * clamp(cfg.delta_seconds, 0.0, 1.0));"
+        ));
+    }
+
+    #[test]
     fn taa_jitter_follows_halton_2_3_eight_sample_cycle() {
         // Halton(2,3) for indices 1..=8, offset to [-0.5, 0.5).
-        let expected_x = [
-            0.5f32,
-            0.25,
-            0.75,
-            0.125,
-            0.625,
-            0.375,
-            0.875,
-            0.0625,
-        ];
+        let expected_x = [0.5f32, 0.25, 0.75, 0.125, 0.625, 0.375, 0.875, 0.0625];
         let expected_y = [
             1.0f32 / 3.0,
             2.0 / 3.0,
