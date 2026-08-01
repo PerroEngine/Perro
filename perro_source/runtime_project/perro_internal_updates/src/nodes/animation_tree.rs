@@ -1,53 +1,45 @@
 use crate::prelude::*;
 use perro_animation::{
-    AnimationBoneSelector, AnimationClip, AnimationTrackValue, AnimationTreeAsset,
-    AnimationTreeGraphNode, AnimationTreeMask, AnimationTreeNodeKind,
+    AnimationBoneSelector, AnimationBoneTarget, AnimationClip, AnimationTrackValue,
+    AnimationTreeAsset, AnimationTreeGraphNode, AnimationTreeMask, AnimationTreeNodeKind,
 };
 use perro_nodes::AnimationTree;
-use perro_nodes::animation_tree::AnimationTreeSlotPlayback;
+use perro_nodes::animation_player::AnimationObjectBinding;
+use perro_nodes::animation_tree::{AnimationTreeRuntimeWeight, AnimationTreeSlotPlayback};
 use perro_scene::{Node3DField, NodeField};
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use std::hash::{BuildHasherDefault, Hash, Hasher};
 
 thread_local! {
-    /// Cycle-guard stamp reused across frames + trees. Indexed by graph-node
-    /// index, so no `String` per visit (see `eval_node`).
-    static VISITING_SCRATCH: RefCell<Vec<bool>> = const { RefCell::new(Vec::new()) };
+    /// Per-thread eval scratch: cycle-guard stamps, the pose-key interner, the
+    /// pose buffer pool + the binding sort order. Persisting the interner across
+    /// frames is what makes key clones a one-time cost per distinct key instead
+    /// of a per-frame cost (see `EvalScratch::intern`).
+    static EVAL_SCRATCH: RefCell<EvalScratch> = RefCell::new(EvalScratch::default());
 }
 
+/// Interner reset threshold. Keys accumulate as scenes swap `NodeID`s, so drop
+/// the whole table once it grows past a plausible live working set.
+const MAX_INTERNED_KEYS: usize = 16_384;
+
+/// Above this binding count the per-track `find` scan is replaced by a sorted
+/// index + binary search. Below it the scan wins outright.
+const BINDING_SORT_THRESHOLD: usize = 8;
+
 // Compact pose-track identity. Replaces the old formatted `String` key so
-// sampling/blending no longer allocs per track per frame. `NodeField` is `Eq`
-// but not `Hash`, so `Hash` is impl'd by hand (see below).
+// sampling/blending no longer allocs per track per frame.
 // Owns `object` + `bone` outright: `PoseTrack` reads them thru the key instead
 // of holding a second copy, halving the `Cow` clones per sampled track.
+// Now lives only inside the interner: a `Pose` stores dense interned ids, so a
+// key is cloned once ever (first sight) rather than once per blend/insert.
 #[derive(Clone, PartialEq, Eq)]
 struct PoseKey {
     node: NodeID,
     object: Cow<'static, str>,
     field: NodeField,
-    bone: Option<perro_animation::AnimationBoneTarget>,
-}
-
-impl std::hash::Hash for PoseKey {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.node.hash(state);
-        self.object.hash(state);
-        // Outer `NodeField` discriminant only; inner variants (few per node)
-        // may collide but `Eq` compares the full field, so lookups stay correct.
-        std::mem::discriminant(&self.field).hash(state);
-        match self.bone.as_ref().map(|target| &target.selector) {
-            None => state.write_u8(0),
-            Some(AnimationBoneSelector::Index(index)) => {
-                state.write_u8(1);
-                index.hash(state);
-            }
-            Some(AnimationBoneSelector::Name(name)) => {
-                state.write_u8(2);
-                name.hash(state);
-            }
-        }
-    }
+    bone: Option<AnimationBoneTarget>,
 }
 
 #[derive(Clone)]
@@ -59,9 +51,242 @@ struct PoseTrack {
     value: AnimationTrackValue,
 }
 
-#[derive(Clone, Default)]
-struct Pose {
-    tracks: HashMap<PoseKey, PoseTrack>,
+/// Dense pose storage indexed by the interned *local* id of a `PoseKey`.
+///
+/// Two tracks collide in blend/add iff their interned ids match, and ids match
+/// iff the `PoseKey`s are `Eq` — the identical collision rule the old
+/// `HashMap<PoseKey, PoseTrack>` used. Everything downstream (blend, add,
+/// invert, apply) becomes a dense `Vec` walk with no per-entry hash, alloc or
+/// key clone.
+type Pose = Vec<Option<PoseTrack>>;
+
+/// FNV-1a, used to derive the interner bucket hash. Content matches the old
+/// `Hash for PoseKey` impl (outer `NodeField` discriminant only); exactness
+/// comes from the full `Eq` compare done on every bucket candidate.
+struct Fnv1a(u64);
+
+impl Fnv1a {
+    #[inline]
+    fn new() -> Self {
+        Self(0xcbf2_9ce4_8422_2325)
+    }
+}
+
+impl Hasher for Fnv1a {
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        for byte in bytes {
+            self.0 ^= *byte as u64;
+            self.0 = self.0.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+}
+
+/// Bucket keys are already well-mixed FNV output, so re-hashing them with
+/// SipHash is pure overhead.
+#[derive(Default)]
+struct IdentityHasher(u64);
+
+impl Hasher for IdentityHasher {
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        for byte in bytes {
+            self.0 = self.0.rotate_left(8) ^ (*byte as u64);
+        }
+    }
+
+    #[inline]
+    fn write_u64(&mut self, value: u64) {
+        self.0 = value;
+    }
+}
+
+type BucketMap = HashMap<u64, Vec<u32>, BuildHasherDefault<IdentityHasher>>;
+
+fn pose_key_hash(
+    node: NodeID,
+    object: &str,
+    field: NodeField,
+    bone: Option<&AnimationBoneTarget>,
+) -> u64 {
+    let mut hasher = Fnv1a::new();
+    node.hash(&mut hasher);
+    object.hash(&mut hasher);
+    std::mem::discriminant(&field).hash(&mut hasher);
+    match bone.map(|target| &target.selector) {
+        None => hasher.write_u8(0),
+        Some(AnimationBoneSelector::Index(index)) => {
+            hasher.write_u8(1);
+            index.hash(&mut hasher);
+        }
+        Some(AnimationBoneSelector::Name(name)) => {
+            hasher.write_u8(2);
+            name.hash(&mut hasher);
+        }
+    }
+    hasher.finish()
+}
+
+/// Per-key eval stamp. `generation` marks the eval a key was last seen in;
+/// `local` is its dense slot inside that eval.
+#[derive(Clone, Copy, Default)]
+struct InternSlot {
+    generation: u64,
+    local: u32,
+}
+
+#[derive(Default)]
+struct EvalScratch {
+    /// Global id -> key. Persists across evals so `Cow` clones amortize away.
+    keys: Vec<PoseKey>,
+    /// Global id -> eval stamp. Parallel to `keys`.
+    slots: Vec<InternSlot>,
+    /// Key hash -> candidate global ids.
+    buckets: BucketMap,
+    /// Local id -> global id, rebuilt per eval by generation stamping.
+    live: Vec<u32>,
+    generation: u64,
+    /// Recycled pose buffers, so blend/add/sample never allocate steady-state.
+    pool: Vec<Pose>,
+    /// Cycle guard, indexed by graph-node index.
+    visiting: Vec<bool>,
+    /// Binding indices sorted by object name (ties by original index).
+    binding_order: Vec<u32>,
+}
+
+impl EvalScratch {
+    fn begin_eval(&mut self, node_count: usize) {
+        self.generation += 1;
+        self.live.clear();
+        self.visiting.clear();
+        self.visiting.resize(node_count, false);
+        if self.keys.len() > MAX_INTERNED_KEYS {
+            self.keys.clear();
+            self.slots.clear();
+            self.buckets.clear();
+        }
+    }
+
+    /// One hash lookup per (track, eval) — the same count the old `HashMap`
+    /// insert did — in exchange for dense ids everywhere downstream.
+    // `&Cow` not `&str` on purpose: on a miss the key is built by *cloning* the
+    // caller's `Cow`, which is free for the `Borrowed` case. Taking `&str` would
+    // force a `String` alloc on every new key.
+    #[allow(clippy::ptr_arg)]
+    fn intern(
+        &mut self,
+        node: NodeID,
+        object: &Cow<'static, str>,
+        field: NodeField,
+        bone: &Option<AnimationBoneTarget>,
+    ) -> usize {
+        let hash = pose_key_hash(node, object.as_ref(), field, bone.as_ref());
+        let Self {
+            keys,
+            slots,
+            buckets,
+            live,
+            generation,
+            ..
+        } = self;
+        let bucket = buckets.entry(hash).or_default();
+        let mut global = u32::MAX;
+        for candidate in bucket.iter().copied() {
+            let key = &keys[candidate as usize];
+            if key.node == node
+                && key.field == field
+                && key.object.as_ref() == object.as_ref()
+                && key.bone.as_ref() == bone.as_ref()
+            {
+                global = candidate;
+                break;
+            }
+        }
+        if global == u32::MAX {
+            global = keys.len() as u32;
+            keys.push(PoseKey {
+                node,
+                object: object.clone(),
+                field,
+                bone: bone.clone(),
+            });
+            slots.push(InternSlot::default());
+            bucket.push(global);
+        }
+        let slot = &mut slots[global as usize];
+        if slot.generation != *generation {
+            slot.generation = *generation;
+            slot.local = live.len() as u32;
+            live.push(global);
+        }
+        slot.local as usize
+    }
+
+    #[inline]
+    fn key(&self, local: usize) -> &PoseKey {
+        &self.keys[self.live[local] as usize]
+    }
+
+    #[inline]
+    fn take_pose(&mut self) -> Pose {
+        match self.pool.pop() {
+            Some(mut pose) => {
+                pose.clear();
+                pose
+            }
+            None => Pose::new(),
+        }
+    }
+
+    #[inline]
+    fn give_pose(&mut self, mut pose: Pose) {
+        if self.pool.len() < 32 {
+            pose.clear();
+            self.pool.push(pose);
+        }
+    }
+
+    /// Replaces the O(tracks x bindings) `bindings.iter().find` string scan.
+    /// Ties sort by original index so a lookup still resolves to the *first*
+    /// matching binding, exactly like `find`.
+    fn prepare_bindings(&mut self, bindings: &[AnimationObjectBinding]) {
+        self.binding_order.clear();
+        if bindings.len() <= BINDING_SORT_THRESHOLD {
+            return;
+        }
+        self.binding_order.extend(0..bindings.len() as u32);
+        self.binding_order.sort_unstable_by(|a, b| {
+            bindings[*a as usize]
+                .object
+                .as_ref()
+                .cmp(bindings[*b as usize].object.as_ref())
+                .then(a.cmp(b))
+        });
+    }
+
+    fn resolve_binding(&self, bindings: &[AnimationObjectBinding], object: &str) -> Option<NodeID> {
+        if self.binding_order.is_empty() {
+            return bindings
+                .iter()
+                .find(|binding| binding.object.as_ref() == object)
+                .map(|binding| binding.node);
+        }
+        let at = self
+            .binding_order
+            .partition_point(|index| bindings[*index as usize].object.as_ref() < object);
+        let binding = &bindings[*self.binding_order.get(at)? as usize];
+        (binding.object.as_ref() == object).then_some(binding.node)
+    }
 }
 
 pub fn internal_update<RT, R, IP>(
@@ -104,6 +329,7 @@ pub fn internal_update<RT, R, IP>(
         return;
     };
     apply_pose(ctx, res, &pose, &mut applied_transforms);
+    release_pose(pose);
     let _ = with_node_mut!(ctx, AnimationTree, id, |tree| {
         tree.internal.applied_transforms = applied_transforms;
     });
@@ -253,31 +479,36 @@ where
     // beat both. Only graph keys ever stay in `visiting` across recursion (slot
     // keys were inserted + removed in the same step), so index stamps match the
     // old string-set semantics exactly.
-    VISITING_SCRATCH.with(|scratch| {
-        let mut visiting = scratch.borrow_mut();
-        visiting.clear();
-        visiting.resize(asset.nodes.len(), false);
-        eval_node(tree, res, asset, asset.output.as_ref(), &mut visiting).unwrap_or_default()
+    EVAL_SCRATCH.with(|cell| {
+        let mut scratch = cell.borrow_mut();
+        scratch.begin_eval(asset.nodes.len());
+        let mut sample_slot =
+            |name: &str, scratch: &mut EvalScratch| eval_slot_pose(tree, res, name, scratch);
+        eval_node(
+            asset,
+            &tree.internal.weights,
+            asset.output.as_ref(),
+            &mut scratch,
+            &mut sample_slot,
+        )
+        .unwrap_or_default()
     })
 }
 
-fn eval_node<R>(
-    tree: &AnimationTree,
-    res: &ResourceWindow<'_, R>,
+fn eval_node(
     asset: &AnimationTreeAsset,
+    runtime_weights: &[AnimationTreeRuntimeWeight],
     key: &str,
-    visiting: &mut [bool],
-) -> Option<Pose>
-where
-    R: ResourceAPI + ?Sized,
-{
+    scratch: &mut EvalScratch,
+    sample_slot: &mut dyn FnMut(&str, &mut EvalScratch) -> Pose,
+) -> Option<Pose> {
     let Some(index) = asset.nodes.iter().position(|node| node.key.as_ref() == key) else {
-        return Some(eval_slot_pose(tree, res, key));
+        return Some(sample_slot(key, scratch));
     };
-    if visiting[index] {
+    if scratch.visiting[index] {
         return None;
     }
-    visiting[index] = true;
+    scratch.visiting[index] = true;
     let node: &AnimationTreeGraphNode = &asset.nodes[index];
     let pose = match &node.kind {
         AnimationTreeNodeKind::Blend {
@@ -285,15 +516,27 @@ where
             weights,
             mask,
         } => {
-            let mut poses = Vec::new();
-            let mut raw_weights = Vec::new();
+            let mut poses = Vec::with_capacity(inputs.len());
+            let mut raw_weights = Vec::with_capacity(inputs.len());
             for (idx, input) in inputs.iter().enumerate() {
-                if let Some(pose) = eval_node(tree, res, asset, input.as_ref(), visiting) {
+                if let Some(pose) =
+                    eval_node(asset, runtime_weights, input.as_ref(), scratch, sample_slot)
+                {
                     poses.push(pose);
-                    raw_weights.push(runtime_weight(tree, key, input.as_ref(), weights, idx));
+                    raw_weights.push(runtime_weight(
+                        runtime_weights,
+                        key,
+                        input.as_ref(),
+                        weights,
+                        idx,
+                    ));
                 }
             }
-            blend_poses(&poses, &raw_weights, mask)
+            let out = blend_poses(&poses, &raw_weights, mask, scratch);
+            for pose in poses {
+                scratch.give_pose(pose);
+            }
+            out
         }
         AnimationTreeNodeKind::Add {
             base,
@@ -301,27 +544,34 @@ where
             weights,
             mask,
         } => {
-            let base_pose = eval_node(tree, res, asset, base.as_ref(), visiting)?;
-            let mut out = base_pose;
+            let mut out = eval_node(asset, runtime_weights, base.as_ref(), scratch, sample_slot)?;
             for (idx, input) in inputs.iter().enumerate() {
-                if let Some(pose) = eval_node(tree, res, asset, input.as_ref(), visiting) {
-                    let weight = runtime_weight(tree, key, input.as_ref(), weights, idx);
-                    add_pose_delta(&mut out, &pose, weight, mask);
+                if let Some(pose) =
+                    eval_node(asset, runtime_weights, input.as_ref(), scratch, sample_slot)
+                {
+                    let weight = runtime_weight(runtime_weights, key, input.as_ref(), weights, idx);
+                    add_pose_delta(&mut out, &pose, weight, mask, scratch);
+                    scratch.give_pose(pose);
                 }
             }
             out
         }
         AnimationTreeNodeKind::Invert { input, mask } => {
-            let mut pose = eval_node(tree, res, asset, input.as_ref(), visiting)?;
-            invert_pose(&mut pose, mask);
+            let mut pose = eval_node(asset, runtime_weights, input.as_ref(), scratch, sample_slot)?;
+            invert_pose(&mut pose, mask, scratch);
             pose
         }
     };
-    visiting[index] = false;
+    scratch.visiting[index] = false;
     Some(pose)
 }
 
-fn eval_slot_pose<R>(tree: &AnimationTree, res: &ResourceWindow<'_, R>, slot_name: &str) -> Pose
+fn eval_slot_pose<R>(
+    tree: &AnimationTree,
+    res: &ResourceWindow<'_, R>,
+    slot_name: &str,
+    scratch: &mut EvalScratch,
+) -> Pose
 where
     R: ResourceAPI + ?Sized,
 {
@@ -331,13 +581,13 @@ where
         .iter()
         .position(|s| s.name.as_ref() == slot_name)
     else {
-        return Pose::default();
+        return scratch.take_pose();
     };
     let Some(slot) = tree.internal.slots.get(slot_index) else {
-        return Pose::default();
+        return scratch.take_pose();
     };
     let Some(animation) = tree.animations.get(slot_index) else {
-        return Pose::default();
+        return scratch.take_pose();
     };
     let animation_id = if res.Animations().is_loaded(animation.animation) {
         animation.animation
@@ -345,87 +595,83 @@ where
         slot.last_animation
     };
     let Some(clip) = res.Animations().get(animation_id) else {
-        return Pose::default();
+        return scratch.take_pose();
     };
-    sample_clip_pose(&clip, slot.current_frame, &animation.bindings)
+    sample_clip_pose(&clip, slot.current_frame, &animation.bindings, scratch)
 }
 
 fn sample_clip_pose(
     clip: &AnimationClip,
     frame: u32,
-    bindings: &[perro_nodes::animation_player::AnimationObjectBinding],
+    bindings: &[AnimationObjectBinding],
+    scratch: &mut EvalScratch,
 ) -> Pose {
-    let mut pose = Pose::default();
+    let mut pose = scratch.take_pose();
+    scratch.prepare_bindings(bindings);
     for track in clip.object_tracks.iter() {
         let Some(value) = super::animation_player::sample_track_value(track, frame) else {
             continue;
         };
-        let Some(binding) = bindings
-            .iter()
-            .find(|binding| binding.object.as_ref() == track.object.as_ref())
-        else {
+        let Some(node) = scratch.resolve_binding(bindings, track.object.as_ref()) else {
             continue;
         };
-        let key = PoseKey {
-            node: binding.node,
-            object: track.object.clone(),
+        let local = scratch.intern(node, &track.object, track.field, &track.bone_target);
+        if pose.len() <= local {
+            pose.resize(local + 1, None);
+        }
+        // Last writer wins, matching the old `HashMap::insert`.
+        pose[local] = Some(PoseTrack {
+            node,
             field: track.field,
-            bone: track.bone_target.clone(),
-        };
-        pose.tracks.insert(
-            key,
-            PoseTrack {
-                node: binding.node,
-                field: track.field,
-                transform2d_mask: track.transform2d_mask,
-                transform3d_mask: track.transform3d_mask,
-                value,
-            },
-        );
+            transform2d_mask: track.transform2d_mask,
+            transform3d_mask: track.transform3d_mask,
+            value,
+        });
     }
     pose
 }
 
-fn blend_poses(poses: &[Pose], weights: &[f32], mask: &AnimationTreeMask) -> Pose {
+fn blend_poses(
+    poses: &[Pose],
+    weights: &[f32],
+    mask: &AnimationTreeMask,
+    scratch: &mut EvalScratch,
+) -> Pose {
     if poses.is_empty() {
-        return Pose::default();
+        return scratch.take_pose();
     }
     let sum: f32 = weights.iter().copied().filter(|v| *v > 0.0).sum();
+    let mut out = scratch.take_pose();
     if sum <= f32::EPSILON {
-        return poses[0].clone();
+        out.extend_from_slice(&poses[0]);
+        return out;
     }
-    let mut out = Pose::default();
-    // Borrow the union of keys (was a second map cloning every key). Each key's
-    // accumulation is independent, so encounter order does not affect the result.
-    let mut seen = HashSet::<&PoseKey>::new();
-    for pose in poses {
-        for key in pose.tracks.keys() {
-            if !seen.insert(key) {
+    let len = poses.iter().map(|pose| pose.len()).max().unwrap_or(0);
+    out.resize(len, None);
+    // Dense walk over the union of interned ids: same key set the old
+    // `HashSet<&PoseKey>` union produced, minus the set + its hashing.
+    for (local, out_slot) in out.iter_mut().enumerate() {
+        let mut acc: Option<(PoseTrack, BlendWeights)> = None;
+        for (idx, pose) in poses.iter().enumerate() {
+            let Some(track) = pose.get(local).and_then(|slot| slot.as_ref()) else {
+                continue;
+            };
+            let key = scratch.key(local);
+            if !mask_allows(mask, key.object.as_ref(), key.bone.as_ref(), track.field) {
                 continue;
             }
-            let mut acc: Option<(PoseTrack, BlendWeights)> = None;
-            for (idx, pose) in poses.iter().enumerate() {
-                let Some(track) = pose.tracks.get(key) else {
-                    continue;
-                };
-                if !mask_allows(mask, key, track) {
-                    continue;
-                }
-                let w = weights.get(idx).copied().unwrap_or(0.0).max(0.0) / sum;
-                if w <= 0.0 {
-                    continue;
-                }
-                acc = Some(if let Some((mut prev, mut blended_weights)) = acc {
-                    blend_track(&mut prev, &mut blended_weights, track, w);
-                    (prev, blended_weights)
-                } else {
-                    (track.clone(), BlendWeights::new(track, w))
-                });
+            let w = weights.get(idx).copied().unwrap_or(0.0).max(0.0) / sum;
+            if w <= 0.0 {
+                continue;
             }
-            if let Some((track, _)) = acc {
-                out.tracks.insert(key.clone(), track);
-            }
+            acc = Some(if let Some((mut prev, mut blended_weights)) = acc {
+                blend_track(&mut prev, &mut blended_weights, track, w);
+                (prev, blended_weights)
+            } else {
+                (track.clone(), BlendWeights::new(track, w))
+            });
         }
+        *out_slot = acc.map(|(track, _)| track);
     }
     out
 }
@@ -558,34 +804,61 @@ fn blend_value(a: &AnimationTrackValue, b: &AnimationTrackValue, t: f32) -> Anim
     }
 }
 
-fn add_pose_delta(base: &mut Pose, pose: &Pose, weight: f32, mask: &AnimationTreeMask) {
+fn add_pose_delta(
+    base: &mut Pose,
+    pose: &Pose,
+    weight: f32,
+    mask: &AnimationTreeMask,
+    scratch: &EvalScratch,
+) {
     if weight == 0.0 {
         return;
     }
-    for (key, track) in &pose.tracks {
-        if !mask_allows(mask, key, track) {
+    if pose.len() > base.len() {
+        base.resize(pose.len(), None);
+    }
+    for (local, slot) in pose.iter().enumerate() {
+        let Some(track) = slot.as_ref() else {
+            continue;
+        };
+        let key = scratch.key(local);
+        if !mask_allows(mask, key.object.as_ref(), key.bone.as_ref(), track.field) {
             continue;
         }
-        if let Some(existing) = base.tracks.get_mut(key) {
-            existing.value = add_value(&existing.value, &scale_value(&track.value, weight));
-            existing.transform2d_mask |= track.transform2d_mask;
-            existing.transform3d_mask |= track.transform3d_mask;
-        } else {
-            let mut next = track.clone();
-            next.value = scale_value(&next.value, weight);
-            base.tracks.insert(key.clone(), next);
+        match base[local].as_mut() {
+            Some(existing) => {
+                existing.value = add_value(&existing.value, &scale_value(&track.value, weight));
+                existing.transform2d_mask |= track.transform2d_mask;
+                existing.transform3d_mask |= track.transform3d_mask;
+            }
+            None => {
+                let mut next = track.clone();
+                next.value = scale_value(&next.value, weight);
+                base[local] = Some(next);
+            }
         }
     }
 }
 
-fn invert_pose(pose: &mut Pose, mask: &AnimationTreeMask) {
-    for (key, track) in pose.tracks.iter_mut() {
-        if mask_allows(mask, key, track) {
+fn invert_pose(pose: &mut Pose, mask: &AnimationTreeMask, scratch: &EvalScratch) {
+    for (local, slot) in pose.iter_mut().enumerate() {
+        let Some(track) = slot.as_mut() else {
+            continue;
+        };
+        let key = scratch.key(local);
+        if mask_allows(mask, key.object.as_ref(), key.bone.as_ref(), track.field) {
             track.value = scale_value(&track.value, -1.0);
         }
     }
 }
 
+/// Applies in ascending interned-id order, i.e. the order tracks were first
+/// sampled this eval. Deterministic, unlike the old `HashMap` iteration order.
+///
+/// Borrows the interner to recover each track's bone target. Safe because
+/// `apply_track_value` only writes node/bone state — it cannot re-enter an
+/// animation-tree eval — and `pose` was interned in the eval that ran
+/// immediately before this call.
 fn apply_pose<RT, R>(
     ctx: &mut RuntimeWindow<'_, RT>,
     res: &ResourceWindow<'_, R>,
@@ -595,19 +868,29 @@ fn apply_pose<RT, R>(
     RT: RuntimeAPI + ?Sized,
     R: ResourceAPI + ?Sized,
 {
-    for (key, track) in &pose.tracks {
-        super::animation_player::apply_track_value(
-            ctx,
-            res,
-            track.node,
-            track.field,
-            key.bone.as_ref(),
-            track.transform2d_mask,
-            track.transform3d_mask,
-            &track.value,
-            applied_transforms,
-        );
-    }
+    EVAL_SCRATCH.with(|cell| {
+        let scratch = cell.borrow();
+        for (local, slot) in pose.iter().enumerate() {
+            let Some(track) = slot.as_ref() else {
+                continue;
+            };
+            super::animation_player::apply_track_value(
+                ctx,
+                res,
+                track.node,
+                track.field,
+                scratch.key(local).bone.as_ref(),
+                track.transform2d_mask,
+                track.transform3d_mask,
+                &track.value,
+                applied_transforms,
+            );
+        }
+    });
+}
+
+fn release_pose(pose: Pose) {
+    EVAL_SCRATCH.with(|cell| cell.borrow_mut().give_pose(pose));
 }
 
 fn fire_slot_events<RT, R>(ctx: &mut RuntimeWindow<'_, RT>, res: &ResourceWindow<'_, R>, id: NodeID)
@@ -660,36 +943,36 @@ where
 }
 
 fn runtime_weight(
-    tree: &AnimationTree,
+    runtime_weights: &[AnimationTreeRuntimeWeight],
     node: &str,
     input: &str,
     weights: &[f32],
     index: usize,
 ) -> f32 {
-    tree.internal
-        .weights
+    runtime_weights
         .iter()
         .find(|w| w.node.as_ref() == node && w.input.as_ref() == input)
         .map(|w| w.weight)
         .unwrap_or_else(|| weights.get(index).copied().unwrap_or(1.0))
 }
 
-fn mask_allows(mask: &AnimationTreeMask, key: &PoseKey, track: &PoseTrack) -> bool {
+fn mask_allows(
+    mask: &AnimationTreeMask,
+    object: &str,
+    bone: Option<&AnimationBoneTarget>,
+    field: NodeField,
+) -> bool {
     if mask.is_empty() {
         return true;
     }
-    let object_ok = mask.objects.is_empty()
-        || mask
-            .objects
-            .iter()
-            .any(|v| v.as_ref() == key.object.as_ref());
-    let field_name = field_mask_name(track.field);
+    let object_ok = mask.objects.is_empty() || mask.objects.iter().any(|v| v.as_ref() == object);
+    let field_name = field_mask_name(field);
     let field_ok = mask.fields.is_empty()
         || mask
             .fields
             .iter()
             .any(|v| v.as_ref().eq_ignore_ascii_case(field_name));
-    let bone_ok = if let Some(target) = &key.bone {
+    let bone_ok = if let Some(target) = bone {
         mask.bones.is_empty()
             || mask.bones.iter().any(|v| match &target.selector {
                 AnimationBoneSelector::Index(index) => bone_index_str_eq(v.as_ref(), *index),
@@ -769,127 +1052,4 @@ fn add_value(a: &AnimationTrackValue, b: &AnimationTrackValue) -> AnimationTrack
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use perro_animation::{AnimationEvent, AnimationEventScope, AnimationFrameEvent};
-
-    fn event(frame: u32) -> AnimationFrameEvent {
-        AnimationFrameEvent {
-            frame,
-            scope: AnimationEventScope::Global,
-            event: AnimationEvent::EmitSignal {
-                name: Cow::Borrowed("test"),
-                params: Cow::Borrowed(&[]),
-            },
-        }
-    }
-
-    #[test]
-    fn paused_slot_queues_current_event_once() {
-        let animation = AnimationID::new(1);
-        let events = [event(2)];
-        let mut slot = AnimationTreeSlotPlayback {
-            current_frame: 2,
-            last_event_frame: u32::MAX,
-            ..Default::default()
-        };
-
-        queue_current_slot_event_once(&mut slot, animation, &events);
-        assert_eq!(slot.pending_event_frames, [2]);
-        slot.pending_event_frames.clear();
-        queue_current_slot_event_once(&mut slot, animation, &events);
-
-        assert!(slot.pending_event_frames.is_empty());
-    }
-
-    #[test]
-    fn changed_current_frame_queues_event_once() {
-        let animation = AnimationID::new(1);
-        let events = [event(1), event(3)];
-        let mut slot = AnimationTreeSlotPlayback {
-            current_frame: 1,
-            last_event_frame: u32::MAX,
-            ..Default::default()
-        };
-        queue_current_slot_event_once(&mut slot, animation, &events);
-        slot.pending_event_frames.clear();
-
-        slot.current_frame = 3;
-        queue_current_slot_event_once(&mut slot, animation, &events);
-
-        assert_eq!(slot.pending_event_frames, [3]);
-    }
-
-    #[test]
-    fn bone_index_str_eq_matches_to_string_exactly() {
-        for index in [0u32, 7, 10, 99, 1234, u32::MAX] {
-            assert!(bone_index_str_eq(&index.to_string(), index));
-        }
-        // Same forms the old `to_string()` compare rejected.
-        assert!(!bone_index_str_eq("07", 7));
-        assert!(!bone_index_str_eq(" 7", 7));
-        assert!(!bone_index_str_eq("", 0));
-        assert!(!bone_index_str_eq("7x", 7));
-        assert!(!bone_index_str_eq("8", 7));
-    }
-
-    #[test]
-    fn transform2d_blend_uses_short_rotation_arc_and_scale() {
-        let mut out = perro_runtime_api::perro_structs::Transform2D::new(
-            perro_runtime_api::perro_structs::Vector2::ZERO,
-            350.0_f32.to_radians(),
-            perro_runtime_api::perro_structs::Vector2::ONE,
-        );
-        let next = perro_runtime_api::perro_structs::Transform2D::new(
-            perro_runtime_api::perro_structs::Vector2::ZERO,
-            10.0_f32.to_radians(),
-            perro_runtime_api::perro_structs::Vector2::new(3.0, 5.0),
-        );
-        let mut weights = BlendWeights {
-            rotation: 1.0,
-            scale: 1.0,
-            ..Default::default()
-        };
-
-        blend_transform2d_channel(
-            &mut out,
-            &next,
-            perro_animation::ANIMATION_TRANSFORM_MASK_ROTATION
-                | perro_animation::ANIMATION_TRANSFORM_MASK_SCALE,
-            &mut weights,
-            1.0,
-        );
-
-        assert!(out.rotation.sin().abs() < 1e-5);
-        assert_eq!(
-            out.scale,
-            perro_runtime_api::perro_structs::Vector2::new(2.0, 3.0)
-        );
-    }
-
-    #[test]
-    fn transform3d_mask_does_not_dilute_only_authored_rotation() {
-        let mut out = perro_runtime_api::perro_structs::Transform3D::IDENTITY;
-        let next_rotation = perro_runtime_api::perro_structs::Quaternion::from_euler_xyz(
-            0.0,
-            0.0,
-            std::f32::consts::FRAC_PI_2,
-        );
-        let next = perro_runtime_api::perro_structs::Transform3D::new(
-            perro_runtime_api::perro_structs::Vector3::ZERO,
-            next_rotation,
-            perro_runtime_api::perro_structs::Vector3::ONE,
-        );
-        let mut weights = BlendWeights::default();
-
-        blend_transform3d_channel(
-            &mut out,
-            &next,
-            perro_animation::ANIMATION_TRANSFORM_MASK_ROTATION,
-            &mut weights,
-            1.0,
-        );
-
-        assert!(out.rotation.dot(next_rotation).abs() > 0.9999);
-    }
-}
+mod tests;
