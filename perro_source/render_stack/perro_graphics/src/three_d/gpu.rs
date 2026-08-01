@@ -1076,6 +1076,13 @@ pub struct Gpu3D {
     // transform patch, or multimesh instance/pose upload). Invalidates all
     // shadow layers in update_shadow_state.
     shadow_casters_dirty: bool,
+    // Input memo for update_shadow_state: when camera, lights, caster flag and
+    // target sizes all match the previous call (and no casters moved), the
+    // whole shadow setup -- O(draw_batches) focus fitting, cascade math and
+    // per-layer diffs -- is skipped.
+    last_shadow_input_camera: Option<Camera3DState>,
+    last_shadow_input_lighting: Option<Lighting3DState>,
+    last_shadow_input_key: Option<(bool, (u32, u32), u32, bool)>,
     // Scratch surviving-batch indices for the per-layer shadow caster cull.
     shadow_cull_scratch: Vec<usize>,
     shadow_pass_enabled: bool,

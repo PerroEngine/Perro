@@ -42,7 +42,7 @@ impl PartialEq for DenseMultiMeshDraw3D {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Draw3DInstance {
     pub node: NodeID,
     pub kind: Draw3DKind,
@@ -57,6 +57,38 @@ pub struct Draw3DInstance {
     pub blend: MeshBlendOptions3D,
     pub cast_shadows: bool,
     pub receive_shadows: bool,
+}
+
+#[inline]
+fn arc_slice_eq<T: PartialEq>(a: &Arc<[T]>, b: &Arc<[T]>) -> bool {
+    Arc::ptr_eq(a, b) || a == b
+}
+
+// The retained producer reuses Arcs when content is unchanged, so ingest-time
+// compares (once per queued draw per frame) usually resolve on pointer
+// identity instead of walking instance matrices / bone palettes / surfaces.
+// f32 members keep std's Arc compare from short-circuiting on its own, hence
+// the manual impl (same pattern as DenseMultiMeshDraw3D above).
+impl PartialEq for Draw3DInstance {
+    fn eq(&self, other: &Self) -> bool {
+        self.node == other.node
+            && self.cast_shadows == other.cast_shadows
+            && self.receive_shadows == other.receive_shadows
+            && self.meshlet_override == other.meshlet_override
+            && self.debug_color == other.debug_color
+            && self.kind == other.kind
+            && self.lod == other.lod
+            && self.blend == other.blend
+            && arc_slice_eq(&self.instance_mats, &other.instance_mats)
+            && arc_slice_eq(&self.surfaces, &other.surfaces)
+            && arc_slice_eq(&self.blend_shape_weights, &other.blend_shape_weights)
+            && match (self.skeleton.as_ref(), other.skeleton.as_ref()) {
+                (Some(a), Some(b)) => arc_slice_eq(&a.matrices, &b.matrices),
+                (None, None) => true,
+                _ => false,
+            }
+            && self.dense_multimesh == other.dense_multimesh
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -484,7 +516,7 @@ impl Renderer3D {
             for draw in queued.drain(..) {
                 let (material_ready, mesh_ready, draw_ready) = draw_readiness(&draw, resources);
                 if draw_ready {
-                    let changed = self.retained_draw(draw.node).as_ref() != Some(&draw);
+                    let changed = self.retained_draw_ref(draw.node) != Some(&draw);
                     if changed {
                         self.upsert_retained_draw(draw);
                         draws_changed = true;
@@ -618,6 +650,12 @@ impl Renderer3D {
     pub fn retained_draw(&self, node: NodeID) -> Option<Draw3DInstance> {
         let idx = *self.node_to_draw_index.get(&node)?;
         self.retained_draws.get(idx).cloned()
+    }
+
+    /// Borrowing variant of [`Self::retained_draw`] for compare-only callers.
+    pub fn retained_draw_ref(&self, node: NodeID) -> Option<&Draw3DInstance> {
+        let idx = *self.node_to_draw_index.get(&node)?;
+        self.retained_draws.get(idx)
     }
 
     pub fn retained_draw_count(&self) -> usize {

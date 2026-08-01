@@ -114,6 +114,29 @@ impl Gpu3D {
         static SHADOWS_DISABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         let shadows_disabled = *SHADOWS_DISABLED
             .get_or_init(|| std::env::var_os("PERRO_DISABLE_SHADOWS").is_some());
+        // Input memo: identical camera/lights/caster-state/target-sizes with no
+        // caster movement produce identical shadow state -- skip the whole
+        // setup (focus fitting is O(draw_batches) per call).
+        let input_key = Some((
+            has_casters,
+            self.depth_size,
+            self.shadow_map_size,
+            self.shadow_pcf_high,
+        ));
+        if !shadows_disabled
+            && !self.shadow_casters_dirty
+            && self.last_shadow_input_key == input_key
+            && self.last_shadow_input_camera.as_ref() == Some(camera)
+            && self
+                .last_shadow_input_lighting
+                .as_ref()
+                .is_some_and(|prev| prev.content_eq(lighting))
+        {
+            return;
+        }
+        self.last_shadow_input_key = input_key;
+        self.last_shadow_input_camera = Some(camera.clone());
+        self.last_shadow_input_lighting = Some(lighting.clone());
         if shadows_disabled {
             let zero = ShadowUniform::zeroed();
             if self.last_shadow != Some(zero) {
