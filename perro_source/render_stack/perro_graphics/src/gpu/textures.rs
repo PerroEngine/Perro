@@ -54,10 +54,26 @@ impl Gpu {
             .map_or(0, |three_d| three_d.pipeline_compiles())
     }
 
+    /// True while the main 3D world still has base pipeline families to build
+    /// (rigid + its depth/shadow, the multimesh trio, sky). False w/o a 3D
+    /// world: a 2D-only session never builds them, so it must not pin the
+    /// splash or the frame pump.
+    #[inline]
+    pub fn base_families_pending(&self) -> bool {
+        self.three_d
+            .as_ref()
+            .is_some_and(|three_d| three_d.base_families_pending())
+    }
+
     // Drain queued material warms into the main 3D pipeline caches, bounded by
     // a per-frame budget. Leaves the queue untouched until `three_d` exists (it
     // is created lazily on the first 3D frame); camera-stream worlds stay lazy
     // on purpose.
+    //
+    // An empty queue is NOT a bail: the same budget warms the base pipeline
+    // families as leftover work, and those are exactly what a splash hold with
+    // no pending materials must compile. Only a warm world (or no world) is a
+    // cheap no-op.
     //
     // Draining the whole queue in one frame is the scene-transition spike: a
     // scene load queues every material at once and each new material shape
@@ -73,12 +89,12 @@ impl Gpu {
         max_compiles: usize,
         time_budget: Option<std::time::Duration>,
     ) -> usize {
-        if materials.is_empty() {
-            return 0;
-        }
         let Some(three_d) = self.three_d.as_mut() else {
             return 0;
         };
+        if materials.is_empty() && !three_d.base_families_pending() {
+            return 0;
+        }
         three_d.warm_material_pipelines_budgeted(
             &self.device,
             materials,

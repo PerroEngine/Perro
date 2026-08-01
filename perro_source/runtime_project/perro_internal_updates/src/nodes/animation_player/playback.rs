@@ -7,14 +7,11 @@ pub(in super::super) fn sample_track_value(
     if track.keys.is_empty() {
         return None;
     }
-    debug_assert!(
-        track.keys.windows(2).all(|w| w[0].frame <= w[1].frame),
-        "animation track keys must be frame-sorted ascending"
-    );
-
-    // Keys are frame-sorted ascending (guaranteed at build time), so the
-    // split point between "<= frame" and "> frame" keys can be found with
-    // a binary search instead of a linear scan.
+    // Keys are frame-sorted ascending (guaranteed at load: parse_panim runs
+    // AnimationClip::validate_key_order), so the split point between "<= frame"
+    // and "> frame" keys can be found with a binary search instead of a linear
+    // scan. Do NOT re-check the order here: this runs per track, per playing
+    // player, per frame.
     let split = track.keys.partition_point(|key| key.frame <= frame);
     let prev_index = if split == 0 { 0 } else { split - 1 };
     let next_index = if split < track.keys.len() {

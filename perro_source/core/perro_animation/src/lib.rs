@@ -36,6 +36,22 @@ impl AnimationClip {
             self.total_frames as f32 / self.fps
         }
     }
+
+    /// Check the per-track key order the sampler relies on: keys ascending by
+    /// frame, so `partition_point` can binary-search them. Load-time only - the
+    /// per-sample path treats it as a hard invariant + must not re-scan keys
+    /// every frame (60-bone x 200-key clip = ~12k compares/player/frame).
+    pub fn validate_key_order(&self) -> Result<(), String> {
+        for track in self.object_tracks.iter() {
+            if let Some(window) = track.keys.windows(2).find(|w| w[0].frame > w[1].frame) {
+                return Err(format!(
+                    "animation '{}': track '{}' keys not frame-sorted ascending ({} b4 {})",
+                    self.name, track.object, window[0].frame, window[1].frame
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Default)]

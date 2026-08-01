@@ -178,9 +178,10 @@ pub trait GraphicsBackend: RenderBridge {
     /// Default no-op 4 backends w/o a warm queue.
     fn set_startup_warm_boost(&mut self, _enabled: bool) {}
 
-    /// True when no queued pipeline warms can still drain (queue empty, or 3D
-    /// world absent so warming is a no-op). Splash exit waits on this so
-    /// compiles land under the splash instead of the first gameplay frame.
+    /// True when no pipeline warming can still drain: material queue empty +
+    /// base pipeline families built, or 3D world absent so warming is a no-op.
+    /// Splash exit waits on this so compiles land under the splash instead of
+    /// the first gameplay frame.
     fn pipeline_warm_idle(&self) -> bool {
         true
     }

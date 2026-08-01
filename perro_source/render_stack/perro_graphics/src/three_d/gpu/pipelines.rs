@@ -385,6 +385,14 @@ impl Gpu3D {
         self.pipeline_compiles
     }
 
+    /// True while the shared registry still has base pipeline families left to
+    /// build. The frame pump + the startup-splash exit gate read this, so it
+    /// must go false as soon as a drain finds them all built.
+    #[inline]
+    pub(crate) fn base_families_pending(&self) -> bool {
+        !self.base_families_warmed
+    }
+
     #[cfg(test)]
     pub(super) fn builtin_variant_pipeline_count(&self) -> usize {
         self.builtin_variant_pipelines.len()

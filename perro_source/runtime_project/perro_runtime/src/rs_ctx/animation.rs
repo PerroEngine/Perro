@@ -40,6 +40,14 @@ impl AnimationAPI for RuntimeResourceApi {
             .static_animation_lookup
             .map(|lookup| Arc::new(lookup(source_hash).clone()))
             .unwrap_or_else(|| Arc::new(AnimationClip::default()));
+        // Static clips skip parse_panim at runtime (baked by the build
+        // pipeline), so this is their one shot at the sampler's key-order
+        // invariant. Once per clip load + debug-only: a broken bake is a build
+        // bug, not something a shipped game should pay 4.
+        #[cfg(debug_assertions)]
+        if let Err(err) = clip.validate_key_order() {
+            panic!("{err}");
+        }
         let id = state.allocate_animation_id();
         state.animation_by_source.insert(source_hash, id);
         state.animation_data_by_id.insert(id, clip);

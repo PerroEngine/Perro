@@ -144,11 +144,11 @@ impl GraphicsBackend for PerroGraphics {
     }
 
     fn pipeline_warm_idle(&self) -> bool {
-        // Mirror the drain gate: queued warms only progress once the lazy 3D
-        // world exists; b4 that the queue must not hold the splash open (a
-        // 2D-only game would sit at the hard timeout otherwise).
-        self.pending_pipeline_warms.is_empty()
-            || !self.gpu.as_ref().is_some_and(Gpu::has_three_d)
+        // Mirror the drain gate exactly (shared predicate): queued materials
+        // *and* the base pipeline families, both only once the lazy 3D world
+        // exists - b4 that nothing can drain + the queue must not hold the
+        // splash open (a 2D-only game would sit at the hard timeout).
+        !self.pipeline_warm_pending()
     }
 
     fn draw_frame(&mut self) {

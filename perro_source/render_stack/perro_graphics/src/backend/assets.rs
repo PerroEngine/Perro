@@ -30,6 +30,18 @@ fn custom_shader_reads_frame_globals(
 }
 
 impl PerroGraphics {
+    // true while pipeline warming still has work to drain: queued materials or
+    // the shared registry's base families. both need drawn frames, so the frame
+    // pump + the startup-splash exit gate must read the same predicate or one
+    // stalls the other. gated on the lazy 3D world existing - warming is a
+    // no-op w/o it + a 2D-only session must not spin.
+    pub(super) fn pipeline_warm_pending(&self) -> bool {
+        self.gpu.as_ref().is_some_and(|gpu| {
+            gpu.has_three_d()
+                && (!self.pending_pipeline_warms.is_empty() || gpu.base_families_pending())
+        })
+    }
+
     pub(super) fn reserve_command_buckets(&mut self, summary: &CommandSummary) {
         if summary.rects_2d > 0 {
             self.renderer_2d.reserve_queued_rects(summary.rects_2d);
@@ -117,8 +129,7 @@ impl PerroGraphics {
         // exists to spread. Gated on the 3D world existing: warming is a no-op
         // without it, and a 2D-only session that creates materials must not
         // spin forever.
-        let has_pending_pipeline_warms = !self.pending_pipeline_warms.is_empty()
-            && self.gpu.as_ref().is_some_and(|gpu| gpu.has_three_d());
+        let has_pending_pipeline_warms = self.pipeline_warm_pending();
         let has_continuous_updates = self.renderer_3d.has_active_sky_animation()
             || has_pending_pipeline_warms
             || self.has_retained_animated_custom_material();

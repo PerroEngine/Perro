@@ -1,6 +1,10 @@
 pub fn parse_panim(source: &str) -> Result<AnimationClip, String> {
     let mut parser = PanimParser::new(source);
-    parser.parse()
+    let clip = parser.parse()?;
+    // Load-time (cold) guard 4 the sampler's binary-search invariant; the
+    // per-sample path must not re-verify it per frame.
+    clip.validate_key_order()?;
+    Ok(clip)
 }
 
 struct PanimParser<'a> {
