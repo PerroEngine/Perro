@@ -7,7 +7,31 @@ use perro_runtime_api::perro_structs::{Transform3D, Vector3};
 use std::cell::RefCell;
 
 thread_local! {
-    static COLLIDER_SCRATCH_3D: RefCell<Vec<Collider>> = const { RefCell::new(Vec::new()) };
+    static COLLIDER_SCRATCH_3D: RefCell<ColliderCache> = const {
+        RefCell::new(ColliderCache {
+            colliders: Vec::new(),
+            served: Vec::new(),
+        })
+    };
+}
+
+/// One collider collection shared by every chain node of a fixed tick.
+///
+/// `collect_colliders` re-queries the world + clones a shape per collider, so
+/// doing it per chain node scaled the cost by chain count. The runtime walks
+/// `internal_fixed_dispatch_nodes` in order on one thread, so a node asking
+/// twice = a new tick began -> rebuild. Colliders cannot shift btw chain nodes
+/// inside a tick anyway: `BoneAttachment3D` (the only bone->transform bridge)
+/// runs in `internal_update`, not the fixed step.
+struct ColliderCache {
+    colliders: Vec<Collider>,
+    served: Vec<NodeID>,
+}
+
+impl ColliderCache {
+    fn refresh_needed(&self, id: NodeID) -> bool {
+        self.served.is_empty() || self.served.contains(&id)
+    }
 }
 
 pub fn internal_fixed_update<RT>(ctx: &mut RuntimeWindow<'_, RT>, id: NodeID)
@@ -32,14 +56,26 @@ where
         return;
     }
 
-    let Some((chain, rest_globals)) = with_base_node!(ctx, Skeleton3D, cfg.skeleton, |skeleton| {
-        let chain = collect_chain(skeleton, cfg.bone_index as usize, cfg.chain_length);
-        let rest_globals = chain_global_positions(skeleton, &chain);
-        (chain, rest_globals)
-    }) else {
+    // Chain + rest buffers live on the node so the per-step walk reuses them.
+    let Some((mut chain, mut rest_globals)) =
+        with_base_node_mut!(ctx, PhysicsBoneChain3D, id, |node| (
+            std::mem::take(&mut node.internal_chain_scratch),
+            std::mem::take(&mut node.internal_rest_globals)
+        ))
+    else {
         return;
     };
-    if chain.len() < 2 || rest_globals.len() != chain.len() {
+    let filled = with_base_node!(ctx, Skeleton3D, cfg.skeleton, |skeleton| {
+        collect_chain(
+            skeleton,
+            cfg.bone_index as usize,
+            cfg.chain_length,
+            &mut chain,
+        );
+        chain_global_positions(skeleton, &chain, &mut rest_globals);
+    });
+    if filled.is_none() || chain.len() < 2 || rest_globals.len() != chain.len() {
+        return_chain_scratch(ctx, id, chain, rest_globals);
         return;
     }
 
@@ -51,18 +87,23 @@ where
     let dt = fixed_delta_time!(ctx).clamp(0.0001, 0.05);
 
     if cfg.collisions {
-        COLLIDER_SCRATCH_3D.with(|scratch| {
-            let mut colliders = scratch.borrow_mut();
-            collect_colliders(ctx, &mut colliders);
+        COLLIDER_SCRATCH_3D.with(|cell| {
+            let mut cache = cell.borrow_mut();
+            if cache.refresh_needed(id) {
+                cache.served.clear();
+                let ColliderCache { colliders, .. } = &mut *cache;
+                collect_colliders(ctx, colliders);
+            }
+            cache.served.push(id);
             update_chain_with_colliders(
                 ctx,
                 id,
                 ChainUpdate {
                     cfg,
                     skeleton_global,
-                    chain: &chain,
-                    rest_globals: &rest_globals,
-                    colliders: &colliders,
+                    chain,
+                    rest_globals,
+                    colliders: &cache.colliders,
                     dt,
                 },
             );
@@ -74,8 +115,8 @@ where
             ChainUpdate {
                 cfg,
                 skeleton_global,
-                chain: &chain,
-                rest_globals: &rest_globals,
+                chain,
+                rest_globals,
                 colliders: &[],
                 dt,
             },
@@ -83,11 +124,25 @@ where
     }
 }
 
+fn return_chain_scratch<RT>(
+    ctx: &mut RuntimeWindow<'_, RT>,
+    id: NodeID,
+    mut chain: Vec<usize>,
+    mut rest_globals: Vec<Vector3>,
+) where
+    RT: RuntimeAPI + ?Sized,
+{
+    let _ = with_base_node_mut!(ctx, PhysicsBoneChain3D, id, |node| {
+        node.internal_chain_scratch = std::mem::take(&mut chain);
+        node.internal_rest_globals = std::mem::take(&mut rest_globals);
+    });
+}
+
 struct ChainUpdate<'a> {
     cfg: ChainCfg,
     skeleton_global: Mat4,
-    chain: &'a [usize],
-    rest_globals: &'a [Vec3],
+    chain: Vec<usize>,
+    rest_globals: Vec<Vector3>,
     colliders: &'a [Collider],
     dt: f32,
 }
@@ -102,8 +157,8 @@ fn update_chain_with_colliders<RT>(
     let ChainUpdate {
         cfg,
         skeleton_global,
-        chain,
-        rest_globals,
+        mut chain,
+        mut rest_globals,
         colliders,
         dt,
     } = update;
@@ -113,7 +168,7 @@ fn update_chain_with_colliders<RT>(
         rest_world.extend(
             rest_globals
                 .iter()
-                .map(|p| Vector3::from(skeleton_global.transform_point3(*p))),
+                .map(|p| Vector3::from(skeleton_global.transform_point3((*p).into()))),
         );
         let mut lengths = std::mem::take(&mut node.internal_lengths);
         lengths.clear();
@@ -122,7 +177,7 @@ fn update_chain_with_colliders<RT>(
                 .windows(2)
                 .map(|pair| pair[0].distance_to(pair[1]).max(0.0001)),
         );
-        step_chain(node, chain, &rest_world, &lengths, colliders, cfg, dt);
+        step_chain(node, &chain, &rest_world, &lengths, colliders, cfg, dt);
 
         let skeleton_from_world = skeleton_global.inverse();
         let mut local_positions = std::mem::take(&mut node.internal_local_positions);
@@ -140,13 +195,15 @@ fn update_chain_with_colliders<RT>(
     };
 
     let changed = with_base_node_mut!(ctx, Skeleton3D, cfg.skeleton, |skeleton| {
-        write_chain_positions(skeleton, chain, &local_positions);
+        write_chain_positions(skeleton, &chain, &local_positions);
     });
     if changed.is_some() {
         let _ = ctx.Nodes().force_rerender(cfg.skeleton);
     }
     let _ = with_base_node_mut!(ctx, PhysicsBoneChain3D, id, |node| {
         node.internal_local_positions = std::mem::take(&mut local_positions);
+        node.internal_chain_scratch = std::mem::take(&mut chain);
+        node.internal_rest_globals = std::mem::take(&mut rest_globals);
     });
 }
 
@@ -173,11 +230,11 @@ struct Collider {
     shape: Shape3D,
 }
 
-fn collect_chain(skeleton: &Skeleton3D, end: usize, max_len: usize) -> Vec<usize> {
+fn collect_chain(skeleton: &Skeleton3D, end: usize, max_len: usize, out: &mut Vec<usize>) {
+    out.clear();
     if end >= skeleton.bones.len() {
-        return Vec::new();
+        return;
     }
-    let mut out = Vec::new();
     let mut current = end as i32;
     let mut hops = 0usize;
     while current >= 0 && hops < skeleton.bones.len() && out.len() < max_len.saturating_add(1) {
@@ -190,13 +247,15 @@ fn collect_chain(skeleton: &Skeleton3D, end: usize, max_len: usize) -> Vec<usize
         hops += 1;
     }
     out.reverse();
-    out
 }
 
-fn chain_global_positions(skeleton: &Skeleton3D, chain: &[usize]) -> Vec<Vec3> {
+fn chain_global_positions(skeleton: &Skeleton3D, chain: &[usize], out: &mut Vec<Vector3>) {
+    out.clear();
     let Some(first) = chain.first().copied() else {
-        return Vec::new();
+        return;
     };
+    // Ancestor walk stays a local: it runs only up to the root once per step
+    // and never outlives this call.
     let mut ancestors = Vec::new();
     let mut current = first as i32;
     let mut hops = 0usize;
@@ -216,13 +275,12 @@ fn chain_global_positions(skeleton: &Skeleton3D, chain: &[usize]) -> Vec<Vec3> {
         global *= skeleton.bones[bone].pose.to_mat4();
     }
 
-    let mut out = Vec::with_capacity(chain.len());
-    out.push(global.transform_point3(Vec3::ZERO));
+    out.reserve(chain.len());
+    out.push(global.transform_point3(Vec3::ZERO).into());
     for bone in chain.iter().copied().skip(1) {
         global *= skeleton.bones[bone].pose.to_mat4();
-        out.push(global.transform_point3(Vec3::ZERO));
+        out.push(global.transform_point3(Vec3::ZERO).into());
     }
-    out
 }
 
 fn collect_colliders<RT>(ctx: &mut RuntimeWindow<'_, RT>, out: &mut Vec<Collider>)
@@ -728,7 +786,21 @@ mod tests {
     fn collect_chain_caps_length() {
         let mut skeleton = Skeleton3D::default();
         skeleton.bones = vec![bone(-1, 0.0), bone(0, 1.0), bone(1, 1.0), bone(2, 1.0)];
-        assert_eq!(collect_chain(&skeleton, 3, 2), vec![1, 2, 3]);
+        let mut chain = Vec::new();
+        collect_chain(&skeleton, 3, 2, &mut chain);
+        assert_eq!(chain, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn collect_chain_reuses_buffer_without_stale_entries() {
+        let mut skeleton = Skeleton3D::default();
+        skeleton.bones = vec![bone(-1, 0.0), bone(0, 1.0), bone(1, 1.0), bone(2, 1.0)];
+        let mut chain = vec![9, 9, 9, 9, 9];
+        collect_chain(&skeleton, 1, 4, &mut chain);
+        assert_eq!(chain, vec![0, 1]);
+        // Out-of-range end must leave the buffer empty, not stale.
+        collect_chain(&skeleton, 99, 4, &mut chain);
+        assert!(chain.is_empty());
     }
 
     #[test]

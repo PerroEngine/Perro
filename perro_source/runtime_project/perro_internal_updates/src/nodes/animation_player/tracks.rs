@@ -65,13 +65,25 @@ where
         }
 
         let binding_revision = player.bindings_revision;
-        let binding_fingerprint = bindings_fingerprint(&player.bindings);
         let frame_changed = player.current_frame != previous_frame;
-        let binding_changed = binding_revision != player.internal.last_binding_revision
-            || binding_fingerprint != player.internal.last_binding_fingerprint;
         let animation_changed = animation_id != player.internal.last_applied_animation;
         let frame_unapplied = player.current_frame != player.internal.last_applied_frame;
-        let should_apply = animation_changed || frame_changed || binding_changed || frame_unapplied;
+        let revision_changed = binding_revision != player.internal.last_binding_revision;
+        // `bindings` is pub: `set_binding`/`clear_bindings`/`replace_bindings`
+        // (+ scene merge) all bump the revision, but a script holding
+        // `with_node_mut!` edits entries in place + bumps nothing. So kp the
+        // content fingerprint as fallback guard -- only on frames nothing else
+        // already forces an apply. A playing clip advances its frame every
+        // frame => never pays for the hash.
+        let forced = animation_changed || frame_changed || revision_changed || frame_unapplied;
+        let mut should_apply = forced;
+        if !forced {
+            let fingerprint = bindings_fingerprint(&player.bindings);
+            if fingerprint != player.internal.last_binding_fingerprint {
+                player.internal.last_binding_fingerprint = fingerprint;
+                should_apply = true;
+            }
+        }
 
         if (animation_changed || (player.paused && frame_unapplied))
             && event_frames.last().copied() != Some(player.current_frame)
@@ -83,14 +95,12 @@ where
             player.internal.last_applied_animation = animation_id;
             player.internal.last_applied_frame = player.current_frame;
             player.internal.last_binding_revision = binding_revision;
-            player.internal.last_binding_fingerprint = binding_fingerprint;
         }
 
+        // Move bindings out instead of cloning every `Cow` per frame; caller
+        // hands them back (same pattern as `applied_transforms` above).
         let bindings = if should_apply || !event_frames.is_empty() {
-            let mut scratch = std::mem::take(&mut player.internal.bindings_scratch);
-            scratch.clear();
-            scratch.extend_from_slice(&player.bindings);
-            scratch
+            std::mem::take(&mut player.bindings)
         } else {
             Vec::new()
         };

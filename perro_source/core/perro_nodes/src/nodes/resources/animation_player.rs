@@ -25,9 +25,6 @@ pub struct InternalAnimationData {
     pub playback_frame: f32,
     pub boomerang_direction: f32,
     pub applied_transforms: Vec<AppliedAnimationTransform>,
-    /// Scratch buffer reused to move bindings out of the node while it is
-    /// borrowed, avoiding a per-frame `bindings.to_vec()` allocation.
-    pub bindings_scratch: Vec<AnimationObjectBinding>,
     /// Crossed event-frame scratch reused across updates.
     pub event_frames_scratch: Vec<u32>,
 }
@@ -57,6 +54,9 @@ pub struct AnimationPlayer {
     /// Bumped on every mutation of `bindings` (see `set_binding`,
     /// `clear_bindings`, `replace_bindings`). Used for cheap change
     /// detection instead of re-hashing binding strings every frame.
+    /// `bindings` stays pub, so scripts reaching it thru `with_node_mut!`
+    /// bypass this counter; the runtime keeps a content fingerprint as a
+    /// fallback guard (see `step_animation_player`).
     pub bindings_revision: u64,
     pub internal: InternalAnimationData,
 }
@@ -79,7 +79,6 @@ impl AnimationPlayer {
                 playback_frame: 0.0,
                 boomerang_direction: 1.0,
                 applied_transforms: Vec::new(),
-                bindings_scratch: Vec::new(),
                 event_frames_scratch: Vec::new(),
             },
         }

@@ -28,6 +28,13 @@ pub struct PhysicsBoneChain3D {
     pub internal_lengths: Vec<f32>,
     #[doc(hidden)]
     pub internal_local_positions: Vec<Vector3>,
+    /// Bone-index chain rebuilt each fixed step; kp here so the walk reuses
+    /// one buffer instead of allocating per step.
+    #[doc(hidden)]
+    pub internal_chain_scratch: Vec<usize>,
+    /// Skeleton-space rest positions matching `internal_chain_scratch`.
+    #[doc(hidden)]
+    pub internal_rest_globals: Vec<Vector3>,
 }
 
 impl Default for PhysicsBoneChain3D {
@@ -56,6 +63,8 @@ impl PhysicsBoneChain3D {
             internal_rest_world: Vec::new(),
             internal_lengths: Vec::new(),
             internal_local_positions: Vec::new(),
+            internal_chain_scratch: Vec::new(),
+            internal_rest_globals: Vec::new(),
         }
     }
 }

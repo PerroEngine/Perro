@@ -7,17 +7,26 @@ use perro_nodes::AnimationTree;
 use perro_nodes::animation_tree::AnimationTreeSlotPlayback;
 use perro_scene::{Node3DField, NodeField};
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+
+thread_local! {
+    /// Cycle-guard stamp reused across frames + trees. Indexed by graph-node
+    /// index, so no `String` per visit (see `eval_node`).
+    static VISITING_SCRATCH: RefCell<Vec<bool>> = const { RefCell::new(Vec::new()) };
+}
 
 // Compact pose-track identity. Replaces the old formatted `String` key so
 // sampling/blending no longer allocs per track per frame. `NodeField` is `Eq`
 // but not `Hash`, so `Hash` is impl'd by hand (see below).
+// Owns `object` + `bone` outright: `PoseTrack` reads them thru the key instead
+// of holding a second copy, halving the `Cow` clones per sampled track.
 #[derive(Clone, PartialEq, Eq)]
 struct PoseKey {
     node: NodeID,
     object: Cow<'static, str>,
     field: NodeField,
-    bone: Option<AnimationBoneSelector>,
+    bone: Option<perro_animation::AnimationBoneTarget>,
 }
 
 impl std::hash::Hash for PoseKey {
@@ -27,7 +36,7 @@ impl std::hash::Hash for PoseKey {
         // Outer `NodeField` discriminant only; inner variants (few per node)
         // may collide but `Eq` compares the full field, so lookups stay correct.
         std::mem::discriminant(&self.field).hash(state);
-        match &self.bone {
+        match self.bone.as_ref().map(|target| &target.selector) {
             None => state.write_u8(0),
             Some(AnimationBoneSelector::Index(index)) => {
                 state.write_u8(1);
@@ -44,9 +53,7 @@ impl std::hash::Hash for PoseKey {
 #[derive(Clone)]
 struct PoseTrack {
     node: NodeID,
-    object: Cow<'static, str>,
     field: NodeField,
-    bone_target: Option<perro_animation::AnimationBoneTarget>,
     transform2d_mask: u8,
     transform3d_mask: u8,
     value: AnimationTrackValue,
@@ -155,12 +162,20 @@ where
     let delta_seconds = delta_time!(ctx).max(0.0);
     let _ = with_node_mut!(ctx, AnimationTree, id, |tree| {
         for idx in 0..tree.internal.slots.len() {
-            let entry = tree.animations.get(idx).cloned().unwrap_or_default();
+            // Borrow: `.cloned()` here deep-copied the whole slot entry incl its
+            // bindings `Vec` every frame. Only POD fields are read below, and
+            // `animations` / `internal.slots` are disjoint fields so the shared
+            // borrow lives alongside the `&mut slot`.
+            let entry = tree.animations.get(idx);
+            let entry_animation = entry.map(|e| e.animation).unwrap_or_else(AnimationID::nil);
+            let entry_speed = entry.map(|e| e.speed).unwrap_or(1.0);
+            let entry_paused = entry.is_some_and(|e| e.paused);
+            let entry_playback_type = entry.map(|e| e.playback_type).unwrap_or_default();
             let slot = &mut tree.internal.slots[idx];
             slot.pending_event_frames.clear();
-            let animation = if res.Animations().is_loaded(entry.animation) {
-                slot.last_animation = entry.animation;
-                entry.animation
+            let animation = if res.Animations().is_loaded(entry_animation) {
+                slot.last_animation = entry_animation;
+                entry_animation
             } else if res.Animations().is_loaded(slot.last_animation) {
                 slot.last_animation
             } else {
@@ -179,20 +194,20 @@ where
                 slot.current_frame = 0;
                 slot.playback_frame = 0.0;
                 slot.boomerang_direction = 1.0;
-            } else if !(tree.paused || slot.paused || entry.paused) {
-                let delta_frames = delta_seconds * clip.fps.max(0.0) * tree.speed * entry.speed;
+            } else if !(tree.paused || slot.paused || entry_paused) {
+                let delta_frames = delta_seconds * clip.fps.max(0.0) * tree.speed * entry_speed;
                 slot.playback_frame = super::animation_player::advance_playback_frame(
                     slot.playback_frame,
                     delta_frames,
                     frame_count,
-                    entry.playback_type,
+                    entry_playback_type,
                     &mut slot.boomerang_direction,
                 );
                 super::animation_player::crossed_animation_frames(
                     previous_playback_frame,
                     delta_frames,
                     frame_count,
-                    entry.playback_type,
+                    entry_playback_type,
                     previous_direction,
                     &clip.frame_events,
                     &mut slot.pending_event_frames,
@@ -200,7 +215,7 @@ where
                 slot.current_frame = super::animation_player::playback_frame_to_frame(
                     slot.playback_frame,
                     frame_count,
-                    entry.playback_type,
+                    entry_playback_type,
                 );
             }
             queue_current_slot_event_once(slot, animation, &clip.frame_events);
@@ -233,32 +248,37 @@ fn eval_tree_pose<R>(
 where
     R: ResourceAPI + ?Sized,
 {
-    let nodes = asset
-        .nodes
-        .iter()
-        .map(|node| (node.key.as_ref(), node))
-        .collect::<HashMap<_, _>>();
-    let mut visiting = HashSet::new();
-    eval_node(tree, res, &nodes, asset.output.as_ref(), &mut visiting).unwrap_or_default()
+    // Was: fresh name->node `HashMap` per tree per frame + a `String` per visit.
+    // Graph node counts are tiny, so a linear key scan + an index-keyed stamp
+    // beat both. Only graph keys ever stay in `visiting` across recursion (slot
+    // keys were inserted + removed in the same step), so index stamps match the
+    // old string-set semantics exactly.
+    VISITING_SCRATCH.with(|scratch| {
+        let mut visiting = scratch.borrow_mut();
+        visiting.clear();
+        visiting.resize(asset.nodes.len(), false);
+        eval_node(tree, res, asset, asset.output.as_ref(), &mut visiting).unwrap_or_default()
+    })
 }
 
 fn eval_node<R>(
     tree: &AnimationTree,
     res: &ResourceWindow<'_, R>,
-    nodes: &HashMap<&str, &AnimationTreeGraphNode>,
+    asset: &AnimationTreeAsset,
     key: &str,
-    visiting: &mut HashSet<String>,
+    visiting: &mut [bool],
 ) -> Option<Pose>
 where
     R: ResourceAPI + ?Sized,
 {
-    if !visiting.insert(key.to_string()) {
-        return None;
-    }
-    let Some(node) = nodes.get(key).copied() else {
-        visiting.remove(key);
+    let Some(index) = asset.nodes.iter().position(|node| node.key.as_ref() == key) else {
         return Some(eval_slot_pose(tree, res, key));
     };
+    if visiting[index] {
+        return None;
+    }
+    visiting[index] = true;
+    let node: &AnimationTreeGraphNode = &asset.nodes[index];
     let pose = match &node.kind {
         AnimationTreeNodeKind::Blend {
             inputs,
@@ -268,7 +288,7 @@ where
             let mut poses = Vec::new();
             let mut raw_weights = Vec::new();
             for (idx, input) in inputs.iter().enumerate() {
-                if let Some(pose) = eval_node(tree, res, nodes, input.as_ref(), visiting) {
+                if let Some(pose) = eval_node(tree, res, asset, input.as_ref(), visiting) {
                     poses.push(pose);
                     raw_weights.push(runtime_weight(tree, key, input.as_ref(), weights, idx));
                 }
@@ -281,10 +301,10 @@ where
             weights,
             mask,
         } => {
-            let base_pose = eval_node(tree, res, nodes, base.as_ref(), visiting)?;
+            let base_pose = eval_node(tree, res, asset, base.as_ref(), visiting)?;
             let mut out = base_pose;
             for (idx, input) in inputs.iter().enumerate() {
-                if let Some(pose) = eval_node(tree, res, nodes, input.as_ref(), visiting) {
+                if let Some(pose) = eval_node(tree, res, asset, input.as_ref(), visiting) {
                     let weight = runtime_weight(tree, key, input.as_ref(), weights, idx);
                     add_pose_delta(&mut out, &pose, weight, mask);
                 }
@@ -292,12 +312,12 @@ where
             out
         }
         AnimationTreeNodeKind::Invert { input, mask } => {
-            let mut pose = eval_node(tree, res, nodes, input.as_ref(), visiting)?;
+            let mut pose = eval_node(tree, res, asset, input.as_ref(), visiting)?;
             invert_pose(&mut pose, mask);
             pose
         }
     };
-    visiting.remove(key);
+    visiting[index] = false;
     Some(pose)
 }
 
@@ -346,19 +366,17 @@ fn sample_clip_pose(
         else {
             continue;
         };
-        let key = pose_key(
-            binding.node,
-            track.object.clone(),
-            track.field,
-            &track.bone_target,
-        );
+        let key = PoseKey {
+            node: binding.node,
+            object: track.object.clone(),
+            field: track.field,
+            bone: track.bone_target.clone(),
+        };
         pose.tracks.insert(
             key,
             PoseTrack {
                 node: binding.node,
-                object: track.object.clone(),
                 field: track.field,
-                bone_target: track.bone_target.clone(),
                 transform2d_mask: track.transform2d_mask,
                 transform3d_mask: track.transform3d_mask,
                 value,
@@ -390,7 +408,7 @@ fn blend_poses(poses: &[Pose], weights: &[f32], mask: &AnimationTreeMask) -> Pos
                 let Some(track) = pose.tracks.get(key) else {
                     continue;
                 };
-                if !mask_allows(mask, track) {
+                if !mask_allows(mask, key, track) {
                     continue;
                 }
                 let w = weights.get(idx).copied().unwrap_or(0.0).max(0.0) / sum;
@@ -545,7 +563,7 @@ fn add_pose_delta(base: &mut Pose, pose: &Pose, weight: f32, mask: &AnimationTre
         return;
     }
     for (key, track) in &pose.tracks {
-        if !mask_allows(mask, track) {
+        if !mask_allows(mask, key, track) {
             continue;
         }
         if let Some(existing) = base.tracks.get_mut(key) {
@@ -561,8 +579,8 @@ fn add_pose_delta(base: &mut Pose, pose: &Pose, weight: f32, mask: &AnimationTre
 }
 
 fn invert_pose(pose: &mut Pose, mask: &AnimationTreeMask) {
-    for track in pose.tracks.values_mut() {
-        if mask_allows(mask, track) {
+    for (key, track) in pose.tracks.iter_mut() {
+        if mask_allows(mask, key, track) {
             track.value = scale_value(&track.value, -1.0);
         }
     }
@@ -577,13 +595,13 @@ fn apply_pose<RT, R>(
     RT: RuntimeAPI + ?Sized,
     R: ResourceAPI + ?Sized,
 {
-    for track in pose.tracks.values() {
+    for (key, track) in &pose.tracks {
         super::animation_player::apply_track_value(
             ctx,
             res,
             track.node,
             track.field,
-            track.bone_target.as_ref(),
+            key.bone.as_ref(),
             track.transform2d_mask,
             track.transform3d_mask,
             &track.value,
@@ -656,7 +674,7 @@ fn runtime_weight(
         .unwrap_or_else(|| weights.get(index).copied().unwrap_or(1.0))
 }
 
-fn mask_allows(mask: &AnimationTreeMask, track: &PoseTrack) -> bool {
+fn mask_allows(mask: &AnimationTreeMask, key: &PoseKey, track: &PoseTrack) -> bool {
     if mask.is_empty() {
         return true;
     }
@@ -664,23 +682,40 @@ fn mask_allows(mask: &AnimationTreeMask, track: &PoseTrack) -> bool {
         || mask
             .objects
             .iter()
-            .any(|v| v.as_ref() == track.object.as_ref());
+            .any(|v| v.as_ref() == key.object.as_ref());
     let field_name = field_mask_name(track.field);
     let field_ok = mask.fields.is_empty()
         || mask
             .fields
             .iter()
             .any(|v| v.as_ref().eq_ignore_ascii_case(field_name));
-    let bone_ok = if let Some(target) = &track.bone_target {
+    let bone_ok = if let Some(target) = &key.bone {
         mask.bones.is_empty()
             || mask.bones.iter().any(|v| match &target.selector {
-                AnimationBoneSelector::Index(index) => v.as_ref() == index.to_string(),
+                AnimationBoneSelector::Index(index) => bone_index_str_eq(v.as_ref(), *index),
                 AnimationBoneSelector::Name(name) => v.as_ref() == name.as_ref(),
             })
     } else {
         mask.bones.is_empty()
     };
     object_ok && field_ok && bone_ok
+}
+
+/// `text == index.to_string()` w/o the per-test `String` alloc. Formats into a
+/// stack buffer so leading-zero / sign forms still miss, like the old compare.
+fn bone_index_str_eq(text: &str, index: u32) -> bool {
+    let mut buf = [0u8; 10];
+    let mut cursor = buf.len();
+    let mut rest = index;
+    loop {
+        cursor -= 1;
+        buf[cursor] = b'0' + (rest % 10) as u8;
+        rest /= 10;
+        if rest == 0 {
+            break;
+        }
+    }
+    text.as_bytes() == &buf[cursor..]
 }
 
 fn field_mask_name(field: NodeField) -> &'static str {
@@ -690,20 +725,6 @@ fn field_mask_name(field: NodeField) -> &'static str {
         NodeField::Node3D(Node3DField::Scale) => "scale",
         NodeField::Node3D(Node3DField::Visible) => "visible",
         _ => "",
-    }
-}
-
-fn pose_key(
-    node: NodeID,
-    object: Cow<'static, str>,
-    field: NodeField,
-    bone_target: &Option<perro_animation::AnimationBoneTarget>,
-) -> PoseKey {
-    PoseKey {
-        node,
-        object,
-        field,
-        bone: bone_target.as_ref().map(|target| target.selector.clone()),
     }
 }
 
@@ -797,6 +818,19 @@ mod tests {
         queue_current_slot_event_once(&mut slot, animation, &events);
 
         assert_eq!(slot.pending_event_frames, [3]);
+    }
+
+    #[test]
+    fn bone_index_str_eq_matches_to_string_exactly() {
+        for index in [0u32, 7, 10, 99, 1234, u32::MAX] {
+            assert!(bone_index_str_eq(&index.to_string(), index));
+        }
+        // Same forms the old `to_string()` compare rejected.
+        assert!(!bone_index_str_eq("07", 7));
+        assert!(!bone_index_str_eq(" 7", 7));
+        assert!(!bone_index_str_eq("", 0));
+        assert!(!bone_index_str_eq("7x", 7));
+        assert!(!bone_index_str_eq("8", 7));
     }
 
     #[test]

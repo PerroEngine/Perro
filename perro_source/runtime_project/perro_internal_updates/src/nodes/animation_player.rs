@@ -91,8 +91,12 @@ pub fn internal_update<RT, R, IP>(
         if step.should_apply {
             player.internal.applied_transforms = applied_transforms;
         }
-        // Hand the scratch bindings buffer back for reuse next frame.
-        player.internal.bindings_scratch = step.bindings;
+        // Hand the moved-out bindings back. A script reached by a frame event
+        // may have pushed onto the (emptied) list mid-apply; kp its version
+        // then + drop ours, same guard shape as the tree event path.
+        if player.bindings.is_empty() {
+            player.bindings = step.bindings;
+        }
         player.internal.event_frames_scratch = step.event_frames;
     });
 }
