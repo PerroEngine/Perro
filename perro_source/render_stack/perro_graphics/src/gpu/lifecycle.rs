@@ -179,6 +179,13 @@ impl Gpu {
         if enable_timestamp_queries && adapter_features.contains(timestamp_features) {
             required_features |= timestamp_features;
         }
+        // Optional: lets the 3D pass issue multi_draw_indexed_indirect_count over
+        // a GPU-compacted command buffer so culled-to-zero draws never reach the
+        // GPU frontend. Absent (metal / wasm / older drivers) the full existing
+        // multi_draw path stays in charge, unchanged.
+        if adapter_features.contains(wgpu::Features::MULTI_DRAW_INDIRECT_COUNT) {
+            required_features |= wgpu::Features::MULTI_DRAW_INDIRECT_COUNT;
+        }
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
@@ -201,6 +208,10 @@ impl Gpu {
         // the same downlevel capability draw_indexed_indirect already relies on,
         // so it rides the existing indirect path with no extra feature request.
         let multi_draw_indirect_enabled = indirect_first_instance_enabled;
+        // Count-driven multi-draw rides on top of the multi-draw path: without
+        // the indirect path there is nothing to compact.
+        let multi_draw_indirect_count_enabled = multi_draw_indirect_enabled
+            && required_features.contains(wgpu::Features::MULTI_DRAW_INDIRECT_COUNT);
         let timestamp_query_enabled = required_features.contains(timestamp_features);
         if !indirect_first_instance_enabled {
             eprintln!(
@@ -353,6 +364,7 @@ impl Gpu {
             shader_variant_mode: cfg.shader_variant_mode,
             indirect_first_instance_enabled,
             multi_draw_indirect_enabled,
+            multi_draw_indirect_count_enabled,
             gpu_timer,
             virtual_size_2d: [1920.0, 1080.0],
         })

@@ -20,6 +20,21 @@ impl Gpu3D {
         self.perf_counters.texture_bind_group_switches
     }
 
+    /// True while the last main pass drew from the GPU-compacted indirect
+    /// buffer via `multi_draw_indexed_indirect_count`.
+    #[inline]
+    pub fn indirect_count_active(&self) -> bool {
+        self.multi_draw_indirect_count_active
+    }
+
+    /// Indirect commands the last main pass would have submitted without
+    /// compaction: the sum of every run's `max_count`. The GPU frontend only
+    /// walks the per-run counts, which are strictly <= this.
+    #[inline]
+    pub fn indirect_max_count(&self) -> u32 {
+        self.indirect_planned_command_count
+    }
+
     #[inline]
     pub fn prepare_step_timing(&self) -> Prepare3DStepTiming {
         self.last_prepare_step_timing

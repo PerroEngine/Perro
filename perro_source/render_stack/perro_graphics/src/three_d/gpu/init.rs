@@ -10,6 +10,84 @@ fn frustum_cull_default(_: bool) -> bool {
     false
 }
 
+// Bind group for the indirect command-compaction compute pass:
+// 0 params (uniform), 1 runs (ro), 2 culled commands (ro), 3 compacted
+// commands (rw), 4 per-run survivor counts (rw).
+pub(in super::super) fn indirect_compact_bgl_entries() -> [wgpu::BindGroupLayoutEntry; 5] {
+    let storage = |binding: u32, read_only: bool| wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Storage { read_only },
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    };
+    [
+        wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::COMPUTE,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+        storage(1, true),
+        storage(2, true),
+        storage(3, false),
+        storage(4, false),
+    ]
+}
+
+// The compacted-command / count / run buffers are recreated together with the
+// indirect buffer on every grow + shrink, so their descriptors live here.
+// Contents are fully rewritten every frame (compaction pass + run upload), so
+// no content-preserving copy is needed on resize.
+pub(in super::super) fn create_indirect_compact_buffer(
+    device: &wgpu::Device,
+    capacity: usize,
+) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("perro_draw_indirect_compact"),
+        size: (capacity.max(1) * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64,
+        usage: wgpu::BufferUsages::INDIRECT
+            | wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_DST
+            | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    })
+}
+
+pub(in super::super) fn create_indirect_count_buffer(
+    device: &wgpu::Device,
+    capacity: usize,
+) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("perro_draw_indirect_counts"),
+        size: (capacity.max(1) * std::mem::size_of::<u32>()) as u64,
+        usage: wgpu::BufferUsages::INDIRECT
+            | wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_DST
+            | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    })
+}
+
+pub(in super::super) fn create_indirect_run_buffer(
+    device: &wgpu::Device,
+    capacity: usize,
+) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("perro_draw_indirect_runs"),
+        size: (capacity.max(1) * std::mem::size_of::<IndirectRunGpu>()) as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    })
+}
+
 fn multimesh_cull_bgl_entries() -> [wgpu::BindGroupLayoutEntry; 11] {
     let uniform = |binding: u32| wgpu::BindGroupLayoutEntry {
         binding,
@@ -144,6 +222,7 @@ impl Gpu3D {
             ssao,
             indirect_first_instance_enabled,
             multi_draw_indirect_enabled,
+            multi_draw_indirect_count_enabled,
             texture_filter,
             shader_variant_mode,
             shadow_pcf_high,
@@ -788,6 +867,75 @@ impl Gpu3D {
                 wgpu::BindGroupEntry {
                     binding: 3,
                     resource: indirect_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        // Indirect-count compaction: stream-compacts the culled indirect buffer
+        // per state run so the main pass can draw with
+        // multi_draw_indexed_indirect_count. Buffers track indirect_capacity.
+        let indirect_compact_shader = create_indirect_compact_shader_module(device);
+        let indirect_compact_bgl =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("perro_indirect_compact_bgl"),
+                entries: &indirect_compact_bgl_entries(),
+            });
+        let indirect_compact_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("perro_indirect_compact_layout"),
+                bind_group_layouts: &[Some(&indirect_compact_bgl)],
+                immediate_size: 0,
+            });
+        let indirect_compact_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("perro_indirect_compact_pipeline"),
+                layout: Some(&indirect_compact_layout),
+                module: &indirect_compact_shader,
+                entry_point: Some("cs_compact"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
+        let indirect_compact_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_indirect_compact_params"),
+            size: std::mem::size_of::<IndirectCompactParamsGpu>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        // Without the feature the compaction pass never runs, so the three
+        // buffers stay at one slot: the bind group still needs valid bindings,
+        // but a fallback adapter pays ~32 bytes instead of 32 bytes per slot.
+        let indirect_compact_capacity = if multi_draw_indirect_count_enabled {
+            indirect_capacity
+        } else {
+            1
+        };
+        let indirect_compact_buffer =
+            create_indirect_compact_buffer(device, indirect_compact_capacity);
+        let indirect_count_buffer = create_indirect_count_buffer(device, indirect_compact_capacity);
+        let indirect_run_buffer = create_indirect_run_buffer(device, indirect_compact_capacity);
+        let indirect_compact_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_indirect_compact_bg"),
+            layout: &indirect_compact_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: indirect_compact_params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: indirect_run_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: indirect_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: indirect_compact_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: indirect_count_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -1454,6 +1602,8 @@ impl Gpu3D {
             frustum_cull_enabled,
             frustum_cull_supported: frustum_cull_enabled,
             multi_draw_indirect_enabled,
+            multi_draw_indirect_count_enabled,
+            multi_draw_indirect_count_active: false,
             frustum_cull_pipeline,
             frustum_cull_bgl,
             frustum_cull_bind_group,
@@ -1466,6 +1616,18 @@ impl Gpu3D {
             indirect_buffer,
             indirect_capacity,
             indirect_staging: Vec::new(),
+            indirect_compact_pipeline,
+            indirect_compact_bgl,
+            indirect_compact_bind_group,
+            indirect_compact_params_buffer,
+            indirect_compact_buffer,
+            indirect_count_buffer,
+            indirect_run_buffer,
+            indirect_run_plan: Vec::new(),
+            indirect_run_plan_groups: [0..0, 0..0, 0..0],
+            last_uploaded_indirect_runs: Vec::new(),
+            last_indirect_compact_params: None,
+            indirect_planned_command_count: 0,
             frustum_gpu_inputs_valid: false,
             last_frustum_params: None,
             last_hiz_params: None,

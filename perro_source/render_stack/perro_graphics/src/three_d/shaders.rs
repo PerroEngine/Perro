@@ -40,6 +40,8 @@ mod culling {
         perro_macros::include_str_stripped!("shaders/hiz_occlusion_cull.wgsl");
     pub const MULTIMESH_CULL_WGSL: &str =
         perro_macros::include_str_stripped!("shaders/multimesh_cull.wgsl");
+    pub const INDIRECT_COMPACT_WGSL: &str =
+        perro_macros::include_str_stripped!("shaders/indirect_compact.wgsl");
 }
 
 use perro_wgsl::compose::{
@@ -682,6 +684,14 @@ pub fn create_frustum_cull_shader_module(device: &wgpu::Device) -> wgpu::ShaderM
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("perro_frustum_cull"),
         source: wgpu::ShaderSource::Wgsl(culling::FRUSTUM_CULL_WGSL.into()),
+    })
+}
+
+#[inline]
+pub fn create_indirect_compact_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_indirect_compact"),
+        source: wgpu::ShaderSource::Wgsl(culling::INDIRECT_COMPACT_WGSL.into()),
     })
 }
 

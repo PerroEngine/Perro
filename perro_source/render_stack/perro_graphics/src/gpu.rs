@@ -750,6 +750,8 @@ pub struct Gpu {
     shader_variant_mode: crate::ShaderVariantMode,
     indirect_first_instance_enabled: bool,
     multi_draw_indirect_enabled: bool,
+    /// `Features::MULTI_DRAW_INDIRECT_COUNT` was available and requested.
+    multi_draw_indirect_count_enabled: bool,
     gpu_timer: Option<GpuTimestampTimer>,
     // Project virtual canvas for 2D aspect-fit scaling; camera-stream / sub
     // view 2D passes use the same world-to-pixel rule as the main view.

@@ -12,6 +12,7 @@ use super::{
         create_depth_prepass_shader_module_skinned, create_frustum_cull_shader_module,
         create_hiz_depth_copy_shader_module, create_hiz_downsample_shader_module,
         create_hiz_downsample_spd_shader_module, create_hiz_occlusion_cull_shader_module,
+        create_indirect_compact_shader_module,
         create_mesh_blend_mask_shader_module_rigid,
         create_mesh_blend_mask_shader_module_rigid_packed_lod,
         create_mesh_blend_mask_shader_module_skinned, create_mesh_blend_screen_shader_module,
@@ -244,6 +245,9 @@ use camera::*;
 pub(crate) use camera::compute_view_proj_mat;
 pub(crate) use pipeline_registry::{PipelineRegistry, PipelineRegistryCache};
 use decals::{create_decal_buffer, create_decal_texture_array};
+use init::{
+    create_indirect_compact_buffer, create_indirect_count_buffer, create_indirect_run_buffer,
+};
 use draw::*;
 use sky::*;
 use targets::*;
@@ -259,6 +263,13 @@ fn next_depth_prepass_view_generation() -> u64 {
 }
 
 const FRUSTUM_CULL_WORKGROUP_SIZE: u32 = 64;
+// Below this many planned indirect commands the compaction dispatch + run
+// upload cost more than the frontend work they remove, so the plain multi-draw
+// path stays in charge.
+const INDIRECT_COUNT_MIN_COMMANDS: u32 = 32;
+// wgpu's guaranteed `max_compute_workgroups_per_dimension`. One workgroup per
+// run, so a plan longer than this falls back to plain multi-draw.
+const INDIRECT_COUNT_MAX_RUNS: u32 = 65_535;
 const HIZ_WORKGROUP_SIZE_X: u32 = 8;
 const HIZ_WORKGROUP_SIZE_Y: u32 = 8;
 // SPD downsampler: dst mips written per dispatch (one src read + this many
@@ -711,6 +722,25 @@ struct DrawIndexedIndirectGpu {
     first_instance: u32,
 }
 
+/// One CPU-planned state run handed to the indirect-compaction compute pass:
+/// the slot range `[start, start + len)` of the indirect buffer that a single
+/// `multi_draw_indexed_indirect(_count)` call covers.
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq, Debug)]
+struct IndirectRunGpu {
+    start: u32,
+    len: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
+struct IndirectCompactParamsGpu {
+    run_count: u32,
+    _pad0: u32,
+    _pad1: u32,
+    _pad2: u32,
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
 struct HizCullParamsGpu {
@@ -1045,6 +1075,12 @@ pub struct Gpu3D {
     // When set, surviving culled draws are issued via multi_draw_indexed_indirect
     // per state group instead of one draw_indexed_indirect per batch.
     multi_draw_indirect_enabled: bool,
+    // When set, each main-pass state run is stream-compacted on the GPU and
+    // drawn with multi_draw_indexed_indirect_count so culled-to-zero slots
+    // never reach the GPU command frontend. Requires the multi-draw path.
+    multi_draw_indirect_count_enabled: bool,
+    // True while this frame's main pass consumes the compacted buffer.
+    multi_draw_indirect_count_active: bool,
     frustum_cull_pipeline: wgpu::ComputePipeline,
     frustum_cull_bgl: wgpu::BindGroupLayout,
     frustum_cull_bind_group: wgpu::BindGroup,
@@ -1057,6 +1093,29 @@ pub struct Gpu3D {
     indirect_buffer: wgpu::Buffer,
     indirect_capacity: usize,
     indirect_staging: Vec<DrawIndexedIndirectGpu>,
+    // Indirect-count compaction resources. All three GPU buffers are sized in
+    // lockstep with `indirect_capacity` (slots), so the added footprint is
+    // 20 + 4 + 8 = 32 bytes per indirect slot.
+    indirect_compact_pipeline: wgpu::ComputePipeline,
+    indirect_compact_bgl: wgpu::BindGroupLayout,
+    indirect_compact_bind_group: wgpu::BindGroup,
+    indirect_compact_params_buffer: wgpu::Buffer,
+    // Compacted commands: run `r` occupies [r.start, r.start + count).
+    indirect_compact_buffer: wgpu::Buffer,
+    // Survivor count per run, stored at index `run.start`.
+    indirect_count_buffer: wgpu::Buffer,
+    // Run descriptors consumed by the compaction dispatch (one workgroup each).
+    indirect_run_buffer: wgpu::Buffer,
+    // CPU-planned runs for the current frame's main pass, plus the per-group
+    // slices ([opaque, alpha, overlay]) into that plan. The render loop walks
+    // the same plan the compute pass compacted, so the two can never diverge.
+    indirect_run_plan: Vec<IndirectRunGpu>,
+    indirect_run_plan_groups: [Range<usize>; 3],
+    last_uploaded_indirect_runs: Vec<IndirectRunGpu>,
+    last_indirect_compact_params: Option<IndirectCompactParamsGpu>,
+    // Commands the main pass would submit without compaction (sum of run
+    // lengths, i.e. the max_count total). Reported by `indirect_max_count`.
+    indirect_planned_command_count: u32,
     frustum_gpu_inputs_valid: bool,
     last_frustum_params: Option<FrustumCullParamsGpu>,
     last_hiz_params: Option<HizCullParamsGpu>,
@@ -1329,6 +1388,9 @@ pub struct Gpu3DConfig {
     pub ssao: crate::SsaoQuality,
     pub indirect_first_instance_enabled: bool,
     pub multi_draw_indirect_enabled: bool,
+    /// `Features::MULTI_DRAW_INDIRECT_COUNT` available: enables the GPU
+    /// command-compaction pass + `multi_draw_indexed_indirect_count` draws.
+    pub multi_draw_indirect_count_enabled: bool,
     pub texture_filter: TextureFilterMode,
     pub shader_variant_mode: crate::ShaderVariantMode,
     /// 9-tap PCF (graphics.shadow_quality = "high"); default is 4-tap.
@@ -2249,3 +2311,7 @@ mod tests {
 #[cfg(test)]
 #[path = "../../tests/unit/three_d_prepare_tests.rs"]
 mod prepare_tests;
+
+#[cfg(test)]
+#[path = "../../tests/unit/three_d_indirect_compact_tests.rs"]
+mod indirect_compact_tests;

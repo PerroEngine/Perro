@@ -262,6 +262,7 @@ impl Gpu {
                         ssao: self.ssao,
                         indirect_first_instance_enabled: self.indirect_first_instance_enabled,
                         multi_draw_indirect_enabled: self.multi_draw_indirect_enabled,
+                        multi_draw_indirect_count_enabled: self.multi_draw_indirect_count_enabled,
                         texture_filter: self.texture_filter,
                         shader_variant_mode: self.shader_variant_mode,
                         shadow_pcf_high: self.shadow_pcf_high,
@@ -352,6 +353,7 @@ impl Gpu {
                         ssao: self.ssao,
                         indirect_first_instance_enabled: self.indirect_first_instance_enabled,
                         multi_draw_indirect_enabled: self.multi_draw_indirect_enabled,
+                        multi_draw_indirect_count_enabled: self.multi_draw_indirect_count_enabled,
                         texture_filter: self.texture_filter,
                         shader_variant_mode: self.shader_variant_mode,
                         shadow_pcf_high: self.shadow_pcf_high,
@@ -915,6 +917,8 @@ impl Gpu {
                                             .indirect_first_instance_enabled,
                                         multi_draw_indirect_enabled: self
                                             .multi_draw_indirect_enabled,
+                                        multi_draw_indirect_count_enabled: self
+                                            .multi_draw_indirect_count_enabled,
                                         texture_filter: self.texture_filter,
                                         shader_variant_mode: self.shader_variant_mode,
                                         shadow_pcf_high: self.shadow_pcf_high,
@@ -989,6 +993,8 @@ impl Gpu {
                                     indirect_first_instance_enabled: self
                                         .indirect_first_instance_enabled,
                                     multi_draw_indirect_enabled: self.multi_draw_indirect_enabled,
+                                    multi_draw_indirect_count_enabled: self
+                                        .multi_draw_indirect_count_enabled,
                                     texture_filter: self.texture_filter,
                                     shader_variant_mode: self.shader_variant_mode,
                                     shadow_pcf_high: self.shadow_pcf_high,

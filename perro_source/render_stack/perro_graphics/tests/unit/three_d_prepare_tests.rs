@@ -57,6 +57,7 @@ fn new_gpu_3d(device: &wgpu::Device, queue: &wgpu::Queue) -> Gpu3D {
             ssao: crate::SsaoQuality::Off,
             indirect_first_instance_enabled: false,
             multi_draw_indirect_enabled: false,
+            multi_draw_indirect_count_enabled: false,
             texture_filter: TextureFilterMode::default(),
             shader_variant_mode: crate::ShaderVariantMode::Generic,
             shadow_pcf_high: false,

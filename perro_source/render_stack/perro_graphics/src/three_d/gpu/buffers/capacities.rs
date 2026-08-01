@@ -1164,6 +1164,7 @@ impl Gpu3D {
                     | wgpu::BufferUsages::COPY_DST
                     | wgpu::BufferUsages::COPY_SRC,
             );
+            self.resize_indirect_compact_buffers(device, new_cap);
             self.hiz_debug_readback_buffer = self.hiz_debug_readback_buffer.is_some().then(|| {
                 device.create_buffer(&wgpu::BufferDescriptor {
                     label: Some("perro_hiz_indirect_readback"),
@@ -1265,6 +1266,7 @@ impl Gpu3D {
                 | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
+        self.resize_indirect_compact_buffers(device, new_capacity);
         self.hiz_debug_readback_buffer = self.hiz_debug_readback_buffer.is_some().then(|| {
             device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("perro_hiz_indirect_readback"),
@@ -1281,9 +1283,54 @@ impl Gpu3D {
         self.frustum_gpu_inputs_valid = false;
     }
 
+    // Recreate the indirect-count compaction buffers alongside the indirect
+    // buffer. Contents are rewritten every frame (run upload + compaction
+    // dispatch), so no preserving copy is required. The caller follows with
+    // `rebuild_frustum_cull_bind_groups`, which re-points the compact bind
+    // group at the new buffers.
+    fn resize_indirect_compact_buffers(&mut self, device: &wgpu::Device, new_capacity: usize) {
+        if !self.multi_draw_indirect_count_enabled {
+            // Feature absent: the compaction pass never runs. Leave the 1-slot
+            // placeholders in place; only the bind group needs re-pointing at
+            // the new indirect buffer, which the caller handles.
+            return;
+        }
+        self.indirect_compact_buffer = create_indirect_compact_buffer(device, new_capacity);
+        self.indirect_count_buffer = create_indirect_count_buffer(device, new_capacity);
+        self.indirect_run_buffer = create_indirect_run_buffer(device, new_capacity);
+        // fresh buffer, undefined contents: the skip-identical gate must not fire.
+        self.last_uploaded_indirect_runs.clear();
+    }
+
     // Rebuild the two bind groups that reference the frustum cull static /
     // dynamic / indirect buffers (grow and shrink paths share this).
     fn rebuild_frustum_cull_bind_groups(&mut self, device: &wgpu::Device) {
+        self.indirect_compact_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_indirect_compact_bg"),
+            layout: &self.indirect_compact_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.indirect_compact_params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.indirect_run_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: self.indirect_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: self.indirect_compact_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: self.indirect_count_buffer.as_entire_binding(),
+                },
+            ],
+        });
         self.frustum_cull_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_frustum_cull_bg"),
             layout: &self.frustum_cull_bgl,

@@ -521,6 +521,26 @@ impl Gpu3D {
                 }
             }
         }
+        // Indirect-count path: plan the main pass's state runs, then compact the
+        // culled command buffer per run so each draw submits only the survivors.
+        // Encoded here - after every cull pass has written instance_count, before
+        // the main pass reads the compacted buffer.
+        self.multi_draw_indirect_count_active = false;
+        self.indirect_planned_command_count = 0;
+        if frustum_cull_active
+            && self.multi_draw_indirect_enabled
+            && self.multi_draw_indirect_count_enabled
+            && !self.draw_batches.is_empty()
+        {
+            let planned = self.build_indirect_run_plan();
+            self.indirect_planned_command_count = planned;
+            if planned >= INDIRECT_COUNT_MIN_COMMANDS
+                && self.indirect_run_plan.len() as u32 <= INDIRECT_COUNT_MAX_RUNS
+            {
+                self.encode_indirect_compaction(queue, encoder);
+                self.multi_draw_indirect_count_active = true;
+            }
+        }
         if render_sky {
             let mut sky_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("perro_sky3d_pass"),
@@ -624,8 +644,15 @@ impl Gpu3D {
                 // available. Consecutive batches sharing pipeline/index/vertex/
                 // texture state (guaranteed contiguous in draw_batches by the
                 // sort) coalesce into one call.
-                let multi_draw = frustum_cull_active && self.multi_draw_indirect_enabled;
+                // Count mode replaces the coalescing builder entirely: the runs
+                // were planned (and GPU-compacted) up front, so the builder is
+                // left disabled and each run is issued at its first batch.
+                let count_mode = self.multi_draw_indirect_count_active;
+                let multi_draw =
+                    frustum_cull_active && self.multi_draw_indirect_enabled && !count_mode;
                 let mut run = IndirectRunBuilder::new(multi_draw);
+                let plan_range = self.indirect_run_plan_groups[group_index].clone();
+                let mut plan_cursor = plan_range.start;
                 for &i in batch_indices.iter() {
                     let batch = &self.draw_batches[i];
                     let state_change = current_state_key != Some(batch.state_key);
@@ -689,6 +716,23 @@ impl Gpu3D {
                             pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
                         }
                         pass.end_occlusion_query();
+                    } else if count_mode {
+                        // Only the run's first batch issues; the rest are already
+                        // covered by that call's compacted command range.
+                        if plan_cursor < plan_range.end
+                            && self.indirect_run_plan[plan_cursor].start as usize == i
+                        {
+                            let planned = self.indirect_run_plan[plan_cursor];
+                            let stride = std::mem::size_of::<DrawIndexedIndirectGpu>() as u64;
+                            pass.multi_draw_indexed_indirect_count(
+                                &self.indirect_compact_buffer,
+                                u64::from(planned.start) * stride,
+                                &self.indirect_count_buffer,
+                                u64::from(planned.start) * std::mem::size_of::<u32>() as u64,
+                                planned.len,
+                            );
+                            plan_cursor += 1;
+                        }
                     } else if run.push(&self.indirect_buffer, &mut pass, i) {
                         // absorbed into (or started) a run
                     } else if frustum_cull_active {

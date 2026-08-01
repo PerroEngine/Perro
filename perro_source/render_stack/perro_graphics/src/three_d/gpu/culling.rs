@@ -265,6 +265,72 @@ impl Gpu3D {
         self.compact_src_region_dedup_scratch = src_region_dedup;
     }
 
+    // Rebuild `indirect_run_plan` from the current main-pass batch groups and
+    // return the total command count the pass would submit without compaction
+    // (the sum of every run's max_count). The render loop walks this exact plan,
+    // so the runs the compaction pass writes counts for and the runs the draws
+    // read counts from can never diverge.
+    pub(super) fn build_indirect_run_plan(&mut self) -> u32 {
+        let mut plan = std::mem::take(&mut self.indirect_run_plan);
+        plan.clear();
+        let groups = [
+            self.opaque_batch_indices.as_slice(),
+            self.alpha_batch_indices.as_slice(),
+            self.overlay_batch_indices.as_slice(),
+        ];
+        let mut ranges = [0..0, 0..0, 0..0];
+        plan_indirect_runs(&self.draw_batches, groups, &mut plan, &mut ranges);
+        let total = plan.iter().map(|run| run.len).sum();
+        self.indirect_run_plan = plan;
+        self.indirect_run_plan_groups = ranges;
+        total
+    }
+
+    // Upload the run plan + params and dispatch one compaction workgroup per
+    // run. Must be encoded after the last cull pass writes the indirect buffer
+    // and before the main render pass reads the compacted one.
+    pub(super) fn encode_indirect_compaction(
+        &mut self,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+    ) {
+        let run_count = self.indirect_run_plan.len() as u32;
+        if run_count == 0 {
+            return;
+        }
+        if !pod_slices_equal(&self.indirect_run_plan, &self.last_uploaded_indirect_runs) {
+            queue.write_buffer(
+                &self.indirect_run_buffer,
+                0,
+                bytemuck::cast_slice(&self.indirect_run_plan),
+            );
+            self.last_uploaded_indirect_runs.clear();
+            self.last_uploaded_indirect_runs
+                .extend_from_slice(&self.indirect_run_plan);
+        }
+        let params = IndirectCompactParamsGpu {
+            run_count,
+            _pad0: 0,
+            _pad1: 0,
+            _pad2: 0,
+        };
+        if self.last_indirect_compact_params != Some(params) {
+            queue.write_buffer(
+                &self.indirect_compact_params_buffer,
+                0,
+                bytemuck::bytes_of(&params),
+            );
+            self.last_indirect_compact_params = Some(params);
+        }
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("perro_indirect_compact_pass"),
+            timestamp_writes: None,
+        });
+        pass.set_pipeline(&self.indirect_compact_pipeline);
+        pass.set_bind_group(0, &self.indirect_compact_bind_group, &[]);
+        pass.dispatch_workgroups(run_count, 1, 1);
+    }
+
     // Gate the multimesh GPU cull: needs frustum-cull support (same gating as
     // rigid) and enough instances to beat direct draw. Blend batches are still
     // culled but never enter the prepass (handled by the caller).
@@ -521,6 +587,67 @@ impl Gpu3D {
         } else {
             spans.push(span);
         }
+    }
+}
+
+// Segment the main pass's three batch groups into indirect-buffer runs, using
+// exactly the breaks the render loop applies: any pipeline-state change, any
+// material-texture change, any occlusion-query batch (drawn on its own), and
+// any gap in indirect-slot indices. Each group restarts the state tracking, so
+// the first batch of a group always opens a run. Pure (no GPU/self) so the
+// render loop and the compaction pass can share one segmentation.
+pub(super) fn plan_indirect_runs(
+    batches: &[DrawBatch],
+    groups: [&[usize]; 3],
+    out: &mut Vec<IndirectRunGpu>,
+    group_ranges: &mut [Range<usize>; 3],
+) {
+    #[inline]
+    fn flush(run: &mut Option<IndirectRunGpu>, out: &mut Vec<IndirectRunGpu>) {
+        if let Some(finished) = run.take() {
+            out.push(finished);
+        }
+    }
+
+    for (group_index, indices) in groups.into_iter().enumerate() {
+        let group_start = out.len();
+        // Matches the render loop: state/texture tracking resets per group.
+        let mut current_state_key: Option<u64> = None;
+        let mut current_texture_key = MaterialTextureKey::empty();
+        let mut run: Option<IndirectRunGpu> = None;
+        for &i in indices {
+            let Some(batch) = batches.get(i) else {
+                continue;
+            };
+            let state_change = current_state_key != Some(batch.state_key);
+            let texture_change = current_texture_key != batch.material_texture_key;
+            if state_change || texture_change || batch.occlusion_query.is_some() {
+                flush(&mut run, out);
+            }
+            if state_change {
+                current_state_key = Some(batch.state_key);
+            }
+            if texture_change {
+                current_texture_key = batch.material_texture_key;
+            }
+            // Query batches draw individually (begin/end_occlusion_query wraps
+            // one draw), so they never join a run.
+            if batch.occlusion_query.is_some() {
+                continue;
+            }
+            match &mut run {
+                Some(open) if open.start as usize + open.len as usize == i => open.len += 1,
+                _ => {
+                    flush(&mut run, out);
+                    run = Some(IndirectRunGpu {
+                        start: i as u32,
+                        len: 1,
+                    });
+                }
+            }
+        }
+        flush(&mut run, out);
+        group_ranges[group_index] = group_start..out.len();
     }
 }
 
