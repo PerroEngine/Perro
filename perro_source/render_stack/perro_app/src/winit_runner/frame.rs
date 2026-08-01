@@ -184,6 +184,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.app.present();
             None
         };
+        self.apply_surface_resync_request();
         self.apply_cursor_icon_request();
         #[cfg(feature = "profile_heavy")]
         let work_duration = work_start.elapsed();

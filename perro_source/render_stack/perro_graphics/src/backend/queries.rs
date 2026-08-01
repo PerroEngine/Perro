@@ -11,7 +11,11 @@ impl PerroGraphics {
             return;
         };
         gpu.set_virtual_size_2d(self.renderer_2d.virtual_viewport());
-        gpu.resize(self.viewport.0.max(1), self.viewport.1.max(1));
+        // (0,0) = no resize landed yet; the attach-time configure already used
+        // the real window size, so a 1x1 rebuild here is pure waste.
+        if self.viewport.0 > 0 && self.viewport.1 > 0 {
+            gpu.resize(self.viewport.0, self.viewport.1);
+        }
         self.events
             .push(RenderEvent::HdrStatusChanged(gpu.hdr_status()));
         self.gpu = Some(gpu);

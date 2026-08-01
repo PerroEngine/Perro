@@ -157,6 +157,13 @@ pub trait GraphicsBackend: RenderBridge {
         GraphicsProfileSnapshot::default()
     }
 
+    /// Size the swapchain drifted to behind the runner's back (window resized
+    /// without a forwarded event). Drained after present; the runner answers
+    /// with a normal `resize`.
+    fn take_surface_resync_request(&mut self) -> Option<(u32, u32)> {
+        None
+    }
+
     fn wait_idle(&mut self) {}
 }
 

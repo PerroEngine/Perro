@@ -9,20 +9,61 @@ impl Gpu {
     #[cfg(target_arch = "wasm32")]
     pub fn wait_idle(&mut self) {}
 
+    /// Live window size when it differs from the configured swapchain extent.
+    /// `self.config` only tracks the resize events the runtime forwarded, so
+    /// after a drifted acquire the window is the only reliable source.
+    fn drifted_window_size(&self) -> Option<(u32, u32)> {
+        let size = self.window_handle.inner_size();
+        let width = size.width.max(1);
+        let height = size.height.max(1);
+        (width != self.config.width || height != self.config.height).then_some((width, height))
+    }
+
+    /// Acquire the next swapchain image. Suboptimal still returns the image
+    /// (dropping it would stall on drivers that raise it every frame) and only
+    /// records the resync. Outdated/Lost cannot present at all, so those
+    /// reconfigure at the live size and retry the acquire once.
+    pub(crate) fn acquire_surface_texture(&mut self) -> Option<wgpu::SurfaceTexture> {
+        match self.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(frame) => Some(frame),
+            wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
+                self.surface_resync_request = self.drifted_window_size();
+                Some(frame)
+            }
+            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
+                let drift = self.drifted_window_size();
+                if let Some((width, height)) = drift {
+                    // Config only: the render targets stay put so this frame
+                    // presents its already-encoded scene (scaled) instead of an
+                    // empty one. The runner's resize rebuilds them next frame.
+                    self.config.width = width;
+                    self.config.height = height;
+                }
+                self.surface.configure(&self.device, &self.config);
+                self.surface_resync_request = drift;
+                match self.surface.get_current_texture() {
+                    wgpu::CurrentSurfaceTexture::Success(frame)
+                    | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => Some(frame),
+                    _ => None,
+                }
+            }
+            wgpu::CurrentSurfaceTexture::Timeout
+            | wgpu::CurrentSurfaceTexture::Occluded
+            | wgpu::CurrentSurfaceTexture::Validation => None,
+        }
+    }
+
+    /// Drained after present: the size the swapchain must be re-synced to.
+    pub fn take_surface_resync_request(&mut self) -> Option<(u32, u32)> {
+        self.surface_resync_request.take()
+    }
+
     pub fn render_idle_clear(&mut self) -> bool {
         // Keep window alive for the full surface lifetime.
         self.window_handle.id();
 
-        let frame = match self.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(frame)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
-            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
-                self.surface.configure(&self.device, &self.config);
-                return false;
-            }
-            wgpu::CurrentSurfaceTexture::Timeout
-            | wgpu::CurrentSurfaceTexture::Occluded
-            | wgpu::CurrentSurfaceTexture::Validation => return false,
+        let Some(frame) = self.acquire_surface_texture() else {
+            return false;
         };
 
         let swap_view = frame.texture.create_view(&wgpu::TextureViewDescriptor {
@@ -306,6 +347,7 @@ impl Gpu {
             device,
             queue,
             config,
+            surface_resync_request: None,
             surface_view_format,
             hdr_status: selection.status,
             render_width,
@@ -416,19 +458,6 @@ impl Gpu {
         if width == 0 || height == 0 {
             return;
         }
-        self.invalidate_retained_scene();
-        let mode = self.hdr_status.requested;
-        self.set_hdr_mode(mode);
-        if self.config.width == width && self.config.height == height {
-            return;
-        }
-        self.config.width = width;
-        self.config.height = height;
-        self.surface.configure(&self.device, &self.config);
-        // Push before the render-size early-out: the swapchain can change size
-        // while the capped render size stays put, and the TAA merged-resolve
-        // gate compares the two.
-        self.present.set_output_size(width, height);
         let (render_width, render_height) = capped_render_size_with_pixel_limit(
             width,
             height,
@@ -437,6 +466,24 @@ impl Gpu {
         );
         let render_size_changed =
             self.render_width != render_width || self.render_height != render_height;
+        // Size early-out first: a window drag fires WM_SIZE per pixel step and
+        // set_hdr_mode costs surface caps + display HDR driver queries. Explicit
+        // mode changes go through set_hdr_mode directly, so nothing is lost.
+        // The render size is part of the check: a failed-acquire reconfigure
+        // moves the config on its own and the rebuild still has to land.
+        if self.config.width == width && self.config.height == height && !render_size_changed {
+            return;
+        }
+        self.invalidate_retained_scene();
+        let mode = self.hdr_status.requested;
+        self.set_hdr_mode(mode);
+        self.config.width = width;
+        self.config.height = height;
+        self.surface.configure(&self.device, &self.config);
+        // Push before the render-size early-out: the swapchain can change size
+        // while the capped render size stays put, and the TAA merged-resolve
+        // gate compares the two.
+        self.present.set_output_size(width, height);
         self.render_width = render_width;
         self.render_height = render_height;
         if !render_size_changed {

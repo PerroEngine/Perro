@@ -267,10 +267,10 @@ Current limit:
 
 | Field                 | Type          | Default       | Values                                      |
 | --------------------- | ------------- | ------------- | ------------------------------------------- |
-| `frame_rate_cap`      | string/number | `"unlimited"` | `"unlimited"`, `"refresh_rate"`, fps number |
+| `frame_rate_cap`      | string/number | `"refresh_rate"` | `"unlimited"`, `"refresh_rate"`, fps number |
 | `target_fixed_update` | number        | `60`          | hz, `<= 0` disables fixed target            |
 
-A missing key means unlimited, but new projects scaffold with `"refresh_rate"`: with vsync off, frames above the monitor refresh are rendered and never displayed, so an uncapped rate only burns GPU. Use `"unlimited"` or a high fps number only when you want minimum input latency and accept the cost.
+A missing key means `"refresh_rate"`, the same value new projects scaffold with: with vsync off, frames above the monitor refresh are rendered and never displayed, so an uncapped rate only burns GPU. Use `"unlimited"` or a high fps number only when you want minimum input latency and accept the cost.
 
 Aliases for unlimited:
 

@@ -687,6 +687,11 @@ pub struct Gpu {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
+    // Live window size recorded when an acquire reported the swapchain extent
+    // drifted (Vulkan raises SUBOPTIMAL, not OUTDATED, for a size mismatch).
+    // Drained by the runner, which drives a normal resize so surface, render
+    // targets, and the 2D/UI viewport all move together.
+    surface_resync_request: Option<(u32, u32)>,
     surface_view_format: wgpu::TextureFormat,
     hdr_status: HdrStatus,
     render_width: u32,

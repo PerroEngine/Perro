@@ -122,9 +122,10 @@ impl ParticleSimDefault {
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum FrameRateCap {
-    #[default]
     Unlimited,
     Fps(f32),
+    /// Default: matches the scaffold template + the absent-key parse fallback.
+    #[default]
     RefreshRate,
 }
 
@@ -338,7 +339,7 @@ impl StaticProjectConfig {
             virtual_width,
             virtual_height,
             vsync: false,
-            frame_rate_cap: FrameRateCap::Unlimited,
+            frame_rate_cap: FrameRateCap::RefreshRate,
             target_fixed_update: Some(60.0),
             physics_gravity: -9.81,
             physics_coef: 1.0,
@@ -730,7 +731,7 @@ impl ProjectConfig {
             virtual_width: 1920,
             virtual_height: 1080,
             vsync: false,
-            frame_rate_cap: FrameRateCap::Unlimited,
+            frame_rate_cap: FrameRateCap::RefreshRate,
             target_fixed_update: Some(60.0),
             physics_gravity: -9.81,
             physics_coef: 1.0,

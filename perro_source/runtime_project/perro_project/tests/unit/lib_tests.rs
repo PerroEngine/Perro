@@ -169,6 +169,38 @@ frame_rate_cap = "refresh_rate"
     )
     .expect("refresh cap");
     assert_eq!(refresh.frame_rate_cap, FrameRateCap::RefreshRate);
+
+    let unlimited = parse_project_toml(
+        r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+aspect_ratio = "16:9"
+
+[runtime]
+frame_rate_cap = "unlimited"
+"#,
+    )
+    .expect("unlimited cap");
+    assert_eq!(unlimited.frame_rate_cap, FrameRateCap::Unlimited);
+
+    // No key / no [runtime] table follows the scaffold template, not uncapped.
+    let absent = parse_project_toml(
+        r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+aspect_ratio = "16:9"
+"#,
+    )
+    .expect("absent cap");
+    assert_eq!(absent.frame_rate_cap, FrameRateCap::RefreshRate);
 }
 
 #[test]

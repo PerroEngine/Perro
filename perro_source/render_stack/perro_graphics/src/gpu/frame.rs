@@ -559,24 +559,11 @@ impl Gpu {
         if direct_present || msaa_direct_present {
             let acquire_start = Instant::now();
             let acquire_surface_start = Instant::now();
-            let acquired = match self.surface.get_current_texture() {
-                wgpu::CurrentSurfaceTexture::Success(frame)
-                | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
-                wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
-                    timing.acquire_surface = acquire_surface_start.elapsed();
-                    self.surface.configure(&self.device, &self.config);
-                    timing.acquire = acquire_start.elapsed();
-                    timing.total = total_start.elapsed();
-                    return timing;
-                }
-                wgpu::CurrentSurfaceTexture::Timeout
-                | wgpu::CurrentSurfaceTexture::Occluded
-                | wgpu::CurrentSurfaceTexture::Validation => {
-                    timing.acquire_surface = acquire_surface_start.elapsed();
-                    timing.acquire = acquire_start.elapsed();
-                    timing.total = total_start.elapsed();
-                    return timing;
-                }
+            let Some(acquired) = self.acquire_surface_texture() else {
+                timing.acquire_surface = acquire_surface_start.elapsed();
+                timing.acquire = acquire_start.elapsed();
+                timing.total = total_start.elapsed();
+                return timing;
             };
             timing.acquire_surface = acquire_surface_start.elapsed();
             let acquire_view_start = Instant::now();
@@ -1704,33 +1691,15 @@ impl Gpu {
         };
 
         if !direct_present && !msaa_direct_present {
-            let final_bind_group = match current_tex {
-                FrameTex::Scene => &self.present_scene_bind_group,
-                FrameTex::Intermediate => self
-                    .present_intermediate_bind_group
-                    .as_ref()
-                    .expect("intermediate frame needs present bind group"),
-            };
             let acquire_start = Instant::now();
             let acquire_surface_start = Instant::now();
-            let acquired = match self.surface.get_current_texture() {
-                wgpu::CurrentSurfaceTexture::Success(frame)
-                | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
-                wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
-                    timing.acquire_surface = acquire_surface_start.elapsed();
-                    self.surface.configure(&self.device, &self.config);
-                    timing.acquire = acquire_start.elapsed();
-                    timing.total = total_start.elapsed();
-                    return timing;
-                }
-                wgpu::CurrentSurfaceTexture::Timeout
-                | wgpu::CurrentSurfaceTexture::Occluded
-                | wgpu::CurrentSurfaceTexture::Validation => {
-                    timing.acquire_surface = acquire_surface_start.elapsed();
-                    timing.acquire = acquire_start.elapsed();
-                    timing.total = total_start.elapsed();
-                    return timing;
-                }
+            // Acquired before the bind-group borrow: the retry path re-configures
+            // the surface and needs &mut self.
+            let Some(acquired) = self.acquire_surface_texture() else {
+                timing.acquire_surface = acquire_surface_start.elapsed();
+                timing.acquire = acquire_start.elapsed();
+                timing.total = total_start.elapsed();
+                return timing;
             };
             timing.acquire_surface = acquire_surface_start.elapsed();
             let acquire_view_start = Instant::now();
@@ -1740,6 +1709,13 @@ impl Gpu {
             });
             timing.acquire_view = acquire_view_start.elapsed();
             timing.acquire = acquire_start.elapsed();
+            let final_bind_group = match current_tex {
+                FrameTex::Scene => &self.present_scene_bind_group,
+                FrameTex::Intermediate => self
+                    .present_intermediate_bind_group
+                    .as_ref()
+                    .expect("intermediate frame needs present bind group"),
+            };
             self.present.apply(
                 &self.queue,
                 &mut encoder,

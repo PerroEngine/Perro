@@ -63,7 +63,12 @@ impl GraphicsBackend for PerroGraphics {
                 let mut gpu =
                     Gpu::new(window, cfg).unwrap_or_else(|err| panic!("GPU init fail: {err}"));
                 gpu.set_virtual_size_2d(self.renderer_2d.virtual_viewport());
-                gpu.resize(self.viewport.0.max(1), self.viewport.1.max(1));
+                // A (0,0) viewport means no resize landed yet; Gpu::new already
+                // configured from window.inner_size(), so resizing to 1x1 here
+                // would only build the post/MSAA/present chain twice.
+                if self.viewport.0 > 0 && self.viewport.1 > 0 {
+                    gpu.resize(self.viewport.0, self.viewport.1);
+                }
                 self.events
                     .push(RenderEvent::HdrStatusChanged(gpu.hdr_status()));
                 self.gpu = Some(gpu);
@@ -85,6 +90,13 @@ impl GraphicsBackend for PerroGraphics {
             }
         }
         self.redraw_requested = true;
+    }
+
+    fn take_surface_resync_request(&mut self) -> Option<(u32, u32)> {
+        self.gpu
+            .as_mut()
+            .and_then(Gpu::take_surface_resync_request)
+            .filter(|&(width, height)| (width, height) != self.viewport)
     }
 
     fn set_smoothing(&mut self, enabled: bool) {

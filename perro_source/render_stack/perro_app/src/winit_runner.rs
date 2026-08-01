@@ -824,6 +824,14 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler<RunnerUserEvent>
             {
                 window.set_visible(true);
                 window.focus_window();
+                // Post-create adjustments (DPI move, work-area clamp,
+                // PERRO_WINDOW_MODE=borderless) can land after the pre-present
+                // size sample; without this the surface stays undersized until
+                // an unrelated Resized event.
+                let shown_size = window.inner_size();
+                if shown_size != initial_size {
+                    self.app.resize_surface(shown_size.width, shown_size.height);
+                }
             }
             self.window = Some(window);
             self.set_mouse_mode(MouseMode::Visible);

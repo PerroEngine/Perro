@@ -223,15 +223,18 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 WindowRequest::SetTitle(title) => window.set_title(&title),
                 WindowRequest::SetSize { width, height } => {
                     let _ = window.request_inner_size(PhysicalSize::new(width, height));
+                    self.sync_surface_size(&window);
                 }
                 WindowRequest::SetMode(WindowMode::Windowed) => {
                     window.set_fullscreen(None);
+                    self.sync_surface_size(&window);
                 }
                 WindowRequest::SetMode(WindowMode::BorderlessFullscreen) => {
                     let monitor = window
                         .current_monitor()
                         .or_else(|| pick_monitor(event_loop));
                     window.set_fullscreen(Some(Fullscreen::Borderless(monitor)));
+                    self.sync_surface_size(&window);
                 }
                 WindowRequest::SetFrameRateCap(cap) => {
                     // No-op when unchanged: per-frame script calls must not
@@ -245,6 +248,25 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 }
                 WindowRequest::CloseApp => {}
             }
+        }
+    }
+
+    /// The swapchain acquire saw the window drift from the configured extent
+    /// (Vulkan SUBOPTIMAL) without a Resized event reaching us: adopt the size
+    /// through the normal path so the surface and the viewports agree.
+    pub(super) fn apply_surface_resync_request(&mut self) {
+        if let Some((width, height)) = self.app.take_surface_resync_request() {
+            self.app.resize_surface(width, height);
+        }
+    }
+
+    /// The Resized event for a window op lands a frame or more later, so the
+    /// frames in between present at the old surface size (white rim / stretched
+    /// image when a script sets fullscreen in `_ready`). The later event no-ops.
+    fn sync_surface_size(&mut self, window: &Window) {
+        let size = window.inner_size();
+        if size.width > 0 && size.height > 0 {
+            self.app.resize_surface(size.width, size.height);
         }
     }
 

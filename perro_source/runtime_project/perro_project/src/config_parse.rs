@@ -932,14 +932,16 @@ fn parse_bool_with_default(
 fn parse_frame_rate_cap(
     runtime: Option<&toml::map::Map<String, Value>>,
 ) -> Result<FrameRateCap, ProjectError> {
+    // Absent key follows the scaffold template (`frame_rate_cap =
+    // "refresh_rate"`); `"unlimited"` must be written explicitly.
     let Some(runtime) = runtime else {
-        return Ok(FrameRateCap::Unlimited);
+        return Ok(FrameRateCap::RefreshRate);
     };
     let Some(value) = runtime
         .get("frame_rate_cap")
         .or_else(|| runtime.get("target_fps"))
     else {
-        return Ok(FrameRateCap::Unlimited);
+        return Ok(FrameRateCap::RefreshRate);
     };
     if let Some(raw) = value.as_str() {
         return match raw.trim().to_ascii_lowercase().as_str() {

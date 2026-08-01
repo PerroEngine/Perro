@@ -842,6 +842,11 @@ impl<B: GraphicsBackend> App<B> {
     }
 
     #[inline]
+    pub fn take_surface_resync_request(&mut self) -> Option<(u32, u32)> {
+        self.graphics.take_surface_resync_request()
+    }
+
+    #[inline]
     pub fn resize_surface(&mut self, width: u32, height: u32) {
         self.graphics.resize(width, height);
         self.runtime.set_viewport_size(width, height);
