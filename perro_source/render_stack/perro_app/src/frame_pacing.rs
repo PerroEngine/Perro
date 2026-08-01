@@ -16,10 +16,19 @@ use winit::window::Window;
 
 pub(crate) const MIN_FRAME_RATE_CAP_FPS: f32 = 1.0;
 pub(crate) const MAX_FRAME_RATE_CAP_FPS: f32 = 1000.0;
-// OS timer wake-ups overshoot; wake this early, then poll to the deadline.
-// Assumes 1ms system timer resolution (see timer_resolution.rs, active on
-// Windows for the app lifetime); 2ms headroom is generous at that resolution.
-pub(crate) const FRAME_WAKE_HEADROOM: Duration = Duration::from_millis(2);
+// OS timer wake-ups overshoot; wake early, then poll the rest. The headroom
+// adapts to the observed overshoot (EWMA) so the busy-poll tail stays as
+// short as the machine allows, bounded to keep both the spin cost and a
+// pathological estimate in check. With 1ms system timer resolution (see
+// timer_resolution.rs) typical overshoot is well under 1ms.
+pub(crate) const MIN_WAKE_HEADROOM: Duration = Duration::from_millis(1);
+pub(crate) const MAX_WAKE_HEADROOM: Duration = Duration::from_millis(4);
+// Safety margin over the average overshoot; late wakes only add jitter (the
+// deadline chain repays them), so the margin stays small.
+const WAKE_HEADROOM_MARGIN: Duration = Duration::from_micros(500);
+// Seed so the first frames use the old fixed 2ms headroom until real
+// overshoot samples arrive.
+const WAKE_OVERSHOOT_SEED: Duration = Duration::from_micros(1500);
 // Used when the monitor refresh rate cannot be queried.
 pub(crate) const FALLBACK_REFRESH_HZ: f32 = 60.0;
 
@@ -82,6 +91,7 @@ pub(crate) struct FramePacer {
     vsync: bool,
     refresh_hz: Option<f32>,
     next_deadline: Option<Instant>,
+    wake_overshoot_ewma: Duration,
 }
 
 impl FramePacer {
@@ -91,6 +101,7 @@ impl FramePacer {
             vsync,
             refresh_hz: None,
             next_deadline: None,
+            wake_overshoot_ewma: WAKE_OVERSHOOT_SEED,
         }
     }
 
@@ -187,9 +198,30 @@ impl FramePacer {
         self.next_deadline.is_some_and(|deadline| deadline > now)
     }
 
+    /// Record how late an OS timer wake landed relative to its requested
+    /// resume time. Feeds the adaptive wake headroom.
+    pub(crate) fn note_timer_wake(&mut self, now: Instant, requested: Instant) {
+        let overshoot = now
+            .saturating_duration_since(requested)
+            .min(MAX_WAKE_HEADROOM);
+        // EWMA, alpha 1/8: converges in ~20 frames, immune to one-off stalls.
+        self.wake_overshoot_ewma = (self.wake_overshoot_ewma * 7 + overshoot) / 8;
+    }
+
+    /// How early to arm the OS wake before the frame deadline; the remainder
+    /// is busy-polled.
+    #[inline]
+    pub(crate) fn wake_headroom(&self) -> Duration {
+        (self.wake_overshoot_ewma + WAKE_HEADROOM_MARGIN)
+            .clamp(MIN_WAKE_HEADROOM, MAX_WAKE_HEADROOM)
+    }
+
     /// Advance the deadline after a frame. Deadlines chain from the previous
-    /// deadline for drift-free pacing, re-anchoring from frame_start when the
-    /// frame overran.
+    /// deadline for drift-free pacing. A chained deadline slightly in the
+    /// past is kept: the next frame fires immediately and repays the debt,
+    /// so late wakes and occasional long frames do not drag the average rate
+    /// below the cap. Only a lag past one full interval (a real stall)
+    /// re-anchors from frame_start.
     pub(crate) fn update_deadline(
         &mut self,
         frame_start: Instant,
@@ -203,7 +235,11 @@ impl FramePacer {
         let next = self
             .next_deadline
             .and_then(|deadline| deadline.checked_add(interval))
-            .filter(|deadline| *deadline > frame_end)
+            .filter(|chained| {
+                chained
+                    .checked_add(interval)
+                    .is_some_and(|catch_up_limit| catch_up_limit > frame_end)
+            })
             .unwrap_or_else(|| frame_start.checked_add(interval).unwrap_or(frame_end));
         self.next_deadline = Some(next);
     }
@@ -309,5 +345,43 @@ mod tests {
             pacer.deadline().expect("required value must be present"),
             start3 + Duration::from_millis(10)
         );
+    }
+
+    #[test]
+    fn deadline_keeps_chain_for_small_lag() {
+        // Frame ends a bit past its chained deadline (late wake / long frame
+        // within one interval): keep the chain so the next frame fires
+        // immediately and the average rate stays at the cap.
+        let mut pacer = FramePacer::new(RuntimeFrameRateCap::Fps(100.0), false);
+        let start = Instant::now();
+        pacer.update_deadline(start, start + Duration::from_millis(2), false);
+        let first = pacer.deadline().expect("required value must be present");
+        // Frame starts late and ends 3ms past the next chained deadline
+        // (first + 10ms), but within the one-interval catch-up window.
+        let start2 = first + Duration::from_millis(4);
+        let end2 = first + Duration::from_millis(13);
+        pacer.update_deadline(start2, end2, false);
+        let chained = pacer.deadline().expect("required value must be present");
+        assert_eq!(chained, first + Duration::from_millis(10));
+        // Deadline sits in the past: next frame is not blocked.
+        assert!(!pacer.blocks_frame(end2));
+    }
+
+    #[test]
+    fn wake_headroom_adapts_to_overshoot() {
+        let mut pacer = FramePacer::new(RuntimeFrameRateCap::Fps(100.0), false);
+        // Seeded headroom matches the old fixed 2ms.
+        assert_eq!(pacer.wake_headroom(), Duration::from_millis(2));
+        let anchor = Instant::now();
+        // Consistently tiny overshoot: headroom converges down to the floor.
+        for _ in 0..200 {
+            pacer.note_timer_wake(anchor + Duration::from_micros(100), anchor);
+        }
+        assert_eq!(pacer.wake_headroom(), MIN_WAKE_HEADROOM);
+        // Consistently late wakes: headroom grows, but stays bounded.
+        for _ in 0..200 {
+            pacer.note_timer_wake(anchor + Duration::from_millis(10), anchor);
+        }
+        assert_eq!(pacer.wake_headroom(), MAX_WAKE_HEADROOM);
     }
 }

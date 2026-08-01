@@ -304,11 +304,11 @@ impl<B: GraphicsBackend> RunnerState<B> {
             && deadline > now
         {
             // OS timers overshoot by a few ms; wake early and poll the rest.
-            // With 1ms-resolution system timers (see timer_resolution.rs),
-            // WaitUntil is accurate enough to use for high-rate caps too, so
-            // only intervals too small to leave any wake headroom fall back
-            // to Poll (busy event loop).
-            let wake_at = deadline.checked_sub(FRAME_WAKE_HEADROOM);
+            // The headroom adapts to the overshoot this machine actually
+            // shows (see FramePacer::note_timer_wake), so only intervals too
+            // small to leave any wake headroom fall back to Poll (busy event
+            // loop).
+            let wake_at = deadline.checked_sub(self.pacer.wake_headroom());
             if wake_at.is_none_or(|wake_at| wake_at <= now) {
                 event_loop.set_control_flow(ControlFlow::Poll);
             } else if let Some(wake_at) = wake_at {

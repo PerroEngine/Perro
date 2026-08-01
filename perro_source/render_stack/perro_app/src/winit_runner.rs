@@ -36,7 +36,7 @@ use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys, Window
 use winit::{dpi::Position, monitor::MonitorHandle};
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize, Size},
-    event::{DeviceEvent, ElementState, WindowEvent},
+    event::{DeviceEvent, ElementState, StartCause, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
     window::{CursorGrabMode, CursorIcon as WinitCursorIcon, Fullscreen, Window, WindowAttributes},
@@ -52,7 +52,7 @@ use startup_splash::{
     STARTUP_SPLASH_TEXTURE_REQUEST, StartupSplashState,
 };
 
-use crate::frame_pacing::{FRAME_WAKE_HEADROOM, FramePacer, project_frame_rate_cap};
+use crate::frame_pacing::{FramePacer, project_frame_rate_cap};
 
 const DEFAULT_FIXED_TIMESTEP: Option<f32> = None;
 const MAX_FIXED_STEPS_PER_FRAME: u32 = 2;
@@ -1032,6 +1032,17 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler<RunnerUserEvent>
         {
             self.kbm_input
                 .handle_mouse_motion(&mut self.app, delta.0, delta.1);
+        }
+    }
+
+    fn new_events(&mut self, _event_loop: &ActiveEventLoop, cause: StartCause) {
+        // Sample how late WaitUntil wakes actually land so the pacer can
+        // adapt its wake headroom to this machine.
+        if let StartCause::ResumeTimeReached {
+            requested_resume, ..
+        } = cause
+        {
+            self.pacer.note_timer_wake(Instant::now(), requested_resume);
         }
     }
 
