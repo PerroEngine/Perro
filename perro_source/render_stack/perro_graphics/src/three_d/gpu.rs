@@ -860,7 +860,10 @@ struct ShadowUniform {
 /// one per grow-only buffer family that participates in shrinking.
 #[derive(Default)]
 struct Gpu3DShrink {
+    // Rigid arena (`rigid_vertex_buffer`); the skinned arena tracks separately
+    // so a scene that stops drawing skinned meshes can give those bytes back.
     mesh_vertices: ShrinkTracker,
+    skinned_vertices: ShrinkTracker,
     mesh_indices: ShrinkTracker,
     packed_lod_vertices: ShrinkTracker,
     packed_lod_indices: ShrinkTracker,
@@ -1203,6 +1206,15 @@ pub struct Gpu3D {
     indirect_buffer: wgpu::Buffer,
     indirect_capacity: usize,
     indirect_staging: Vec<DrawIndexedIndirectGpu>,
+    // Skip-identical gate for the indirect commands, keyed on the staged bytes
+    // AND `indirect_capacity` (a grow hands out a fresh, undefined buffer).
+    last_uploaded_indirect_hash: Option<(usize, u64, usize)>,
+    // The cull passes overwrite `instance_count` in every slot; they source the
+    // authoritative count from the static cull record, so the GPU copy is
+    // re-derived from scratch on every cull dispatch. Set while that rewrite is
+    // outstanding: the gate above may only fire when a cull runs again this
+    // frame to restore the counts (or when they were never touched).
+    indirect_counts_gpu_dirty: bool,
     // Indirect-count compaction resources. All three GPU buffers are sized in
     // lockstep with `indirect_capacity` (slots) times INDIRECT_COMPACT_REGIONS,
     // so the added footprint is 3 * (20 + 4 + 12) = 108 bytes per indirect slot.
@@ -1245,6 +1257,9 @@ pub struct Gpu3D {
     last_frustum_params: Option<FrustumCullParamsGpu>,
     last_hiz_params: Option<HizCullParamsGpu>,
     last_prepare_step_timing: Prepare3DStepTiming,
+    // Cumulative count of full scene restages since startup. A scene whose
+    // topology is settled should stop advancing this even while it animates.
+    prepare_full_rebuild_count: u64,
     // Per-prepare upload accounting (reset at the top of `prepare`). Every
     // gated staging upload notes its byte count here, so the skip gates below
     // are directly observable from tests / debug overlays.
@@ -1306,6 +1321,13 @@ pub struct Gpu3D {
     // draw produced. Lets the transform-only fast path patch only the moved
     // multimesh draw's model rows w/o re-staging any instances.
     last_draw_multimesh_param_ranges: Vec<Range<u32>>,
+    // Per-draw boundaries into the two animation lanes, recorded by the full
+    // rebuild as `draws.len() + 1` monotonic marks: draw `i` owns
+    // `[bounds[i], bounds[i + 1])`. Marks are pushed at the top of the draw
+    // loop, so every early-out arm of that loop lands on an empty range for
+    // free. The animation-only fast path patches exactly these rows.
+    last_draw_skeleton_bounds: Vec<u32>,
+    last_draw_blend_meta_bounds: Vec<u32>,
     // Persistent scratch for compact_sorted_draw_batches: avoids a fresh alloc
     // per full rebuild. dst_* buffers are double-buffered via mem::swap with
     // the live staged_* vectors (old contents overwritten by extend_from_slice
@@ -1371,6 +1393,10 @@ pub struct Gpu3D {
     shrink: Gpu3DShrink,
     // Element counts of the GPU mesh arenas (no CPU mirrors are retained; the
     // buffers are append-only and grown via copy_buffer_to_buffer).
+    // `mesh_vertex_len` is the SKINNED arena (48B/vertex, `vertex_buffer`) and
+    // `rigid_vertex_len` the rigid one (36B/vertex, `rigid_vertex_buffer`).
+    // They share only the builtin prefix; past it each has its own cursor and a
+    // mesh lands in whichever arena its draw path binds (see `MeshAssetEntry`).
     mesh_vertex_len: usize,
     rigid_vertex_len: usize,
     packed_lod_vertex_len: usize,
@@ -1391,7 +1417,7 @@ pub struct Gpu3D {
     builtin_mesh_ranges: AHashMap<&'static str, MeshRange>,
     builtin_mesh_bounds: AHashMap<&'static str, ([f32; 3], f32)>,
     builtin_meshlets: AHashMap<&'static str, Arc<[MeshletRange]>>,
-    custom_mesh_ranges: AHashMap<MeshID, (u64, MeshAssetRange)>,
+    custom_mesh_ranges: AHashMap<MeshID, MeshAssetEntry>,
     // At sample_count == 1 these alias depth_prepass_texture/_view (same
     // Depth32Float data); MSAA keeps a separate multisampled target.
     depth_texture: wgpu::Texture,
@@ -1410,10 +1436,11 @@ pub struct Gpu3D {
     taa_base_view_proj: Mat4,
     taa_base_inv_view_proj: Mat4,
     taa_jitter_applied: bool,
-    // Lazily allocated 1x-only scene-depth copy for the 3D water pass, which
-    // samples scene depth while depth-testing (illegal against the shared
-    // prepass texture in one pass). None while no 3D water renders.
-    water_scene_depth: Option<(wgpu::Texture, wgpu::TextureView)>,
+    // Lazily allocated 1x-only private depth target for the 3D water pass,
+    // which samples scene depth while depth-testing (illegal against the shared
+    // prepass texture in one pass) and so keeps its own writes here. None while
+    // no 3D water renders.
+    water_private_depth: Option<(wgpu::Texture, wgpu::TextureView)>,
     ssao_pass: Option<ssao::SsaoPass>,
     _ssao_fallback_texture: wgpu::Texture,
     ssao_fallback_view: wgpu::TextureView,
@@ -1490,7 +1517,12 @@ pub struct Gpu3D {
     // param spans right after. Mesh-blend sphere refresh reads it.
     transform_dirty_spans_snapshot: Vec<Range<u32>>,
     dirty_cull_batch_spans_scratch: Vec<Range<usize>>,
-    transform_only_kinds_scratch: Vec<draw::TransformOnlyDrawKind>,
+    // Dedicated span scratch for the animation patch. Kept apart from the
+    // instance/multimesh scratch above: the transform patch's merged spans are
+    // still live when the animation patch runs (the cull-input step reads them).
+    dirty_animation_spans_scratch: Vec<Range<u32>>,
+    merged_animation_spans_scratch: Vec<Range<u32>>,
+    transform_only_kinds_scratch: Vec<draw::TransformOnlyDrawClass>,
     debug_point_instances_scratch: Vec<BuiltInstanceParts>,
     debug_edge_instances_scratch: Vec<BuiltInstanceParts>,
     camera_bind_group_generation: u32,
@@ -1547,6 +1579,10 @@ pub struct Prepare3DStepTiming {
     pub hiz_skipped: u32,
     pub indirect_skipped: u32,
     pub cull_input_skipped: u32,
+    /// `1` when this prepare restaged the whole scene (instances, batches, sort,
+    /// compaction, cull inputs), `0` when a fast path handled it. Animated
+    /// scenes should sit at `0` once their topology settles.
+    pub full_rebuilds: u32,
 }
 
 pub struct Gpu3DConfig {
@@ -1610,8 +1646,16 @@ struct PassCounters {
     mesh_blend_scene_copies: u32,
     // Pixels covered by the seam scene copy (0 when the copy is skipped).
     mesh_blend_copy_pixels: u32,
+    // Per-source receiver depth passes the vertex mesh-blend loop encodes, and
+    // the sources that reused depth already resident in the shared target
+    // (an earlier source's pass, or the frame's global blend-depth pass).
+    mesh_blend_source_depth_passes: u32,
+    mesh_blend_source_depth_reuses: u32,
     // Full-res scene-depth copies encoded for the 3D water pass.
     water_depth_copies: u32,
+    // Depth clears encoded for the 3D water pass's private depth target (the
+    // copy's replacement at 1 sample).
+    water_depth_clears: u32,
 }
 
 // Screen region the mesh-blend seam pass has to touch this frame.
@@ -1650,6 +1694,40 @@ struct MeshAssetRange {
     blend_shape_target_count: u32,
     blend_shape_vertex_start: u32,
     blend_shape_vertex_count: u32,
+}
+
+/// One mesh id's resolved arena residency, split by render path.
+///
+/// The rigid (36B/vertex) and skinned (48B/vertex) vertex arenas each own an
+/// independent cursor, so a mesh is uploaded to whichever arena the draw that
+/// asked for it actually binds -- rigid-only content never pays the skinned
+/// stride. Each variant carries its own index block (indices are absolute:
+/// `MeshRange::base_vertex` is always 0 and the arena offset is baked into the
+/// uploaded indices), so a variant's ranges are only ever valid against its own
+/// arena. Both slots are populated only for a mesh drawn on both paths.
+#[derive(Clone, Default)]
+struct MeshAssetEntry {
+    revision: u64,
+    rigid: Option<MeshAssetRange>,
+    skinned: Option<MeshAssetRange>,
+}
+
+impl MeshAssetEntry {
+    fn variant(&self, skinned: bool) -> Option<&MeshAssetRange> {
+        if skinned {
+            self.skinned.as_ref()
+        } else {
+            self.rigid.as_ref()
+        }
+    }
+
+    fn variant_mut(&mut self, skinned: bool) -> &mut Option<MeshAssetRange> {
+        if skinned {
+            &mut self.skinned
+        } else {
+            &mut self.rigid
+        }
+    }
 }
 
 #[derive(Clone)]

@@ -286,12 +286,14 @@ fn read_buffer(device: &wgpu::Device, queue: &wgpu::Queue, src: &wgpu::Buffer, l
 
 /// Cull-item pair placing a batch either at the origin (inside the test
 /// frustum) or far outside it, so the real frustum-cull shader decides.
-fn cull_rows(visible: bool) -> (FrustumCullStaticGpu, FrustumCullDynamicGpu) {
+/// `instance_count` is the authoritative count the shader writes back for a
+/// survivor (`cull_flags[1]`); it must mirror the staged command.
+fn cull_rows(visible: bool, instance_count: u32) -> (FrustumCullStaticGpu, FrustumCullDynamicGpu) {
     let x = if visible { 0.0 } else { 1.0e6 };
     (
         FrustumCullStaticGpu {
             local_center_radius: [0.0, 0.0, 0.0, 1.0],
-            cull_flags: [0; 4],
+            cull_flags: [0, instance_count, 0, 0],
         },
         FrustumCullDynamicGpu {
             model_0: [1.0, 0.0, 0.0, 0.0],
@@ -366,7 +368,11 @@ fn cull_and_compact(
         .collect();
     queue.write_buffer(&gpu.indirect_buffer, 0, bytemuck::cast_slice(&commands));
 
-    let (statics, dynamics): (Vec<_>, Vec<_>) = visibility.iter().map(|v| cull_rows(*v)).unzip();
+    let (statics, dynamics): (Vec<_>, Vec<_>) = visibility
+        .iter()
+        .enumerate()
+        .map(|(i, v)| cull_rows(*v, commands[i].instance_count))
+        .unzip();
     queue.write_buffer(
         &gpu.frustum_cull_static_buffer,
         0,

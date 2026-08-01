@@ -22,6 +22,10 @@ struct Particle {
 @group(0) @binding(1) var<storage, read> particles: array<Particle>;
 struct Camera3D { view_proj: mat4x4<f32> }
 @group(1) @binding(0) var<uniform> camera: Camera3D;
+// Scene depth the 3D water pass samples. Bound (with the refraction color the
+// splash pass ignores) so `fs_splash_scene_reject` can do the occlusion the
+// hardware test did while the pass attached a copy of the scene depth.
+@group(2) @binding(0) var scene_depth_tex: texture_depth_2d;
 
 fn model(w: FlipWater) -> mat4x4<f32> {
     return mat4x4<f32>(w.model_x, w.model_y, w.model_z, w.model_w);
@@ -55,8 +59,27 @@ fn vs_splash(@builtin(instance_index) idx: u32, @builtin(vertex_index) vertex: u
     out.uv = uv;
     return out;
 }
-@fragment
-fn fs_splash(in: SplashOut) -> @location(0) vec4<f32> {
+fn splash_color(in: SplashOut) -> vec4<f32> {
     let edge = smoothstep(1.0, 0.55, length(in.uv));
     return vec4<f32>(in.color.rgb, in.color.a * edge);
+}
+
+// MSAA path: the pass attaches the real scene depth, so the hardware LessEqual
+// test still rejects splashes behind geometry.
+@fragment
+fn fs_splash(in: SplashOut) -> @location(0) vec4<f32> {
+    return splash_color(in);
+}
+
+// Private-depth path (1 sample): the attachment holds the water surface only,
+// so scene occlusion runs here - same LessEqual compare on the same window-space
+// z the hardware test consumed, against the scene prepass depth, no bias.
+@fragment
+fn fs_splash_scene_reject(in: SplashOut) -> @location(0) vec4<f32> {
+    let dims = vec2<i32>(textureDimensions(scene_depth_tex));
+    let coord = clamp(vec2<i32>(floor(in.clip.xy)), vec2<i32>(0), dims - vec2<i32>(1));
+    if in.clip.z > textureLoad(scene_depth_tex, coord, 0) {
+        discard;
+    }
+    return splash_color(in);
 }

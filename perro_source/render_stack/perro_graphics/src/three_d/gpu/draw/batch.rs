@@ -138,19 +138,86 @@ pub(in super::super) fn render_state_key(
     }
 }
 
+/// Which animation lanes of an otherwise-identical draw carry new values.
+///
+/// Both lanes are laid out row-per-joint / row-per-weight in staging vectors
+/// whose row counts are fixed by the draw's topology, so "same shape, new
+/// numbers" is patchable in place: no restage, no batch sort, no compaction.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub(in super::super) struct AnimationDelta {
+    pub skeleton: bool,
+    pub blend_weights: bool,
+}
+
+impl AnimationDelta {
+    #[inline]
+    pub(in super::super) fn any(self) -> bool {
+        self.skeleton || self.blend_weights
+    }
+}
+
+/// `Some(changed)` when both draws agree on skeleton *shape* (both unskinned,
+/// or both skinned with the same joint count), `None` when the shape itself
+/// moved and the palette rows have to be restaged.
+///
+/// A differing `Arc` is reported as changed without a deep compare: the patch
+/// step compares against the staged rows it is about to overwrite anyway, so a
+/// producer that reallocates identical values still uploads nothing.
 #[inline]
-pub(in super::super) fn same_draw_except_model(a: &Draw3DInstance, b: &Draw3DInstance) -> bool {
-    a.node == b.node
+fn skeleton_animation_delta(
+    a: Option<&perro_render_bridge::SkeletonPalette>,
+    b: Option<&perro_render_bridge::SkeletonPalette>,
+) -> Option<bool> {
+    match (a, b) {
+        (None, None) => Some(false),
+        (Some(a), Some(b)) => {
+            if a.matrices.len() != b.matrices.len() {
+                return None;
+            }
+            // An empty palette stages no rows, so it can never be a delta.
+            Some(!a.matrices.is_empty() && !Arc::ptr_eq(&a.matrices, &b.matrices))
+        }
+        _ => None,
+    }
+}
+
+/// Same contract as [`skeleton_animation_delta`] for the blend-shape weights:
+/// the staged weight run of an instance is `min(len, mesh target count)` long,
+/// so an equal-length lane keeps every row start and count in place.
+#[inline]
+fn blend_weights_delta(a: &Arc<[f32]>, b: &Arc<[f32]>) -> Option<bool> {
+    if a.len() != b.len() {
+        return None;
+    }
+    // An empty lane stages no rows, and the retained producer commonly hands
+    // out a fresh empty `Arc` per frame; that must not read as a delta.
+    Some(!a.is_empty() && !Arc::ptr_eq(a, b))
+}
+
+/// `Some(delta)` when `a`/`b` are the same draw except possibly its model row
+/// and the animation lanes named by `delta`; `None` when anything structural
+/// (topology, material, instance count, joint count, weight count) differs.
+#[inline]
+pub(in super::super) fn same_draw_except_model_and_animation(
+    a: &Draw3DInstance,
+    b: &Draw3DInstance,
+) -> Option<AnimationDelta> {
+    let same_shape = a.node == b.node
         && a.kind == b.kind
         && a.surfaces == b.surfaces
-        && a.skeleton == b.skeleton
-        && a.blend_shape_weights == b.blend_shape_weights
         && a.dense_multimesh == b.dense_multimesh
         && a.meshlet_override == b.meshlet_override
         && a.lod == b.lod
         && a.blend == b.blend
         && a.cast_shadows == b.cast_shadows
-        && a.receive_shadows == b.receive_shadows
+        && a.receive_shadows == b.receive_shadows;
+    if !same_shape {
+        return None;
+    }
+    Some(AnimationDelta {
+        skeleton: skeleton_animation_delta(a.skeleton.as_ref(), b.skeleton.as_ref())?,
+        blend_weights: blend_weights_delta(&a.blend_shape_weights, &b.blend_shape_weights)?,
+    })
 }
 
 /// Cheap identity check for a dense multimesh's instance pose list. The retained
@@ -192,7 +259,7 @@ pub(in super::super) fn same_multimesh_except_node_model(
         && same_dense_instances(dense_a, dense_b)
 }
 
-/// Per-draw classification for the transform-only fast path.
+/// Per-draw shape classification for the transform-only fast path.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(in super::super) enum TransformOnlyDrawKind {
     /// Single-instance regular draw; only its model row may differ.
@@ -201,16 +268,37 @@ pub(in super::super) enum TransformOnlyDrawKind {
     Multimesh,
 }
 
+/// One draw's full fast-path classification: its shape plus which animation
+/// lanes changed. A frame is free to mix the two (a walking character moves
+/// AND re-poses), so the patch step handles the union.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(in super::super) struct TransformOnlyDrawClass {
+    pub kind: TransformOnlyDrawKind,
+    pub anim: AnimationDelta,
+}
+
+impl TransformOnlyDrawClass {
+    #[inline]
+    pub(in super::super) fn transform(kind: TransformOnlyDrawKind) -> Self {
+        Self {
+            kind,
+            anim: AnimationDelta::default(),
+        }
+    }
+}
+
 /// Classify one draw pair for the transform-only path, or `None` if the pair
 /// forces a full rebuild (topology/material/instance-count change).
 #[inline]
 pub(in super::super) fn classify_transform_only_draw(
     prev: &Draw3DInstance,
     next: &Draw3DInstance,
-) -> Option<TransformOnlyDrawKind> {
+) -> Option<TransformOnlyDrawClass> {
     if next.dense_multimesh.is_some() {
         if same_multimesh_except_node_model(prev, next) {
-            return Some(TransformOnlyDrawKind::Multimesh);
+            return Some(TransformOnlyDrawClass::transform(
+                TransformOnlyDrawKind::Multimesh,
+            ));
         }
         return None;
     }
@@ -218,22 +306,23 @@ pub(in super::super) fn classify_transform_only_draw(
     if prev.dense_multimesh.is_some() {
         return None;
     }
-    if prev.instance_mats.len() == 1
-        && next.instance_mats.len() == 1
-        && same_draw_except_model(prev, next)
-    {
-        return Some(TransformOnlyDrawKind::RegularSingle);
+    if prev.instance_mats.len() != 1 || next.instance_mats.len() != 1 {
+        return None;
     }
-    None
+    let anim = same_draw_except_model_and_animation(prev, next)?;
+    Some(TransformOnlyDrawClass {
+        kind: TransformOnlyDrawKind::RegularSingle,
+        anim,
+    })
 }
 
 /// Whole-scene decision: every draw pair must classify, and at least one draw
-/// must actually be present. Returns per-draw kinds when the transform-only
+/// must actually be present. Returns per-draw classes when the transform-only
 /// path is valid.
 pub(in super::super) fn classify_transform_only_scene(
     prev: &[Draw3DInstance],
     next: &[Draw3DInstance],
-    out: &mut Vec<TransformOnlyDrawKind>,
+    out: &mut Vec<TransformOnlyDrawClass>,
 ) -> bool {
     out.clear();
     if prev.len() != next.len() || next.is_empty() {
@@ -241,7 +330,7 @@ pub(in super::super) fn classify_transform_only_scene(
     }
     for (p, n) in prev.iter().zip(next.iter()) {
         match classify_transform_only_draw(p, n) {
-            Some(kind) => out.push(kind),
+            Some(class) => out.push(class),
             None => {
                 out.clear();
                 return false;

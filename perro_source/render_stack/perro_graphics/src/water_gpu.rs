@@ -67,11 +67,17 @@ struct WaterParamsGpu {
     water_count: u32,
     water_2d_count: u32,
     cell_count: u32,
-    _pad: u32,
+    render_flags: u32,
     time_seconds: f32,
     delta_seconds: f32,
     _pad1: [f32; 2],
 }
+
+// `render_flags` bit 0: the 3D water pass attaches a private depth target
+// (1 sample; see Gpu3D::water_depth_attachment), so the 3D water shader has to
+// reject fragments behind scene geometry itself. Clear under MSAA, where the
+// pass still attaches the real scene depth.
+const WATER_RENDER_FLAG_SCENE_DEPTH_REJECT: u32 = 1 << 0;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -344,7 +350,6 @@ impl GpuWater {
         _width: u32,
         _height: u32,
     ) -> Self {
-        let flip_3d = GpuWaterFlip::new(device, color_format, sample_count, camera_3d_bgl);
         let compute_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_water_gpu_bgl"),
             entries: &[
@@ -480,6 +485,15 @@ impl GpuWater {
                 },
             ],
         });
+        // Built after `depth_bgl`: the splash pass shares it, to sample scene
+        // depth on the private-depth path.
+        let flip_3d = GpuWaterFlip::new(
+            device,
+            color_format,
+            sample_count,
+            camera_3d_bgl,
+            &depth_bgl,
+        );
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("perro_water_gpu_shader"),
             source: wgpu::ShaderSource::Wgsl(WATER_WGSL.into()),
@@ -802,6 +816,15 @@ impl GpuWater {
         );
         self.render_pipeline_2d = render_pipeline_2d;
         self.render_pipeline_3d = render_pipeline_3d;
+        // The splash pipeline attaches the same depth target, so it tracks the
+        // sample count too (format + scene-occlusion path).
+        self.flip_3d.set_sample_count(
+            device,
+            color_format,
+            sample_count,
+            camera_3d_bgl,
+            &self.depth_bgl,
+        );
         self.sample_count = sample_count.max(1);
     }
 
@@ -1019,7 +1042,11 @@ impl GpuWater {
             water_count: self.water_count,
             water_2d_count: self.water_2d_count,
             cell_count: cell_needed.min(u32::MAX as usize) as u32,
-            _pad: 0,
+            render_flags: if self.sample_count <= 1 {
+                WATER_RENDER_FLAG_SCENE_DEPTH_REJECT
+            } else {
+                0
+            },
             time_seconds: ctx.time_seconds.max(0.0),
             delta_seconds: ctx.delta_seconds.max(0.0),
             _pad1: [0.0; 2],
@@ -1165,6 +1192,11 @@ impl GpuWater {
         pass.dispatch_workgroups(x_groups, self.water_count, 1);
     }
 
+    #[cfg(test)]
+    pub(crate) fn flip_particle_count(&self) -> u32 {
+        self.flip_3d.particle_count()
+    }
+
     pub fn render_2d(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -1240,8 +1272,13 @@ impl GpuWater {
             pass.set_bind_group(2, &self.depth_bind_group, &[]);
             pass.draw(0..self.max_3d_chunk_vertices, 0..self.render_3d_chunk_count);
         }
-        self.flip_3d
-            .render(encoder, target, depth, camera_bind_group);
+        self.flip_3d.render(
+            encoder,
+            target,
+            depth,
+            camera_bind_group,
+            &self.depth_bind_group,
+        );
     }
 
     pub fn encode_readback(&mut self, encoder: &mut wgpu::CommandEncoder) {

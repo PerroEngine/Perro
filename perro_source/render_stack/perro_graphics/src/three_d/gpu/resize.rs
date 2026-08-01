@@ -50,7 +50,7 @@ impl Gpu3D {
         );
         self.depth_texture = depth_texture;
         self.depth_view = depth_view;
-        self.water_scene_depth = None;
+        self.water_private_depth = None;
         if let Some(ssao_pass) = self.ssao_pass.as_mut() {
             ssao_pass.resize(
                 device,
@@ -160,7 +160,7 @@ impl Gpu3D {
         );
         self.depth_texture = depth_texture;
         self.depth_view = depth_view;
-        self.water_scene_depth = None;
+        self.water_private_depth = None;
         if let Some(ssao_pass) = self.ssao_pass.as_mut() {
             ssao_pass.resize(
                 device,

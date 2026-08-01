@@ -72,7 +72,9 @@ impl Gpu3D {
                     } else {
                         0
                     },
-                    0,
+                    // Authoritative instance count for the cull shaders; see
+                    // `rebuild_and_upload_indirect`.
+                    batch.instance_count,
                     0,
                     0,
                 ],

@@ -665,7 +665,7 @@ mod tests {
         next[0].blend.enabled = false;
         next[1].blend.enabled = false;
         // prev[1] blend was left enabled by `draw`; disable to match next.
-        // (blend must be equal for same_draw_except_model.)
+        // (blend must be equal for same_draw_except_model_and_animation.)
         let mut prev = prev;
         prev[1].blend.enabled = false;
         prev[0].blend.enabled = false;
@@ -675,10 +675,86 @@ mod tests {
         assert_eq!(
             kinds,
             vec![
-                TransformOnlyDrawKind::Multimesh,
-                TransformOnlyDrawKind::RegularSingle,
+                TransformOnlyDrawClass::transform(TransformOnlyDrawKind::Multimesh),
+                TransformOnlyDrawClass::transform(TransformOnlyDrawKind::RegularSingle),
             ]
         );
+    }
+
+    /// A skinned draw whose palette is re-posed (same joint count, new `Arc`)
+    /// stays on the fast path and is reported as an animation-only delta, so
+    /// prepare patches the palette rows instead of rebuilding the scene.
+    #[test]
+    pub(super) fn skeleton_only_change_classifies_as_animation_delta() {
+        fn palette(offset: f32) -> perro_render_bridge::SkeletonPalette {
+            perro_render_bridge::SkeletonPalette {
+                matrices: Arc::from([
+                    [[1.0, 0.0, 0.0, offset], [0.0; 4], [0.0; 4]],
+                    [[1.0, 0.0, 0.0, offset * 2.0], [0.0; 4], [0.0; 4]],
+                ]),
+            }
+        }
+        let mut prev = draw(1, BitMask::NONE, BitMask::NONE, 1);
+        prev.blend.enabled = false;
+        prev.skeleton = Some(palette(0.0));
+        let mut next = prev.clone();
+        next.skeleton = Some(palette(1.0));
+
+        let mut kinds = Vec::new();
+        assert!(classify_transform_only_scene(
+            std::slice::from_ref(&prev),
+            std::slice::from_ref(&next),
+            &mut kinds
+        ));
+        assert_eq!(
+            kinds,
+            vec![TransformOnlyDrawClass {
+                kind: TransformOnlyDrawKind::RegularSingle,
+                anim: AnimationDelta {
+                    skeleton: true,
+                    blend_weights: false,
+                },
+            }]
+        );
+
+        // A joint-count change is structural: back to the full rebuild.
+        let mut regrown = prev.clone();
+        regrown.skeleton = Some(perro_render_bridge::SkeletonPalette {
+            matrices: Arc::from([[[1.0, 0.0, 0.0, 0.0], [0.0; 4], [0.0; 4]]]),
+        });
+        assert!(!classify_transform_only_scene(
+            std::slice::from_ref(&prev),
+            std::slice::from_ref(&regrown),
+            &mut kinds
+        ));
+    }
+
+    /// Blend-shape weights follow the same rule: same length is a patchable
+    /// delta, a different length restages.
+    #[test]
+    pub(super) fn blend_weight_change_classifies_as_animation_delta() {
+        let mut prev = draw(1, BitMask::NONE, BitMask::NONE, 1);
+        prev.blend.enabled = false;
+        prev.blend_shape_weights = Arc::from([0.0f32, 0.5]);
+        let mut next = prev.clone();
+        next.blend_shape_weights = Arc::from([0.25f32, 0.75]);
+
+        let mut kinds = Vec::new();
+        assert!(classify_transform_only_scene(
+            std::slice::from_ref(&prev),
+            std::slice::from_ref(&next),
+            &mut kinds
+        ));
+        assert!(kinds[0].anim.blend_weights);
+        assert!(!kinds[0].anim.skeleton);
+
+        let mut shorter = prev.clone();
+        shorter.blend_shape_weights = Arc::from([0.25f32]);
+        assert!(!classify_transform_only_scene(
+            std::slice::from_ref(&prev),
+            std::slice::from_ref(&shorter),
+            &mut kinds
+        ));
     }
 
     #[test]
@@ -936,6 +1012,9 @@ mod tests {
         assert_eq!(dynamic_row.model_2, [0.0, 0.0, 1.0, 0.0]);
         assert_eq!(dynamic_row.model_3, [0.0, 0.0, 0.0, 1.0]);
         assert_eq!(static_row.cull_flags[0], 0, "hi-z stays enabled");
+        // The cull shaders write this count back for a survivor instead of
+        // reading the (GPU-mutated) command, so it must equal the batch's.
+        assert_eq!(static_row.cull_flags[1], batch.instance_count);
         let [x, y, z, r] = static_row.local_center_radius;
         assert!((x - 0.0).abs() < 1.0e-4 && y == 0.0 && z == 0.0);
         assert!((r - 6.0).abs() < 1.0e-4, "sphere spans both instances");
@@ -948,5 +1027,6 @@ mod tests {
             fallback_static.cull_flags[0],
             CULL_FLAG_DISABLE_HIZ_OCCLUSION
         );
+        assert_eq!(fallback_static.cull_flags[1], 2);
     }
 }

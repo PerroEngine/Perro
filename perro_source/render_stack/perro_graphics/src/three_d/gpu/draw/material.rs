@@ -753,8 +753,11 @@ pub(in super::super) fn multi_instance_cull_rows(
     };
     (
         FrustumCullStaticGpu {
+            // flags word, then the authoritative instance count the cull
+            // shaders write back for a survivor (the command itself carries
+            // last frame's cull result, so it can never be the source).
             local_center_radius: center_radius,
-            cull_flags: [flags, 0, 0, 0],
+            cull_flags: [flags, batch.instance_count, 0, 0],
         },
         FrustumCullDynamicGpu {
             model_0: [1.0, 0.0, 0.0, 0.0],

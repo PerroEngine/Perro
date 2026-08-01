@@ -880,106 +880,56 @@ impl Gpu3D {
                 .saturating_add(texture_bind_group_switches);
         }
 
+        // Every source needs its receiver set's depth in `mesh_blend_depth_view`
+        // before its color pass reads it, but that texture is shared and only
+        // these passes (plus the global blend-depth pass above) write it, so its
+        // contents stay valid until the next source overwrites them. Sources
+        // that share a receiver set therefore share one depth pass: N sources
+        // over one set cost 1 pass instead of N.
+        //
+        // Seeded with the global pass's output: it rendered
+        // `mesh_blend_depth_batch_indices` into the same texture, with the same
+        // Clear(1.0) and the same depth pipelines, so a source whose receiver
+        // list matches it needs no pass at all. Hi-z rewrites the indirect
+        // buffer between that pass and this loop (dropping occluded receivers
+        // from the draws issued here), so the seed only holds when it is off.
+        //
+        // Cross-frame reuse is not available on top of this: the global pass
+        // clears and rewrites the texture every frame mesh blending is active,
+        // which is every frame this loop runs, so nothing survives to the next
+        // frame. Caching across frames needs a private per-group depth target
+        // (and the source pipelines' bind group rebound to it), not a validity
+        // bit.
+        let mut blend_depth_resident =
+            if mesh_blend_depth_active && !(frustum_cull_active && hiz_active) {
+                BlendDepthResident::Global
+            } else {
+                BlendDepthResident::Unknown
+            };
         // Indexed (not iterated by reference) so the per-source pass counters
         // can be written between the two passes without holding a borrow of
         // `mesh_blend_source_receivers` across them.
         for source_slot in 0..self.mesh_blend_source_receivers.len() {
             let (source_i, receiver_range) = self.mesh_blend_source_receivers[source_slot].clone();
-            self.pass_counters.render_passes += 2;
-            let source_batch = &self.draw_batches[source_i];
-            let mut blend_prepass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("perro_mesh_blend_source_depth_pass"),
-                color_attachments: &[],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.mesh_blend_depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            let mut current_state: Option<(RenderPath3D, bool, bool)> = None;
-            blend_prepass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
-            for &target_i in &self.mesh_blend_receiver_indices[receiver_range] {
-                let target_batch = &self.draw_batches[target_i];
-                let state = (
-                    target_batch.path,
-                    target_batch.double_sided,
-                    target_batch.packed_lod,
+            let depth_resident = blend_depth_resident_matches(
+                &blend_depth_resident,
+                &self.mesh_blend_receiver_indices,
+                &self.mesh_blend_depth_batch_indices,
+                receiver_range.clone(),
+            );
+            self.pass_counters.render_passes += if depth_resident { 1 } else { 2 };
+            if depth_resident {
+                self.pass_counters.mesh_blend_source_depth_reuses += 1;
+            } else {
+                self.pass_counters.mesh_blend_source_depth_passes += 1;
+                self.encode_mesh_blend_source_depth(
+                    encoder,
+                    receiver_range.clone(),
+                    frustum_cull_active,
                 );
-                if current_state != Some(state) {
-                    let (camera_bg, vertex_buf, pipeline) =
-                        if target_batch.path == RenderPath3D::Rigid {
-                            let p = if target_batch.double_sided {
-                                if target_batch.packed_lod {
-                                    &self.pipelines.depth_prepass_rigid_packed_lod().double_sided
-                                } else {
-                                    &self.pipelines.depth_prepass_rigid().double_sided
-                                }
-                            } else {
-                                if target_batch.packed_lod {
-                                    &self.pipelines.depth_prepass_rigid_packed_lod().culled
-                                } else {
-                                    &self.pipelines.depth_prepass_rigid().culled
-                                }
-                            };
-                            let v = if target_batch.packed_lod {
-                                &self.packed_lod_vertex_buffer
-                            } else {
-                                &self.rigid_vertex_buffer
-                            };
-                            (&self.rigid_camera_bind_group, v, p)
-                        } else {
-                            let p = if target_batch.double_sided {
-                                &self.pipelines.depth_prepass_skinned().double_sided
-                            } else {
-                                &self.pipelines.depth_prepass_skinned().culled
-                            };
-                            (&self.camera_bind_group, &self.vertex_buffer, p)
-                        };
-                    blend_prepass.set_bind_group(0, camera_bg, &[]);
-                    if target_batch.packed_lod {
-                        blend_prepass.set_index_buffer(
-                            self.packed_lod_index_buffer.slice(..),
-                            wgpu::IndexFormat::Uint32,
-                        );
-                    } else {
-                        blend_prepass.set_index_buffer(
-                            self.index_buffer.slice(..),
-                            wgpu::IndexFormat::Uint32,
-                        );
-                    }
-                    blend_prepass.set_vertex_buffer(0, vertex_buf.slice(..));
-                    if target_batch.path == RenderPath3D::Skinned {
-                        blend_prepass
-                            .set_vertex_buffer(2, self.skinned_instance_meta_buffer.slice(..));
-                    } else {
-                        blend_prepass
-                            .set_vertex_buffer(2, self.rigid_instance_meta_buffer.slice(..));
-                    }
-                    blend_prepass.set_pipeline(pipeline);
-                    current_state = Some(state);
-                }
-                if frustum_cull_active {
-                    let offset = (target_i * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
-                    blend_prepass.draw_indexed_indirect(&self.indirect_buffer, offset);
-                } else {
-                    let start = target_batch.mesh.index_start;
-                    let end = start + target_batch.mesh.index_count;
-                    let instances = target_batch.instance_start
-                        ..target_batch.instance_start + target_batch.instance_count;
-                    blend_prepass.draw_indexed(
-                        start..end,
-                        target_batch.mesh.base_vertex,
-                        instances,
-                    );
-                }
+                blend_depth_resident = BlendDepthResident::Receivers(receiver_range);
             }
-            drop(blend_prepass);
+            let source_batch = &self.draw_batches[source_i];
 
             let mut blend_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("perro_mesh_blend_source_pass"),
@@ -1065,6 +1015,100 @@ impl Gpu3D {
         }
     }
 
+    // Receiver depth for one mesh-blend source: clear `mesh_blend_depth_view`
+    // and re-rasterize the source's receiver batches into it, exactly as the
+    // global blend-depth pass does for its own list. Split out of `render_pass`
+    // so the source loop can skip the call when the depth it would write is
+    // already resident.
+    fn encode_mesh_blend_source_depth(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        receiver_range: Range<usize>,
+        frustum_cull_active: bool,
+    ) {
+        let mut blend_prepass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("perro_mesh_blend_source_depth_pass"),
+            color_attachments: &[],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &self.mesh_blend_depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        let mut current_state: Option<(RenderPath3D, bool, bool)> = None;
+        blend_prepass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
+        for &target_i in &self.mesh_blend_receiver_indices[receiver_range] {
+            let target_batch = &self.draw_batches[target_i];
+            let state = (
+                target_batch.path,
+                target_batch.double_sided,
+                target_batch.packed_lod,
+            );
+            if current_state != Some(state) {
+                let (camera_bg, vertex_buf, pipeline) = if target_batch.path == RenderPath3D::Rigid {
+                    let p = if target_batch.double_sided {
+                        if target_batch.packed_lod {
+                            &self.pipelines.depth_prepass_rigid_packed_lod().double_sided
+                        } else {
+                            &self.pipelines.depth_prepass_rigid().double_sided
+                        }
+                    } else if target_batch.packed_lod {
+                        &self.pipelines.depth_prepass_rigid_packed_lod().culled
+                    } else {
+                        &self.pipelines.depth_prepass_rigid().culled
+                    };
+                    let v = if target_batch.packed_lod {
+                        &self.packed_lod_vertex_buffer
+                    } else {
+                        &self.rigid_vertex_buffer
+                    };
+                    (&self.rigid_camera_bind_group, v, p)
+                } else {
+                    let p = if target_batch.double_sided {
+                        &self.pipelines.depth_prepass_skinned().double_sided
+                    } else {
+                        &self.pipelines.depth_prepass_skinned().culled
+                    };
+                    (&self.camera_bind_group, &self.vertex_buffer, p)
+                };
+                blend_prepass.set_bind_group(0, camera_bg, &[]);
+                if target_batch.packed_lod {
+                    blend_prepass.set_index_buffer(
+                        self.packed_lod_index_buffer.slice(..),
+                        wgpu::IndexFormat::Uint32,
+                    );
+                } else {
+                    blend_prepass
+                        .set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                }
+                blend_prepass.set_vertex_buffer(0, vertex_buf.slice(..));
+                if target_batch.path == RenderPath3D::Skinned {
+                    blend_prepass.set_vertex_buffer(2, self.skinned_instance_meta_buffer.slice(..));
+                } else {
+                    blend_prepass.set_vertex_buffer(2, self.rigid_instance_meta_buffer.slice(..));
+                }
+                blend_prepass.set_pipeline(pipeline);
+                current_state = Some(state);
+            }
+            if frustum_cull_active {
+                let offset = (target_i * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
+                blend_prepass.draw_indexed_indirect(&self.indirect_buffer, offset);
+            } else {
+                let start = target_batch.mesh.index_start;
+                let end = start + target_batch.mesh.index_count;
+                let instances = target_batch.instance_start
+                    ..target_batch.instance_start + target_batch.instance_count;
+                blend_prepass.draw_indexed(start..end, target_batch.mesh.base_vertex, instances);
+            }
+        }
+    }
+
     pub fn depth_view(&self) -> &wgpu::TextureView {
         &self.depth_view
     }
@@ -1080,23 +1124,29 @@ impl Gpu3D {
     }
 
     /// Depth attachment for the 3D water pass. Water samples scene depth (the
-    /// prepass view) while depth-testing; at sample_count == 1 the scene depth
-    /// target aliases the prepass texture, and one pass cannot both sample and
-    /// attach the same texture. Water therefore depth-tests against a lazily
-    /// allocated copy of the scene depth, refreshed here each frame it is
-    /// requested. MSAA returns the separate main depth target directly.
+    /// prepass view) for shoreline, thickness and SSR while it depth-tests, and
+    /// one pass cannot both sample and attach the same texture; at
+    /// sample_count == 1 the scene depth target aliases the prepass texture, so
+    /// water gets a lazily allocated *private* depth target instead, cleared
+    /// here once per water frame. MSAA returns the separate main depth target
+    /// directly - it never aliased the prepass.
     ///
-    /// Attaching the prepass view read-only instead (WebGPU allows sampling a
-    /// depth texture bound with `depth_ops: None` in the same pass) would drop
-    /// the copy, but it also forces `depth_write_enabled: false` on everything
-    /// in the pass - and the water surface relies on its writes: the 3D water
-    /// pipeline is alpha-blended with a top-surface alpha that reaches 1.0, and
-    /// the wave-displaced chunk grid is drawn unsorted, so without a depth
-    /// buffer a far crest overwrites a near one at grazing angles. The
-    /// flip-splash pass that follows also depth-tests (LessEqual, writes off)
-    /// against those writes to sit behind the surface. The copy stays until the
-    /// surface gets a private depth target plus a shader-side scene-depth
-    /// reject; `PassCounters::water_depth_copies` tracks the cost.
+    /// The private target carries water only, which is all the hardware test is
+    /// needed for: the 3D water pipeline is alpha-blended with a top-surface
+    /// alpha that reaches 1.0 and the wave-displaced chunk grid draws unsorted,
+    /// so a far crest must not overwrite a near one, and the flip-splash pass
+    /// that follows depth-tests (LessEqual, writes off) against those writes to
+    /// sit behind the surface. Occlusion by *scene* geometry moved into the
+    /// water shaders, which reject a fragment that loses the same LessEqual
+    /// compare against the sampled prepass depth that the hardware ran when
+    /// this attachment was a full-res copy of it (same values, same encoding,
+    /// no bias). That per-frame Depth32Float copy is gone:
+    /// `PassCounters::water_depth_copies` stays 0 and `water_depth_clears`
+    /// counts the clear that replaced it.
+    ///
+    /// Read-only attachment (`depth_ops: None`) was the other way to drop the
+    /// copy, but it forces `depth_write_enabled: false` on the whole pass and
+    /// the surface needs its writes, per above.
     pub fn water_depth_attachment(
         &mut self,
         device: &wgpu::Device,
@@ -1108,13 +1158,13 @@ impl Gpu3D {
         let (width, height) = self.depth_size;
         let (width, height) = (width.max(1), height.max(1));
         let stale = self
-            .water_scene_depth
+            .water_private_depth
             .as_ref()
             .map(|(texture, _)| texture.width() != width || texture.height() != height)
             .unwrap_or(true);
         if stale {
             let texture = device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("perro_water_scene_depth"),
+                label: Some("perro_water_private_depth"),
                 size: wgpu::Extent3d {
                     width,
                     height,
@@ -1124,34 +1174,46 @@ impl Gpu3D {
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: DEPTH_PREPASS_FORMAT,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                 view_formats: &[],
             });
             let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-            self.water_scene_depth = Some((texture, view));
+            self.water_private_depth = Some((texture, view));
         }
-        let (texture, view) = self
-            .water_scene_depth
+        let view = self
+            .water_private_depth
             .as_ref()
-            .expect("water scene depth allocated above");
-        encoder.copy_texture_to_texture(
-            self.depth_prepass_texture.as_image_copy(),
-            texture.as_image_copy(),
-            wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-        );
-        let view = view.clone();
-        self.pass_counters.water_depth_copies += 1;
+            .expect("water private depth allocated above")
+            .1
+            .clone();
+        // Water-vs-water only, so the target starts empty every frame. Cleared
+        // here rather than by the water pass itself: that pass loads by default
+        // (the caller decides its clear flag from scene contents) and the
+        // flip-splash pass behind it must see the surface's writes, not a
+        // second clear.
+        let _clear = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("perro_water_private_depth_clear"),
+            color_attachments: &[],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        self.pass_counters.water_depth_clears += 1;
         view
     }
 
-    /// Drop the lazily allocated water scene-depth copy once no 3D water
+    /// Drop the lazily allocated private water depth target once no 3D water
     /// renders anymore.
     pub fn release_water_depth(&mut self) {
-        self.water_scene_depth = None;
+        self.water_private_depth = None;
     }
 
     pub fn camera_bind_group(&self) -> &wgpu::BindGroup {
@@ -1641,6 +1703,50 @@ mod tests {
         let expected: Vec<usize> = indices.iter().copied().filter(|&i| visible(i)).collect();
         assert_eq!(out, expected, "survivors only, in draw order");
         assert_eq!(out.len(), 153, "70% culled");
+    }
+
+    #[test]
+    fn blend_depth_resident_matches_only_an_identical_receiver_list() {
+        // Three sources: 0 and 1 share a receiver set, 2 has its own.
+        let receivers = [2usize, 5, 7, /* src 1 */ 2, 5, 7, /* src 2 */ 2, 9];
+        let global = [2usize, 5, 7];
+        let sets = [0..3usize, 3..6, 6..8];
+        let matches = |resident: &BlendDepthResident, set: usize| {
+            blend_depth_resident_matches(resident, &receivers, &global, sets[set].clone())
+        };
+        // Nothing known about the target: every source pays for its own pass.
+        for set in 0..3 {
+            assert!(!matches(&BlendDepthResident::Unknown, set));
+        }
+        // Seeded from the global blend-depth pass: an equal list needs no pass.
+        assert!(matches(&BlendDepthResident::Global, 0));
+        assert!(matches(&BlendDepthResident::Global, 1));
+        assert!(!matches(&BlendDepthResident::Global, 2));
+        // Seeded from source 0's pass: source 1 reuses it, source 2 does not.
+        let resident = BlendDepthResident::Receivers(sets[0].clone());
+        assert!(matches(&resident, 1));
+        assert!(!matches(&resident, 2));
+        // Same length, different batches -> no reuse.
+        assert!(!blend_depth_resident_matches(
+            &BlendDepthResident::Global,
+            &[2usize, 5, 8],
+            &global,
+            0..3,
+        ));
+        // Empty receiver list: a cleared target is still content of its own,
+        // and only another empty list can reuse it.
+        assert!(!blend_depth_resident_matches(
+            &BlendDepthResident::Global,
+            &receivers,
+            &global,
+            0..0,
+        ));
+        assert!(blend_depth_resident_matches(
+            &BlendDepthResident::Receivers(0..0),
+            &receivers,
+            &global,
+            3..3,
+        ));
     }
 
     #[test]

@@ -50,6 +50,19 @@ fn prepare_fast_path_eligible(force_full_rebuild: bool, eligible: bool) -> bool 
     !force_full_rebuild && eligible
 }
 
+/// `bounds` describes draw `i`'s rows as `[bounds[i], bounds[i + 1])`, so it is
+/// usable only when it has one mark per draw plus the tail, is non-decreasing,
+/// and stays inside the staging vector it indexes. The tail may sit short of
+/// `staged_len`: the debug point/edge instances stage their rows after the draw
+/// loop and are not owned by any draw.
+fn animation_bounds_valid(bounds: &[u32], draw_count: usize, staged_len: usize) -> bool {
+    bounds.len() == draw_count + 1
+        && bounds
+            .last()
+            .is_some_and(|end| *end as usize <= staged_len)
+        && bounds.windows(2).all(|pair| pair[0] <= pair[1])
+}
+
 /// Field-wise adoption of `src` into `dst` that only touches the `Arc` lanes
 /// whose allocation actually changed.
 ///
@@ -120,15 +133,24 @@ impl Gpu3D {
 
     /// Restage the per-batch indirect draw records and upload them.
     ///
-    /// Deliberately NOT skip-gated on staged-byte equality, unlike every other
-    /// staging upload here: `frustum_cull.wgsl` / `hiz_occlusion_cull.wgsl`
-    /// bind this buffer `read_write` and zero `instance_count` for culled
-    /// batches, then rebuild a survivor's count as `max(current, 1)`. The GPU
-    /// copy therefore diverges from the staging vec after every cull dispatch,
-    /// and a multi-instance batch that comes back into frustum would resurrect
-    /// with one instance instead of its real count. Gating this needs the
-    /// shader to source the count from the read-only static record (there are
-    /// three spare `cull_flags` words) rather than from the command itself.
+    /// Skip-gated on staged-byte equality like every other staging lane, which
+    /// only became possible once the cull shaders stopped reading the commands
+    /// back: `frustum_cull.wgsl` / `hiz_occlusion_cull.wgsl` bind this buffer
+    /// `read_write` and zero `instance_count` for culled batches, and used to
+    /// rebuild a survivor's count as `max(current, 1)` -- so a multi-instance
+    /// batch returning to frustum resurrected with one instance unless the CPU
+    /// re-primed the whole buffer every frame. The count now lives in the
+    /// read-only static cull record (`cull_flags[1]`), so a cull dispatch
+    /// re-derives every slot from CPU-authored data and the only GPU-mutated
+    /// field is fully reconstructed on each pass. Nothing else writes here (the
+    /// compaction pass has its own destination buffer).
+    ///
+    /// Two conditions therefore force an upload past the byte gate:
+    /// - `indirect_capacity` changed: a grow hands out a fresh, undefined
+    ///   buffer (part of the gate key, since the capacity helpers cannot reach
+    ///   in here to invalidate it);
+    /// - the counts are still overwritten from an earlier cull and no cull runs
+    ///   this frame to restore them.
     pub(super) fn rebuild_and_upload_indirect(&mut self, queue: &wgpu::Queue) {
         self.indirect_staging.clear();
         self.indirect_staging.reserve(self.draw_batches.len());
@@ -141,6 +163,14 @@ impl Gpu3D {
                 first_instance: batch.instance_start,
             });
         }
+        let (len, hash) = super::pod_slice_len_hash(&self.indirect_staging);
+        let key = (len, hash, self.indirect_capacity);
+        let cull_active = self.should_run_frustum_cull();
+        let counts_stale = self.indirect_counts_gpu_dirty && !cull_active;
+        if self.last_uploaded_indirect_hash == Some(key) && !counts_stale {
+            self.indirect_counts_gpu_dirty |= cull_active;
+            return;
+        }
         let bytes = std::mem::size_of_val(self.indirect_staging.as_slice());
         queue.write_buffer(
             &self.indirect_buffer,
@@ -148,6 +178,49 @@ impl Gpu3D {
             bytemuck::cast_slice(&self.indirect_staging),
         );
         self.note_upload(bytes);
+        self.last_uploaded_indirect_hash = Some(key);
+        self.indirect_counts_gpu_dirty = cull_active;
+    }
+
+    /// Sort + coalesce `src` into `out`, draining `src`. Spans are half-open
+    /// row ranges into a staging vector; adjacent/overlapping ones merge so the
+    /// upload below issues one `write_buffer` per contiguous region.
+    fn merge_dirty_spans(src: &mut Vec<Range<u32>>, out: &mut Vec<Range<u32>>) {
+        src.sort_unstable_by_key(|span| span.start);
+        out.clear();
+        for span in src.drain(..) {
+            match out.last_mut() {
+                Some(last) if span.start <= last.end => last.end = last.end.max(span.end),
+                _ => out.push(span),
+            }
+        }
+    }
+
+    /// Upload each merged span of `staged` at its matching byte offset.
+    /// Returns `(write_buffer calls, bytes)` for the frame's upload stats.
+    fn upload_dirty_spans<T: bytemuck::Pod>(
+        queue: &wgpu::Queue,
+        buffer: &wgpu::Buffer,
+        staged: &[T],
+        spans: &[Range<u32>],
+    ) -> (u32, usize) {
+        let stride = std::mem::size_of::<T>() as u64;
+        let mut calls = 0u32;
+        let mut bytes = 0usize;
+        for span in spans {
+            let slice = &staged[span.start as usize..span.end as usize];
+            if slice.is_empty() {
+                continue;
+            }
+            calls += 1;
+            bytes += std::mem::size_of_val(slice);
+            queue.write_buffer(
+                buffer,
+                span.start as u64 * stride,
+                bytemuck::cast_slice(slice),
+            );
+        }
+        (calls, bytes)
     }
 
     /// Refresh `last_draws` from this frame's draw list without rebuilding the
@@ -352,10 +425,30 @@ impl Gpu3D {
                 range.start <= range.end
                     && (range.end as usize) <= self.staged_instance_transforms.len()
             });
+        // Animation-only lanes (bone palettes / blend-shape weights) ride the
+        // same fast path: the classification above already proved the draw is
+        // otherwise identical and the lanes keep their row counts, so the staged
+        // rows can be rewritten where they sit. That keeps a character-animation
+        // frame -- which used to fail `same_draw_except_model` and force a full
+        // restage + batch sort + compaction + cull rebuild every single frame --
+        // on the patch path.
+        let animation_changed =
+            transform_only_semantic && transform_only_kinds.iter().any(|class| class.anim.any());
+        // Patching needs the per-draw boundaries the last full rebuild recorded
+        // to still describe the standing staging vectors.
+        let stable_animation_ranges = !animation_changed
+            || (animation_bounds_valid(&self.last_draw_skeleton_bounds, draws.len(), self.staged_skeletons.len())
+                && animation_bounds_valid(
+                    &self.last_draw_blend_meta_bounds,
+                    draws.len(),
+                    self.staged_blend_shape_instance_meta.len(),
+                ));
         let transform_only_changed = !draws_unchanged
             && transform_only_semantic
             && stable_instance_ranges
-            && stable_multimesh_ranges;
+            && stable_multimesh_ranges
+            && stable_animation_ranges;
+        let animation_changed = animation_changed && transform_only_changed;
         self.transform_only_kinds_scratch = transform_only_kinds;
         let scene_changed = self.last_scene != Some(uniform) || !draws_unchanged;
         if self.last_scene != Some(uniform) {
@@ -431,10 +524,25 @@ impl Gpu3D {
         }
         if transform_only_changed {
             self.dirty_instance_spans_scratch.clear();
-            for (draw, span_range) in draws.iter().zip(self.last_draw_instance_span_ranges.iter()) {
+            for (draw_index, (draw, span_range)) in draws
+                .iter()
+                .zip(self.last_draw_instance_span_ranges.iter())
+                .enumerate()
+            {
                 let Some(model) = draw.instance_mats.first() else {
                     continue;
                 };
+                // Only draws that actually moved need a patch. The staged model
+                // rows mirror `last_draws` exactly (both fast paths and the full
+                // rebuild leave them in sync), so an unmoved draw's rows are
+                // already correct -- and an animation-only frame moves none of
+                // them, which is what keeps the instance buffer off the wire.
+                if self.last_draws.get(draw_index).is_some_and(|prev| {
+                    Arc::ptr_eq(&prev.instance_mats, &draw.instance_mats)
+                        || prev.instance_mats.first() == Some(model)
+                }) {
+                    continue;
+                }
                 for range in self.last_draw_instance_spans[span_range.clone()].iter() {
                     if range.start >= range.end {
                         continue;
@@ -493,14 +601,24 @@ impl Gpu3D {
             // patch just the MultiMeshDrawParamGpu rows and upload those slots.
             // No per-instance re-pack, no instance buffer re-upload.
             self.dirty_instance_spans_scratch.clear();
-            for (draw, param_range) in draws
+            for (draw_index, (draw, param_range)) in draws
                 .iter()
                 .zip(self.last_draw_multimesh_param_ranges.iter())
+                .enumerate()
             {
                 let Some(dense) = draw.dense_multimesh.as_ref() else {
                     continue;
                 };
                 if param_range.start >= param_range.end {
+                    continue;
+                }
+                // Same "did it actually move" gate as the regular draws above.
+                if self
+                    .last_draws
+                    .get(draw_index)
+                    .and_then(|prev| prev.dense_multimesh.as_ref())
+                    .is_some_and(|prev| prev.node_model == dense.node_model)
+                {
                     continue;
                 }
                 let draw_model = Mat4::from_cols_array_2d(&dense.node_model);
@@ -727,6 +845,15 @@ impl Gpu3D {
                 self.write_frustum_params_if_needed(queue, &frustum);
                 self.write_multimesh_cull_params_if_needed(queue);
             }
+            // Bone palettes / blend-shape weights last: the cull step above
+            // still reads the transform patch's merged spans, and these lanes
+            // feed no cull input at all (batch bounds come from the local mesh
+            // sphere and the instance model, neither of which animation moves).
+            if animation_changed {
+                let classes = std::mem::take(&mut self.transform_only_kinds_scratch);
+                self.patch_animation_lanes(queue, draws, &classes);
+                self.transform_only_kinds_scratch = classes;
+            }
             // The multimesh staging itself is untouched by a transform patch
             // (only the draw params' model rows moved, in place), so the reuse
             // snapshots stay valid -- refresh them with the draws that are now
@@ -743,6 +870,9 @@ impl Gpu3D {
             return;
         }
 
+        // Past every fast path: this prepare restages the whole scene.
+        step_timing.full_rebuilds = 1;
+        self.prepare_full_rebuild_count = self.prepare_full_rebuild_count.saturating_add(1);
         self.frustum_gpu_inputs_valid = false;
         self.sync_last_draws(draws);
         self.last_draws_revision = draws_revision;
@@ -832,6 +962,13 @@ impl Gpu3D {
         self.last_draw_instance_span_ranges.reserve(draws.len());
         self.last_draw_multimesh_param_ranges.clear();
         self.last_draw_multimesh_param_ranges.reserve(draws.len());
+        // Boundary marks for the two animation lanes; one per draw is pushed at
+        // the top of the loop below and the tail right after it, so the many
+        // early-out arms inside the loop need no bookkeeping of their own.
+        self.last_draw_skeleton_bounds.clear();
+        self.last_draw_skeleton_bounds.reserve(draws.len() + 1);
+        self.last_draw_blend_meta_bounds.clear();
+        self.last_draw_blend_meta_bounds.reserve(draws.len() + 1);
         self.frustum_cull_static_staging.clear();
         self.frustum_cull_dynamic_staging.clear();
         self.indirect_staging.clear();
@@ -868,6 +1005,10 @@ impl Gpu3D {
             let draw_instance_start = self.staged_instance_transforms.len() as u32;
             let draw_span_start = self.last_draw_instance_spans.len();
             let draw_multimesh_param_start = self.staged_multimesh_draw_params.len() as u32;
+            self.last_draw_skeleton_bounds
+                .push(self.staged_skeletons.len() as u32);
+            self.last_draw_blend_meta_bounds
+                .push(self.staged_blend_shape_instance_meta.len() as u32);
             // Reused multimesh: the staged rows for this draw are already in
             // place from the previous build, so only the per-draw range
             // bookkeeping (and the pose-cache retention mark) is replayed.
@@ -900,6 +1041,15 @@ impl Gpu3D {
                 Draw3DKind::DebugEdgeCylinder => "__cylinder__",
             };
             let flat_builtin_double_sided = builtin_flat_mesh_double_sided(mesh_source);
+            // Which vertex arena this draw's ranges must index. Mirrors the
+            // `render_path` decision below exactly: a dense multimesh always
+            // draws on RenderPath3D::MultiMesh (rigid buffer) whatever skeleton
+            // it carries, and every other draw is Skinned iff it staged bones.
+            let draw_needs_skinned = draw.dense_multimesh.is_none()
+                && draw
+                    .skeleton
+                    .as_ref()
+                    .is_some_and(|skeleton| !skeleton.matrices.is_empty());
             let mesh_asset: &MeshAssetRange = match draw.kind {
                 Draw3DKind::Mesh(mesh_id) => self
                     .resolve_mesh_range(
@@ -910,6 +1060,7 @@ impl Gpu3D {
                         mesh_id,
                         mesh_source,
                         static_mesh_lookup,
+                        draw_needs_skinned,
                     )
                     .unwrap_or(&default_mesh),
                 Draw3DKind::CameraStreamQuad { .. } => quad_mesh.as_ref().unwrap_or(&default_mesh),
@@ -1756,6 +1907,12 @@ impl Gpu3D {
             self.last_draw_multimesh_param_ranges
                 .push(draw_multimesh_param_start..(self.staged_multimesh_draw_params.len() as u32));
         }
+        // Tail marks: the debug point/edge rows staged below belong to no draw
+        // and stay outside every per-draw range.
+        self.last_draw_skeleton_bounds
+            .push(self.staged_skeletons.len() as u32);
+        self.last_draw_blend_meta_bounds
+            .push(self.staged_blend_shape_instance_meta.len() as u32);
         self.custom_mesh_ranges = custom_mesh_ranges;
         self.mesh_blend_scratch = mesh_blends;
         self.surface_entries_scratch = surface_entries;
@@ -2261,6 +2418,140 @@ impl Gpu3D {
         self.debug_point_instances_scratch = debug_point_instances;
         self.debug_edge_instances_scratch = debug_edge_instances;
         self.last_prepare_step_timing = step_timing;
+    }
+
+    /// Rows of `staged_skeletons` owned by draw `draw_index`, or `None` when
+    /// that draw staged no palette (unskinned, or an early-out arm of the build
+    /// loop skipped it).
+    #[inline]
+    fn draw_animation_range(bounds: &[u32], draw_index: usize) -> Option<Range<usize>> {
+        let start = *bounds.get(draw_index)? as usize;
+        let end = *bounds.get(draw_index + 1)? as usize;
+        (start < end).then_some(start..end)
+    }
+
+    /// Patch the animation lanes of an otherwise-unchanged draw list.
+    ///
+    /// A skinned scene's per-frame delta is exactly this: new bone matrices and
+    /// new blend-shape weights inside row counts that topology fixes. Batches,
+    /// instance rows, cull inputs and the draw order are all identical, so the
+    /// staged rows are rewritten in place and only the touched byte spans go to
+    /// the GPU -- no restage, no batch sort, no compaction, no cull rebuild.
+    ///
+    /// Row indices are stable across this path because the full rebuild assigns
+    /// them by appending in draw order (`skeleton_start = staged_skeletons.len()`
+    /// at the draw's turn) and the draw order is what the caller just proved
+    /// unchanged. Nothing after the build loop permutes either lane: batch
+    /// compaction moves instance rows and their metadata, but a palette is
+    /// addressed through `skeleton_start` carried inside those rows, and the
+    /// blend-shape rows are addressed through the weight offsets carried in the
+    /// meta rows.
+    fn patch_animation_lanes(
+        &mut self,
+        queue: &wgpu::Queue,
+        draws: &[Draw3DInstance],
+        classes: &[TransformOnlyDrawClass],
+    ) {
+        // Bone palettes: whole-range overwrite, compared first so a producer
+        // that reallocated an identical pose still sends nothing.
+        self.dirty_animation_spans_scratch.clear();
+        for (draw_index, class) in classes.iter().enumerate() {
+            if !class.anim.skeleton {
+                continue;
+            }
+            let Some(skeleton) = draws[draw_index]
+                .skeleton
+                .as_ref()
+                .filter(|skeleton| !skeleton.matrices.is_empty())
+            else {
+                continue;
+            };
+            let Some(range) = Self::draw_animation_range(&self.last_draw_skeleton_bounds, draw_index)
+            else {
+                continue;
+            };
+            let rows = &mut self.staged_skeletons[range.clone()];
+            if rows.len() != skeleton.matrices.len() || rows == skeleton.matrices.as_ref() {
+                continue;
+            }
+            rows.copy_from_slice(&skeleton.matrices);
+            self.dirty_animation_spans_scratch
+                .push(range.start as u32..range.end as u32);
+        }
+        Self::merge_dirty_spans(
+            &mut self.dirty_animation_spans_scratch,
+            &mut self.merged_animation_spans_scratch,
+        );
+        let (calls, bytes) = Self::upload_dirty_spans(
+            queue,
+            &self.skeleton_buffer,
+            &self.staged_skeletons,
+            &self.merged_animation_spans_scratch,
+        );
+        if calls > 0 {
+            self.note_uploads(calls, bytes);
+            // Partial spans leave the whole-vec hash describing something the
+            // GPU no longer holds; drop it rather than re-hash a multi-MB vec
+            // on the fast path (same policy as the transform patch).
+            self.last_uploaded_skeletons_hash = None;
+        }
+
+        // Blend-shape weights: the per-instance runs are addressed through the
+        // meta rows, which the classification proved unchanged (same weight
+        // length -> same `weight_count` against the same mesh).
+        self.dirty_animation_spans_scratch.clear();
+        for (draw_index, class) in classes.iter().enumerate() {
+            if !class.anim.blend_weights {
+                continue;
+            }
+            let weights = draws[draw_index].blend_shape_weights.as_ref();
+            let Some(meta_range) =
+                Self::draw_animation_range(&self.last_draw_blend_meta_bounds, draw_index)
+            else {
+                continue;
+            };
+            for meta_index in meta_range {
+                let meta = self.staged_blend_shape_instance_meta[meta_index];
+                let start = meta.weight_range[0] as usize;
+                let count = meta.weight_range[1] as usize;
+                if count == 0 || count > weights.len() {
+                    continue;
+                }
+                let end = start + count;
+                if end > self.staged_blend_shape_weights.len() {
+                    continue;
+                }
+                let mut changed = false;
+                for (dst, weight) in self.staged_blend_shape_weights[start..end]
+                    .iter_mut()
+                    .zip(weights)
+                {
+                    let clamped = weight.clamp(0.0, 1.0);
+                    if *dst != clamped {
+                        *dst = clamped;
+                        changed = true;
+                    }
+                }
+                if changed {
+                    self.dirty_animation_spans_scratch
+                        .push(start as u32..end as u32);
+                }
+            }
+        }
+        Self::merge_dirty_spans(
+            &mut self.dirty_animation_spans_scratch,
+            &mut self.merged_animation_spans_scratch,
+        );
+        let (calls, bytes) = Self::upload_dirty_spans(
+            queue,
+            &self.blend_shape_weight_buffer,
+            &self.staged_blend_shape_weights,
+            &self.merged_animation_spans_scratch,
+        );
+        if calls > 0 {
+            self.note_uploads(calls, bytes);
+            self.last_uploaded_blend_shape_weights_hash = None;
+        }
     }
 
     fn stage_blend_shape_instance(

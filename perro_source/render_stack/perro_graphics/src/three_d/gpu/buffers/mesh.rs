@@ -1,14 +1,10 @@
 use super::*;
 
-/// Widest mesh-arena vertex stride (skinned and rigid arenas hold one entry per
-/// vertex each, so the skinned stride bounds both).
-const MESH_VERTEX_STRIDE: usize = if std::mem::size_of::<SkinnedMeshVertex>()
-    > std::mem::size_of::<RigidMeshVertex>()
-{
-    std::mem::size_of::<SkinnedMeshVertex>()
-} else {
-    std::mem::size_of::<RigidMeshVertex>()
-};
+/// Per-vertex stride of each mesh arena. The two arenas are independent: a mesh
+/// is appended to the skinned one only when a skinned draw asks for it, so
+/// rigid-only content pays `RIGID_VERTEX_STRIDE` and nothing more.
+const SKINNED_VERTEX_STRIDE: usize = std::mem::size_of::<SkinnedMeshVertex>();
+const RIGID_VERTEX_STRIDE: usize = std::mem::size_of::<RigidMeshVertex>();
 
 /// Arena floor for GC-driven compaction. Below this the stranded bytes are not
 /// worth the full re-resolve (every live mesh is decoded + re-uploaded), so
@@ -24,12 +20,20 @@ const MESH_ARENA_COMPACT_LIVE_RATIO_DEN: usize = 2;
 /// tests and memory diagnostics.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Gpu3DMemoryReport {
-    /// Vertices appended to the shared mesh arena (builtin prefix included).
+    /// Vertices appended across both mesh arenas (builtin prefix counted in
+    /// each, since both hold it).
     pub mesh_arena_vertices: usize,
     /// Vertices still reachable: builtin prefix + live `custom_mesh_ranges`.
     pub mesh_arena_live_vertices: usize,
+    /// Bytes across both arenas, each at its own stride.
     pub mesh_arena_bytes: usize,
     pub mesh_arena_live_bytes: usize,
+    /// Rigid arena (36B/vertex): every mesh a rigid-path draw resolved.
+    pub rigid_arena_vertices: usize,
+    pub rigid_arena_bytes: usize,
+    /// Skinned arena (48B/vertex): only meshes a skinned-path draw resolved.
+    pub skinned_arena_vertices: usize,
+    pub skinned_arena_bytes: usize,
     pub mesh_index_len: usize,
     /// True while a GC tick has asked the next prepare to compact the arena.
     pub mesh_compact_requested: bool,
@@ -53,26 +57,43 @@ pub struct Gpu3DMemoryReport {
 }
 
 impl Gpu3D {
-    /// Vertices still reachable in the mesh arena: the builtin prefix (never
-    /// freed, always the arena's head) plus every live custom mesh range.
-    /// `blend_shape_vertex_count` is the mesh's own vertex count, recorded for
-    /// every appended mesh (blend shapes or not) in `append_mesh_data`.
-    fn mesh_arena_live_vertices(&self) -> usize {
-        self.builtin_vertex_len
-            + self
-                .custom_mesh_ranges
-                .values()
-                .map(|(_, range)| range.blend_shape_vertex_count as usize)
-                .sum::<usize>()
+    /// Vertices still reachable in each mesh arena: the builtin prefix (never
+    /// freed, always each arena's head) plus every live custom mesh range that
+    /// landed in that arena. `blend_shape_vertex_count` is the mesh's own
+    /// vertex count, recorded for every appended mesh (blend shapes or not) in
+    /// `append_mesh_data`.
+    ///
+    /// Returns `(rigid, skinned)`.
+    fn mesh_arena_live_vertices(&self) -> (usize, usize) {
+        let mut rigid = self.builtin_vertex_len;
+        let mut skinned = self.builtin_vertex_len;
+        for entry in self.custom_mesh_ranges.values() {
+            if let Some(range) = entry.rigid.as_ref() {
+                rigid += range.blend_shape_vertex_count as usize;
+            }
+            if let Some(range) = entry.skinned.as_ref() {
+                skinned += range.blend_shape_vertex_count as usize;
+            }
+        }
+        (
+            rigid.min(self.rigid_vertex_len),
+            skinned.min(self.mesh_vertex_len),
+        )
     }
 
     pub(in super::super) fn memory_report(&self) -> Gpu3DMemoryReport {
-        let live_vertices = self.mesh_arena_live_vertices().min(self.mesh_vertex_len);
+        let (live_rigid, live_skinned) = self.mesh_arena_live_vertices();
         Gpu3DMemoryReport {
-            mesh_arena_vertices: self.mesh_vertex_len,
-            mesh_arena_live_vertices: live_vertices,
-            mesh_arena_bytes: self.mesh_vertex_len * MESH_VERTEX_STRIDE,
-            mesh_arena_live_bytes: live_vertices * MESH_VERTEX_STRIDE,
+            mesh_arena_vertices: self.rigid_vertex_len + self.mesh_vertex_len,
+            mesh_arena_live_vertices: live_rigid + live_skinned,
+            mesh_arena_bytes: self.rigid_vertex_len * RIGID_VERTEX_STRIDE
+                + self.mesh_vertex_len * SKINNED_VERTEX_STRIDE,
+            mesh_arena_live_bytes: live_rigid * RIGID_VERTEX_STRIDE
+                + live_skinned * SKINNED_VERTEX_STRIDE,
+            rigid_arena_vertices: self.rigid_vertex_len,
+            rigid_arena_bytes: self.rigid_vertex_len * RIGID_VERTEX_STRIDE,
+            skinned_arena_vertices: self.mesh_vertex_len,
+            skinned_arena_bytes: self.mesh_vertex_len * SKINNED_VERTEX_STRIDE,
             mesh_index_len: self.mesh_index_len,
             mesh_compact_requested: self.mesh_compact_requested,
             vertex_capacity: self.vertex_capacity,
@@ -130,26 +151,33 @@ impl Gpu3D {
     /// cache (the prepare loop `mem::take`s `custom_mesh_ranges` so the hit
     /// path can hand out `&MeshAssetRange` instead of cloning 3 Arcs per draw
     /// per frame).
+    ///
+    /// `skinned` must match the `RenderPath3D` the caller will batch this draw
+    /// on: the returned ranges index the skinned arena when it is true and the
+    /// rigid arena when it is false, and a mesh is uploaded to an arena only
+    /// the first time a draw on that path asks for it.
     #[allow(clippy::too_many_arguments)]
     pub(in super::super) fn resolve_mesh_range<'cache>(
         &mut self,
-        cache: &'cache mut AHashMap<MeshID, (u64, MeshAssetRange)>,
+        cache: &'cache mut AHashMap<MeshID, MeshAssetEntry>,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         resources: &ResourceStore,
         mesh_id: MeshID,
         source: &str,
         static_mesh_lookup: Option<StaticMeshLookup>,
+        skinned: bool,
     ) -> Option<&'cache MeshAssetRange> {
         let revision = resources.mesh_revision(mesh_id);
         if cache
             .get(&mesh_id)
-            .is_some_and(|(cached_revision, _)| *cached_revision == revision)
+            .is_some_and(|entry| entry.revision == revision && entry.variant(skinned).is_some())
         {
-            return cache.get(&mesh_id).map(|(_, range)| range);
+            return cache.get(&mesh_id).and_then(|entry| entry.variant(skinned));
         }
-        // Miss path (new mesh or revision bump) is cold; the double map lookup
-        // below keeps the hot hit path above borrow-check friendly.
+        // Miss path (new mesh, revision bump, or first draw on this path) is
+        // cold; the double map lookup below keeps the hot hit path above
+        // borrow-check friendly.
         let range = if let Some(range) = self.builtin_mesh_ranges.get(source).copied() {
             let (bounds_center, bounds_radius) = self
                 .builtin_mesh_bounds
@@ -196,10 +224,18 @@ impl Gpu3D {
                     )?
                 }
             };
-            self.append_mesh_data(device, queue, source, decoded)?
+            self.append_mesh_data(device, queue, source, decoded, skinned)?
         };
-        cache.insert(mesh_id, (revision, range));
-        cache.get(&mesh_id).map(|(_, range)| range)
+        let entry = cache.entry(mesh_id).or_default();
+        if entry.revision != revision {
+            // Revision bump: the old upload is stranded in the arena until the
+            // next compaction, so both variants must be re-resolved.
+            entry.revision = revision;
+            entry.rigid = None;
+            entry.skinned = None;
+        }
+        *entry.variant_mut(skinned) = Some(range);
+        cache.get(&mesh_id).and_then(|entry| entry.variant(skinned))
     }
 
     pub(in super::super) fn resolve_builtin_mesh_asset(
@@ -231,12 +267,21 @@ impl Gpu3D {
         })
     }
 
+    /// Append one mesh to a single vertex arena -- the skinned one when
+    /// `skinned`, the rigid one otherwise -- plus its own index block.
+    ///
+    /// The uploaded indices are absolute (`base_vertex` is folded in and
+    /// `MeshRange::base_vertex` stays 0), so the returned ranges are only valid
+    /// against the arena they were appended to. A mesh drawn on both paths is
+    /// appended twice, once per arena, which is why `MeshAssetEntry` keeps a
+    /// slot for each.
     pub(in super::super) fn append_mesh_data(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         _source: &str,
         decoded: DecodedMesh,
+        skinned: bool,
     ) -> Option<MeshAssetRange> {
         if decoded.vertices.is_empty() || decoded.indices.is_empty() {
             return None;
@@ -250,7 +295,11 @@ impl Gpu3D {
             lods: decoded_lods,
             has_skinning: _,
         } = decoded;
-        let base_vertex = self.mesh_vertex_len as u32;
+        let base_vertex = if skinned {
+            self.mesh_vertex_len as u32
+        } else {
+            self.rigid_vertex_len as u32
+        };
         let index_start = self.mesh_index_len as u32;
         let index_count = decoded_indices.len() as u32;
 
@@ -272,43 +321,51 @@ impl Gpu3D {
                 })
                 .collect()
         };
-        let added_vertices: Vec<SkinnedMeshVertex> = decoded_vertices
-            .iter()
-            .map(pack_skinned_mesh_vertex)
-            .collect();
-        let added_rigid_vertices: Vec<RigidMeshVertex> = decoded_vertices
-            .iter()
-            .map(pack_rigid_mesh_vertex)
-            .collect();
+        let vertex_count = decoded_vertices.len();
         let mut added_indices = Vec::with_capacity(decoded_indices.len());
         for idx in decoded_indices {
             added_indices.push(idx + base_vertex);
         }
 
-        let new_vertex_len = self.mesh_vertex_len + added_vertices.len();
         let new_index_len = self.mesh_index_len + added_indices.len();
-        self.ensure_mesh_buffer_capacity(device, queue, new_vertex_len, new_index_len);
+        let new_skinned_len = self.mesh_vertex_len + if skinned { vertex_count } else { 0 };
+        let new_rigid_len = self.rigid_vertex_len + if skinned { 0 } else { vertex_count };
+        self.ensure_mesh_buffer_capacity(
+            device,
+            queue,
+            new_skinned_len,
+            new_rigid_len,
+            new_index_len,
+        );
 
-        let vertex_offset =
-            self.mesh_vertex_len as u64 * std::mem::size_of::<SkinnedMeshVertex>() as u64;
-        let rigid_vertex_offset =
-            self.rigid_vertex_len as u64 * std::mem::size_of::<RigidMeshVertex>() as u64;
         let index_offset = self.mesh_index_len as u64 * std::mem::size_of::<u32>() as u64;
-
-        self.mesh_vertex_len = new_vertex_len;
-        self.rigid_vertex_len += added_rigid_vertices.len();
+        if skinned {
+            let added_vertices: Vec<SkinnedMeshVertex> = decoded_vertices
+                .iter()
+                .map(pack_skinned_mesh_vertex)
+                .collect();
+            let vertex_offset = self.mesh_vertex_len as u64 * SKINNED_VERTEX_STRIDE as u64;
+            queue.write_buffer(
+                &self.vertex_buffer,
+                vertex_offset,
+                bytemuck::cast_slice(&added_vertices),
+            );
+        } else {
+            let added_vertices: Vec<RigidMeshVertex> = decoded_vertices
+                .iter()
+                .map(pack_rigid_mesh_vertex)
+                .collect();
+            let vertex_offset = self.rigid_vertex_len as u64 * RIGID_VERTEX_STRIDE as u64;
+            queue.write_buffer(
+                &self.rigid_vertex_buffer,
+                vertex_offset,
+                bytemuck::cast_slice(&added_vertices),
+            );
+        }
+        self.mesh_vertex_len = new_skinned_len;
+        self.rigid_vertex_len = new_rigid_len;
         self.mesh_index_len = new_index_len;
 
-        queue.write_buffer(
-            &self.vertex_buffer,
-            vertex_offset,
-            bytemuck::cast_slice(&added_vertices),
-        );
-        queue.write_buffer(
-            &self.rigid_vertex_buffer,
-            rigid_vertex_offset,
-            bytemuck::cast_slice(&added_rigid_vertices),
-        );
         queue.write_buffer(
             &self.index_buffer,
             index_offset,
@@ -386,15 +443,22 @@ impl Gpu3D {
             .collect();
         let meshlets_arc: Arc<[MeshletRange]> = Arc::from(meshlets);
         let surface_ranges_arc: Arc<[MeshRange]> = Arc::from(surface_ranges);
-        let packed_lods = self.append_packed_lod_data(AppendPackedLodDataArgs {
-            device,
-            queue,
-            vertices: &decoded_vertices,
-            mesh_indices: &added_indices,
-            base_vertex,
-            decoded_lods: &decoded_lods,
-            decoded_surfaces: &decoded_surface_ranges,
-        });
+        // Packed LODs are a rigid-path-only optimisation (prepare gates
+        // `packed_lod` on `RenderPath3D::Rigid`), so the skinned variant never
+        // reads them -- building them would only burn arena bytes.
+        let packed_lods = if skinned {
+            vec![None; decoded_lods.len()]
+        } else {
+            self.append_packed_lod_data(AppendPackedLodDataArgs {
+                device,
+                queue,
+                vertices: &decoded_vertices,
+                mesh_indices: &added_indices,
+                base_vertex,
+                decoded_lods: &decoded_lods,
+                decoded_surfaces: &decoded_surface_ranges,
+            })
+        };
         let lods = build_mesh_lod_ranges(BuildMeshLodRangesArgs {
             index_start,
             index_count,
@@ -594,32 +658,56 @@ impl Gpu3D {
         self.rebuild_camera_bind_groups(device);
     }
 
+    /// Grow the three mesh buffers to hold the requested lengths. The two
+    /// vertex arenas grow independently (each at its own stride), so a scene
+    /// with no skinned draws never grows `vertex_buffer` past the builtin
+    /// prefix.
     pub(in super::super) fn ensure_mesh_buffer_capacity(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        needed_vertices: usize,
+        needed_skinned_vertices: usize,
+        needed_rigid_vertices: usize,
         needed_indices: usize,
     ) {
+        let mut skinned_grew = false;
+        let mut rigid_grew = false;
+        let mut index_grew = false;
         let mut grew = false;
         let max_buffer_size = device.limits().max_buffer_size as usize;
-        let max_vertex_capacity = max_buffer_size
-            / std::mem::size_of::<SkinnedMeshVertex>().max(std::mem::size_of::<RigidMeshVertex>());
+        let max_skinned_capacity = max_buffer_size / SKINNED_VERTEX_STRIDE;
+        let max_rigid_capacity = max_buffer_size / RIGID_VERTEX_STRIDE;
         let max_index_capacity = max_buffer_size / std::mem::size_of::<u32>();
 
-        if needed_vertices > self.vertex_capacity {
+        if needed_skinned_vertices > self.vertex_capacity {
             let cap = bounded_growth_capacity(
                 self.vertex_capacity,
-                needed_vertices,
-                max_vertex_capacity,
+                needed_skinned_vertices,
+                max_skinned_capacity,
             )
             .unwrap_or_else(|| {
                 panic!(
-                    "mesh vertex data needs {needed_vertices} vertices; device limit is {max_vertex_capacity}"
+                    "skinned mesh vertex data needs {needed_skinned_vertices} vertices; device limit is {max_skinned_capacity}"
                 )
             });
             self.vertex_capacity = cap;
+            skinned_grew = true;
+            grew = true;
+        }
+
+        if needed_rigid_vertices > self.rigid_vertex_capacity {
+            let cap = bounded_growth_capacity(
+                self.rigid_vertex_capacity,
+                needed_rigid_vertices,
+                max_rigid_capacity,
+            )
+            .unwrap_or_else(|| {
+                panic!(
+                    "rigid mesh vertex data needs {needed_rigid_vertices} vertices; device limit is {max_rigid_capacity}"
+                )
+            });
             self.rigid_vertex_capacity = cap;
+            rigid_grew = true;
             grew = true;
         }
 
@@ -635,47 +723,58 @@ impl Gpu3D {
                 )
             });
             self.index_capacity = cap;
+            index_grew = true;
             grew = true;
         }
 
         if grew {
+            // Only the buffers that actually grew are reallocated: an index-only
+            // growth must not drag the (now independently sized) vertex arenas
+            // through a pointless realloc + copy.
             let old_vertex_buffer = self.vertex_buffer.clone();
             let old_rigid_vertex_buffer = self.rigid_vertex_buffer.clone();
             let old_index_buffer = self.index_buffer.clone();
-            let old_vertex_size =
-                self.mesh_vertex_len as u64 * std::mem::size_of::<SkinnedMeshVertex>() as u64;
-            let old_rigid_vertex_size =
-                self.rigid_vertex_len as u64 * std::mem::size_of::<RigidMeshVertex>() as u64;
+            let old_vertex_size = self.mesh_vertex_len as u64 * SKINNED_VERTEX_STRIDE as u64;
+            let old_rigid_vertex_size = self.rigid_vertex_len as u64 * RIGID_VERTEX_STRIDE as u64;
             let old_index_size = self.mesh_index_len as u64 * std::mem::size_of::<u32>() as u64;
-            self.vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("perro_mesh_vertices"),
-                size: (self.vertex_capacity * std::mem::size_of::<SkinnedMeshVertex>()) as u64,
-                usage: wgpu::BufferUsages::VERTEX
-                    | wgpu::BufferUsages::COPY_DST
-                    | wgpu::BufferUsages::COPY_SRC,
-                mapped_at_creation: false,
-            });
-            self.rigid_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("perro_mesh_vertices_rigid"),
-                size: (self.rigid_vertex_capacity * std::mem::size_of::<RigidMeshVertex>()) as u64,
-                usage: wgpu::BufferUsages::VERTEX
-                    | wgpu::BufferUsages::COPY_DST
-                    | wgpu::BufferUsages::COPY_SRC,
-                mapped_at_creation: false,
-            });
-            self.index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("perro_mesh_indices"),
-                size: (self.index_capacity * std::mem::size_of::<u32>()) as u64,
-                usage: wgpu::BufferUsages::INDEX
-                    | wgpu::BufferUsages::COPY_DST
-                    | wgpu::BufferUsages::COPY_SRC,
-                mapped_at_creation: false,
-            });
-            if old_vertex_size > 0 || old_rigid_vertex_size > 0 || old_index_size > 0 {
+            if skinned_grew {
+                self.vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("perro_mesh_vertices"),
+                    size: (self.vertex_capacity * SKINNED_VERTEX_STRIDE) as u64,
+                    usage: wgpu::BufferUsages::VERTEX
+                        | wgpu::BufferUsages::COPY_DST
+                        | wgpu::BufferUsages::COPY_SRC,
+                    mapped_at_creation: false,
+                });
+            }
+            if rigid_grew {
+                self.rigid_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("perro_mesh_vertices_rigid"),
+                    size: (self.rigid_vertex_capacity * RIGID_VERTEX_STRIDE) as u64,
+                    usage: wgpu::BufferUsages::VERTEX
+                        | wgpu::BufferUsages::COPY_DST
+                        | wgpu::BufferUsages::COPY_SRC,
+                    mapped_at_creation: false,
+                });
+            }
+            if index_grew {
+                self.index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("perro_mesh_indices"),
+                    size: (self.index_capacity * std::mem::size_of::<u32>()) as u64,
+                    usage: wgpu::BufferUsages::INDEX
+                        | wgpu::BufferUsages::COPY_DST
+                        | wgpu::BufferUsages::COPY_SRC,
+                    mapped_at_creation: false,
+                });
+            }
+            let copy_skinned = skinned_grew && old_vertex_size > 0;
+            let copy_rigid = rigid_grew && old_rigid_vertex_size > 0;
+            let copy_index = index_grew && old_index_size > 0;
+            if copy_skinned || copy_rigid || copy_index {
                 let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("perro_mesh_buffer_growth_copy"),
                 });
-                if old_vertex_size > 0 {
+                if copy_skinned {
                     encoder.copy_buffer_to_buffer(
                         &old_vertex_buffer,
                         0,
@@ -684,7 +783,7 @@ impl Gpu3D {
                         old_vertex_size,
                     );
                 }
-                if old_rigid_vertex_size > 0 {
+                if copy_rigid {
                     encoder.copy_buffer_to_buffer(
                         &old_rigid_vertex_buffer,
                         0,
@@ -693,7 +792,7 @@ impl Gpu3D {
                         old_rigid_vertex_size,
                     );
                 }
-                if old_index_size > 0 {
+                if copy_index {
                     encoder.copy_buffer_to_buffer(
                         &old_index_buffer,
                         0,
@@ -728,13 +827,22 @@ impl Gpu3D {
         device: &wgpu::Device,
     ) -> bool {
         let requested = std::mem::take(&mut self.mesh_compact_requested);
-        let max_vertices = device.limits().max_buffer_size as usize / MESH_VERTEX_STRIDE;
-        if !requested && self.mesh_vertex_len < max_vertices.saturating_mul(3) / 4 {
+        // Backstop per arena: each has its own stride, so each has its own
+        // device-limit ceiling.
+        let max_buffer_size = device.limits().max_buffer_size as usize;
+        let max_skinned = max_buffer_size / SKINNED_VERTEX_STRIDE;
+        let max_rigid = max_buffer_size / RIGID_VERTEX_STRIDE;
+        let near_limit = self.mesh_vertex_len >= max_skinned.saturating_mul(3) / 4
+            || self.rigid_vertex_len >= max_rigid.saturating_mul(3) / 4;
+        if !requested && !near_limit {
             return false;
         }
-        // Nothing appended past the builtin prefix: compacting would only cost
-        // a pointless full rebuild.
-        if self.mesh_vertex_len <= self.builtin_vertex_len && self.custom_mesh_ranges.is_empty() {
+        // Nothing appended past the builtin prefix in either arena: compacting
+        // would only cost a pointless full rebuild.
+        if self.mesh_vertex_len <= self.builtin_vertex_len
+            && self.rigid_vertex_len <= self.builtin_vertex_len
+            && self.custom_mesh_ranges.is_empty()
+        {
             return false;
         }
 

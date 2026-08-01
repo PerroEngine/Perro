@@ -810,10 +810,12 @@ impl Gpu3D {
     /// groups referencing a shrunk buffer are rebuilt below.
     pub fn shrink_tick(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         use crate::gpu_shrink::shrink_buffer_preserving;
-        // Mesh arena lengths are authoritative retained content.
-        self.shrink
-            .mesh_vertices
-            .note_used(self.mesh_vertex_len.max(self.rigid_vertex_len));
+        // Mesh arena lengths are authoritative retained content. The rigid and
+        // skinned arenas grow independently, so they shrink independently too:
+        // a scene that stopped drawing skinned meshes gives the 48B arena back
+        // without dragging the rigid one down with it.
+        self.shrink.mesh_vertices.note_used(self.rigid_vertex_len);
+        self.shrink.skinned_vertices.note_used(self.mesh_vertex_len);
         self.shrink.mesh_indices.note_used(self.mesh_index_len);
         self.shrink
             .packed_lod_vertices
@@ -859,7 +861,11 @@ impl Gpu3D {
             | wgpu::BufferUsages::COPY_DST
             | wgpu::BufferUsages::COPY_SRC;
 
-        if let Some(new_cap) = self.shrink.mesh_vertices.tick(self.vertex_capacity, 1024) {
+        if let Some(new_cap) = self
+            .shrink
+            .skinned_vertices
+            .tick(self.vertex_capacity, 1024)
+        {
             self.vertex_buffer = shrink_buffer_preserving(
                 device,
                 queue,
@@ -868,6 +874,13 @@ impl Gpu3D {
                 (new_cap * std::mem::size_of::<SkinnedMeshVertex>()) as u64,
                 vertex_usage,
             );
+            self.vertex_capacity = new_cap;
+        }
+        if let Some(new_cap) = self
+            .shrink
+            .mesh_vertices
+            .tick(self.rigid_vertex_capacity, 1024)
+        {
             self.rigid_vertex_buffer = shrink_buffer_preserving(
                 device,
                 queue,
@@ -876,7 +889,6 @@ impl Gpu3D {
                 (new_cap * std::mem::size_of::<RigidMeshVertex>()) as u64,
                 vertex_usage,
             );
-            self.vertex_capacity = new_cap;
             self.rigid_vertex_capacity = new_cap;
         }
         if let Some(new_cap) = self.shrink.mesh_indices.tick(self.index_capacity, 1024) {

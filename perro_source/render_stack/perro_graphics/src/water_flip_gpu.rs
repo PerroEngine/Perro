@@ -66,12 +66,81 @@ pub struct GpuWaterFlip {
     impact_epoch: HashMap<NodeID, u32>,
 }
 
+// The splash pipeline depends on the color format and on the sample count -
+// which fixes both the scene depth format it attaches and whether scene
+// occlusion is the hardware test's job or the shader's - so `new` and
+// `set_sample_count` build it through here.
+fn create_flip_render_pipeline(
+    device: &wgpu::Device,
+    color_format: wgpu::TextureFormat,
+    sample_count: u32,
+    render_bgl: &wgpu::BindGroupLayout,
+    camera_bgl: &wgpu::BindGroupLayout,
+    depth_bgl: &wgpu::BindGroupLayout,
+) -> wgpu::RenderPipeline {
+    let render_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_water_flip_render_shader"),
+        source: wgpu::ShaderSource::Wgsl(WATER_FLIP_RENDER_WGSL.into()),
+    });
+    let render_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("perro_water_flip_render_layout"),
+        bind_group_layouts: &[Some(render_bgl), Some(camera_bgl), Some(depth_bgl)],
+        immediate_size: 0,
+    });
+    // 1 sample => water attaches its own depth target, which holds water only,
+    // so the splash pass rejects scene-occluded particles in the shader; MSAA
+    // keeps the hardware test against the real scene depth.
+    let splash_entry = if sample_count.max(1) == 1 {
+        "fs_splash_scene_reject"
+    } else {
+        "fs_splash"
+    };
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("perro_water_flip_render"),
+        layout: Some(&render_layout),
+        vertex: wgpu::VertexState {
+            module: &render_shader,
+            entry_point: Some("vs_splash"),
+            buffers: &[],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &render_shader,
+            entry_point: Some(splash_entry),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: color_format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: crate::scene_depth_format(sample_count.max(1)),
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::LessEqual),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        }),
+        multisample: wgpu::MultisampleState {
+            count: sample_count.max(1),
+            ..Default::default()
+        },
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
 impl GpuWaterFlip {
+    // `depth_bgl` is the water pass's scene-depth/scene-color layout: the splash
+    // pass only reads the depth half, and only on the 1-sample path where the
+    // attached depth is water-private (see Gpu3D::water_depth_attachment).
     pub fn new(
         device: &wgpu::Device,
         color_format: wgpu::TextureFormat,
         sample_count: u32,
         camera_bgl: &wgpu::BindGroupLayout,
+        depth_bgl: &wgpu::BindGroupLayout,
     ) -> Self {
         let compute_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_water_flip_compute_bgl"),
@@ -94,10 +163,6 @@ impl GpuWaterFlip {
             label: Some("perro_water_flip_shader"),
             source: wgpu::ShaderSource::Wgsl(WATER_FLIP_WGSL.into()),
         });
-        let render_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("perro_water_flip_render_shader"),
-            source: wgpu::ShaderSource::Wgsl(WATER_FLIP_RENDER_WGSL.into()),
-        });
         let compute_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_water_flip_compute_layout"),
             bind_group_layouts: &[Some(&compute_bgl)],
@@ -117,45 +182,14 @@ impl GpuWaterFlip {
         let p2g = pipeline("cs_p2g");
         let grid = pipeline("cs_grid");
         let g2p = pipeline("cs_g2p");
-        let render_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("perro_water_flip_render_layout"),
-            bind_group_layouts: &[Some(&render_bgl), Some(camera_bgl)],
-            immediate_size: 0,
-        });
-        let render = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("perro_water_flip_render"),
-            layout: Some(&render_layout),
-            vertex: wgpu::VertexState {
-                module: &render_shader,
-                entry_point: Some("vs_splash"),
-                buffers: &[],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &render_shader,
-                entry_point: Some("fs_splash"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: color_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: crate::scene_depth_format(sample_count.max(1)),
-                depth_write_enabled: Some(false),
-                depth_compare: Some(wgpu::CompareFunction::LessEqual),
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: sample_count.max(1),
-                ..Default::default()
-            },
-            multiview_mask: None,
-            cache: None,
-        });
+        let render = create_flip_render_pipeline(
+            device,
+            color_format,
+            sample_count,
+            &render_bgl,
+            camera_bgl,
+            depth_bgl,
+        );
         let waters = storage_buffer(device, "perro_water_flip_waters", size_of::<FlipWaterGpu>());
         let particles = storage_buffer(device, "perro_water_flip_particles", 64);
         let accum = storage_buffer(device, "perro_water_flip_accum", 16);
@@ -285,6 +319,34 @@ impl GpuWaterFlip {
         );
     }
 
+    // Rebuild the splash pipeline for a new MSAA sample count: it attaches the
+    // scene depth format derived from that count, and picks its scene-occlusion
+    // path from it. Simulation state is untouched.
+    pub fn set_sample_count(
+        &mut self,
+        device: &wgpu::Device,
+        color_format: wgpu::TextureFormat,
+        sample_count: u32,
+        camera_bgl: &wgpu::BindGroupLayout,
+        depth_bgl: &wgpu::BindGroupLayout,
+    ) {
+        self.render = create_flip_render_pipeline(
+            device,
+            color_format,
+            sample_count,
+            &self.render_bgl,
+            camera_bgl,
+            depth_bgl,
+        );
+    }
+
+    // Lets the water render test assert the splash pass actually drew (an
+    // empty pass would validate its bindings vacuously).
+    #[cfg(test)]
+    pub(crate) fn particle_count(&self) -> u32 {
+        self.particle_count
+    }
+
     pub fn clear_active(&mut self) {
         self.water_count = 0;
         self.particle_count = 0;
@@ -321,6 +383,7 @@ impl GpuWaterFlip {
         target: &wgpu::TextureView,
         depth: &wgpu::TextureView,
         camera: &wgpu::BindGroup,
+        scene_depth: &wgpu::BindGroup,
     ) {
         if self.particle_count == 0 {
             return;
@@ -351,6 +414,7 @@ impl GpuWaterFlip {
         pass.set_pipeline(&self.render);
         pass.set_bind_group(0, &self.render_bg, &[]);
         pass.set_bind_group(1, camera, &[]);
+        pass.set_bind_group(2, scene_depth, &[]);
         pass.draw(0..6, 0..self.particle_count);
     }
 

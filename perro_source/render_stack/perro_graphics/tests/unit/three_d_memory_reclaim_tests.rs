@@ -10,9 +10,10 @@ use perro_ids::{MeshID, TextureID};
 use perro_structs::UnitVector4;
 
 const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
-// Three of these clear MESH_ARENA_COMPACT_MIN_BYTES (16MiB at a 48B stride)
-// with room to spare, so dropping two takes the live share well under half.
-const TEST_MESH_VERTICES: usize = 120_000;
+// Three of these clear MESH_ARENA_COMPACT_MIN_BYTES (16MiB at the rigid arena's
+// 36B stride) with room to spare, so dropping two takes the live share well
+// under half.
+const TEST_MESH_VERTICES: usize = 160_000;
 
 async fn test_device() -> Option<(wgpu::Device, wgpu::Queue)> {
     let instance = wgpu::Instance::default();
@@ -87,6 +88,14 @@ fn decoded_mesh(vertices: usize) -> DecodedMesh {
     }
 }
 
+fn rigid_entry(range: MeshAssetRange) -> MeshAssetEntry {
+    MeshAssetEntry {
+        revision: 0,
+        rigid: Some(range),
+        skinned: None,
+    }
+}
+
 fn shadow_point_light(x: f32) -> PointLight3DState {
     PointLight3DState {
         position: [x, 2.0, 0.0],
@@ -107,10 +116,10 @@ fn dead_mesh_ranges_trigger_arena_compaction_from_the_gc_tick() {
         return;
     };
     let mut gpu = new_gpu_3d(&device, &queue);
-    let builtin_vertices = gpu.memory_report().mesh_arena_vertices;
+    let builtin_vertices = gpu.memory_report().rigid_arena_vertices;
 
-    // Three custom meshes resolved into the shared arena (what prepare's
-    // resolve_mesh_range does on a scene load).
+    // Three custom meshes resolved into the rigid arena (what prepare's
+    // resolve_mesh_range does on a scene load with no skeletons in sight).
     for index in 0..3u32 {
         let range = gpu
             .append_mesh_data(
@@ -118,16 +127,19 @@ fn dead_mesh_ranges_trigger_arena_compaction_from_the_gc_tick() {
                 &queue,
                 "test://reclaim_mesh",
                 decoded_mesh(TEST_MESH_VERTICES),
+                false,
             )
             .expect("append_mesh_data");
         gpu.custom_mesh_ranges
-            .insert(MeshID::from_parts(index + 1, 1), (0, range));
+            .insert(MeshID::from_parts(index + 1, 1), rigid_entry(range));
     }
     let grown = gpu.memory_report();
     assert_eq!(
-        grown.mesh_arena_vertices,
+        grown.rigid_arena_vertices,
         builtin_vertices + 3 * TEST_MESH_VERTICES
     );
+    // Rigid-only content never touches the skinned arena.
+    assert_eq!(grown.skinned_arena_vertices, builtin_vertices);
     assert_eq!(grown.mesh_arena_live_vertices, grown.mesh_arena_vertices);
     assert!(!grown.mesh_compact_requested);
     // A full arena never asks for compaction.
@@ -142,7 +154,7 @@ fn dead_mesh_ranges_trigger_arena_compaction_from_the_gc_tick() {
     let stranded = gpu.memory_report();
     assert_eq!(
         stranded.mesh_arena_live_vertices,
-        builtin_vertices + TEST_MESH_VERTICES
+        2 * builtin_vertices + TEST_MESH_VERTICES
     );
     assert!(stranded.mesh_arena_bytes > stranded.mesh_arena_live_bytes * 2);
 
@@ -159,8 +171,9 @@ fn dead_mesh_ranges_trigger_arena_compaction_from_the_gc_tick() {
     // `force_full_rebuild`, which re-resolves every live mesh.
     assert!(gpu.compact_custom_mesh_storage_if_needed(&device));
     let compacted = gpu.memory_report();
-    assert_eq!(compacted.mesh_arena_vertices, builtin_vertices);
-    assert_eq!(compacted.mesh_arena_live_vertices, builtin_vertices);
+    assert_eq!(compacted.rigid_arena_vertices, builtin_vertices);
+    assert_eq!(compacted.skinned_arena_vertices, builtin_vertices);
+    assert_eq!(compacted.mesh_arena_live_vertices, 2 * builtin_vertices);
     assert!(!compacted.mesh_compact_requested);
     assert!(gpu.custom_mesh_ranges.is_empty());
     eprintln!("mesh arena vertices: {} -> {} (live {} -> {}), bytes {} -> {}",
@@ -176,6 +189,126 @@ fn dead_mesh_ranges_trigger_arena_compaction_from_the_gc_tick() {
     // no-op: no pointless full rebuild.
     gpu.mesh_compact_requested = true;
     assert!(!gpu.compact_custom_mesh_storage_if_needed(&device));
+}
+
+/// The split-arena win: rigid-only meshes stay out of the 48B/vertex skinned
+/// arena entirely, and a mesh drawn on both paths lands in both arenas with its
+/// own index block (the ranges of one variant are never valid against the
+/// other's arena, because the uploaded indices are absolute).
+#[test]
+fn rigid_only_meshes_stay_out_of_the_skinned_arena() {
+    let Some((device, queue)) = pollster::block_on(test_device()) else {
+        eprintln!("no wgpu adapter; skipping mesh arena split test");
+        return;
+    };
+    let mut gpu = new_gpu_3d(&device, &queue);
+    let base = gpu.memory_report();
+    let builtin_vertices = base.rigid_arena_vertices;
+    assert_eq!(base.skinned_arena_vertices, builtin_vertices);
+
+    const RIGID_MESHES: usize = 10;
+    const RIGID_VERTICES: usize = 100_000;
+    const SKINNED_MESHES: usize = 2;
+    const SKINNED_VERTICES: usize = 50_000;
+
+    for index in 0..RIGID_MESHES {
+        let range = gpu
+            .append_mesh_data(
+                &device,
+                &queue,
+                "test://rigid_mesh",
+                decoded_mesh(RIGID_VERTICES),
+                false,
+            )
+            .expect("append rigid mesh");
+        gpu.custom_mesh_ranges
+            .insert(MeshID::from_parts(index as u32 + 1, 1), rigid_entry(range));
+    }
+    for index in 0..SKINNED_MESHES {
+        let range = gpu
+            .append_mesh_data(
+                &device,
+                &queue,
+                "test://skinned_mesh",
+                decoded_mesh(SKINNED_VERTICES),
+                true,
+            )
+            .expect("append skinned mesh");
+        gpu.custom_mesh_ranges.insert(
+            MeshID::from_parts((RIGID_MESHES + index) as u32 + 1, 1),
+            MeshAssetEntry {
+                revision: 0,
+                rigid: None,
+                skinned: Some(range),
+            },
+        );
+    }
+
+    let report = gpu.memory_report();
+    let rigid_custom = RIGID_MESHES * RIGID_VERTICES;
+    let skinned_custom = SKINNED_MESHES * SKINNED_VERTICES;
+    assert_eq!(
+        report.rigid_arena_vertices,
+        builtin_vertices + rigid_custom,
+        "every rigid-path mesh lands in the rigid arena"
+    );
+    assert_eq!(
+        report.skinned_arena_vertices,
+        builtin_vertices + skinned_custom,
+        "the skinned arena holds only the meshes a skinned draw asked for"
+    );
+    // Everything appended is still reachable.
+    assert_eq!(report.mesh_arena_live_vertices, report.mesh_arena_vertices);
+
+    // What the old single-cursor layout cost: both copies of every vertex.
+    let before = (builtin_vertices + rigid_custom + skinned_custom) * (48 + 36);
+    let after = report.mesh_arena_bytes;
+    assert!(
+        after * 2 < before,
+        "split arenas must more than halve the vertex bytes: {after} vs {before}"
+    );
+    eprintln!(
+        "mesh arena bytes: {before} (both copies of every vertex) -> {after} \
+         (rigid {} @36B + skinned {} @48B)",
+        report.rigid_arena_vertices, report.skinned_arena_vertices,
+    );
+
+    // A mesh drawn on both paths occupies both arenas, each with its own index
+    // block -- the case the split has to keep correct, not just small.
+    let both_id = MeshID::from_parts(9_000, 1);
+    let index_len_before = gpu.memory_report().mesh_index_len;
+    let rigid = gpu
+        .append_mesh_data(&device, &queue, "test://both", decoded_mesh(1_024), false)
+        .expect("append rigid variant");
+    let skinned = gpu
+        .append_mesh_data(&device, &queue, "test://both", decoded_mesh(1_024), true)
+        .expect("append skinned variant");
+    assert_ne!(
+        rigid.full.index_start, skinned.full.index_start,
+        "each variant owns a distinct index block"
+    );
+    assert_eq!(rigid.full.base_vertex, 0);
+    assert_eq!(skinned.full.base_vertex, 0);
+    assert_eq!(
+        gpu.memory_report().mesh_index_len,
+        index_len_before + 2 * 1_024,
+        "the skinned variant duplicates the index block, not the vertex data"
+    );
+    gpu.custom_mesh_ranges.insert(
+        both_id,
+        MeshAssetEntry {
+            revision: 0,
+            rigid: Some(rigid),
+            skinned: Some(skinned),
+        },
+    );
+    let both = gpu.memory_report();
+    assert_eq!(both.rigid_arena_vertices, builtin_vertices + rigid_custom + 1_024);
+    assert_eq!(
+        both.skinned_arena_vertices,
+        builtin_vertices + skinned_custom + 1_024
+    );
+    assert_eq!(both.mesh_arena_live_vertices, both.mesh_arena_vertices);
 }
 
 #[test]

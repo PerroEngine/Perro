@@ -14,6 +14,42 @@ pub(super) fn batch_overlaps_dirty_spans(batch: &DrawBatch, spans: &[Range<u32>]
     spans.get(candidate).is_some_and(|span| span.start < end)
 }
 
+// What the per-source blend loop knows about the depth currently sitting in
+// `mesh_blend_depth_view`. The receiver depth a source needs is a pure function
+// of the batch list rendered into that texture, and nothing between two source
+// passes writes it, so a source whose list matches what is already resident can
+// skip its own depth pass entirely.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum BlendDepthResident {
+    // Contents not attributable to a known batch list: every source renders.
+    Unknown,
+    // Output of this frame's global mesh-blend depth pass: the batches in
+    // `mesh_blend_depth_batch_indices`, same Clear(1.0), same depth pipelines.
+    Global,
+    // Output of an earlier source's depth pass: this range of
+    // `mesh_blend_receiver_indices`.
+    Receivers(Range<usize>),
+}
+
+// True when the resident depth is exactly what re-rendering `receivers` would
+// produce. Both lists are built in ascending batch order, so equal sets are
+// equal slices; the compare is element-wise (no hashing), so a hit is exact
+// rather than probable. O(receivers) against a whole render pass.
+pub(super) fn blend_depth_resident_matches(
+    resident: &BlendDepthResident,
+    receiver_indices: &[usize],
+    global_indices: &[usize],
+    receivers: Range<usize>,
+) -> bool {
+    match resident {
+        BlendDepthResident::Unknown => false,
+        BlendDepthResident::Global => receiver_indices[receivers] == *global_indices,
+        BlendDepthResident::Receivers(prev) => {
+            receiver_indices[prev.clone()] == receiver_indices[receivers]
+        }
+    }
+}
+
 pub(super) fn mesh_blend_relevant_sphere_changed(
     batches: &[DrawBatch],
     sources: &[usize],

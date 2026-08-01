@@ -6,6 +6,14 @@ struct FrustumCullParams {
     _pad2: u32,
 }
 
+// cull_flags.x: bit 0 disables hi-z occlusion for this draw.
+// cull_flags.y: authoritative instance count of the batch. The cull passes
+//   rewrite commands[i].instance_count in place, so the command itself is not a
+//   trustworthy source for a survivor's real count -- reading it back would
+//   resurrect a multi-instance batch with a single instance. Sourcing the count
+//   from this read-only record instead keeps the indirect upload CPU-authored
+//   and therefore skip-gateable.
+// cull_flags.z/.w: spare.
 struct CullStatic {
     local_center_radius: vec4<f32>,
     cull_flags: vec4<u32>,
@@ -74,8 +82,9 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
         }
     }
 
-    // Do not rely on previous-frame command contents. If visible this frame,
-    // force at least one instance so culled draws can become visible again.
-    let instances = max(commands[i].instance_count, 1u);
+    // Never read the command back: it still holds last frame's cull result.
+    // cull_flags.y carries the CPU-staged instance count, so a batch that comes
+    // back into frustum resurrects with its real count.
+    let instances = max(stat.cull_flags.y, 1u);
     commands[i].instance_count = select(0u, instances, visible);
 }

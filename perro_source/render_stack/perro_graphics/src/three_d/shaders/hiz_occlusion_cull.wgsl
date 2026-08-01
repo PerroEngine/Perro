@@ -10,6 +10,9 @@ struct HizCullParams {
     _pad0: u32,
 }
 
+// Layout shared with frustum_cull.wgsl: .x = flag bits, .y = authoritative
+// instance count (the commands are GPU-mutated and never read back as input),
+// .z/.w spare.
 struct CullStatic {
     local_center_radius: vec4<f32>,
     cull_flags: vec4<u32>,

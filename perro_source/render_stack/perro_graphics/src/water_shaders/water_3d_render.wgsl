@@ -29,11 +29,17 @@ struct Params {
     water_count: u32,
     water_2d_count: u32,
     cell_count: u32,
-    _pad: u32,
+    render_flags: u32,
     time_seconds: f32,
     delta_seconds: f32,
     _pad1: vec2<f32>,
 }
+
+// render_flags bit 0: the 3D water pass attached a private depth target that
+// holds water only, so scene occlusion is this shader's job (see
+// Gpu3D::water_depth_attachment). Clear on the MSAA path, where the pass still
+// attaches the real scene depth and the hardware test does it.
+const WATER_RENDER_FLAG_SCENE_DEPTH_REJECT: u32 = 1u;
 
 struct RayLightGpu {
     direction: vec4<f32>,
@@ -387,6 +393,21 @@ fn water_scene_color_coord(coord: vec2<i32>) -> vec2<i32> {
     let clamped = clamp(coord, vec2<i32>(0), vec2<i32>(depth_dims) - vec2<i32>(1));
     let scaled = (vec2<u32>(clamped) * color_dims) / max(depth_dims, vec2<u32>(1u));
     return clamp(vec2<i32>(scaled), vec2<i32>(0), vec2<i32>(color_dims) - vec2<i32>(1));
+}
+
+// Scene occlusion for the private-depth path: exactly the compare the hardware
+// depth test ran when the attachment was a copy of the scene depth - the
+// fragment's window-space z (the same value the depth test consumes; no
+// frag_depth override, no depth bias on this pipeline) against the scene
+// prepass depth at the same pixel, LessEqual, no epsilon. Screen-space coords
+// in this shader already live in full-res depth-texture pixel space.
+fn water_scene_depth_rejects(frag_pos: vec4<f32>) -> bool {
+    if (params.render_flags & WATER_RENDER_FLAG_SCENE_DEPTH_REJECT) == 0u {
+        return false;
+    }
+    let dims = vec2<i32>(textureDimensions(scene_depth_tex));
+    let coord = clamp(vec2<i32>(floor(frag_pos.xy)), vec2<i32>(0), dims - vec2<i32>(1));
+    return frag_pos.z > textureLoad(scene_depth_tex, coord, 0);
 }
 
 fn water_scene_world_from_depth(coord: vec2<i32>, dims_u: vec2<u32>, depth: f32) -> vec3<f32> {
@@ -891,6 +912,11 @@ fn vs_water_3d(
 
 @fragment
 fn fs_water_3d(in: Water3DVertexOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
+    // Behind opaque scene geometry: discard, so no color and no depth write -
+    // what the hardware test did with the scene-depth copy attached.
+    if water_scene_depth_rejects(in.clip_pos) {
+        discard;
+    }
     let w = waters[in.water_idx];
     if in.side_t <= 0.5 && water_shape_alpha(w, in.uv) <= 0.0 {
         return vec4<f32>(0.0);

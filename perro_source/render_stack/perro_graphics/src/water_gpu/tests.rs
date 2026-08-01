@@ -662,6 +662,139 @@ mod tests {
         })
     }
 
+    // The 3D water pass and the flip-splash pass behind it both attach the
+    // depth target `Gpu3D::water_depth_attachment` hands out - now a private,
+    // water-only one at 1 sample, with scene occlusion moved into the shaders.
+    // The splash pass therefore binds the scene-depth group as well; encode both
+    // passes under a validation scope so a layout/binding mismatch fails here.
+    #[test]
+    fn water_3d_and_splash_passes_encode_against_a_private_depth_target() {
+        pollster::block_on(async {
+            let Some((device, queue)) = water_test_device().await else {
+                return;
+            };
+            let camera_2d_bgl = camera_uniform_bgl(&device, "perro_water_test_camera2d");
+            let camera_3d_bgl = camera_uniform_bgl(&device, "perro_water_test_camera3d");
+            let scene_depth = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("perro_water_test_scene_depth"),
+                size: wgpu::Extent3d {
+                    width: 32,
+                    height: 32,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Depth32Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+            let scene_depth_view = scene_depth.create_view(&wgpu::TextureViewDescriptor::default());
+            // Stand-in for the pass's private depth: cleared, never a copy.
+            let private_depth = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("perro_water_test_private_depth"),
+                size: wgpu::Extent3d {
+                    width: 32,
+                    height: 32,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Depth32Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            });
+            let private_depth_view =
+                private_depth.create_view(&wgpu::TextureViewDescriptor::default());
+            let color = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("perro_water_test_color"),
+                size: wgpu::Extent3d {
+                    width: 32,
+                    height: 32,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::COPY_SRC,
+                view_formats: &[],
+            });
+            let color_view = color.create_view(&wgpu::TextureViewDescriptor::default());
+            let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("perro_water_test_camera_buffer"),
+                // Scene3D (view_proj, lights, inv_view_proj) as the 3D water
+                // shader declares it; a short buffer trips late binding-size
+                // validation.
+                size: 2048,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("perro_water_test_camera_bg"),
+                layout: &camera_3d_bgl,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: camera_buffer.as_entire_binding(),
+                }],
+            });
+            let mut water_gpu = GpuWater::new(
+                &device,
+                wgpu::TextureFormat::Rgba8UnormSrgb,
+                1,
+                &camera_2d_bgl,
+                &camera_3d_bgl,
+                &scene_depth_view,
+                32,
+                32,
+            );
+            water_gpu.set_scene_color_size(&device, &scene_depth_view, 32, 32);
+            let waters = [(NodeID::from_parts(7, 0), test_water_3d())];
+            water_gpu.prepare(
+                &device,
+                &queue,
+                &[],
+                &waters,
+                WaterPrepareContext {
+                    camera_2d_position: [0.0, 0.0],
+                    camera_3d_position: [0.0, 8.0, 24.0],
+                    camera_3d_frustum_planes: [[0.0, 0.0, 0.0, 1.0e9]; 6],
+                    sky_color: [0.4, 0.6, 0.9],
+                    time_seconds: 0.0,
+                    delta_seconds: 1.0 / 60.0,
+                },
+            );
+            assert!(
+                water_gpu.flip_particle_count() > 0,
+                "splash pass must draw, or its bindings validate vacuously"
+            );
+            let error_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("perro_water_test_render_encoder"),
+            });
+            water_gpu.encode(&mut encoder);
+            water_gpu.capture_scene_color(&device, &mut encoder, &color_view);
+            water_gpu.render_3d(
+                &mut encoder,
+                &color_view,
+                &private_depth_view,
+                &camera_bind_group,
+                true,
+            );
+            queue.submit([encoder.finish()]);
+            let _ = device.poll(wgpu::PollType::wait_indefinitely());
+            let validation_error = error_scope.pop().await;
+            assert!(
+                validation_error.is_none(),
+                "water 3D / splash passes failed validation: {validation_error:?}"
+            );
+        });
+    }
+
     #[test]
     fn idle_water_prepare_stops_uploading_coastline_cells() {
         let Some((device, queue)) = pollster::block_on(water_test_device()) else {

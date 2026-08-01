@@ -6,9 +6,11 @@
 //! * the mesh-blend seam stage (mask pass + full-res scene copy + fullscreen
 //!   seam pass) is skipped outright when every blend source is off screen, and
 //!   restricted to the sources' screen footprint when they are not;
-//! * the 3D water pass still takes a full-res scene-depth copy (see the note on
-//!   `water_depth_attachment`) - pinned so the copy cannot come back silently
-//!   after being removed, or vanish without the surrounding reasoning changing.
+//! * mesh-blend sources that share a receiver set share one receiver-depth
+//!   pass instead of re-rasterizing the same receivers per source;
+//! * the 3D water pass attaches a private depth target and takes no scene-depth
+//!   copy (see the note on `water_depth_attachment`) - pinned so the full-res
+//!   per-frame blit cannot come back silently.
 //!
 //! GPU cases run against a headless wgpu device and are skipped with a note
 //! when no adapter is available; the rect-math cases are pure CPU.
@@ -452,30 +454,440 @@ fn seam_region_restricts_to_the_source_footprint_at_screen_resolution() {
     });
 }
 
+// -------------------------------------------- mesh-blend source depth reuse
+
+// Source/receiver batches that draw nothing: this case is about how many passes
+// the loop encodes, not what lands in them.
+fn empty_batch(instance_start: u32, mesh_blend: bool, blend_depth_receiver: bool) -> DrawBatch {
+    let mut batch = super::tests::test_batch(instance_start, 0, 1.0);
+    batch.mesh.index_count = 0;
+    batch.mesh_blend = mesh_blend;
+    batch.mesh_blend_depth = blend_depth_receiver;
+    batch.render_state = render_state_key(
+        batch.state_key,
+        batch.material_texture_key.state_hash(),
+        0,
+        0,
+        false,
+        0,
+        mesh_blend,
+    );
+    batch
+}
+
+// Two receivers, three sources: the first two share a receiver set, the third
+// has its own.
+fn prime_blend_sources(gpu: &mut Gpu3D, device: &wgpu::Device, blend_depth_receivers: bool) {
+    gpu.draw_batches.clear();
+    gpu.draw_batches
+        .push(empty_batch(0, false, blend_depth_receivers));
+    gpu.draw_batches
+        .push(empty_batch(1, false, blend_depth_receivers));
+    for source in 0..3u32 {
+        gpu.draw_batches.push(empty_batch(2 + source, true, false));
+    }
+    gpu.staged_instance_transforms.clear();
+    gpu.rebuild_batch_views();
+    gpu.ensure_mesh_blend_targets(device);
+    gpu.mesh_blend_receiver_indices = vec![0, 1, 0, 1, 0];
+    gpu.mesh_blend_source_receivers = vec![(2, 0..2), (3, 2..4), (4, 4..5)];
+}
+
+#[test]
+fn mesh_blend_sources_sharing_a_receiver_set_share_one_depth_pass() {
+    pollster::block_on(async {
+        let Some((device, queue)) = test_device().await else {
+            eprintln!("skip mesh-blend depth reuse test: no wgpu adapter");
+            return;
+        };
+        let mut gpu = new_gpu_3d(&device, &queue);
+        gpu.ensure_material_fallback_texture(&device, &queue, &mut SharedTextureStore::default());
+        let (_target, view) = color_target(&device);
+        let camera = Camera3DState::default();
+        let clear = wgpu::Color::BLACK;
+
+        // Receivers outside the global blend-depth list: nothing to seed from,
+        // so the first source renders, the second reuses it, the third (a
+        // different set) renders again. Without the reuse this is 3 passes.
+        prime_blend_sources(&mut gpu, &device, false);
+        let error_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("perro_render_pass_test_blend_depth_encoder"),
+        });
+        gpu.render_pass(&queue, &mut encoder, &view, clear, false, &camera, false);
+        let counters = gpu.pass_counters;
+        queue.submit([encoder.finish()]);
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        let validation_error = error_scope.pop().await;
+        assert!(
+            validation_error.is_none(),
+            "reused blend depth failed validation: {validation_error:?}"
+        );
+        assert_eq!(counters.mesh_blend_source_depth_passes, 2);
+        assert_eq!(counters.mesh_blend_source_depth_reuses, 1);
+
+        // Same receivers, now also the frame's global blend-depth set: the two
+        // sources over that set need no pass of their own at all.
+        prime_blend_sources(&mut gpu, &device, true);
+        assert_eq!(gpu.mesh_blend_depth_batch_indices, vec![0, 1]);
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("perro_render_pass_test_blend_depth_seed_encoder"),
+        });
+        gpu.render_pass(&queue, &mut encoder, &view, clear, false, &camera, false);
+        let counters = gpu.pass_counters;
+        queue.submit([encoder.finish()]);
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        assert_eq!(counters.mesh_blend_source_depth_passes, 1);
+        assert_eq!(counters.mesh_blend_source_depth_reuses, 2);
+    });
+}
+
 // ------------------------------------------------------------- water depth
 
 #[test]
-fn water_depth_attachment_still_copies_the_scene_depth() {
+fn water_depth_attachment_takes_a_private_target_not_a_scene_copy() {
     pollster::block_on(async {
         let Some((device, queue)) = test_device().await else {
-            eprintln!("skip water depth copy test: no wgpu adapter");
+            eprintln!("skip water depth target test: no wgpu adapter");
             return;
         };
         let mut gpu = new_gpu_3d(&device, &queue);
         gpu.pass_counters = PassCounters::default();
+        let error_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("perro_render_pass_test_water_encoder"),
         });
         let _view = gpu.water_depth_attachment(&device, &mut encoder);
         queue.submit([encoder.finish()]);
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
-        // The read-only-attachment alternative was rejected: the water surface
-        // pipeline is alpha-blended, unsorted and wave-displaced, so it relies
-        // on its own depth writes for self-occlusion, and the flip-splash pass
-        // that follows depth-tests against them. Dropping the copy would mean
-        // dropping those writes. Pinned at one copy per water frame so the cost
-        // stays visible and a future fix has a counter to move.
-        assert_eq!(gpu.pass_counters.water_depth_copies, 1);
+        let validation_error = error_scope.pop().await;
+        assert!(
+            validation_error.is_none(),
+            "private water depth failed validation: {validation_error:?}"
+        );
+        // Read-only attachment is still rejected (the surface needs its depth
+        // writes: alpha-blended, unsorted, wave-displaced chunks, plus the
+        // flip-splash pass testing against them), but those writes only ever
+        // need water-vs-water, so they go to a private target that is cleared
+        // instead of filled with a full-res copy of the scene depth. Scene
+        // occlusion moved into the water shaders. Pinned at zero copies so the
+        // per-frame Depth32Float blit cannot come back unnoticed.
+        assert_eq!(gpu.pass_counters.water_depth_copies, 0);
+        assert_eq!(gpu.pass_counters.water_depth_clears, 1);
+    });
+}
+
+// The compare the water shaders run in place of the hardware depth test, kept
+// verbatim from water_3d_render.wgsl / water_flip_render.wgsl. `vs_gradient`
+// sweeps fragment depth across the occluder plane (so the boundary pixels where
+// water meets geometry are all exercised) and `vs_flat` sits exactly on it (the
+// LessEqual equality case).
+const DEPTH_REJECT_TEST_WGSL: &str = r#"
+@group(0) @binding(0) var scene_depth_tex: texture_depth_2d;
+
+@vertex
+fn vs_occluder(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4<f32> {
+    // Left half of the target at z = 0.5; the right half keeps the 1.0 clear.
+    var xy = array<vec2<f32>, 6>(
+        vec2<f32>(-1.0, -1.0), vec2<f32>(0.0, -1.0), vec2<f32>(0.0, 1.0),
+        vec2<f32>(-1.0, -1.0), vec2<f32>(0.0, 1.0), vec2<f32>(-1.0, 1.0),
+    );
+    return vec4<f32>(xy[vertex], 0.5, 1.0);
+}
+
+@vertex
+fn vs_gradient(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4<f32> {
+    var p = array<vec3<f32>, 3>(
+        vec3<f32>(-1.0, -1.0, 0.1),
+        vec3<f32>(3.0, -1.0, 0.9),
+        vec3<f32>(-1.0, 3.0, 0.55),
+    );
+    return vec4<f32>(p[vertex], 1.0);
+}
+
+@vertex
+fn vs_flat(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4<f32> {
+    var p = array<vec2<f32>, 3>(
+        vec2<f32>(-1.0, -1.0), vec2<f32>(3.0, -1.0), vec2<f32>(-1.0, 3.0),
+    );
+    return vec4<f32>(p[vertex], 0.5, 1.0);
+}
+
+@fragment
+fn fs_solid() -> @location(0) vec4<f32> {
+    return vec4<f32>(1.0, 1.0, 1.0, 1.0);
+}
+
+@fragment
+fn fs_reject(@builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
+    let dims = vec2<i32>(textureDimensions(scene_depth_tex));
+    let coord = clamp(vec2<i32>(floor(frag_pos.xy)), vec2<i32>(0), dims - vec2<i32>(1));
+    if frag_pos.z > textureLoad(scene_depth_tex, coord, 0) {
+        discard;
+    }
+    return vec4<f32>(1.0, 1.0, 1.0, 1.0);
+}
+"#;
+
+fn depth_target(device: &wgpu::Device, label: &str) -> (wgpu::Texture, wgpu::TextureView) {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some(label),
+        size: wgpu::Extent3d {
+            width: TARGET_SIZE,
+            height: TARGET_SIZE,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Depth32Float,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    (texture, view)
+}
+
+fn read_pixels(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture) -> Vec<u8> {
+    let staging = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("perro_render_pass_test_image_readback"),
+        size: u64::from(BYTES_PER_ROW) * u64::from(TARGET_SIZE),
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("perro_render_pass_test_image_encoder"),
+    });
+    encoder.copy_texture_to_buffer(
+        texture.as_image_copy(),
+        wgpu::TexelCopyBufferInfo {
+            buffer: &staging,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(BYTES_PER_ROW),
+                rows_per_image: Some(TARGET_SIZE),
+            },
+        },
+        wgpu::Extent3d {
+            width: TARGET_SIZE,
+            height: TARGET_SIZE,
+            depth_or_array_layers: 1,
+        },
+    );
+    queue.submit([encoder.finish()]);
+    let slice = staging.slice(..);
+    let (tx, rx) = std::sync::mpsc::channel();
+    slice.map_async(wgpu::MapMode::Read, move |result| {
+        let _ = tx.send(result);
+    });
+    let _ = device.poll(wgpu::PollType::wait_indefinitely());
+    rx.recv().expect("map callback").expect("readback map");
+    let pixels = slice
+        .get_mapped_range()
+        .expect("mapped readback range")
+        .to_vec();
+    staging.unmap();
+    pixels
+}
+
+#[test]
+fn shader_scene_depth_reject_matches_the_hardware_depth_test() {
+    pollster::block_on(async {
+        let Some((device, queue)) = test_device().await else {
+            eprintln!("skip depth reject equivalence test: no wgpu adapter");
+            return;
+        };
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("perro_depth_reject_test_shader"),
+            source: wgpu::ShaderSource::Wgsl(DEPTH_REJECT_TEST_WGSL.into()),
+        });
+        let depth_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("perro_depth_reject_test_bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Depth,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            }],
+        });
+        let sampled_layouts = [Some(&depth_bgl)];
+        // The occluder only lays down depth: with color writes on it would tint
+        // the hardware path's target where the tested draw is rejected, which
+        // the private-depth path (no occluder in its pass) cannot reproduce.
+        let pipeline = |vertex_entry: &str, fragment_entry: &str, sampled: bool| {
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("perro_depth_reject_test_layout"),
+                bind_group_layouts: if sampled { &sampled_layouts[..] } else { &[] },
+                immediate_size: 0,
+            });
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("perro_depth_reject_test_pipeline"),
+                layout: Some(&layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some(vertex_entry),
+                    buffers: &[],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some(fragment_entry),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: COLOR_FORMAT,
+                        blend: None,
+                        write_mask: if vertex_entry == "vs_occluder" {
+                            wgpu::ColorWrites::empty()
+                        } else {
+                            wgpu::ColorWrites::ALL
+                        },
+                    })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                }),
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: wgpu::TextureFormat::Depth32Float,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState::default(),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let occluder = pipeline("vs_occluder", "fs_solid", false);
+        let hardware = |vertex_entry| pipeline(vertex_entry, "fs_solid", false);
+        let rejected = |vertex_entry| pipeline(vertex_entry, "fs_reject", true);
+
+        // Scene depth: written once by the occluder and never touched again,
+        // so the reject path samples exactly what the hardware path's
+        // attachment held before the tested draw. `hardware_depth` is that
+        // attachment (occluder + the tested draw's own writes) and
+        // `private_depth` is water's private target - cleared, water only.
+        let (_scene_depth, scene_depth_view) = depth_target(&device, "perro_reject_test_scene");
+        let (_hardware_depth, hardware_depth_view) =
+            depth_target(&device, "perro_reject_test_hardware");
+        let (_private_depth, private_depth_view) =
+            depth_target(&device, "perro_reject_test_private");
+        let depth_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_depth_reject_test_bg"),
+            layout: &depth_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&scene_depth_view),
+            }],
+        });
+        let (hardware_target, hardware_view) = color_target(&device);
+        let (rejected_target, rejected_view) = color_target(&device);
+
+        let render = |vertex_entry: &'static str| {
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("perro_depth_reject_test_encoder"),
+            });
+            let mut pass = |color: &wgpu::TextureView,
+                            depth: &wgpu::TextureView,
+                            draw_occluder: bool,
+                            pipe: Option<&wgpu::RenderPipeline>,
+                            bind: Option<&wgpu::BindGroup>| {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("perro_depth_reject_test_pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: color,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                        depth_slice: None,
+                    })],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: depth,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                if draw_occluder {
+                    pass.set_pipeline(&occluder);
+                    pass.draw(0..6, 0..1);
+                }
+                if let Some(pipe) = pipe {
+                    pass.set_pipeline(pipe);
+                    if let Some(bind) = bind {
+                        pass.set_bind_group(0, bind, &[]);
+                    }
+                    pass.draw(0..3, 0..1);
+                }
+            };
+            // Scene geometry, into the texture the reject path samples.
+            pass(&hardware_view, &scene_depth_view, true, None, None);
+            // Old behavior: the same scene depth in the attachment, hardware
+            // LessEqual, the tested draw writing its own depth on top.
+            pass(
+                &hardware_view,
+                &hardware_depth_view,
+                true,
+                Some(&hardware(vertex_entry)),
+                None,
+            );
+            // New behavior: private cleared depth, scene occlusion in-shader.
+            pass(
+                &rejected_view,
+                &private_depth_view,
+                false,
+                Some(&rejected(vertex_entry)),
+                Some(&depth_bind_group),
+            );
+            queue.submit([encoder.finish()]);
+            let _ = device.poll(wgpu::PollType::wait_indefinitely());
+            (
+                read_pixels(&device, &queue, &hardware_target),
+                read_pixels(&device, &queue, &rejected_target),
+            )
+        };
+
+        for (case, vertex_entry) in [
+            // Depth ramp straight through the occluder plane: every boundary
+            // pixel between "in front" and "behind" is covered.
+            ("depth gradient across the occluder", "vs_gradient"),
+            // Fragment depth exactly equal to the stored depth: LessEqual keeps
+            // it, and so must `!(z > stored)`.
+            ("fragment depth equal to scene depth", "vs_flat"),
+        ] {
+            let (hardware_pixels, rejected_pixels) = render(vertex_entry);
+            let differing = hardware_pixels
+                .chunks_exact(4)
+                .zip(rejected_pixels.chunks_exact(4))
+                .filter(|(a, b)| a != b)
+                .count();
+            let max_diff = hardware_pixels
+                .iter()
+                .zip(rejected_pixels.iter())
+                .map(|(a, b)| a.abs_diff(*b))
+                .max()
+                .unwrap_or(0);
+            assert_eq!(
+                (differing, max_diff),
+                (0, 0),
+                "{case}: shader reject diverges from the hardware depth test",
+            );
+            // Guard against a degenerate pass that kept or killed everything.
+            let lit = hardware_pixels.chunks_exact(4).filter(|p| p[0] > 0).count();
+            assert!(
+                lit > 0 && lit < (TARGET_SIZE * TARGET_SIZE) as usize || vertex_entry == "vs_flat",
+                "{case}: occlusion did not actually split the image ({lit} lit)"
+            );
+        }
     });
 }
 
