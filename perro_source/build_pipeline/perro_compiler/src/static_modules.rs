@@ -55,67 +55,67 @@ fn generate_project_static_modules(
         let tasks = [
             spawn_generation!(
                 "collision trimesh",
-                perro_static_pipeline::generate_static_collision_trimeshes(project_root, &res_tree)
+                perro_static_pipeline::generate_static_collision_trimeshes(project_root, res_tree)
             ),
             spawn_generation!(
                 "scene",
-                perro_static_pipeline::generate_static_scenes(project_root, &res_tree)
+                perro_static_pipeline::generate_static_scenes(project_root, res_tree)
             ),
             spawn_generation!(
                 "material",
-                perro_static_pipeline::generate_static_materials(project_root, &res_tree)
+                perro_static_pipeline::generate_static_materials(project_root, res_tree)
             ),
             spawn_generation!(
                 "ui style",
-                perro_static_pipeline::generate_static_ui_styles(project_root, &res_tree)
+                perro_static_pipeline::generate_static_ui_styles(project_root, res_tree)
             ),
             spawn_generation!(
                 "tileset",
-                perro_static_pipeline::generate_static_tilesets(project_root, &res_tree)
+                perro_static_pipeline::generate_static_tilesets(project_root, res_tree)
             ),
             spawn_generation!(
                 "particle",
-                perro_static_pipeline::generate_static_particles(project_root, &res_tree)
+                perro_static_pipeline::generate_static_particles(project_root, res_tree)
             ),
             spawn_generation!(
                 "animation",
-                perro_static_pipeline::generate_static_animations(project_root, &res_tree)
+                perro_static_pipeline::generate_static_animations(project_root, res_tree)
             ),
             spawn_generation!(
                 "animation tree",
-                perro_static_pipeline::generate_static_animation_trees(project_root, &res_tree)
+                perro_static_pipeline::generate_static_animation_trees(project_root, res_tree)
             ),
             spawn_generation!(
                 "mesh",
                 perro_static_pipeline::generate_static_meshes(
                     project_root,
-                    &res_tree,
+                    res_tree,
                     cfg.meshlets && cfg.release_meshlets,
                 )
             ),
             spawn_generation!(
                 "navmesh",
-                perro_static_pipeline::generate_static_navmeshes(project_root, &res_tree)
+                perro_static_pipeline::generate_static_navmeshes(project_root, res_tree)
             ),
             spawn_generation!(
                 "skeleton",
-                perro_static_pipeline::generate_static_skeletons(project_root, &res_tree)
+                perro_static_pipeline::generate_static_skeletons(project_root, res_tree)
             ),
             spawn_generation!(
                 "texture",
-                perro_static_pipeline::generate_static_textures(project_root, &res_tree)
+                perro_static_pipeline::generate_static_textures(project_root, res_tree)
             ),
             spawn_generation!(
                 "font",
-                perro_static_pipeline::generate_static_fonts(project_root, &res_tree)
+                perro_static_pipeline::generate_static_fonts(project_root, res_tree)
             ),
             spawn_generation!(
                 "shader",
-                perro_static_pipeline::generate_static_shaders(project_root, &res_tree)
+                perro_static_pipeline::generate_static_shaders(project_root, res_tree)
             ),
             spawn_generation!(
                 "audio",
-                perro_static_pipeline::generate_static_audios(project_root, &res_tree)
+                perro_static_pipeline::generate_static_audios(project_root, res_tree)
             ),
             spawn_generation!(
                 "csv",
@@ -152,63 +152,63 @@ fn generate_dlc_static_modules(
     let res_tree = &res_tree;
     generate!(
         "collision trimesh",
-        perro_static_pipeline::generate_static_collision_trimeshes(project_root, &res_tree)
+        perro_static_pipeline::generate_static_collision_trimeshes(project_root, res_tree)
     );
     generate!(
         "scene",
-        perro_static_pipeline::generate_static_scenes(project_root, &res_tree)
+        perro_static_pipeline::generate_static_scenes(project_root, res_tree)
     );
     generate!(
         "material",
-        perro_static_pipeline::generate_static_materials(project_root, &res_tree)
+        perro_static_pipeline::generate_static_materials(project_root, res_tree)
     );
     generate!(
         "ui style",
-        perro_static_pipeline::generate_static_ui_styles(project_root, &res_tree)
+        perro_static_pipeline::generate_static_ui_styles(project_root, res_tree)
     );
     generate!(
         "tileset",
-        perro_static_pipeline::generate_static_tilesets(project_root, &res_tree)
+        perro_static_pipeline::generate_static_tilesets(project_root, res_tree)
     );
     generate!(
         "particle",
-        perro_static_pipeline::generate_static_particles(project_root, &res_tree)
+        perro_static_pipeline::generate_static_particles(project_root, res_tree)
     );
     generate!(
         "animation",
-        perro_static_pipeline::generate_static_animations(project_root, &res_tree)
+        perro_static_pipeline::generate_static_animations(project_root, res_tree)
     );
     generate!(
         "animation tree",
-        perro_static_pipeline::generate_static_animation_trees(project_root, &res_tree)
+        perro_static_pipeline::generate_static_animation_trees(project_root, res_tree)
     );
     generate!(
         "mesh",
-        perro_static_pipeline::generate_static_meshes(project_root, &res_tree, bake_meshlets)
+        perro_static_pipeline::generate_static_meshes(project_root, res_tree, bake_meshlets)
     );
     generate!(
         "navmesh",
-        perro_static_pipeline::generate_static_navmeshes(project_root, &res_tree)
+        perro_static_pipeline::generate_static_navmeshes(project_root, res_tree)
     );
     generate!(
         "skeleton",
-        perro_static_pipeline::generate_static_skeletons(project_root, &res_tree)
+        perro_static_pipeline::generate_static_skeletons(project_root, res_tree)
     );
     generate!(
         "texture",
-        perro_static_pipeline::generate_static_textures(project_root, &res_tree)
+        perro_static_pipeline::generate_static_textures(project_root, res_tree)
     );
     generate!(
         "font",
-        perro_static_pipeline::generate_static_fonts(project_root, &res_tree)
+        perro_static_pipeline::generate_static_fonts(project_root, res_tree)
     );
     generate!(
         "shader",
-        perro_static_pipeline::generate_static_shaders(project_root, &res_tree)
+        perro_static_pipeline::generate_static_shaders(project_root, res_tree)
     );
     generate!(
         "audio",
-        perro_static_pipeline::generate_static_audios(project_root, &res_tree)
+        perro_static_pipeline::generate_static_audios(project_root, res_tree)
     );
     generate!(
         "csv",

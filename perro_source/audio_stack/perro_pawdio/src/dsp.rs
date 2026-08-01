@@ -556,8 +556,10 @@ mod tests {
         assert!(source.wet.is_none());
         assert_eq!(source.next(), Some(0.25));
 
-        let mut params = SpatialAudioParams::default();
-        params.reverb_send = 0.5;
+        let params = SpatialAudioParams {
+            reverb_send: 0.5,
+            ..Default::default()
+        };
         control.update_spatial(params);
         assert!(
             control
