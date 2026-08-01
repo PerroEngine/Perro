@@ -415,6 +415,14 @@ pub struct MicDevice {
     pub channels: u16,
 }
 
+impl MicDevice {
+    /// Default capture settings targeting this device.
+    #[inline]
+    pub fn settings(&self) -> MicSettings {
+        MicSettings::default().with_device(&self.name)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct MicDenoiseSettings {
     pub enabled: bool,
@@ -523,7 +531,7 @@ mod tests {
     #[test]
     fn mic_v1_round_trip_stays_available_without_backend() {
         let clip = MicClip::new(vec![1, -2, 3, -4], 48_000, 2);
-        assert_eq!(MicClip::unpack(&clip.pack()).unwrap(), clip);
+        assert_eq!(MicClip::unpack(&clip.pack()).expect("unpack mic clip"), clip);
         assert_eq!(&clip.wav_bytes()[..4], b"RIFF");
     }
 }
