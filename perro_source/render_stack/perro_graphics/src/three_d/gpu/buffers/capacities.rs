@@ -539,12 +539,23 @@ impl Gpu3D {
                         .map(ssao::SsaoPass::view)
                         .unwrap_or(&self.ssao_fallback_view),
                 });
+            self.rebuild_multimesh_shadow_cull_bind_groups(device);
+        }
+        // With the per-layer shadow cull on, every rendered layer recompacts
+        // this buffer before its draw, so an identity prime would be
+        // overwritten unread -- and the rows the cull wrote are no longer
+        // identity, so the primed mark has to drop for the day the scene falls
+        // back under the cull threshold (which only happens through a restage,
+        // i.e. through this function).
+        if self.should_run_multimesh_cull() {
+            self.multimesh_shadow_identity_uploaded_len = 0;
+            return;
         }
         // `visible_indices[i] == i` is position-independent, so a prefix that
-        // was already primed stays correct: nothing but this function ever
-        // writes the shadow identity buffer (unlike the cull identity, which
-        // the cull compute overwrites). Re-upload only the rows past what was
-        // primed -- a multimesh scene that merely restages hits zero bytes.
+        // was already primed stays correct: with the cull off nothing but this
+        // function writes the shadow identity buffer. Re-upload only the rows
+        // past what was primed -- a multimesh scene that merely restages hits
+        // zero bytes.
         if needed <= self.multimesh_shadow_identity_uploaded_len {
             return;
         }
@@ -617,6 +628,78 @@ impl Gpu3D {
                 },
             ],
         });
+        self.rebuild_multimesh_shadow_cull_bind_groups(device);
+    }
+
+    // One cull bind group per shadow layer: the main-view cull layout, but with
+    // that layer's light-frustum planes and the shadow-side compaction targets
+    // (visible indices, indirect records, counters). Rebuilt with the main cull
+    // bind group, so every buffer swap that reaches one reaches these too.
+    pub(in super::super) fn rebuild_multimesh_shadow_cull_bind_groups(
+        &mut self,
+        device: &wgpu::Device,
+    ) {
+        self.multimesh_shadow_cull_bind_groups = self
+            .multimesh_shadow_cull_plane_buffers
+            .iter()
+            .map(|planes| {
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("perro_multimesh_shadow_cull_bg"),
+                    layout: &self.multimesh_cull_bgl,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: planes.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: self.multimesh_cull_params_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: self.multimesh_draw_params_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: self.multimesh_instance_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 4,
+                            resource: self.multimesh_instance_batch_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 5,
+                            resource: self.multimesh_cull_batch_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 6,
+                            resource: self.multimesh_shadow_identity_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 7,
+                            resource: self.multimesh_shadow_indirect_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 8,
+                            resource: self
+                                .multimesh_shadow_cull_counter_buffer
+                                .as_entire_binding(),
+                        },
+                        // Hi-z inputs are bound but never read: the shadow path
+                        // only ever dispatches `cs_main` (a light's visibility
+                        // has nothing to do with the camera's depth pyramid).
+                        wgpu::BindGroupEntry {
+                            binding: 9,
+                            resource: self.hiz_cull_params.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 10,
+                            resource: wgpu::BindingResource::TextureView(&self.hiz_sample_view),
+                        },
+                    ],
+                })
+            })
+            .collect();
     }
 
     // Grow the per-instance cull buffers (instance_batch + visible_indices).
@@ -692,6 +775,10 @@ impl Gpu3D {
                 | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        self.multimesh_shadow_cull_counter_buffer =
+            super::super::init::create_multimesh_shadow_counter_buffer(device, new_capacity);
+        self.multimesh_shadow_indirect_buffer =
+            super::super::init::create_multimesh_shadow_indirect_buffer(device, new_capacity);
         self.multimesh_cull_batch_capacity = new_capacity;
         // fresh buffers, undefined contents: the skip-identical gates must not fire.
         self.last_uploaded_multimesh_cull_batches.clear();

@@ -969,15 +969,32 @@ pub struct Gpu3D {
     // multimesh_bgl but binding 0 = that layer's scene uniform and binding 8 =
     // the dedicated identity index buffer (never overwritten by camera cull).
     shadow_multimesh_bind_groups: Vec<wgpu::BindGroup>,
-    // Identity visible-index buffer for the multimesh shadow path. Grown to the
-    // multimesh instance count; never touched by the GPU cull compute pass.
+    // Visible-index buffer for the multimesh shadow path, grown to the
+    // multimesh instance count. Two modes, mutually exclusive per frame:
+    // * shadow cull off - primed as identity (every instance of a batch draws);
+    // * shadow cull on  - rewritten per shadow layer by the cull compute pass
+    //   with that layer's surviving instances, compacted into the same
+    //   per-batch regions the main-view cull uses.
     multimesh_shadow_identity_buffer: wgpu::Buffer,
     multimesh_shadow_identity_capacity: usize,
     // Identity rows already primed in `multimesh_shadow_identity_buffer`.
-    // Nothing else writes that buffer and `visible_indices[i] == i` is
-    // position-independent, so a primed prefix stays valid forever; only the
-    // tail past this mark ever needs an upload.
+    // `visible_indices[i] == i` is position-independent, so a primed prefix
+    // stays valid until the cull overwrites it; the cull path resets this to 0.
     multimesh_shadow_identity_uploaded_len: usize,
+    // Per-layer GPU instance cull for multimesh shadow casters. Same compute
+    // pipelines and per-batch records as the main-view cull, but a per-layer
+    // plane set (that layer's light frustum) and its own compaction targets, so
+    // a re-rendered cascade rasterizes only the instances inside its window
+    // instead of every instance of every batch the CPU sphere cull kept.
+    multimesh_shadow_cull_plane_buffers: Vec<wgpu::Buffer>,
+    multimesh_shadow_cull_bind_groups: Vec<wgpu::BindGroup>,
+    multimesh_shadow_indirect_buffer: wgpu::Buffer,
+    multimesh_shadow_cull_counter_buffer: wgpu::Buffer,
+    // Planes last written to each layer's plane buffer (upload skip gate).
+    last_shadow_cull_planes: Vec<Option<FrustumCullParamsGpu>>,
+    // Set once per frame in `render_pass`: the shadow layers encoded this frame
+    // draw indirect out of the per-layer cull instead of the identity buffer.
+    multimesh_shadow_cull_active: bool,
     shadow_buffer: wgpu::Buffer,
     shadow_bind_group: wgpu::BindGroup,
     // Shadow atlases start as 1x1 single-layer dummies and grow lazily
@@ -1677,6 +1694,20 @@ struct PassCounters {
     // Depth clears encoded for the 3D water pass's private depth target (the
     // copy's replacement at 1 sample).
     water_depth_clears: u32,
+    // Shadow depth layers actually re-rendered this frame (cached-valid layers
+    // are skipped and do not count).
+    shadow_layer_renders: u32,
+    // Multimesh caster instances submitted across every shadow layer this
+    // frame. Direct-draw layers count the whole surviving batch; per-layer
+    // GPU-culled layers count the indirect cap, so the CPU-visible number is
+    // the upper bound either way -- `shadow_multimesh_culled_layers` says which
+    // layers went through the compute cull.
+    shadow_multimesh_instance_draws: u64,
+    // Multimesh batches submitted across every shadow layer this frame.
+    shadow_multimesh_batch_draws: u32,
+    // Shadow layers whose multimesh casters went through the per-layer GPU
+    // instance cull (indirect draws) instead of the identity full-batch draw.
+    shadow_multimesh_culled_layers: u32,
 }
 
 // Screen region the mesh-blend seam pass has to touch this frame.

@@ -1,6 +1,15 @@
 use super::*;
 use crate::gpu_shrink::SHRINK_LOW_TICKS;
 
+/// Cascade window snap granularity: the window's world-space min corner is
+/// quantized to `window_size / CASCADE_SNAP_STEPS`. Power of two (and the map
+/// size is too), so the grid step stays a whole number of shadow texels and the
+/// stable-CSM texel alignment survives; the coarseness is what lets a cascade
+/// hold its cached depth across many frames of camera motion instead of
+/// re-rendering every frame. Higher = more cache hits + slightly coarser texels
+/// (the window grows by `2 / CASCADE_SNAP_STEPS` to keep covering its slice).
+const CASCADE_SNAP_STEPS: f32 = 32.0;
+
 /// High-water tracker for grow-only *layer* arrays (shadow atlases, decal
 /// texture array). Same policy as `crate::gpu_shrink::ShrinkTracker` -- shrink
 /// after `SHRINK_LOW_TICKS` consecutive low ticks -- but the target is the
@@ -475,6 +484,9 @@ impl Gpu3D {
             // Cache the frustum planes so shadow draws can sphere-cull per view.
             let view_proj = Mat4::from_cols_array_2d(&scene.view_proj);
             self.shadow_camera_frustums[index] = extract_frustum_planes(view_proj);
+            // Same planes drive the per-layer multimesh instance cull.
+            let planes = self.shadow_camera_frustums[index];
+            self.write_shadow_cull_planes_if_needed(queue, index, &planes);
             // Per-layer scene diff: an unchanged view keeps its cached depth (skip
             // the buffer write). A changed view (light moved, or a slot newly
             // enabled with a fresh matrix) re-uploads.
@@ -877,10 +889,9 @@ fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScen
             .fold(0.0f32, f32::max)
             .clamp(2.0, 600.0);
         let distance = (radius * 3.0).max(80.0);
-        let eye = center - dir * distance;
-        let view = Mat4::look_at_rh(eye, center, up);
-        let (mut ls_min, mut ls_max) =
-            cascade_light_bounds(&corners, scene_corners.as_deref(), view)?;
+        let fit_eye = center - dir * distance;
+        let fit_view = Mat4::look_at_rh(fit_eye, center, up);
+        let (ls_min, ls_max) = cascade_light_bounds(&corners, scene_corners.as_deref(), fit_view)?;
         // Stable window size. The slice's bounding-sphere diameter is invariant
         // under camera rotation AND translation (it depends only on fov, aspect
         // and this cascade's split distances), and the caster-box span is
@@ -895,43 +906,56 @@ fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScen
         if let Some(scene_span) = scene_span {
             size = size.min(scene_span);
         }
-        // Margin for the sub-texel snap below plus the PCF kernel reach.
-        let size = (size * 1.05).max(2.0);
+        // Margin for the PCF kernel reach plus the coarse snap below: the snap
+        // can pull the min corner down by up to one grid step, so the window
+        // must carry two steps of slack over the fit extent
+        // (`size * (1 - 2/CASCADE_SNAP_STEPS) >= fit extent`, satisfied because
+        // 1.05 * (1 + 2/STEPS) * (1 - 2/STEPS) > 1).
+        let size = (size * 1.05 * (1.0 + 2.0 / CASCADE_SNAP_STEPS)).max(2.0);
         let texel = (size / shadow_map_size as f32).max(1.0e-6);
-        // Snap the window's min corner to a texel grid anchored in the LIGHT's
-        // frame, not the camera's: `right_axis`/`up_axis` come from the light
-        // direction alone, and `axis.dot(eye)` converts a light-space
-        // coordinate to that absolute light-plane coordinate (light space is
-        // `axis.dot(p - eye)`). Quantizing there makes the window advance in
-        // whole texels as the camera moves, so a static receiver keeps sampling
-        // the same texel centres instead of crawling across the map.
-        //
-        // The previous form -- shifting `eye` (and the look-at target) by the
-        // rounding delta and then re-fitting the bounds in the shifted frame --
-        // cancelled itself out exactly: translating the frame and re-measuring
-        // the same world window in it leaves `eye . axis + ls_min` unchanged.
-        let center_ls_x = (ls_min.x + ls_max.x) * 0.5;
-        let center_ls_y = (ls_min.y + ls_max.y) * 0.5;
-        let anchor_x = right_axis.dot(eye);
-        let anchor_y = up_axis.dot(eye);
-        ls_min.x = ((center_ls_x - size * 0.5 + anchor_x) / texel).floor() * texel - anchor_x;
-        ls_min.y = ((center_ls_y - size * 0.5 + anchor_y) / texel).floor() * texel - anchor_y;
-        ls_max.x = ls_min.x + size;
-        ls_max.y = ls_min.y + size;
         texels[cascade] = texel.max(1.0e-4);
+        // Snap grid, in world units. A whole number of texels (the map size is
+        // a power of two and so is CASCADE_SNAP_STEPS), so quantizing to it
+        // still lands every texel centre on the same world grid -- the stable-
+        // CSM property -- while advancing the window only once per grid step
+        // instead of once per texel. A camera translating at 2 units/frame
+        // moves a far cascade's window ~8 texels/frame: snapping per texel
+        // re-renders that cascade every frame, snapping per grid step
+        // re-renders it once every `grid / speed` frames and lets the cached
+        // depth stand in between (`shadow_layer_needs_render`).
+        let grid = (size / CASCADE_SNAP_STEPS).max(1.0e-6);
         let z_pad = (radius * 0.65).max(12.0);
-        // With scene bounds, ls_max.z already reaches the caster closest to the
-        // light; the near plane must follow it even past the eye (negative near
-        // is valid for an orthographic projection) so off-frustum casters
-        // between the light and this slice still write depth.
-        let near = if scene_corners.is_some() {
-            -ls_max.z - z_pad
-        } else {
-            (-ls_max.z - z_pad).max(0.1)
-        };
-        let far = (-ls_min.z + z_pad).max(near + 1.0);
-        let light_view_proj =
-            Mat4::orthographic_rh(ls_min.x, ls_max.x, ls_min.y, ls_max.y, near, far) * view;
+        // Convert the fit (measured in the `fit_eye`-anchored light frame) to
+        // absolute light-plane coordinates, so the quantization below is
+        // anchored in the world and not in the moving camera.
+        // Light space is `axis.dot(p - eye)` for x/y and `-dir.dot(p - eye)`
+        // for z, so `axis.dot(fit_eye) + ls` is the absolute coordinate.
+        let anchor_x = right_axis.dot(fit_eye);
+        let anchor_y = up_axis.dot(fit_eye);
+        let anchor_z = dir.dot(fit_eye);
+        let fit_center_x = anchor_x + (ls_min.x + ls_max.x) * 0.5;
+        let fit_center_y = anchor_y + (ls_min.y + ls_max.y) * 0.5;
+        // Larger light-space z = closer to the light, so `-ls_max.z` is the
+        // near side. With scene bounds `ls_max.z` already reaches the caster
+        // closest to the light, so off-frustum casters between the light and
+        // this slice still write depth.
+        let near_world = anchor_z - ls_max.z - z_pad;
+        let far_world = anchor_z - ls_min.z + z_pad;
+        let x0 = ((fit_center_x - size * 0.5) / grid).floor() * grid;
+        let y0 = ((fit_center_y - size * 0.5) / grid).floor() * grid;
+        let z0 = (near_world / grid).floor() * grid;
+        let z1 = (far_world / grid).ceil() * grid;
+        let depth = (z1 - z0).max(1.0);
+        // Rebuild the light view from the QUANTIZED window corner instead of
+        // the camera-following fit eye. Every input to the matrix is then a
+        // quantized world coordinate, so an unchanged window reproduces a
+        // bit-identical `Scene3DUniform` and the per-layer cache
+        // (`scene_changed` in `update_shadow_state`) actually holds. Deriving
+        // it from `fit_eye` instead left the matrix drifting in the low bits
+        // every frame, which invalidated every cascade on every camera move.
+        let eye = right_axis * x0 + up_axis * y0 + dir * z0;
+        let view = Mat4::look_at_rh(eye, eye + dir, up);
+        let light_view_proj = Mat4::orthographic_rh(0.0, size, 0.0, size, 0.0, depth) * view;
         if !light_view_proj.is_finite() {
             return None;
         }
@@ -1555,7 +1579,11 @@ mod tests {
                     &view,
                     1280,
                     720,
-                    if cascade == 0 { 0.0 } else { splits[cascade - 1] },
+                    if cascade == 0 {
+                        0.0
+                    } else {
+                        splits[cascade - 1]
+                    },
                     splits[cascade],
                 )
                 .expect("slice corners must be finite");
@@ -1622,5 +1650,4 @@ mod tests {
             prev = Some((u, v, texel));
         }
     }
-
 }

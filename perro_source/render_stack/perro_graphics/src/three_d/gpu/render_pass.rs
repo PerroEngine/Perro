@@ -158,6 +158,16 @@ impl Gpu3D {
             });
             return;
         }
+        // Per-layer multimesh instance cull for the shadow depth passes. Each
+        // rendered layer gets its own compaction encoded right before its pass;
+        // the identity prime in `multimesh_shadow_identity_buffer` is gone until
+        // the next topology build.
+        self.multimesh_shadow_cull_active = self.shadow_pass_enabled
+            && self.has_shadow_casters
+            && self.should_run_multimesh_shadow_cull();
+        if self.multimesh_shadow_cull_active {
+            self.multimesh_shadow_identity_uploaded_len = 0;
+        }
         if self.shadow_pass_enabled && self.has_shadow_casters {
             if self.ray_shadow_enabled {
                 for cascade in 0..MAX_SHADOW_RAY_CASCADES.min(self.shadow_layer_views.len()) {
@@ -171,6 +181,7 @@ impl Gpu3D {
                         continue;
                     }
                     self.compute_shadow_cull(cascade);
+                    self.encode_multimesh_shadow_cull(encoder, cascade);
                     self.pass_counters.render_passes += 1;
                     let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                         label: Some("perro_ray_shadow3d_pass"),
@@ -187,8 +198,9 @@ impl Gpu3D {
                         occlusion_query_set: None,
                         multiview_mask: None,
                     });
-                    draw_shadow_batches(self, &mut shadow_pass, cascade);
+                    let stats = draw_shadow_batches(self, &mut shadow_pass, cascade);
                     drop(shadow_pass);
+                    self.note_shadow_draw_stats(stats);
                     if let Some(valid) = self.shadow_layer_valid.get_mut(cascade) {
                         *valid = true;
                     }
@@ -203,6 +215,7 @@ impl Gpu3D {
                     continue;
                 }
                 self.compute_shadow_cull(flat);
+                self.encode_multimesh_shadow_cull(encoder, flat);
                 self.pass_counters.render_passes += 1;
                 let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("perro_spot_shadow3d_pass"),
@@ -219,8 +232,9 @@ impl Gpu3D {
                     occlusion_query_set: None,
                     multiview_mask: None,
                 });
-                draw_shadow_batches(self, &mut shadow_pass, flat);
+                let stats = draw_shadow_batches(self, &mut shadow_pass, flat);
                 drop(shadow_pass);
+                self.note_shadow_draw_stats(stats);
                 if let Some(valid) = self.shadow_layer_valid.get_mut(flat) {
                     *valid = true;
                 }
@@ -237,6 +251,7 @@ impl Gpu3D {
                     continue;
                 }
                 self.compute_shadow_cull(flat);
+                self.encode_multimesh_shadow_cull(encoder, flat);
                 self.pass_counters.render_passes += 1;
                 let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("perro_point_shadow3d_pass"),
@@ -253,8 +268,9 @@ impl Gpu3D {
                     occlusion_query_set: None,
                     multiview_mask: None,
                 });
-                draw_shadow_batches(self, &mut shadow_pass, flat);
+                let stats = draw_shadow_batches(self, &mut shadow_pass, flat);
                 drop(shadow_pass);
+                self.note_shadow_draw_stats(stats);
                 if let Some(valid) = self.shadow_layer_valid.get_mut(flat) {
                     *valid = true;
                 }
@@ -1558,6 +1574,10 @@ use shadows::*;
 #[cfg(test)]
 #[path = "../../../tests/unit/three_d_render_pass_gpu_tests.rs"]
 mod render_pass_gpu_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/three_d_shadow_multimesh_tests.rs"]
+mod shadow_multimesh_tests;
 
 #[cfg(test)]
 mod tests {

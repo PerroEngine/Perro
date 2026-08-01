@@ -1336,10 +1336,21 @@ fn camera_motion_keeps_light_local_shadow_layers_cached() {
             (0, 0),
             "static spot/point lights must keep their cached depth while only the camera moves"
         );
-        assert_eq!(
+        let all_cascades_every_frame = FRAMES * MAX_SHADOW_RAY_CASCADES as u32;
+        assert!(
+            totals.0 > 0,
+            "cascades follow the camera and must re-render as it moves"
+        );
+        // Cascade windows snap to a coarse world grid (CASCADE_SNAP_STEPS), so
+        // a slowly moving camera leaves most cascades -- above all the far ones,
+        // which carry most of the casters -- on their cached depth. Re-rendering
+        // all four every frame is the regression this pins.
+        assert!(
+            totals.0 <= all_cascades_every_frame / 2,
+            "cascade windows are not holding their coarse snap: {} of {} layer \
+             re-renders over {FRAMES} small-move frames",
             totals.0,
-            FRAMES * MAX_SHADOW_RAY_CASCADES as u32,
-            "cascades follow the camera and must still re-render"
+            all_cascades_every_frame
         );
 
         // ...and the cache must still drop when a caster actually moves.

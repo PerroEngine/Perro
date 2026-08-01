@@ -133,6 +133,35 @@ fn multimesh_cull_bgl_entries() -> [wgpu::BindGroupLayoutEntry; 11] {
     ]
 }
 
+pub(in super::super) fn create_multimesh_shadow_counter_buffer(
+    device: &wgpu::Device,
+    capacity: usize,
+) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("perro_multimesh_shadow_cull_counters"),
+        size: (capacity.max(1) * std::mem::size_of::<u32>()) as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    })
+}
+
+pub(in super::super) fn create_multimesh_shadow_indirect_buffer(
+    device: &wgpu::Device,
+    capacity: usize,
+) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("perro_multimesh_shadow_indirect"),
+        size: (capacity.max(1) * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64,
+        // COPY_SRC so the shadow-cull tests can read the per-layer survivor
+        // counts back and check them against a CPU reference frustum test.
+        usage: wgpu::BufferUsages::INDIRECT
+            | wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_DST
+            | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn create_multimesh_cull_bind_group(
     device: &wgpu::Device,
@@ -975,6 +1004,20 @@ impl Gpu3D {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let multimesh_shadow_cull_counter_buffer =
+            create_multimesh_shadow_counter_buffer(device, multimesh_cull_batch_capacity);
+        let multimesh_shadow_indirect_buffer =
+            create_multimesh_shadow_indirect_buffer(device, multimesh_cull_batch_capacity);
+        let multimesh_shadow_cull_plane_buffers = (0..SHADOW_CAMERA_COUNT)
+            .map(|_| {
+                device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("perro_multimesh_shadow_cull_params"),
+                    size: std::mem::size_of::<FrustumCullParamsGpu>() as u64,
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                })
+            })
+            .collect::<Vec<_>>();
         let multimesh_cull_counter_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_multimesh_cull_counters"),
             size: (multimesh_cull_batch_capacity * std::mem::size_of::<u32>()) as u64,
@@ -1429,6 +1472,14 @@ impl Gpu3D {
             multimesh_shadow_identity_buffer,
             multimesh_shadow_identity_capacity,
             multimesh_shadow_identity_uploaded_len: 0,
+            multimesh_shadow_cull_plane_buffers,
+            // Filled by `rebuild_multimesh_shadow_cull_bind_groups` below, once
+            // every buffer this borrows is owned by `gpu`.
+            multimesh_shadow_cull_bind_groups: Vec::new(),
+            multimesh_shadow_indirect_buffer,
+            multimesh_shadow_cull_counter_buffer,
+            last_shadow_cull_planes: Vec::new(),
+            multimesh_shadow_cull_active: false,
             shadow_buffer,
             shadow_bind_group,
             _shadow_map_texture: shadow_map_texture,
@@ -1777,6 +1828,7 @@ impl Gpu3D {
             next_custom_pipeline_token: 1,
         };
         gpu.rebuild_hiz_bind_groups(device);
+        gpu.rebuild_multimesh_shadow_cull_bind_groups(device);
         gpu
     }
 }

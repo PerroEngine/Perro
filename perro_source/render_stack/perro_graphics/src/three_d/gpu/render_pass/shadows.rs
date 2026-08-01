@@ -53,6 +53,56 @@ impl Gpu3D {
         }
         self.shadow_cull_scratch = scratch;
     }
+
+    // Compact this shadow layer's multimesh instances before its depth pass.
+    // Same compute pair as the main-view cull (cs_main + cs_finalize) against
+    // the layer's own plane set, writing the shadow visible-index buffer and
+    // the shadow indirect records. Encoded per layer, immediately before that
+    // layer's render pass, so one buffer set serves every layer: the passes run
+    // in submission order and wgpu inserts the barriers between them.
+    pub(super) fn encode_multimesh_shadow_cull(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        camera_index: usize,
+    ) {
+        if !self.multimesh_shadow_cull_active {
+            return;
+        }
+        let Some(bind_group) = self.multimesh_shadow_cull_bind_groups.get(camera_index) else {
+            return;
+        };
+        let counter_bytes = (self.multimesh_batches.len() * std::mem::size_of::<u32>()) as u64;
+        encoder.clear_buffer(
+            &self.multimesh_shadow_cull_counter_buffer,
+            0,
+            Some(counter_bytes),
+        );
+        let mut cull_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("perro_multimesh_shadow_cull_pass"),
+            timestamp_writes: None,
+        });
+        cull_pass.set_bind_group(0, bind_group, &[]);
+        cull_pass.set_pipeline(&self.multimesh_cull_pipeline);
+        let instance_groups =
+            (self.staged_multimesh_instances.len() as u32).div_ceil(FRUSTUM_CULL_WORKGROUP_SIZE);
+        cull_pass.dispatch_workgroups(instance_groups, 1, 1);
+        cull_pass.set_pipeline(&self.multimesh_cull_finalize_pipeline);
+        let batch_groups =
+            (self.multimesh_batches.len() as u32).div_ceil(FRUSTUM_CULL_WORKGROUP_SIZE);
+        cull_pass.dispatch_workgroups(batch_groups, 1, 1);
+    }
+
+    // Fold one rendered layer's submission tally into the frame counters.
+    // Called after the layer's render pass is dropped (the pass borrows `self`).
+    #[inline]
+    pub(super) fn note_shadow_draw_stats(&mut self, stats: ShadowDrawStats) {
+        self.pass_counters.shadow_layer_renders += 1;
+        self.pass_counters.shadow_multimesh_batch_draws += stats.multimesh_batches;
+        self.pass_counters.shadow_multimesh_instance_draws += stats.multimesh_instances;
+        if stats.multimesh_culled {
+            self.pass_counters.shadow_multimesh_culled_layers += 1;
+        }
+    }
 }
 
 // No indirect-count path here, by construction. Shadow layers are culled on the
@@ -66,12 +116,12 @@ pub(super) fn draw_shadow_batches<'a>(
     gpu: &'a Gpu3D,
     shadow_pass: &mut wgpu::RenderPass<'a>,
     camera_index: usize,
-) {
+) -> ShadowDrawStats {
     let Some(shadow_camera_bg) = gpu.shadow_camera_bind_groups.get(camera_index) else {
-        return;
+        return ShadowDrawStats::default();
     };
     let Some(rigid_shadow_camera_bg) = gpu.rigid_shadow_camera_bind_groups.get(camera_index) else {
-        return;
+        return ShadowDrawStats::default();
     };
     let mut current_state: Option<(RenderPath3D, bool, bool)> = None;
     shadow_pass.set_vertex_buffer(1, gpu.instance_transform_buffer.slice(..));
@@ -136,7 +186,16 @@ pub(super) fn draw_shadow_batches<'a>(
         let instances = batch.instance_start..batch.instance_start + batch.instance_count;
         shadow_pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
     }
-    draw_multimesh_shadow_casters(gpu, shadow_pass, camera_index);
+    draw_multimesh_shadow_casters(gpu, shadow_pass, camera_index)
+}
+
+/// Per-layer submission tally, folded into `PassCounters` by the caller once
+/// the borrow of `self` the render pass holds is released.
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct ShadowDrawStats {
+    pub(super) multimesh_batches: u32,
+    pub(super) multimesh_instances: u64,
+    pub(super) multimesh_culled: bool,
 }
 
 // True when a multimesh batch uses a custom material whose shader defines a
@@ -160,17 +219,25 @@ pub(super) fn draw_multimesh_shadow_casters<'a>(
     gpu: &'a Gpu3D,
     pass: &mut wgpu::RenderPass<'a>,
     camera_index: usize,
-) {
+) -> ShadowDrawStats {
+    let mut stats = ShadowDrawStats::default();
     if gpu.multimesh_batches.is_empty() {
-        return;
+        return stats;
     }
     let Some(shadow_bg) = gpu.shadow_multimesh_bind_groups.get(camera_index) else {
-        return;
+        return stats;
     };
     let frustum = gpu.shadow_camera_frustums.get(camera_index);
+    // With the per-layer cull encoded, the shadow indirect records carry this
+    // layer's survivor counts and the shadow visible-index buffer carries the
+    // compacted source indices; without it, the identity prime makes the direct
+    // draw of the whole batch correct.
+    let cull = gpu.multimesh_shadow_cull_active
+        && gpu.multimesh_shadow_cull_bind_groups.len() > camera_index;
+    stats.multimesh_culled = cull;
     let mut bound = false;
     let mut current_double_sided: Option<bool> = None;
-    for batch in gpu.multimesh_batches.iter() {
+    for (batch_index, batch) in gpu.multimesh_batches.iter().enumerate() {
         if !batch.casts_shadows || batch.mesh_blend {
             continue;
         }
@@ -206,11 +273,19 @@ pub(super) fn draw_multimesh_shadow_casters<'a>(
             pass.set_pipeline(pipeline);
             current_double_sided = Some(batch.double_sided);
         }
-        let start = batch.mesh.index_start;
-        let end = start + batch.mesh.index_count;
-        let instances = batch.instance_start..batch.instance_start + batch.instance_count;
-        pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
+        if cull {
+            let offset = (batch_index * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
+            pass.draw_indexed_indirect(&gpu.multimesh_shadow_indirect_buffer, offset);
+        } else {
+            let start = batch.mesh.index_start;
+            let end = start + batch.mesh.index_count;
+            let instances = batch.instance_start..batch.instance_start + batch.instance_count;
+            pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
+        }
+        stats.multimesh_batches += 1;
+        stats.multimesh_instances += u64::from(batch.instance_count);
     }
+    stats
 }
 
 pub(super) fn draw_multimesh_batches<'a>(gpu: &'a Gpu3D, pass: &mut wgpu::RenderPass<'a>) {

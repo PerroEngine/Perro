@@ -535,6 +535,14 @@ impl Gpu3D {
                     0,
                     bytemuck::cast_slice(&self.multimesh_indirect_staging),
                 );
+                // The shadow path's records are the same topology (only the
+                // GPU-written instance_count diverges, per layer), so they ride
+                // the same gate.
+                queue.write_buffer(
+                    &self.multimesh_shadow_indirect_buffer,
+                    0,
+                    bytemuck::cast_slice(&self.multimesh_indirect_staging),
+                );
                 self.last_uploaded_multimesh_indirect.clear();
                 self.last_uploaded_multimesh_indirect
                     .extend_from_slice(&self.multimesh_indirect_staging);
@@ -571,6 +579,53 @@ impl Gpu3D {
                 self.multimesh_identity_primed = true;
             }
         }
+    }
+
+    // Per-layer shadow instance cull. Same support/threshold gate as the
+    // main-view cull (it shares the compute pipelines, the per-batch records
+    // and the indirect `first_instance` requirement), plus at least one
+    // shadow-casting multimesh batch to cull.
+    #[inline]
+    pub(super) fn should_run_multimesh_shadow_cull(&self) -> bool {
+        self.should_run_multimesh_cull()
+            && self
+                .multimesh_batches
+                .iter()
+                .any(|batch| batch.casts_shadows && !batch.mesh_blend)
+    }
+
+    // Upload one shadow layer's cull planes. Called from `update_shadow_state`
+    // where the per-layer frustums are (re)computed, so a layer whose light
+    // view did not move writes nothing.
+    pub(super) fn write_shadow_cull_planes_if_needed(
+        &mut self,
+        queue: &wgpu::Queue,
+        index: usize,
+        frustum: &[Vec4; 6],
+    ) {
+        let Some(buffer) = self.multimesh_shadow_cull_plane_buffers.get(index) else {
+            return;
+        };
+        if self.last_shadow_cull_planes.len() != self.multimesh_shadow_cull_plane_buffers.len() {
+            self.last_shadow_cull_planes
+                .resize(self.multimesh_shadow_cull_plane_buffers.len(), None);
+        }
+        let mut planes = [[0.0f32; 4]; 6];
+        for (dst, plane) in planes.iter_mut().zip(frustum.iter()) {
+            *dst = [plane.x, plane.y, plane.z, plane.w];
+        }
+        // `draw_count` is the rigid path's field; the multimesh cull entries
+        // never read it.
+        let params = FrustumCullParamsGpu {
+            planes,
+            draw_count: 0,
+            _pad: [0; 3],
+        };
+        if self.last_shadow_cull_planes[index] == Some(params) {
+            return;
+        }
+        queue.write_buffer(buffer, 0, bytemuck::bytes_of(&params));
+        self.last_shadow_cull_planes[index] = Some(params);
     }
 
     #[inline]

@@ -606,7 +606,9 @@ impl Gpu3D {
                 self.last_uploaded_instance_transforms_hash = None;
             }
             // The multimesh block below reuses the merged scratch; keep the
-            // transform spans for the mesh-blend sphere refresh.
+            // transform spans for the mesh-blend sphere refresh and the dirty
+            // cull-batch detection (both need INSTANCE index space, which the
+            // multimesh block replaces with param indices).
             self.transform_dirty_spans_snapshot.clear();
             self.transform_dirty_spans_snapshot
                 .extend_from_slice(&self.merged_instance_spans_scratch);
@@ -733,11 +735,14 @@ impl Gpu3D {
                         // search per batch instead of sweeping. A batch is dirty
                         // when ANY of its instances moved: multi-instance bounds
                         // depend on every instance, not just the first.
+                        // Read the snapshot, not merged_instance_spans_scratch:
+                        // the multimesh param patch above may have refilled the
+                        // scratch with param-space indices.
                         let candidate = self
-                            .merged_instance_spans_scratch
+                            .transform_dirty_spans_snapshot
                             .partition_point(|span| span.end <= batch_start);
                         let overlaps = self
-                            .merged_instance_spans_scratch
+                            .transform_dirty_spans_snapshot
                             .get(candidate)
                             .is_some_and(|span| span.start < batch_end);
                         if overlaps {
@@ -860,7 +865,7 @@ impl Gpu3D {
                 self.write_multimesh_cull_params_if_needed(queue);
             }
             // Bone palettes / blend-shape weights last: the cull step above
-            // still reads the transform patch's merged spans, and these lanes
+            // still reads the transform patch's span snapshot, and these lanes
             // feed no cull input at all (batch bounds come from the local mesh
             // sphere and the instance model, neither of which animation moves).
             if animation_changed {
@@ -2296,9 +2301,8 @@ impl Gpu3D {
         // Both arenas carry the multimesh tail after the regular rows.
         self.ensure_custom_params_capacity(
             device,
-            (self.staged_custom_params_meta.len()
-                + self.staged_multimesh_custom_params_meta.len())
-            .max(1),
+            (self.staged_custom_params_meta.len() + self.staged_multimesh_custom_params_meta.len())
+                .max(1),
             (self.staged_custom_params_values.len()
                 + self.staged_multimesh_custom_params_values.len())
             .max(1),
@@ -2306,8 +2310,7 @@ impl Gpu3D {
         if self.custom_params_meta_uploaded < self.staged_custom_params_meta.len() {
             let upload_start = self.custom_params_meta_uploaded;
             let byte_start = upload_start as u64 * std::mem::size_of::<u32>() as u64;
-            let bytes =
-                std::mem::size_of_val(&self.staged_custom_params_meta[upload_start..]);
+            let bytes = std::mem::size_of_val(&self.staged_custom_params_meta[upload_start..]);
             queue.write_buffer(
                 &self.custom_params_meta_buffer,
                 byte_start,
@@ -2319,8 +2322,7 @@ impl Gpu3D {
         if self.custom_params_values_uploaded < self.staged_custom_params_values.len() {
             let upload_start = self.custom_params_values_uploaded;
             let byte_start = upload_start as u64 * std::mem::size_of::<f32>() as u64;
-            let bytes =
-                std::mem::size_of_val(&self.staged_custom_params_values[upload_start..]);
+            let bytes = std::mem::size_of_val(&self.staged_custom_params_values[upload_start..]);
             queue.write_buffer(
                 &self.custom_params_values_buffer,
                 byte_start,
@@ -2497,7 +2499,8 @@ impl Gpu3D {
             else {
                 continue;
             };
-            let Some(range) = Self::draw_animation_range(&self.last_draw_skeleton_bounds, draw_index)
+            let Some(range) =
+                Self::draw_animation_range(&self.last_draw_skeleton_bounds, draw_index)
             else {
                 continue;
             };
@@ -2719,10 +2722,7 @@ impl Gpu3D {
             let starts = &self.staged_multimesh_custom_params_entry_starts;
             let meta = &mut self.staged_multimesh_custom_params_meta;
             for (entry, &start) in starts.iter().enumerate() {
-                let end = starts
-                    .get(entry + 1)
-                    .copied()
-                    .unwrap_or(meta.len() as u32) as usize;
+                let end = starts.get(entry + 1).copied().unwrap_or(meta.len() as u32) as usize;
                 let start = start as usize;
                 meta[start] = meta[start].wrapping_add(values_delta);
                 // Word 1 is the modifier count; the rest are param words.
