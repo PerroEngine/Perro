@@ -1622,3 +1622,97 @@ fn multimesh_staging_reuse_survives_camera_motion_across_lod_bands() {
         );
     });
 }
+
+/// Cross-instance GPU texture dedup: the main view and every camera-stream
+/// subview own separate `Gpu3D`s but must resolve one material texture source
+/// to ONE shared upload (same `SharedGpuTexture`), not one copy per instance.
+/// Guards the `SharedTextureStore` wiring in `ensure_material_texture_slot`.
+#[test]
+fn material_texture_upload_is_shared_across_gpu3d_instances() {
+    pollster::block_on(async {
+        let Some((device, queue)) = test_device().await else {
+            eprintln!("skip shared material texture test: no wgpu adapter");
+            return;
+        };
+        const TEXTURE_SOURCE: &str = "__shared_material_texture_src__";
+        let mut mesh_arena = SharedMeshArena::new(&device, false, false);
+        // Second instance = a camera stream watching the same world.
+        let mut gpu_main = new_gpu_3d(&device, &queue, &mesh_arena);
+        let mut gpu_stream = new_gpu_3d(&device, &queue, &mesh_arena);
+        let mut resources = ResourceStore::new();
+        let mesh = resources.create_mesh(LOD_MESH_SOURCE, true);
+        // Index 0 carries no source slot (`texture_source_by_index` treats it
+        // as none); burn it so the real texture's index round-trips.
+        let _pad = resources.create_texture("__shared_material_texture_pad__", true);
+        let texture = resources.create_texture(TEXTURE_SOURCE, true);
+        resources.set_decoded_texture_data(
+            texture,
+            crate::resources::DecodedTextureRgba {
+                rgba: vec![255u8; 2 * 2 * 4].into(),
+                width: 2,
+                height: 2,
+            },
+        );
+        let material = resources.create_material(
+            Material3D::Standard(StandardMaterial3D {
+                base_color_texture: texture.index(),
+                ..StandardMaterial3D::default()
+            }),
+            Some("__shared_material_texture_mat__"),
+            true,
+        );
+        let draws = [regular_draw(0, mesh, material, Color::WHITE)];
+        let mut shared_textures = SharedTextureStore::default();
+        let lighting = Lighting3DState::default();
+        let prepare = |gpu: &mut Gpu3D,
+                       mesh_arena: &mut SharedMeshArena,
+                       shared_textures: &mut SharedTextureStore| {
+            gpu.prepare(
+                &device,
+                &queue,
+                Prepare3D {
+                    resources: &resources,
+                    shared_textures,
+                    mesh_arena,
+                    mesh_arena_compact_allowed: false,
+                    camera: Camera3DState::default(),
+                    lighting: &lighting,
+                    draws: &draws,
+                    draws_revision: 1,
+                    force_full_rebuild: true,
+                    decals: &[],
+                    decals_revision: 0,
+                    width: 256,
+                    height: 256,
+                    static_texture_lookup: None,
+                    static_mesh_lookup: Some(lod_test_mesh_lookup),
+                    static_shader_lookup: None,
+                },
+            );
+        };
+        let shared_handle = |gpu: &Gpu3D| {
+            gpu.material_textures
+                .values()
+                .find(|cached| cached.source == TEXTURE_SOURCE)
+                .and_then(|cached| cached.shared.clone())
+        };
+
+        prepare(&mut gpu_main, &mut mesh_arena, &mut shared_textures);
+        let main_shared =
+            shared_handle(&gpu_main).expect("main instance never resolved the material texture");
+        let entries_after_main = shared_textures.len();
+
+        prepare(&mut gpu_stream, &mut mesh_arena, &mut shared_textures);
+        let stream_shared = shared_handle(&gpu_stream)
+            .expect("stream instance never resolved the material texture");
+        assert_eq!(
+            shared_textures.len(),
+            entries_after_main,
+            "second instance re-uploaded an already-shared source"
+        );
+        assert!(
+            Arc::ptr_eq(&main_shared, &stream_shared),
+            "instances hold distinct GPU textures for one material source"
+        );
+    });
+}

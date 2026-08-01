@@ -170,3 +170,86 @@ fn camera_pan_with_unchanged_visible_set_skips_sprite_upload() {
     assert_eq!(gpu.sprite_batch_count(), 1);
     assert_eq!(gpu.sprite_instance_upload_count(), after_first + 1);
 }
+
+/// Cross-instance GPU texture dedup: the main 2D view and every camera-stream
+/// `Gpu2D` must resolve one sprite texture source to ONE shared upload (same
+/// `SharedGpuTexture`), not one copy per instance.
+#[test]
+fn sprite_texture_upload_is_shared_across_gpu2d_instances() {
+    let Some((device, queue)) = pollster::block_on(test_device()) else {
+        // No adapter available in this environment.
+        return;
+    };
+    let new_gpu = || {
+        Gpu2D::new(
+            &device,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            1,
+            TextureFilterMode::Nearest,
+        )
+    };
+    let mut gpu_main = new_gpu();
+    let mut gpu_stream = new_gpu();
+    let mut resources = ResourceStore::new();
+    let texture = resources.create_texture(TEST_TEXTURE_SOURCE, true);
+    let mut shared_textures = SharedTextureStore::default();
+    shared_textures.ensure_rgba(
+        &device,
+        &queue,
+        SharedTextureKey::from_source(
+            TEST_TEXTURE_SOURCE,
+            SharedTextureColorSpace::Srgb,
+            TextureFilterMode::Nearest,
+        ),
+        &[255u8; 4],
+        1,
+        1,
+    );
+    let entries_seeded = shared_textures.len();
+
+    let sprites = [sprite_at(texture, 0.0, 0.0)];
+    let upload = RectUploadPlan {
+        full_reupload: true,
+        dirty_ranges: Vec::new(),
+        draw_count: 0,
+    };
+    let run_prepare = |gpu: &mut Gpu2D, shared_textures: &mut SharedTextureStore| {
+        gpu.prepare(
+            &device,
+            &queue,
+            Prepare2D {
+                resources: &resources,
+                shared_textures,
+                camera: camera_at(0.0, 0.0),
+                rects: &[],
+                upload: &upload,
+                sprites: &sprites,
+                sprites_revision: 1,
+                force_sprite_prepare: false,
+                point_lights: &[],
+                point_lights_revision: 1,
+                shadow_casters: &[],
+                shadow_casters_revision: 1,
+                static_texture_lookup: None,
+            },
+        );
+    };
+    run_prepare(&mut gpu_main, &mut shared_textures);
+    run_prepare(&mut gpu_stream, &mut shared_textures);
+
+    assert_eq!(
+        shared_textures.len(),
+        entries_seeded,
+        "an instance re-uploaded an already-shared source"
+    );
+    let handle = |gpu: &Gpu2D| {
+        gpu.sprite_textures
+            .get(&texture)
+            .and_then(|cached| cached.shared.clone())
+            .expect("instance never resolved the sprite texture")
+    };
+    assert!(
+        Arc::ptr_eq(&handle(&gpu_main), &handle(&gpu_stream)),
+        "instances hold distinct GPU textures for one sprite source"
+    );
+}
