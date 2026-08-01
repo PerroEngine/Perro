@@ -61,6 +61,8 @@ pub enum CameraStreamDraw3DState {
         meshlet_override: Option<bool>,
         lod: LODOptions3D,
         blend: MeshBlendOptions3D,
+        cast_shadows: bool,
+        receive_shadows: bool,
     },
     DrawMulti {
         mesh: MeshID,
@@ -71,6 +73,8 @@ pub enum CameraStreamDraw3DState {
         meshlet_override: Option<bool>,
         lod: LODOptions3D,
         blend: MeshBlendOptions3D,
+        cast_shadows: bool,
+        receive_shadows: bool,
     },
     DrawMultiDense {
         mesh: MeshID,
@@ -82,6 +86,8 @@ pub enum CameraStreamDraw3DState {
         meshlet_override: Option<bool>,
         lod: LODOptions3D,
         blend: MeshBlendOptions3D,
+        cast_shadows: bool,
+        receive_shadows: bool,
     },
 }
 

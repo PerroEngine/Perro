@@ -355,7 +355,10 @@ impl Runtime {
                             .unwrap_or(local_transform)
                             .to_mat3()
                             .to_cols_array_2d();
-                        let stream_state = Arc::new(stream_state);
+                        // Reuse the deduped Arc: both commands ship the same
+                        // retained state.
+                        let stream_state =
+                            self.queue_camera_stream_upsert(node, Arc::new(stream_state));
                         let sprite = Sprite2DCommand {
                             texture: stream_state.output_texture,
                             model,
@@ -366,7 +369,6 @@ impl Runtime {
                             size: [aspect, 1.0],
                             z_index,
                         };
-                        self.queue_camera_stream_upsert(node, stream_state.clone());
                         self.queue_render_command(RenderCommand::TwoD(
                             Command2D::UpsertCameraStream {
                                 node,
@@ -569,7 +571,8 @@ impl Runtime {
                             .unwrap_or(local_transform)
                             .to_mat3()
                             .to_cols_array_2d();
-                        let stream_state = Arc::new(stream_state);
+                        let stream_state =
+                            self.queue_camera_stream_upsert(node, Arc::new(stream_state));
                         let sprite = Sprite2DCommand {
                             texture: stream_state.output_texture,
                             model,
@@ -580,7 +583,6 @@ impl Runtime {
                             size: [size.x.max(0.001), size.y.max(0.001)],
                             z_index,
                         };
-                        self.queue_camera_stream_upsert(node, stream_state.clone());
                         self.queue_render_command(RenderCommand::TwoD(
                             Command2D::UpsertCameraStream {
                                 node,

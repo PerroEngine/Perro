@@ -383,7 +383,6 @@ impl Runtime {
             if let Some((visible, stream, local_transform, size, tint)) = stream_data {
                 if visible {
                     if let Some(stream_state) = self.camera_stream_state(node, &stream) {
-                        let stream_state = Arc::new(stream_state);
                         let tint =
                             Runtime::color_modulate(tint, self.effective_self_modulate(node));
                         let model = self
@@ -391,7 +390,10 @@ impl Runtime {
                             .unwrap_or(local_transform)
                             .to_mat4()
                             .to_cols_array_2d();
-                        self.queue_camera_stream_upsert(node, stream_state.clone());
+                        // Reuse the deduped Arc: both commands ship the same
+                        // retained state.
+                        let stream_state =
+                            self.queue_camera_stream_upsert(node, Arc::new(stream_state));
                         self.queue_render_command(RenderCommand::ThreeD(Box::new(
                             Command3D::UpsertCameraStream {
                                 node,
@@ -426,7 +428,6 @@ impl Runtime {
             if let Some((visible, view, local_transform, size, tint)) = sub_view_data {
                 if visible {
                     if let Some(stream_state) = self.sub_view_state(node, &view, None) {
-                        let stream_state = Arc::new(stream_state);
                         let tint =
                             Runtime::color_modulate(tint, self.effective_self_modulate(node));
                         let model = self
@@ -434,7 +435,8 @@ impl Runtime {
                             .unwrap_or(local_transform)
                             .to_mat4()
                             .to_cols_array_2d();
-                        self.queue_camera_stream_upsert(node, stream_state.clone());
+                        let stream_state =
+                            self.queue_camera_stream_upsert(node, Arc::new(stream_state));
                         self.queue_render_command(RenderCommand::ThreeD(Box::new(
                             Command3D::UpsertCameraStream {
                                 node,

@@ -146,11 +146,14 @@ impl Gpu {
         }
         self.camera_stream_content_revisions
             .retain(|node, _| camera_streams.iter().any(|(active, _)| active == node));
-        // Any stream that (re)binds a target or re-renders one can change a
-        // texture the main scene samples, so it blocks the retained-scene fast
-        // path for this frame. Set conservatively: a stream that passes the
-        // idle gate counts as rendered even if a later early-out skips it.
-        let mut streams_rendered = false;
+        // Output textures of every stream that (re)binds a target or
+        // re-renders one this frame. Collected conservatively: a stream that
+        // passes the idle gate counts as rendered even if a later early-out
+        // skips it. The retained-scene fast path is only blocked when a
+        // retained MAIN-scene draw / decal / sprite samples one of these (see
+        // `collect_main_scene_sampled_texture_slots`); a UI-only consumer such
+        // as a minimap composites after the scene texture and must not block.
+        let mut rendered_stream_textures: Vec<perro_ids::TextureID> = Vec::new();
         for (node, stream) in camera_streams {
             if !camera_stream_uses_render_target(stream) {
                 continue;
@@ -180,7 +183,7 @@ impl Gpu {
                 continue;
             };
             if needs_external_binding {
-                streams_rendered = true;
+                rendered_stream_textures.push(stream.output_texture);
                 let texture_id = stream.output_texture;
                 let view_2d = target.view.clone();
                 let view_ui = target.view.clone();
@@ -682,7 +685,7 @@ impl Gpu {
             if stream_can_idle {
                 continue;
             }
-            streams_rendered = true;
+            rendered_stream_textures.push(stream.output_texture);
             // revision update only on render: idle streams skip the content
             // compare entirely; the compare against last-RENDERED content is
             // exactly what the prepare paths below need.
@@ -1383,7 +1386,7 @@ impl Gpu {
             blend_screen_active,
             post_stage_count,
         };
-        let scene_fast_path = scene_fast_path_allowed(&SceneFastPathSignals {
+        let mut fast_path_signals = SceneFastPathSignals {
             retained_scene_valid: self.retained_scene_valid,
             retained_key_matches: self.retained_scene_key == retained_scene_key,
             did_prepare_3d,
@@ -1395,11 +1398,33 @@ impl Gpu {
             needs_water,
             needs_particles: needs_3d_particles_path,
             scene_continuous_updates: scene_continuous_updates || sky_animating,
-            streams_rendered,
+            streams_rendered: false,
             decals_texture_pending,
             post_stage_count,
             camera_image_saves_pending: !self.camera_image_save_requests.is_empty(),
-        });
+        };
+        // Consumer scan only when every other signal already allows the skip,
+        // so scenes that re-encode anyway never pay for it. The set is keyed by
+        // the three content revisions and additionally dropped on every
+        // re-encode frame, so a consecutive run of fast-path frames rebuilds it
+        // at most once.
+        if !rendered_stream_textures.is_empty() && scene_fast_path_allowed(&fast_path_signals) {
+            let sampled_key = (draws_3d_revision, sprites_2d_revision, decals_3d_revision);
+            if self.main_scene_sampled_key != Some(sampled_key) {
+                collect_main_scene_sampled_texture_slots(
+                    &mut self.main_scene_sampled_texture_slots,
+                    resources,
+                    draws_3d,
+                    decals_3d,
+                    sprites_2d,
+                );
+                self.main_scene_sampled_key = Some(sampled_key);
+            }
+            fast_path_signals.streams_rendered = rendered_stream_textures
+                .iter()
+                .any(|texture| self.main_scene_sampled_texture_slots.contains(&texture.index()));
+        }
+        let scene_fast_path = scene_fast_path_allowed(&fast_path_signals);
         // Cleared BEFORE the encode: a frame that renders the scene but then
         // fails to acquire a surface returns without submitting, so its passes
         // never execute. Leaving the flag set there would present the older
@@ -1409,6 +1434,10 @@ impl Gpu {
             timing.skip_render_2d = 1;
         } else {
             self.retained_scene_valid = false;
+            // Revision-keyed above, but a material can swap texture slots
+            // without moving a revision; that always lands on a re-encode
+            // frame, so drop the set here too.
+            self.main_scene_sampled_key = None;
         }
 
         // Water timestamps stay paired every frame so the GPU timer never

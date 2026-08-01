@@ -407,6 +407,8 @@ impl Gpu {
             last_prepare_3d_height: render_height,
             retained_scene_valid: false,
             retained_scene_key: RetainedSceneKey::default(),
+            main_scene_sampled_texture_slots: ahash::AHashSet::new(),
+            main_scene_sampled_key: None,
             meshlets_enabled: cfg.meshlets_enabled,
             dev_meshlets: cfg.dev_meshlets,
             meshlet_debug_view: cfg.meshlet_debug_view,

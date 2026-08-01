@@ -441,6 +441,8 @@ fn stream_draw_state(i: u32, mesh: MeshID, material: MaterialID) -> CameraStream
         meshlet_override: None,
         lod: LODOptions3D::default(),
         blend: MeshBlendOptions3D::default(),
+        cast_shadows: true,
+        receive_shadows: true,
     }
 }
 

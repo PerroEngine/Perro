@@ -27,7 +27,8 @@ use perro_ids::NodeID;
 use perro_render_bridge::{
     Camera3DState, CameraProjectionState, CameraStreamDraw3DState, CameraStreamLighting3DState,
     CameraStreamSourceState, CameraStreamState, Decal3DState, HdrColorSpace, HdrFallback, HdrMode,
-    HdrStatus, LODOptions3D, Light2DState, MeshBlendOptions3D, PointParticles3DState,
+    HdrStatus, LODOptions3D, Light2DState, MATERIAL_TEXTURE_NONE, MeshBlendOptions3D,
+    PointParticles3DState,
     ShadowCaster2DState, Sprite2DCommand, Water2DState, Water3DState, WaterBodySampleState,
     WaterSampleState, WaterShapeState,
 };
@@ -240,6 +241,8 @@ fn fill_camera_stream_draws_3d(draws: &[CameraStreamDraw3DState], out: &mut Vec<
             meshlet_override,
             lod,
             blend,
+            cast_shadows,
+            receive_shadows,
         } => Draw3DInstance {
             node: *node,
             kind: Draw3DKind::Mesh(*mesh),
@@ -252,8 +255,8 @@ fn fill_camera_stream_draws_3d(draws: &[CameraStreamDraw3DState], out: &mut Vec<
             meshlet_override: *meshlet_override,
             lod: *lod,
             blend: *blend,
-            cast_shadows: true,
-            receive_shadows: true,
+            cast_shadows: *cast_shadows,
+            receive_shadows: *receive_shadows,
         },
         CameraStreamDraw3DState::DrawMulti {
             mesh,
@@ -264,6 +267,8 @@ fn fill_camera_stream_draws_3d(draws: &[CameraStreamDraw3DState], out: &mut Vec<
             meshlet_override,
             lod,
             blend,
+            cast_shadows,
+            receive_shadows,
         } => Draw3DInstance {
             node: *node,
             kind: Draw3DKind::Mesh(*mesh),
@@ -276,8 +281,8 @@ fn fill_camera_stream_draws_3d(draws: &[CameraStreamDraw3DState], out: &mut Vec<
             meshlet_override: *meshlet_override,
             lod: *lod,
             blend: *blend,
-            cast_shadows: true,
-            receive_shadows: true,
+            cast_shadows: *cast_shadows,
+            receive_shadows: *receive_shadows,
         },
         CameraStreamDraw3DState::DrawMultiDense {
             mesh,
@@ -289,6 +294,8 @@ fn fill_camera_stream_draws_3d(draws: &[CameraStreamDraw3DState], out: &mut Vec<
             meshlet_override,
             lod,
             blend,
+            cast_shadows,
+            receive_shadows,
         } => Draw3DInstance {
             node: *node,
             kind: Draw3DKind::Mesh(*mesh),
@@ -305,8 +312,8 @@ fn fill_camera_stream_draws_3d(draws: &[CameraStreamDraw3DState], out: &mut Vec<
             meshlet_override: *meshlet_override,
             lod: *lod,
             blend: *blend,
-            cast_shadows: true,
-            receive_shadows: true,
+            cast_shadows: *cast_shadows,
+            receive_shadows: *receive_shadows,
         },
     }))
 }
@@ -784,6 +791,19 @@ pub struct Gpu {
     // again only after that frame's command buffer is submitted.
     retained_scene_valid: bool,
     retained_scene_key: RetainedSceneKey,
+    // Stream-consumption cache for the fast path. Texture *indices*
+    // (generation dropped, matching how the 3D external material slot is
+    // keyed) sampled by the passes that write the retained scene texture: 3D
+    // draws + their material slots, decals, and the 2D scene sprites. Absent
+    // by design: UI primitives and the late 2D overlay, which both re-encode
+    // onto the swapchain after the scene texture every frame, so a stream
+    // only they sample can never make the retained image stale.
+    main_scene_sampled_texture_slots: ahash::AHashSet<u32>,
+    // (draws, sprites, decals) revisions the set above was built from; `None`
+    // forces a rebuild. Also reset on every frame that re-encodes the scene,
+    // since a material can change its texture slots without moving any of the
+    // three revisions.
+    main_scene_sampled_key: Option<(u64, u64, u64)>,
     meshlets_enabled: bool,
     dev_meshlets: bool,
     meshlet_debug_view: bool,
@@ -1046,8 +1066,11 @@ pub(crate) struct SceneFastPathSignals {
     pub needs_particles: bool,
     /// unpaused sky or frame-global-reading custom material.
     pub scene_continuous_updates: bool,
-    /// at least one camera stream re-rendered its target this frame; the main
-    /// scene may sample that texture.
+    /// at least one camera stream re-rendered (or re-bound) a target this
+    /// frame AND a retained main-scene draw / decal / 2D sprite samples that
+    /// output texture. A stream consumed only by the UI pass or the late
+    /// overlay does not set this: both re-encode onto the swapchain after the
+    /// retained scene texture, so their pixels are new every frame anyway.
     pub streams_rendered: bool,
     /// a decal texture is still decoding and must be retried next frame.
     pub decals_texture_pending: bool,
@@ -1056,6 +1079,55 @@ pub(crate) struct SceneFastPathSignals {
     pub post_stage_count: u32,
     /// a camera image save copies out of a stream target this frame.
     pub camera_image_saves_pending: bool,
+}
+
+/// Fill `out` with the texture indices the retained scene texture's own
+/// passes sample: 3D draws (camera-stream quads + every material texture
+/// slot), decals, and the 2D scene sprites. Indices, not full ids: the 3D
+/// external material binding is keyed by `TextureID::index` alone, so
+/// dropping the generation keeps the answer conservative.
+///
+/// UI primitives and the late 2D overlay are intentionally not walked. Both
+/// draw onto the swapchain after the scene texture is composited and are
+/// re-encoded every frame, so a stream only they sample cannot leave the
+/// retained scene image stale.
+fn collect_main_scene_sampled_texture_slots(
+    out: &mut ahash::AHashSet<u32>,
+    resources: &ResourceStore,
+    draws_3d: &[Draw3DInstance],
+    decals_3d: &[(NodeID, Decal3DState)],
+    sprites_2d: &[Sprite2DCommand],
+) {
+    out.clear();
+    for draw in draws_3d {
+        if let Draw3DKind::CameraStreamQuad { texture, .. } = draw.kind {
+            out.insert(texture.index());
+        }
+        for surface in draw.surfaces.iter() {
+            let Some(material) = surface.material.and_then(|id| resources.material_ref(id)) else {
+                continue;
+            };
+            for slot in material.texture_slots() {
+                if slot != MATERIAL_TEXTURE_NONE {
+                    out.insert(slot);
+                }
+            }
+        }
+    }
+    for (_, decal) in decals_3d {
+        for texture in [
+            decal.albedo_texture,
+            decal.normal_texture,
+            decal.emission_texture,
+        ] {
+            if !texture.is_nil() {
+                out.insert(texture.index());
+            }
+        }
+    }
+    for sprite in sprites_2d {
+        out.insert(sprite.texture.index());
+    }
 }
 
 /// Pure gate for the retained-scene fast path (see `SceneFastPathSignals`).
@@ -1170,6 +1242,8 @@ mod camera_stream_revision_tests {
             meshlet_override: None,
             lod: perro_render_bridge::LODOptions3D::default(),
             blend: perro_render_bridge::MeshBlendOptions3D::default(),
+            cast_shadows: true,
+            receive_shadows: true,
         }]);
         let second = update_camera_stream_content_revisions(
             &mut revisions,

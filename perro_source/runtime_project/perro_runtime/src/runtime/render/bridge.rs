@@ -266,11 +266,14 @@ impl Runtime {
     /// retains, so idle passes stop re-sending RemoveNode for streams that
     /// were never (or are no longer) upserted — each command wakes a full gpu
     /// frame. One-shot camera captures bypass this (always paired).
+    /// Returns the retained Arc actually sent, so the paired
+    /// `Command3D`/`Command2D::UpsertCameraStream` at the call site rides the
+    /// same dedup instead of shipping its own fresh allocation.
     pub(crate) fn queue_camera_stream_upsert(
         &mut self,
         node: NodeID,
         state: Arc<CameraStreamState>,
-    ) {
+    ) -> Arc<CameraStreamState> {
         // Whole-state retention: an unchanged rebuild re-sends the previously
         // upserted Arc, so the gpu-side upsert hits Arc::ptr_eq instead of a
         // deep compare. Value-gated (never skips the command), so streams can
@@ -285,8 +288,9 @@ impl Runtime {
         self.camera_stream_active.insert(node);
         self.queue_render_command(RenderCommand::CameraStream(CameraStreamCommand::Upsert {
             node,
-            state,
+            state: state.clone(),
         }));
+        state
     }
 
     pub(crate) fn queue_camera_stream_remove(&mut self, node: NodeID) {

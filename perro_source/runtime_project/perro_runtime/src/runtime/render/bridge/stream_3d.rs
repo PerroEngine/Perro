@@ -187,7 +187,16 @@ impl Runtime {
             return;
         }
         // mesh / multimesh draws.
-        if let Some((mesh, skeleton, meshlet_override, lod, blend, instance_kind)) = self
+        if let Some((
+            mesh,
+            skeleton,
+            meshlet_override,
+            lod,
+            blend,
+            cast_shadows,
+            receive_shadows,
+            instance_kind,
+        )) = self
             .nodes
             .get(node)
             .and_then(|node_ref| match &node_ref.data {
@@ -219,6 +228,8 @@ impl Runtime {
                             strength: mesh.blend.strength,
                             salt_instances: mesh.blend.salt_instances,
                         },
+                        mesh.cast_shadows,
+                        mesh.receive_shadows,
                         StreamMeshInstanceKind::Single,
                     ))
                 }
@@ -250,6 +261,8 @@ impl Runtime {
                             strength: mesh.blend.strength,
                             salt_instances: mesh.blend.salt_instances,
                         },
+                        mesh.cast_shadows,
+                        mesh.receive_shadows,
                         StreamMeshInstanceKind::Dense {
                             instance_scale: mesh.instance_scale.max(0.0001),
                             // Shares the main extract path's per-node
@@ -350,6 +363,8 @@ impl Runtime {
                     meshlet_override,
                     lod,
                     blend,
+                    cast_shadows,
+                    receive_shadows,
                 }),
                 StreamMeshInstanceKind::Dense {
                     instance_scale,
@@ -364,6 +379,8 @@ impl Runtime {
                     meshlet_override,
                     lod,
                     blend,
+                    cast_shadows,
+                    receive_shadows,
                 }),
             }
             return;
