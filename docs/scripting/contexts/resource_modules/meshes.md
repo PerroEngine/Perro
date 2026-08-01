@@ -19,6 +19,7 @@
 | `drop` | [`drop`](#drop) |
 | `create` | [`create`](#create) |
 | `get_data` | [`get_data`](#get_data) |
+| `get_data_shared` | [`get_data_shared`](#get_data_shared) |
 | `write` | [`write`](#write) |
 | `is_loaded` | [`is_loaded`](#is_loaded) |
 | `mesh_load` | [`mesh_load`](#mesh_load) |
@@ -38,6 +39,7 @@
 - Streaming level geometry: `mesh_load!(ctx.res, "res://meshes/pillar.glb")` and assign the `MeshID` to a mesh node.
 - Procedural geometry: build a `Mesh3D` (terrain patch, generated wall) and register it with `mesh_create!`.
 - Runtime mesh editing: `mesh_get_data!` to read CPU vertices, deform them, then `mesh_write!` the modified `Mesh3D` back into the same ID.
+- Read without a full copy: `get_data_shared` returns `Arc<Mesh3D>` (clones the `Arc`, not the vertex data); pair w/ `Arc::make_mut` for read-modify-write.
 - Deforming built-in primitives: `get_data` returns canonical CPU geometry for engine preset meshes immediately, so a script can start from a cube or sphere and reshape it.
 - Decoding downloaded models: `create_from_bytes` for engine `PMESH` or glTF/GLB mesh index 0.
 - Preloading and memory control: `mesh_reserve!` to pin a mesh, `mesh_is_loaded!` to poll readiness, `mesh_drop!` to free it.
@@ -189,6 +191,17 @@ methods!({
 | Returns | `Option<Mesh3D>` |
 | Use when | Reading a mesh's CPU geometry to inspect or deform it. |
 | Fails when / edge behavior | Built-in preset IDs return canonical CPU vertices, indices, one surface range, `uv`, and matching `paint_uv` immediately, including before renderer upload completes. Other IDs return `None` when CPU mesh data is unavailable, stale, or the target type does not match. |
+
+### `get_data_shared`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Meshes()` |
+| Signature | `pub fn get_data_shared(&self, id: MeshID) -> Option<Arc<Mesh3D>>` |
+| Params | `id: MeshID` |
+| Returns | `Option<Arc<Mesh3D>>` |
+| Use when | Reading CPU geometry w/o a full copy; clones the `Arc`, not the vertex/index/blend-shape data. Pair w/ `Arc::make_mut` for read-modify-write. |
+| Fails when / edge behavior | Same lookup and built-in-preset behavior as `get_data`. |
 
 ### `write`
 

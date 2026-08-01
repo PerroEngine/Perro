@@ -5,6 +5,7 @@
 use crate::ResPathSource;
 use perro_ids::MeshID;
 use perro_render_bridge::Mesh3D;
+use std::sync::Arc;
 
 pub trait MeshAPI {
     fn load_mesh_hashed(&self, source_hash: u64, source: Option<&str>) -> MeshID;
@@ -13,6 +14,9 @@ pub trait MeshAPI {
     fn create_mesh_data(&self, data: Mesh3D) -> MeshID;
     fn create_mesh_from_bytes(&self, bytes: &[u8]) -> MeshID;
     fn get_mesh_data(&self, id: MeshID) -> Option<Mesh3D>;
+    /// Shared variant of `get_mesh_data`: clones the `Arc`, not the mesh data.
+    /// Pair w/ `Arc::make_mut` 4 read-modify-write w/o a full copy.
+    fn get_mesh_data_shared(&self, id: MeshID) -> Option<Arc<Mesh3D>>;
     fn write_mesh_data(&self, id: MeshID, data: Mesh3D) -> bool;
     fn is_mesh_loaded(&self, id: MeshID) -> bool;
     fn load_mesh(&self, source: &str) -> MeshID {
@@ -136,6 +140,11 @@ impl<'res, R: MeshAPI + ?Sized> MeshModule<'res, R> {
     #[inline]
     pub fn get_data(&self, id: MeshID) -> Option<Mesh3D> {
         self.api.get_mesh_data(id)
+    }
+
+    #[inline]
+    pub fn get_data_shared(&self, id: MeshID) -> Option<Arc<Mesh3D>> {
+        self.api.get_mesh_data_shared(id)
     }
 
     #[inline]

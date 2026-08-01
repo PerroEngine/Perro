@@ -95,6 +95,22 @@ impl MeshAPI for RuntimeResourceApi {
         builtin_mesh_data(&source)
     }
 
+    fn get_mesh_data_shared(&self, id: MeshID) -> Option<Arc<Mesh3D>> {
+        let source = {
+            let state = self.state.lock().expect("resource api mutex poisoned");
+            let canonical = state.mesh_id_alias.get(&id).copied().unwrap_or(id);
+            if let Some(data) = state.mesh_data_by_id.get(&canonical) {
+                return Some(data.clone());
+            }
+            state
+                .mesh_source_by_id
+                .get(&canonical)
+                .or_else(|| state.mesh_source_by_id.get(&id))
+                .cloned()
+        }?;
+        builtin_mesh_data(&source).map(Arc::new)
+    }
+
     fn write_mesh_data(&self, id: MeshID, data: Mesh3D) -> bool {
         if id.is_nil() {
             return false;
