@@ -659,8 +659,16 @@ fn perro_ray_shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_dir
             break;
         }
     }
+    // Ramp visibility back to fully lit over the last ~12% of the shadow
+    // range. Without it the early-out above draws a hard shadow-on/shadow-off
+    // line straight across large terrain at the range limit. 0 = inside the
+    // stable band, 1 = at the limit, so the fade meets the early-out's 1.0.
+    // max() keeps smoothstep's two edges apart when the range is degenerate.
+    let fade_range = max(shadow.ray_splits.w, 1.0e-4);
+    let range_fade = smoothstep(fade_range * 0.88, fade_range, view_dist);
+    let faded = mix(visibility, 1.0, range_fade);
     let strength = clamp(shadow.params0.y, 0.0, 1.0);
-    return mix(1.0, visibility, strength);
+    return mix(1.0, faded, strength);
 }
 
 fn perro_spot_shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_index: u32) -> f32 {

@@ -137,6 +137,39 @@ impl Lighting3DState {
             && *point_lights == other.point_lights
             && *spot_lights == other.spot_lights
     }
+
+    /// Equality over only the fields the shadow setup reads.
+    ///
+    /// `build_shadow_setup` / `build_ray_shadow_scenes` touch `ray_lights`,
+    /// `spot_lights` and `point_lights` and nothing else: sky and ambient feed
+    /// environment/ambient shading, never a shadow depth pass or a cascade fit.
+    /// Comparing them here would let an unpaused `Sky3D` -- whose
+    /// `sky_time_seconds` advances every single frame -- defeat
+    /// `update_shadow_state`'s input memo forever, re-running the
+    /// O(draw_batches) focus fit under a parked camera.
+    ///
+    /// This is deliberately *not* `content_eq`: the prepare change gate needs
+    /// the sky fields, because the scene itself must re-render as the sky
+    /// animates.
+    pub fn shadow_input_eq(&self, other: &Self) -> bool {
+        // Destructure so adding a field without deciding its shadow role is a
+        // compile error.
+        let Self {
+            frame_time_seconds: _,
+            frame_delta_seconds: _,
+            frame_index: _,
+            // Ambient and sky light the scene; they cast nothing.
+            ambient_light: _,
+            sky: _,
+            sky_time_seconds: _,
+            ray_lights,
+            point_lights,
+            spot_lights,
+        } = self;
+        *ray_lights == other.ray_lights
+            && *point_lights == other.point_lights
+            && *spot_lights == other.spot_lights
+    }
 }
 
 pub const MAX_RAY_LIGHTS: usize = 3;

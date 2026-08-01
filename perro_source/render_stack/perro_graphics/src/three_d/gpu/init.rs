@@ -1715,6 +1715,7 @@ impl Gpu3D {
             last_shadow_input_camera: None,
             last_shadow_input_lighting: None,
             last_shadow_input_key: None,
+            shadow_setup_run_count: 0,
             shadow_cull_scratch: Vec::new(),
             shadow_pass_enabled: false,
             ray_shadow_enabled: false,

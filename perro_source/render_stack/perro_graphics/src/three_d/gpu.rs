@@ -1441,6 +1441,10 @@ pub struct Gpu3D {
     last_shadow_input_camera: Option<Camera3DState>,
     last_shadow_input_lighting: Option<Lighting3DState>,
     last_shadow_input_key: Option<(bool, (u32, u32), u32, bool)>,
+    // Cumulative count of `update_shadow_state` calls that missed the memo and
+    // ran the full setup. A parked camera over static lights should stop
+    // advancing this even while the sky animates.
+    shadow_setup_run_count: u64,
     // Scratch surviving-batch indices for the per-layer shadow caster cull.
     shadow_cull_scratch: Vec<usize>,
     shadow_pass_enabled: bool,

@@ -1503,6 +1503,199 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         parse_and_validate(regular::MESH_BLEND_SCREEN_WGSL, "mesh blend screen");
     }
 
+    // The last-cascade distance fade inside `perro_ray_shadow_factor`, exactly
+    // as it survives whitespace minification. Extracted (not re-typed) by the
+    // tests below so the GPU evaluates the shipped expression, and so a drifted
+    // or deleted fade fails loudly instead of silently restoring the hard cut.
+    const RAY_SHADOW_RANGE_FADE_WGSL: &str = "let fade_range = max(shadow.ray_splits.w, 1.0e-4); let range_fade = smoothstep(fade_range * 0.88, fade_range, view_dist); let faded = mix(visibility, 1.0, range_fade);";
+
+    #[test]
+    fn ray_shadow_range_fade_survives_every_prelude_variant() {
+        // One definition in the shared prelude, so every lit variant that calls
+        // perro_shadow_factor must carry it -- including the rigid/skinned
+        // rewrites and the packed-LOD patch chain, which all rewrite the
+        // prelude by text.
+        let packed_lod = build_packed_lod_rigid_prelude();
+        for (prelude, label) in [
+            (regular::prelude_wgsl(), "prelude"),
+            (regular::prelude_rigid_wgsl(), "prelude rigid"),
+            (regular::prelude_skinned_wgsl(), "prelude skinned"),
+            (packed_lod.as_str(), "prelude rigid packed lod"),
+        ] {
+            assert!(
+                prelude.contains(RAY_SHADOW_RANGE_FADE_WGSL),
+                "{label}: ray shadow range fade missing (hard cut at the range limit is back)"
+            );
+            // The fade must feed the return, not sit dead next to it.
+            assert!(
+                prelude.contains("return mix(1.0, faded, strength);"),
+                "{label}: range fade computed but not returned"
+            );
+            let wgsl = build_material_shader_with_prelude(prelude, regular::MATERIAL_STANDARD_WGSL);
+            parse_and_validate(&wgsl, &format!("{label} range fade"));
+        }
+    }
+
+    /// Runs the shipped fade statements on the GPU over a sweep of view
+    /// distances. Splices the text straight out of the minified prelude (only
+    /// the uniform read is rebound to a local), so this measures the real
+    /// expression rather than a copy of it.
+    #[test]
+    fn ray_shadow_range_fade_ramps_across_the_last_cascade_band() {
+        const RANGE: f32 = 220.0;
+        let fade_block = RAY_SHADOW_RANGE_FADE_WGSL.replace("shadow.ray_splits.w", "shadow_range");
+        assert_ne!(
+            fade_block, RAY_SHADOW_RANGE_FADE_WGSL,
+            "fade block no longer reads shadow.ray_splits.w"
+        );
+        let wgsl = format!(
+            "@group(0) @binding(0) var<storage, read> view_dists: array<f32>;\n\
+             @group(0) @binding(1) var<storage, read_write> results: array<f32>;\n\
+             @compute @workgroup_size(1)\n\
+             fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {{\n\
+             let view_dist = view_dists[gid.x];\n\
+             let visibility = 0.0;\n\
+             let shadow_range = f32({RANGE:?});\n\
+             {fade_block}\n\
+             results[gid.x] = faded;\n\
+             }}\n"
+        );
+        parse_and_validate(&wgsl, "ray shadow range fade kernel");
+
+        // 0.0 .. RANGE inclusive, so the last sample sits exactly on the limit
+        // the early-out hands over at.
+        const SAMPLES: usize = 65;
+        let dists: Vec<f32> = (0..SAMPLES)
+            .map(|i| RANGE * i as f32 / (SAMPLES - 1) as f32)
+            .collect();
+
+        let Some(values) = pollster::block_on(run_f32_kernel(&wgsl, &dists)) else {
+            eprintln!("skip ray shadow range fade gpu test: no wgpu adapter");
+            return;
+        };
+
+        let fade_start = RANGE * 0.88;
+        for (dist, value) in dists.iter().zip(values.iter()) {
+            assert!(
+                (0.0..=1.0).contains(value),
+                "fade left the visibility range at {dist}: {value}"
+            );
+            if *dist < fade_start {
+                // Inside the stable band the fade must be inert: a fully
+                // shadowed sample stays fully shadowed.
+                assert_eq!(*value, 0.0, "fade leaked into the stable band at {dist}");
+            }
+        }
+        // At the limit the fade must land on 1.0 -- the value the early-out
+        // returns for anything past it. Any gap here is the visible line.
+        let at_limit = *values.last().expect("sample at the range limit");
+        assert!(
+            (at_limit - 1.0).abs() <= 1.0e-5,
+            "fade does not meet the early-out at the range limit: {at_limit}"
+        );
+        // And it must actually ramp: monotonic, with real intermediate values
+        // rather than a two-state step.
+        let band: Vec<f32> = dists
+            .iter()
+            .zip(values.iter())
+            .filter(|(d, _)| **d >= fade_start)
+            .map(|(_, v)| *v)
+            .collect();
+        assert!(band.len() >= 4, "too few samples inside the fade band");
+        for pair in band.windows(2) {
+            assert!(
+                pair[1] >= pair[0],
+                "fade is not monotonic: {:?} -> {:?}",
+                pair[0],
+                pair[1]
+            );
+        }
+        let intermediate = band.iter().filter(|v| **v > 0.01 && **v < 0.99).count();
+        assert!(
+            intermediate >= 2,
+            "fade is a hard cut, not a ramp: {band:?}"
+        );
+        eprintln!("ray shadow range fade over the last 12%: {band:?}");
+    }
+
+    async fn run_f32_kernel(wgsl: &str, inputs: &[f32]) -> Option<Vec<f32>> {
+        let (device, queue) = test_device().await?;
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("perro_test_f32_kernel"),
+            source: wgpu::ShaderSource::Wgsl(wgsl.into()),
+        });
+        let bytes = std::mem::size_of_val(inputs) as u64;
+        let input = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_test_kernel_input"),
+            size: bytes,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let output = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_test_kernel_output"),
+            size: bytes,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let readback = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_test_kernel_readback"),
+            size: bytes,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&input, 0, bytemuck::cast_slice(inputs));
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("perro_test_f32_kernel_pipeline"),
+            layout: None,
+            module: &module,
+            entry_point: Some("cs_main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_test_f32_kernel_bind_group"),
+            layout: &pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: input.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: output.as_entire_binding(),
+                },
+            ],
+        });
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("perro_test_f32_kernel_pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.dispatch_workgroups(inputs.len() as u32, 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(&output, 0, &readback, 0, bytes);
+        queue.submit(Some(encoder.finish()));
+
+        let slice = readback.slice(..);
+        let (tx, rx) = mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        rx.recv()
+            .expect("kernel readback callback")
+            .expect("map kernel readback buffer");
+        let mapped = slice.get_mapped_range().expect("kernel readback range");
+        let values: Vec<f32> = bytemuck::cast_slice(&mapped).to_vec();
+        drop(mapped);
+        readback.unmap();
+        Some(values)
+    }
+
     #[test]
     fn multimesh_wgsl_parses() {
         let wgsl = sanitize_reserved_meta_identifier(regular::multimesh_wgsl());

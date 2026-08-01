@@ -502,13 +502,18 @@ impl Gpu3D {
             && self.shadow_cascade_defer_count == 0
             && self.last_shadow_input_key == input_key
             && self.last_shadow_input_camera.as_ref() == Some(camera)
+            // Shadow-specific compare, not the general `content_eq`: an
+            // unpaused Sky3D advances `sky_time_seconds` every frame and would
+            // otherwise defeat this memo forever, even though no shadow input
+            // moved. See `Lighting3DState::shadow_input_eq`.
             && self
                 .last_shadow_input_lighting
                 .as_ref()
-                .is_some_and(|prev| prev.content_eq(lighting))
+                .is_some_and(|prev| prev.shadow_input_eq(lighting))
         {
             return;
         }
+        self.shadow_setup_run_count = self.shadow_setup_run_count.saturating_add(1);
         self.last_shadow_input_key = input_key;
         self.last_shadow_input_camera = Some(camera.clone());
         self.last_shadow_input_lighting = Some(lighting.clone());
@@ -2406,3 +2411,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/three_d_shadow_memo_tests.rs"]
+mod shadow_memo_tests;
