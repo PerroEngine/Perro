@@ -191,7 +191,9 @@ fps = 30
         path.to_string_lossy().to_string()
     }
 
-    fn new_api_with_lookup(lookup: Option<StaticAnimationLookup>) -> std::rc::Rc<RuntimeResourceApi> {
+    fn new_api_with_lookup(
+        lookup: Option<StaticAnimationLookup>,
+    ) -> std::rc::Rc<RuntimeResourceApi> {
         RuntimeResourceApi::new(None, None, None, lookup, None, None, None, None)
     }
 

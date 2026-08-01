@@ -23,8 +23,7 @@ use crate::scripts::ui::editor_view as editor_view;
 use crate::scripts::ui::theme as theme;
 use crate::scripts::ui::inspector_value_row::{
     apply_inspector_value_row_panel, clear_inspector_value_rows, ensure_inspector_matrix_grid,
-    ensure_inspector_value_row, hide_inspector_value_rows_from, inspector_value_row_inner,
-    place_inspector_value_row,
+    ensure_inspector_value_row, hide_inspector_value_rows_from, place_inspector_value_row,
 };
 use perro_api::prelude::*;
 use perro_api::scene::{
@@ -43,7 +42,24 @@ struct CachedFilteredFiles {
 }
 
 static FILTERED_FILE_CACHE: OnceLock<Mutex<Option<CachedFilteredFiles>>> = OnceLock::new();
+// Builtin icon tokens ("[DIR]", "Node2D", ...) resolve to a small fixed set
+// of canonical res:// paths and stay resident here unbounded.
 static EDITOR_TREE_ICON_CACHE: OnceLock<Mutex<Vec<(String, TextureID)>>> = OnceLock::new();
+// Custom node icons (res:// paths from the user-editable `custom_icon`
+// scene field) are unbounded in principle, so this cache is capped with
+// oldest-first eviction instead of growing forever.
+static EDITOR_TREE_ICON_CACHE_CUSTOM: OnceLock<Mutex<Vec<(String, TextureID)>>> = OnceLock::new();
+const EDITOR_TREE_ICON_CACHE_CUSTOM_CAP: usize = 256;
+
+/// Drops all cached custom-icon textures. Call on project close/switch so a
+/// previous project's user-controlled `res://` icon paths don't linger.
+pub fn clear_editor_tree_icon_cache() {
+    if let Some(cache) = EDITOR_TREE_ICON_CACHE_CUSTOM.get()
+        && let Ok(mut cache) = cache.lock()
+    {
+        cache.clear();
+    }
+}
 
 pub fn classify_editor_log(text: &str) -> &'static str {
     let first = text.lines().next().unwrap_or_default().to_ascii_lowercase();
@@ -788,13 +804,9 @@ fn refresh_inspector_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
         ensure_inspector_value_row(ctx, idx, row);
         let parent_idx = row_parents.get(idx).copied().flatten();
         place_inspector_value_row(ctx, idx, parent_idx);
-        // Bitmask grid = ~40 nodes; only instantiate it for rows that
-        // actually show one instead of hiding a copy under every row.
-        if row.is_some_and(|item| item.kind == "BitMask")
-            && let Some(row_id) = inspector_value_row_inner(ctx, idx)
-        {
-            ensure_inspector_bitmask_grid(ctx, idx, row_id);
-        }
+        // Bitmask grid = ~40 nodes; created/removed to match whether this
+        // row currently shows one (mirrors the matrix-grid pattern below).
+        ensure_inspector_bitmask_grid(ctx, idx, row);
         ensure_inspector_matrix_grid(ctx, idx, row);
         set_ui_display(
             ctx,
@@ -5451,7 +5463,8 @@ fn editor_tree_icon_texture<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     icon: &str,
 ) -> TextureID {
-    let path = if icon.starts_with("res://") {
+    let is_custom = icon.starts_with("res://");
+    let path = if is_custom {
         icon
     } else {
         match icon {
@@ -5477,6 +5490,29 @@ fn editor_tree_icon_texture<API: ScriptAPI + ?Sized>(
             _ => "res://icons/nodes/node.png",
         }
     };
+    if is_custom {
+        let cache = EDITOR_TREE_ICON_CACHE_CUSTOM.get_or_init(|| Mutex::new(Vec::new()));
+        if let Ok(cache) = cache.lock()
+            && let Some((_, texture)) = cache.iter().find(|(cached_path, _)| cached_path == path)
+        {
+            return *texture;
+        }
+        let texture = texture_load!(ctx.res, path);
+        if let Ok(mut cache) = cache.lock() {
+            if let Some((_, cached_texture)) = cache
+                .iter_mut()
+                .find(|(cached_path, _)| cached_path == path)
+            {
+                *cached_texture = texture;
+            } else {
+                if cache.len() >= EDITOR_TREE_ICON_CACHE_CUSTOM_CAP {
+                    cache.remove(0);
+                }
+                cache.push((path.to_string(), texture));
+            }
+        }
+        return texture;
+    }
     let cache = EDITOR_TREE_ICON_CACHE.get_or_init(|| Mutex::new(Vec::new()));
     if let Ok(cache) = cache.lock()
         && let Some((_, texture)) = cache.iter().find(|(cached_path, _)| cached_path == path)

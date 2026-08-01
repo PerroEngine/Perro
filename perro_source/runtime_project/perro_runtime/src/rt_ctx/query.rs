@@ -774,10 +774,7 @@ impl<'a> QueryPlan<'a> {
                 strip_redundant_type_filters_borrowed(e)
             }
         });
-        let estimated_cost_per_node = optimized_expr
-            .as_deref()
-            .map(expr_cost)
-            .unwrap_or(1);
+        let estimated_cost_per_node = optimized_expr.as_deref().map(expr_cost).unwrap_or(1);
         let has_type_filter =
             exact_type_mask != QueryTypeMask::all() || base_type_mask != QueryTypeMask::all();
         Self {

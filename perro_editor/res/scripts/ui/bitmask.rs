@@ -1,18 +1,36 @@
 use crate::scripts::app::editor_app as editor_app;
+use crate::scripts::ui::editor_inspector_values::InspectorValueRow;
 use crate::scripts::ui::editor_ui::find_named;
+use crate::scripts::ui::inspector_value_row::inspector_value_row_inner;
 use perro_api::prelude::*;
 
 const BITMASK_TEMPLATE_ROOT: &str = "bitmask_root";
 
+/// Creates the bitmask grid (~35 nodes) for row `idx` when it currently
+/// shows a BitMask field, and removes it otherwise -- mirrors
+/// `ensure_inspector_matrix_grid`'s create-or-remove pattern so bitmask
+/// grids get torn down instead of merely hidden when a row stops being a
+/// bitmask (kind change, row reused for a different field, or the row goes
+/// away entirely on selection change).
 pub fn ensure_inspector_bitmask_grid<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     idx: usize,
-    parent: NodeID,
+    row: Option<&InspectorValueRow>,
 ) {
     let grid_name = format!("inspector_var_{idx}_bitmask_grid");
+    let is_bitmask = row.is_some_and(|item| item.kind == "BitMask");
+    if !is_bitmask {
+        if let Some(id) = find_named(ctx, &grid_name) {
+            let _ = ctx.run.Nodes().remove_node(id);
+        }
+        return;
+    }
     if find_named(ctx, &grid_name).is_some() {
         return;
     }
+    let Some(parent) = inspector_value_row_inner(ctx, idx) else {
+        return;
+    };
     let Ok(root_id) = ctx
         .run
         .Scene()

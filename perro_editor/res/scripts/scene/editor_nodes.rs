@@ -1595,6 +1595,12 @@ pub fn delete_selected_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
             .retain(|node| !removed_keys.contains(&node.key.as_u32()));
         doc.normalize_links();
         set_state_scene_doc(state, &doc);
+        // Deleted nodes' keys must not linger in the tree-collapse toggle
+        // list forever -- prune them here instead of waiting on a full
+        // scene reload.
+        state
+            .collapsed_scene_keys
+            .retain(|key| !removed_keys.contains(key));
         state.selected_key = parent_key
             .filter(|parent| {
                 doc.scene

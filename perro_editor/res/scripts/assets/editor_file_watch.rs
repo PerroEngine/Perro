@@ -56,7 +56,26 @@ pub fn request_project_scan(root: PathBuf, before: Vec<FileSig>) {
 pub fn take_project_scan(root: &Path) -> Option<ProjectScan> {
     let key = root.to_string_lossy();
     let jobs = PROJECT_SCAN_JOBS.get_or_init(|| Mutex::new(BTreeMap::new()));
-    jobs.lock().ok()?.get_mut(key.as_ref())?.ready.take()
+    let mut guard = jobs.lock().ok()?;
+    let job = guard.get_mut(key.as_ref())?;
+    let scan = job.ready.take()?;
+    // Job is fully consumed (not running, ready drained) -- drop the entry
+    // instead of leaving a spent placeholder in the map forever.
+    guard.remove(key.as_ref());
+    Some(scan)
+}
+
+/// Drops scan-job entries for any root other than `root`. The editor only
+/// ever polls one project root at a time, so entries from a previously
+/// opened project would otherwise sit in the map (with a background thread
+/// possibly still writing to them) for the rest of the process lifetime.
+/// Call on project open/switch.
+pub fn retain_project_scan_job(root: &Path) {
+    let key = root.to_string_lossy().to_string();
+    let jobs = PROJECT_SCAN_JOBS.get_or_init(|| Mutex::new(BTreeMap::new()));
+    if let Ok(mut guard) = jobs.lock() {
+        guard.retain(|existing_key, _| existing_key == &key);
+    }
 }
 
 pub fn scan_project(root: &Path) -> Vec<FileSig> {

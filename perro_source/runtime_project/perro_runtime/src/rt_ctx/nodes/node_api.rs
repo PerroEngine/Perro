@@ -388,7 +388,9 @@ impl NodeAPI for Runtime {
         S: AsRef<str>,
     {
         let name = name.as_ref();
-        self.nodes.named_ids(name).find(|&id| root.is_nil() || self.node_is_descendant_of(id, root))
+        self.nodes
+            .named_ids(name)
+            .find(|&id| root.is_nil() || self.node_is_descendant_of(id, root))
     }
 
     fn get_node_parent_id(&mut self, node_id: perro_ids::NodeID) -> Option<perro_ids::NodeID> {
