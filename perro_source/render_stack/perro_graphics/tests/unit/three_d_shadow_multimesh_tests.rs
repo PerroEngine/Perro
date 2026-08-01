@@ -440,6 +440,19 @@ fn median(mut samples: Vec<std::time::Duration>) -> std::time::Duration {
     samples[samples.len() / 2]
 }
 
+/// Cascade budget knob for the cases below. `None` restores the shipped
+/// `CASCADE_RENDER_BUDGET`; `Some(MAX_SHADOW_RAY_CASCADES)` turns the budget off
+/// so a case can measure (or assert against) the un-spread behavior.
+fn set_cascade_budget(budget: Option<usize>) {
+    crate::three_d::gpu::shadows::set_cascade_render_budget_override(budget);
+}
+
+/// Cascade window snap granularity knob. `None` restores the shipped
+/// `CASCADE_SNAP_STEPS`.
+fn set_cascade_snap_steps(steps: Option<f32>) {
+    crate::three_d::gpu::shadows::set_cascade_snap_steps_override(steps);
+}
+
 fn build_harness(
     indirect_first_instance: bool,
     shape: SceneShape,
@@ -589,6 +602,9 @@ fn shadow_layer_instance_cull_matches_cpu_reference() {
         eprintln!("skip shadow instance-cull reference test: no wgpu adapter");
         return;
     };
+    // The cull is what's under test, not the scheduler: run every cascade this
+    // frame so the far cascade's readback is available.
+    set_cascade_budget(Some(MAX_SHADOW_RAY_CASCADES));
     for _ in 0..3 {
         harness.frame(&draws, camera_at(0.0));
     }
@@ -672,6 +688,7 @@ fn shadow_layer_instance_cull_matches_cpu_reference() {
         "per-layer cull submitted no fewer instances than the batch pre-cull \
          ({gpu_total} vs {batch_survivors})"
     );
+    set_cascade_budget(None);
 }
 
 /// Where the per-layer instance cull earns its keep: a few world-spanning
@@ -684,6 +701,8 @@ fn wide_field_shadow_casters_cull_per_instance() {
         eprintln!("skip wide-field shadow cull test: no wgpu adapter");
         return;
     };
+    // Measuring the cull, not the scheduler: every cascade renders this frame.
+    set_cascade_budget(Some(MAX_SHADOW_RAY_CASCADES));
     for _ in 0..3 {
         harness.frame(&draws, camera_at(0.0));
     }
@@ -738,6 +757,207 @@ fn wide_field_shadow_casters_cull_per_instance() {
         "the far layer must submit fewer instances than its whole batch set \
          ({culled_submission} vs {last_layer_batch_submission})"
     );
+    set_cascade_budget(None);
+}
+
+/// Lever 1: the cascade round-robin budget. A translating camera drags several
+/// cascade windows across their snap grid in the same frame; the budget caps how
+/// many of them re-raster per frame and lets the rest ride one more frame on
+/// their cached depth. Measured on the same 102_400-caster walk as
+/// `moving_camera_multimesh_shadow_submission`, budget off vs on, plus the
+/// starvation and settle guarantees the deferral rests on.
+#[test]
+fn cascade_round_robin_budget_spreads_shadow_renders() {
+    let Some((mut harness, draws)) = build_harness(true, SceneShape::Clusters) else {
+        eprintln!("skip cascade round-robin budget test: no wgpu adapter");
+        return;
+    };
+    const WALK: u32 = 24;
+    const SPEED: f32 = 2.0;
+
+    // Which cascades advanced their window this frame: a rendered cascade gets
+    // its new scene uniform applied, a deferred one keeps the old one.
+    fn cascade_scenes(harness: &ShadowHarness) -> Vec<Option<Scene3DUniform>> {
+        harness.gpu.last_shadow_scenes[..MAX_SHADOW_RAY_CASCADES].to_vec()
+    }
+
+    struct WalkResult {
+        layers: u32,
+        instances: u64,
+        peak_layers: u32,
+        time: std::time::Duration,
+        per_cascade: [u32; MAX_SHADOW_RAY_CASCADES],
+        // Longest run of consecutive frames a cascade ASKED for a re-render and
+        // did not get one. Frames where its window simply did not move are not
+        // waiting, so this reads the scheduler's own age counters rather than
+        // inferring from the applied scenes.
+        worst_wait: [u32; MAX_SHADOW_RAY_CASCADES],
+    }
+
+    fn walk(
+        harness: &mut ShadowHarness,
+        draws: &[Draw3DInstance],
+        first_step: u32,
+        budget: Option<usize>,
+        snap_steps: Option<f32>,
+    ) -> WalkResult {
+        set_cascade_budget(budget);
+        set_cascade_snap_steps(snap_steps);
+        let mut result = WalkResult {
+            layers: 0,
+            instances: 0,
+            peak_layers: 0,
+            time: std::time::Duration::ZERO,
+            per_cascade: [0; MAX_SHADOW_RAY_CASCADES],
+            worst_wait: [0; MAX_SHADOW_RAY_CASCADES],
+        };
+        let mut times = Vec::new();
+        for step in first_step..first_step + WALK {
+            let before = cascade_scenes(harness);
+            let (stats, elapsed) = harness.timed_frame(draws, camera_at(step as f32 * SPEED));
+            let after = cascade_scenes(harness);
+            result.layers += stats.layers;
+            result.instances += stats.instances;
+            result.peak_layers = result.peak_layers.max(stats.layers);
+            times.push(elapsed);
+            for cascade in 0..MAX_SHADOW_RAY_CASCADES {
+                if before[cascade] != after[cascade] {
+                    result.per_cascade[cascade] += 1;
+                }
+                result.worst_wait[cascade] =
+                    result.worst_wait[cascade].max(harness.gpu.shadow_cascade_defer_age[cascade]);
+            }
+        }
+        result.time = median(times);
+        set_cascade_budget(None);
+        set_cascade_snap_steps(None);
+        result
+    }
+
+    for _ in 0..3 {
+        harness.frame(&draws, camera_at(0.0));
+    }
+    let total_instances = harness.gpu.staged_multimesh_instances.len();
+
+    // Lever 2 on the same repro, with the budget out of the way: the old snap
+    // granularity vs the shipped one.
+    let snap_32 = walk(
+        &mut harness,
+        &draws,
+        1,
+        Some(MAX_SHADOW_RAY_CASCADES),
+        Some(32.0),
+    );
+    // Budget off: every cascade whose window moved re-rasters the same frame.
+    let off = walk(
+        &mut harness,
+        &draws,
+        WALK + 1,
+        Some(MAX_SHADOW_RAY_CASCADES),
+        None,
+    );
+    // Budget on (shipped value): at most CASCADE_RENDER_BUDGET cascades a frame.
+    let on = walk(&mut harness, &draws, WALK * 2 + 1, None, None);
+
+    println!(
+        "cascade snap steps on the repro ({WALK} moving frames, budget off): \
+         32 -> layers={} instances={} median frame={:?} per-cascade={:?}; \
+         16 -> layers={} instances={} median frame={:?} per-cascade={:?}",
+        snap_32.layers,
+        snap_32.instances,
+        snap_32.time,
+        snap_32.per_cascade,
+        off.layers,
+        off.instances,
+        off.time,
+        off.per_cascade,
+    );
+    assert!(
+        off.layers <= snap_32.layers,
+        "the coarser snap grid must not re-render cascades more often \
+         ({} vs {})",
+        off.layers,
+        snap_32.layers
+    );
+
+    println!(
+        "cascade budget over {WALK} moving frames @ {SPEED} u/frame \
+         ({total_instances} caster instances):\n  off: layers={} (peak {}/frame) \
+         instances={} median frame={:?} per-cascade renders={:?}\n  on:  layers={} \
+         (peak {}/frame) instances={} median frame={:?} per-cascade renders={:?} \
+         worst wait={:?}",
+        off.layers,
+        off.peak_layers,
+        off.instances,
+        off.time,
+        off.per_cascade,
+        on.layers,
+        on.peak_layers,
+        on.instances,
+        on.time,
+        on.per_cascade,
+        on.worst_wait,
+    );
+
+    assert!(
+        on.peak_layers <= 2,
+        "the budget must cap a frame at 2 cascade re-renders, saw {}",
+        on.peak_layers
+    );
+    assert!(
+        on.layers <= off.layers,
+        "the budget must not add cascade re-renders ({} vs {})",
+        on.layers,
+        off.layers
+    );
+    assert!(
+        on.instances < off.instances,
+        "fewer cascade re-renders must mean fewer caster instances submitted \
+         ({} vs {})",
+        on.instances,
+        off.instances
+    );
+    // No starvation: every cascade still gets served, within the age cap.
+    for cascade in 0..MAX_SHADOW_RAY_CASCADES {
+        assert!(
+            on.per_cascade[cascade] > 0,
+            "cascade {cascade} never rendered across {WALK} moving frames"
+        );
+        assert!(
+            on.worst_wait[cascade] <= 3,
+            "cascade {cascade} waited {} frames, past the 3-frame promotion cap",
+            on.worst_wait[cascade]
+        );
+    }
+    assert_eq!(
+        on.worst_wait[0], 0,
+        "cascade 0 holds the closest shadows and must never be deferred"
+    );
+
+    // Settle: once the camera parks, the pending cascades flush and the cache
+    // takes over again -- the deferral must not leave a layer stale forever.
+    let park = camera_at((WALK * 3 + 1) as f32 * SPEED);
+    let mut settle_frames = 0;
+    let mut settle_layers = 0;
+    for _ in 0..8 {
+        let stats = harness.frame(&draws, park.clone());
+        if stats.layers == 0 && harness.gpu.shadow_cascade_defer_count == 0 {
+            break;
+        }
+        settle_layers += stats.layers;
+        settle_frames += 1;
+    }
+    println!("parked camera settled after {settle_frames} frames ({settle_layers} layers)");
+    assert!(
+        settle_frames <= 4,
+        "a parked camera must flush every pending cascade quickly, took {settle_frames} frames"
+    );
+    let parked = harness.frame(&draws, park);
+    assert_eq!(
+        parked.layers, 0,
+        "a settled parked camera must keep every shadow layer cached"
+    );
+    assert_eq!(harness.gpu.shadow_cascade_defer_count, 0);
 }
 
 /// Adapters without INDIRECT_FIRST_INSTANCE keep the identity draw path: the

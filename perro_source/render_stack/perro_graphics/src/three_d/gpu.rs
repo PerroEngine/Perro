@@ -1406,6 +1406,15 @@ pub struct Gpu3D {
     // Per shadow layer (flat cascade/spot/point-face index) cache validity. A
     // valid layer retains prior depth contents and skips its render pass.
     shadow_layer_valid: Vec<bool>,
+    // Round-robin cascade budget state (see `schedule_cascade_renders`).
+    // `shadow_cascade_defer_age[i]` counts consecutive frames cascade i asked
+    // for a re-render and did not get one -- the age-based promotion that stops
+    // a far cascade starving. `shadow_cascade_defer_count` is how many cascades
+    // the last prepare deferred; non-zero also keeps `update_shadow_state`'s
+    // input memo open so a pending cascade is still served once the camera
+    // stops moving.
+    shadow_cascade_defer_age: [u32; MAX_SHADOW_RAY_CASCADES],
+    shadow_cascade_defer_count: u32,
     // Set when any shadow-caster geometry MAY have moved this frame (full
     // rebuild, transform patch, or multimesh instance/pose upload). A full
     // rebuild is not proof of movement -- a camera-only frame restages

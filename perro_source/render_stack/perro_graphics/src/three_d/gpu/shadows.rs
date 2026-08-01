@@ -6,9 +6,75 @@ use crate::gpu_shrink::SHRINK_LOW_TICKS;
 /// size is too), so the grid step stays a whole number of shadow texels and the
 /// stable-CSM texel alignment survives; the coarseness is what lets a cascade
 /// hold its cached depth across many frames of camera motion instead of
-/// re-rendering every frame. Higher = more cache hits + slightly coarser texels
-/// (the window grows by `2 / CASCADE_SNAP_STEPS` to keep covering its slice).
-const CASCADE_SNAP_STEPS: f32 = 32.0;
+/// re-rendering every frame.
+///
+/// LOWER = coarser grid = more cache hits, and a slightly larger (so coarser-
+/// texelled) window, since it grows by `2 / CASCADE_SNAP_STEPS` to keep covering
+/// its slice. Measured at 2 world units/frame over 64 frames
+/// (`coarser_cascade_snap_trades_texel_size_for_cache_hits`): 32 moves the four
+/// cascade windows [63, 63, 47, 20] times, 16 moves them [61, 49, 25, 11] -- the
+/// two far cascades, which are the expensive ones to re-raster, roughly halve --
+/// for a flat 5.9% texel growth. 16 is the better trade; raise it back toward 32
+/// if shadow edges look too blocky on a low map size.
+const CASCADE_SNAP_STEPS: f32 = 16.0;
+
+// Test-only override for `CASCADE_SNAP_STEPS`, so one process can measure the
+// cascade re-render rate at more than one granularity (32 vs 16) on the same
+// repro. Production always reads the constant.
+#[cfg(test)]
+thread_local! {
+    static CASCADE_SNAP_STEPS_OVERRIDE: std::cell::Cell<Option<f32>> =
+        const { std::cell::Cell::new(None) };
+}
+
+#[inline]
+fn cascade_snap_steps() -> f32 {
+    #[cfg(test)]
+    if let Some(steps) = CASCADE_SNAP_STEPS_OVERRIDE.with(std::cell::Cell::get) {
+        return steps;
+    }
+    CASCADE_SNAP_STEPS
+}
+
+#[cfg(test)]
+pub(super) fn set_cascade_snap_steps_override(steps: Option<f32>) {
+    CASCADE_SNAP_STEPS_OVERRIDE.with(|cell| cell.set(steps));
+}
+
+/// Cascade re-render budget: at most this many ray cascades re-render in one
+/// frame. Cascade 0 always takes a slot (it holds the closest, most visible
+/// shadows and must never lag); the cascades that lose the race keep their
+/// previous depth for a frame or two. Raise it to trade GPU back for freshness,
+/// lower it to shave more raster off a moving camera.
+const CASCADE_RENDER_BUDGET: usize = 2;
+
+/// Hard cap on how many consecutive frames one cascade may sit pending. A
+/// cascade at the cap renders regardless of the budget, so no layer can starve;
+/// it is only reachable when more cascades than the budget want a re-render for
+/// this many frames running.
+const CASCADE_MAX_DEFER_FRAMES: u32 = 3;
+
+// Test-only override for `CASCADE_RENDER_BUDGET`, so the repro can measure the
+// same camera walk with the budget on and off.
+#[cfg(test)]
+thread_local! {
+    static CASCADE_RENDER_BUDGET_OVERRIDE: std::cell::Cell<Option<usize>> =
+        const { std::cell::Cell::new(None) };
+}
+
+#[inline]
+fn cascade_render_budget() -> usize {
+    #[cfg(test)]
+    if let Some(budget) = CASCADE_RENDER_BUDGET_OVERRIDE.with(std::cell::Cell::get) {
+        return budget;
+    }
+    CASCADE_RENDER_BUDGET
+}
+
+#[cfg(test)]
+pub(super) fn set_cascade_render_budget_override(budget: Option<usize>) {
+    CASCADE_RENDER_BUDGET_OVERRIDE.with(|cell| cell.set(budget));
+}
 
 /// High-water tracker for grow-only *layer* arrays (shadow atlases, decal
 /// texture array). Same policy as `crate::gpu_shrink::ShrinkTracker` -- shrink
@@ -389,6 +455,10 @@ impl Gpu3D {
         ));
         if !shadows_disabled
             && !self.shadow_casters_dirty
+            // A cascade left pending by the round-robin budget must still be
+            // served after the camera stops moving; taking the memo here would
+            // freeze it stale forever.
+            && self.shadow_cascade_defer_count == 0
             && self.last_shadow_input_key == input_key
             && self.last_shadow_input_camera.as_ref() == Some(camera)
             && self
@@ -416,6 +486,8 @@ impl Gpu3D {
             self.shadow_layer_shrink.ray.note_used(0);
             self.shadow_layer_shrink.spot.note_used(0);
             self.shadow_layer_shrink.point.note_used(0);
+            self.shadow_cascade_defer_age = [0; MAX_SHADOW_RAY_CASCADES];
+            self.shadow_cascade_defer_count = 0;
             return;
         }
         let mut setup = build_shadow_setup(ShadowSetupArgs {
@@ -480,7 +552,54 @@ impl Gpu3D {
                 && (caster_key.is_none() || self.last_shadow_caster_key != caster_key));
         self.last_shadow_caster_key = caster_key;
         self.shadow_casters_dirty = false;
-        for (index, scene) in setup.scenes.iter().copied().enumerate() {
+        // Cascade round-robin budget. A translating camera drags several cascade
+        // windows across their snap grid at once; rendering all of them in the
+        // same frame is the spike. Cap the frame at CASCADE_RENDER_BUDGET
+        // cascades and let the losers ride one more frame on their cached depth.
+        let cascade_layers = if setup.ray_enabled {
+            MAX_SHADOW_RAY_CASCADES
+        } else {
+            0
+        };
+        // Falling back to the previous window needs a previous uniform to
+        // restore the cascade's matrix + texel from.
+        let can_defer = self.last_shadow.is_some();
+        let mut cascade_wants = [false; MAX_SHADOW_RAY_CASCADES];
+        let mut cascade_forced = [false; MAX_SHADOW_RAY_CASCADES];
+        for index in 0..cascade_layers {
+            let scene_changed = self.last_shadow_scenes.get(index).copied().flatten()
+                != setup.scenes.get(index).copied();
+            let was_valid = self.shadow_layer_valid.get(index).copied().unwrap_or(false);
+            cascade_wants[index] =
+                shadow_layer_needs_render(casters_dirty, scene_changed, was_valid);
+            // Moved casters and garbage depth are correctness, not freshness: a
+            // stale window is invisible, a shadow left behind by a moved caster
+            // is not.
+            cascade_forced[index] = casters_dirty || !was_valid || !can_defer;
+        }
+        let cascade_granted = schedule_cascade_renders(
+            cascade_wants,
+            cascade_forced,
+            &mut self.shadow_cascade_defer_age,
+            cascade_render_budget(),
+        );
+        self.shadow_cascade_defer_count = (0..cascade_layers)
+            .filter(|&index| cascade_wants[index] && !cascade_granted[index])
+            .count() as u32;
+        let scenes = std::mem::take(&mut setup.scenes);
+        for (index, scene) in scenes.iter().copied().enumerate() {
+            if index < cascade_layers && cascade_wants[index] && !cascade_granted[index] {
+                // Deferred: hold the whole cascade at the window its cached
+                // depth was rendered for -- matrix, texel, frustum planes and
+                // cull planes all stay put, so receivers keep sampling a map
+                // that matches them. Only the outer rim of the window (where
+                // the camera has since advanced past the fit slack) reads lit.
+                if let Some(previous) = self.last_shadow {
+                    setup.uniform.ray_light_view_proj[index] = previous.ray_light_view_proj[index];
+                    setup.uniform.ray_texel[index] = previous.ray_texel[index];
+                }
+                continue;
+            }
             // Cache the frustum planes so shadow draws can sphere-cull per view.
             let view_proj = Mat4::from_cols_array_2d(&scene.view_proj);
             self.shadow_camera_frustums[index] = extract_frustum_planes(view_proj);
@@ -525,6 +644,61 @@ pub(super) fn shadow_layer_needs_render(
     was_valid: bool,
 ) -> bool {
     casters_dirty || scene_changed || !was_valid
+}
+
+/// Round-robin cascade budget.
+///
+/// `wants[i]` = cascade i asked for a re-render (its window moved, or its depth
+/// is gone). `forced[i]` = it cannot be deferred at all -- casters actually
+/// moved, the layer holds garbage depth, or there is no previously-uploaded
+/// uniform to fall back on. Returns which cascades render this frame; the rest
+/// keep their cached depth AND the matrix it was drawn with, so each deferred
+/// cascade stays internally consistent (old window, old contents).
+///
+/// Spot/point layers are deliberately not budgeted: they are event-driven
+/// (light or caster change), never camera-driven, so they do not contend frame
+/// after frame the way cascades do. The one case that invalidates many at once
+/// -- a scene load / atlas recreate -- leaves them holding garbage depth, which
+/// is exactly the case a budget must not defer anyway.
+pub(super) fn schedule_cascade_renders(
+    wants: [bool; MAX_SHADOW_RAY_CASCADES],
+    forced: [bool; MAX_SHADOW_RAY_CASCADES],
+    ages: &mut [u32; MAX_SHADOW_RAY_CASCADES],
+    budget: usize,
+) -> [bool; MAX_SHADOW_RAY_CASCADES] {
+    let mut granted = [false; MAX_SHADOW_RAY_CASCADES];
+    let mut used = 0usize;
+    // Un-deferrable work, cascade 0 (closest shadows never lag) and anything
+    // that hit the age cap all ignore the budget: correctness before budget.
+    for index in 0..MAX_SHADOW_RAY_CASCADES {
+        if wants[index] && (forced[index] || index == 0 || ages[index] >= CASCADE_MAX_DEFER_FRAMES)
+        {
+            granted[index] = true;
+            used += 1;
+        }
+    }
+    // Spend what is left oldest-pending first, nearest cascade breaking ties. A
+    // straight nearest-first scan would re-serve the same cascade every frame
+    // and march the far ones into the age cap together, which then bursts back
+    // to a full four-cascade frame -- the cost this budget exists to spread.
+    while used < budget {
+        let Some(next) = (0..MAX_SHADOW_RAY_CASCADES)
+            .filter(|&index| wants[index] && !granted[index])
+            .max_by_key(|&index| (ages[index], std::cmp::Reverse(index)))
+        else {
+            break;
+        };
+        granted[next] = true;
+        used += 1;
+    }
+    for index in 0..MAX_SHADOW_RAY_CASCADES {
+        if wants[index] && !granted[index] {
+            ages[index] += 1;
+        } else {
+            ages[index] = 0;
+        }
+    }
+    granted
 }
 
 pub(super) struct ShadowSetupArgs<'a> {
@@ -865,6 +1039,7 @@ fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScen
         let span = span(right_axis).max(span(up_axis));
         span.is_finite().then_some(span)
     });
+    let snap_steps = cascade_snap_steps();
     let mut scenes = Vec::with_capacity(MAX_SHADOW_RAY_CASCADES);
     let mut matrices = [Mat4::IDENTITY; MAX_SHADOW_RAY_CASCADES];
     let mut texels = [0.0f32; MAX_SHADOW_RAY_CASCADES];
@@ -911,7 +1086,7 @@ fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScen
         // must carry two steps of slack over the fit extent
         // (`size * (1 - 2/CASCADE_SNAP_STEPS) >= fit extent`, satisfied because
         // 1.05 * (1 + 2/STEPS) * (1 - 2/STEPS) > 1).
-        let size = (size * 1.05 * (1.0 + 2.0 / CASCADE_SNAP_STEPS)).max(2.0);
+        let size = (size * 1.05 * (1.0 + 2.0 / snap_steps)).max(2.0);
         let texel = (size / shadow_map_size as f32).max(1.0e-6);
         texels[cascade] = texel.max(1.0e-4);
         // Snap grid, in world units. A whole number of texels (the map size is
@@ -923,7 +1098,7 @@ fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScen
         // re-renders that cascade every frame, snapping per grid step
         // re-renders it once every `grid / speed` frames and lets the cached
         // depth stand in between (`shadow_layer_needs_render`).
-        let grid = (size / CASCADE_SNAP_STEPS).max(1.0e-6);
+        let grid = (size / snap_steps).max(1.0e-6);
         let z_pad = (radius * 0.65).max(12.0);
         // Convert the fit (measured in the `fit_eye`-anchored light frame) to
         // absolute light-plane coordinates, so the quantization below is
@@ -1346,6 +1521,156 @@ mod tests {
             shadow_normal_bias: 0.045,
         });
         lighting
+    }
+
+    /// Walk the camera in a straight line and count how many times each
+    /// cascade's window (its light view-proj) actually moves. A window that does
+    /// not move is a cached layer that skips its depth pass entirely, so this is
+    /// the cache-hit measurement `CASCADE_SNAP_STEPS` is tuned against.
+    fn cascade_window_moves(steps: f32, frames: usize, speed: f32) -> ([u32; 4], [f32; 4]) {
+        set_cascade_snap_steps_override(Some(steps));
+        let mut ground = caster_batch();
+        ground.local_radius = 400.0;
+        let batches = [ground];
+        let instances = [identity_instance()];
+        let mut moves = [0u32; MAX_SHADOW_RAY_CASCADES];
+        let mut texels = [0.0f32; MAX_SHADOW_RAY_CASCADES];
+        let mut previous: Option<[[[f32; 4]; 4]; MAX_SHADOW_RAY_CASCADES]> = None;
+        for frame in 0..frames {
+            let mut moving = camera(Quat::IDENTITY);
+            moving.position[0] = frame as f32 * speed;
+            let setup = build_shadow_setup(ShadowSetupArgs {
+                camera: &moving,
+                lighting: &lighting_with_ray([-0.4, -1.0, -0.3]),
+                draw_batches: &batches,
+                staged_instances: &instances,
+                fallback_focus_center: Vec3::ZERO,
+                fallback_focus_radius: 64.0,
+                viewport_width: 1280,
+                viewport_height: 720,
+                shadow_map_size: SHADOW_MAP_SIZE,
+                has_casters: true,
+            });
+            if let Some(previous) = previous {
+                for cascade in 0..MAX_SHADOW_RAY_CASCADES {
+                    if setup.uniform.ray_light_view_proj[cascade] != previous[cascade] {
+                        moves[cascade] += 1;
+                    }
+                }
+            }
+            previous = Some(setup.uniform.ray_light_view_proj);
+            texels = setup.uniform.ray_texel;
+        }
+        set_cascade_snap_steps_override(None);
+        (moves, texels)
+    }
+
+    /// The `CASCADE_SNAP_STEPS` trade, measured: a coarser snap grid holds every
+    /// cascade's cached depth over more frames of camera motion, at the price of
+    /// a proportionally larger (so coarser-texelled) window.
+    #[test]
+    fn coarser_cascade_snap_trades_texel_size_for_cache_hits() {
+        let frames = 64;
+        let speed = 2.0;
+        let (moves_32, texels_32) = cascade_window_moves(32.0, frames, speed);
+        let (moves_16, texels_16) = cascade_window_moves(16.0, frames, speed);
+        let total_32: u32 = moves_32.iter().sum();
+        let total_16: u32 = moves_16.iter().sum();
+        let coarsening: Vec<f32> = (0..MAX_SHADOW_RAY_CASCADES)
+            .map(|c| texels_16[c] / texels_32[c].max(1.0e-9))
+            .collect();
+        println!(
+            "cascade snap steps over {frames} frames @ {speed} u/frame: \
+             32 -> per-cascade window moves {moves_32:?} (total {total_32}), \
+             16 -> {moves_16:?} (total {total_16}); texel 32={texels_32:?} \
+             16={texels_16:?} coarsening={coarsening:?}"
+        );
+        assert!(
+            total_16 < total_32,
+            "16 steps must not move windows more often than 32 ({total_16} vs {total_32})"
+        );
+        // Halving the step count doubles the grid, so a window survives about
+        // twice as many frames of the same motion. Only the far cascades can
+        // show it: cascades 0/1 have windows small enough that any real camera
+        // speed crosses a grid step every frame at either setting -- and they
+        // are also the cheapest layers to re-render.
+        for cascade in 2..MAX_SHADOW_RAY_CASCADES {
+            assert!(
+                moves_16[cascade] * 3 < moves_32[cascade] * 2,
+                "cascade {cascade}: 16 steps must cut window moves well below 32 \
+                 ({} vs {})",
+                moves_16[cascade],
+                moves_32[cascade]
+            );
+        }
+        // ...and the window (hence the texel) only grows by the extra snap
+        // slack, a few percent -- not the ~2x the cache win is worth.
+        for (cascade, ratio) in coarsening.iter().enumerate() {
+            assert!(
+                *ratio < 1.10,
+                "cascade {cascade} texel grew {ratio}x, far past the snap slack"
+            );
+        }
+    }
+
+    #[test]
+    fn cascade_budget_caps_renders_and_always_serves_cascade_zero() {
+        let mut ages = [0u32; MAX_SHADOW_RAY_CASCADES];
+        // All four windows moved; nothing is forced.
+        let granted = schedule_cascade_renders([true; 4], [false; 4], &mut ages, 2);
+        assert!(granted[0], "cascade 0 must never be deferred");
+        assert_eq!(
+            granted.iter().filter(|g| **g).count(),
+            2,
+            "budget of 2 must not render more than 2 cascades: {granted:?}"
+        );
+        // Deferred cascades age, served ones reset.
+        assert_eq!(ages[0], 0);
+        assert_eq!(ages.iter().filter(|age| **age == 1).count(), 2);
+    }
+
+    #[test]
+    fn cascade_budget_ignores_the_cap_for_undeferrable_layers() {
+        let mut ages = [0u32; MAX_SHADOW_RAY_CASCADES];
+        // Casters moved / layers hold garbage depth: every layer must render
+        // now, budget or not.
+        let granted = schedule_cascade_renders([true; 4], [true; 4], &mut ages, 2);
+        assert_eq!(granted, [true; 4]);
+        assert_eq!(ages, [0; 4]);
+    }
+
+    #[test]
+    fn cascade_budget_never_starves_a_cascade() {
+        let mut ages = [0u32; MAX_SHADOW_RAY_CASCADES];
+        // Worst case: every cascade wants a re-render every frame forever.
+        let mut waited = [0u32; MAX_SHADOW_RAY_CASCADES];
+        let mut worst = [0u32; MAX_SHADOW_RAY_CASCADES];
+        let mut rendered = [0u32; MAX_SHADOW_RAY_CASCADES];
+        for _ in 0..64 {
+            let granted = schedule_cascade_renders([true; 4], [false; 4], &mut ages, 2);
+            for cascade in 0..MAX_SHADOW_RAY_CASCADES {
+                if granted[cascade] {
+                    rendered[cascade] += 1;
+                    waited[cascade] = 0;
+                } else {
+                    waited[cascade] += 1;
+                    worst[cascade] = worst[cascade].max(waited[cascade]);
+                }
+            }
+        }
+        println!("cascade budget saturation: renders={rendered:?} worst wait={worst:?}");
+        for cascade in 0..MAX_SHADOW_RAY_CASCADES {
+            assert!(
+                rendered[cascade] > 0,
+                "cascade {cascade} never rendered in 64 saturated frames"
+            );
+            assert!(
+                worst[cascade] <= CASCADE_MAX_DEFER_FRAMES,
+                "cascade {cascade} waited {} frames, past the {CASCADE_MAX_DEFER_FRAMES}-frame cap",
+                worst[cascade]
+            );
+        }
+        assert_eq!(worst[0], 0, "cascade 0 must render every frame it wants to");
     }
 
     #[test]
