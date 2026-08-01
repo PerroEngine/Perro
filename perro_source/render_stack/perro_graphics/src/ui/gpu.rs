@@ -136,6 +136,9 @@ pub struct GpuUi {
     vertices: Vec<UiVertexGpu>,
     indices: Vec<u32>,
     prepared_mesh_signature: Option<UiMeshSignature>,
+    // Keeps every Arc whose pointer the current signature hashed alive until
+    // the next signature is computed (ABA guard for the ptr-identity hash).
+    signature_pins: Vec<Arc<ClippedPrimitive>>,
     prepared_revision: u64,
     prepared_viewport: [u32; 2],
     // Retained supersample raster. The target keeps the previous frame's UI
@@ -462,6 +465,7 @@ impl GpuUi {
             vertices: Vec::new(),
             indices: Vec::new(),
             prepared_mesh_signature: None,
+            signature_pins: Vec::new(),
             prepared_revision: u64::MAX,
             prepared_viewport: [0, 0],
             supersample_dirty: true,
@@ -554,6 +558,12 @@ impl GpuUi {
                 static_texture_lookup,
             },
         );
+        // ABA guard: the signature hashes `Arc::as_ptr` per primitive. Pin the
+        // hashed Arcs for as long as the signature can gate a skip, so a
+        // dropped primitive's address can never be reused by a different
+        // primitive that would then collide with the retained signature.
+        self.signature_pins.clear();
+        self.signature_pins.extend_from_slice(primitives);
         if self.prepared_mesh_signature == Some(mesh_signature) {
             self.perf_counters.draw_calls = self.meshes.len() as u32;
             self.prepared_revision = revision;
@@ -803,6 +813,7 @@ impl GpuUi {
         self.vertices.clear();
         self.indices.clear();
         self.prepared_mesh_signature = None;
+        self.signature_pins.clear();
         self.prepared_revision = u64::MAX;
         self.prepared_uses_depth_test = false;
         self.prepared_uses_live_texture = false;
@@ -1283,6 +1294,7 @@ impl GpuUi {
             return;
         }
         self.prepared_mesh_signature = None;
+        self.signature_pins.clear();
         self.prepared_revision = u64::MAX;
         self.supersample_dirty = true;
     }
@@ -1291,6 +1303,7 @@ impl GpuUi {
         self.image_textures.remove(&texture);
         self.external_image_texture_ids.remove(&texture);
         self.prepared_mesh_signature = None;
+        self.signature_pins.clear();
         self.prepared_revision = u64::MAX;
         self.supersample_dirty = true;
     }
@@ -1448,6 +1461,7 @@ impl GpuUi {
         // retained.
         self.external_image_texture_ids.insert(texture_key);
         self.prepared_mesh_signature = None;
+        self.signature_pins.clear();
         self.prepared_revision = u64::MAX;
         self.supersample_dirty = true;
     }
