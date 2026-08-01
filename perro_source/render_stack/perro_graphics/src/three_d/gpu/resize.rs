@@ -26,7 +26,7 @@ impl Gpu3D {
         // shadow-multimesh bind groups; rebuild them all.
         self.rebuild_environment_bind_group(device);
         self.rebuild_camera_bind_groups(device);
-        self.shadow_casters_dirty = true;
+        self.invalidate_shadow_layers();
     }
 
     pub fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
@@ -81,7 +81,7 @@ impl Gpu3D {
         self.depth_size = (width, height);
         // Bind group pointers (mesh_blend_depth_view) changed; force a shadow
         // re-render so the cache does not keep stale layers.
-        self.shadow_casters_dirty = true;
+        self.invalidate_shadow_layers();
         let (hiz_width, hiz_height) = if occlusion_flags(self.occlusion_mode).0 {
             (width, height)
         } else {
@@ -191,7 +191,7 @@ impl Gpu3D {
         self.rebuild_camera_bind_groups(device);
         // Shadow depth pipelines + bind group pointers were recreated; force a
         // full shadow re-render.
-        self.shadow_casters_dirty = true;
+        self.invalidate_shadow_layers();
         self.depth_size = (width.max(1), height.max(1));
         let (hiz_width, hiz_height) = if occlusion_flags(self.occlusion_mode).0 {
             (width, height)

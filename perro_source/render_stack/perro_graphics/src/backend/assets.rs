@@ -110,7 +110,17 @@ impl PerroGraphics {
         let has_late_overlay = !late_overlay_pending.is_empty()
             || self.late_overlay_2d.retained_sprite_count() > 0
             || !self.late_overlay_2d.retained_rects().is_empty();
+        // A budgeted warm queue drains a few materials per frame, so the frame
+        // pump has to stay awake until it empties or a scene that loads and
+        // then sits still would leave its pipelines uncompiled - handing the
+        // compile back to the first visible draw, which is the spike the budget
+        // exists to spread. Gated on the 3D world existing: warming is a no-op
+        // without it, and a 2D-only session that creates materials must not
+        // spin forever.
+        let has_pending_pipeline_warms = !self.pending_pipeline_warms.is_empty()
+            && self.gpu.as_ref().is_some_and(|gpu| gpu.has_three_d());
         let has_continuous_updates = self.renderer_3d.has_active_sky_animation()
+            || has_pending_pipeline_warms
             || self.has_retained_animated_custom_material();
         let has_retained_scene = self.renderer_2d.retained_sprite_count() > 0
             || !self.renderer_2d.retained_rects().is_empty()
@@ -120,7 +130,7 @@ impl PerroGraphics {
             || self.renderer_3d.retained_draw_count() > 0
             || self.renderer_3d.has_retained_non_draw_state()
             || self.particles_3d.retained_point_particle_count() > 0;
-        if !has_pending && !has_retained_scene {
+        if !has_pending && !has_retained_scene && !has_pending_pipeline_warms {
             if self.redraw_requested
                 && let Some(gpu) = &mut self.gpu
             {
@@ -523,6 +533,7 @@ impl PerroGraphics {
         }
 
         let mut gpu_timing = RenderGpuTiming::default();
+        let mut pipeline_compiles = 0_u32;
         // streams whose 3D draws use time-reading custom shaders must
         // re-render every frame; the rest may idle-skip inside gpu.render.
         let mut animated_streams = std::mem::take(&mut self.animated_stream_nodes_scratch);
@@ -588,9 +599,13 @@ impl PerroGraphics {
             // compile pipelines 4 materials that arrived this frame while
             // their meshes/textures still load async => first draw skips
             // shader compile. no-op drain until the 3d pipeline exists.
+            // budgeted: a scene switch queues every material at once + the
+            // whole drain in one frame was the transition spike.
             gpu.warm_material_pipelines(
                 &mut self.pending_pipeline_warms,
                 self.static_shader_lookup,
+                PIPELINE_WARM_MAX_COMPILES_PER_FRAME,
+                Some(PIPELINE_WARM_TIME_BUDGET),
             );
             gpu_timing = gpu.render(RenderFrame {
                 resources: &self.resources,
@@ -661,6 +676,13 @@ impl PerroGraphics {
                     samples: Arc::from(water_body_samples.into_boxed_slice()),
                 });
             }
+            // Read after render so lazy first-draw compiles land in the same
+            // frame's count as the warm-queue ones.
+            let compiles_now = gpu.pipeline_compiles_3d();
+            pipeline_compiles = compiles_now
+                .wrapping_sub(self.last_pipeline_compiles_3d)
+                .min(u32::MAX as u64) as u32;
+            self.last_pipeline_compiles_3d = compiles_now;
             self.redraw_requested = !gpu_timing.presented;
             if gpu_timing.presented {
                 // changed streams re-rendered this frame; next frame they can
@@ -696,6 +718,11 @@ impl PerroGraphics {
             sprite_batches_2d: gpu_timing.sprite_batches_2d,
             sprite_bind_group_switches_2d: gpu_timing.sprite_bind_group_switches_2d,
             draw_batches_3d: gpu_timing.draw_batches_3d,
+            pipeline_compiles_3d: pipeline_compiles,
+            pipeline_warms_pending_3d: self
+                .pending_pipeline_warms
+                .len()
+                .min(u32::MAX as usize) as u32,
             pipeline_switches_3d: gpu_timing.pipeline_switches_3d,
             texture_bind_group_switches_3d: gpu_timing.texture_bind_group_switches_3d,
             draw_instances_3d: self.retained_draw_instances_cache,

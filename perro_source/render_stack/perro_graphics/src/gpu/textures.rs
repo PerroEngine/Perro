@@ -34,23 +34,58 @@ impl Gpu {
         }
     }
 
-    // Drain queued material warms into the main 3D pipeline caches. Leaves the
-    // queue untouched until `three_d` exists (it is created lazily on the
-    // first 3D frame); camera-stream worlds stay lazy on purpose.
+    /// Whether the lazy main 3D world exists yet. Queued pipeline warms are a
+    /// no-op until it does (a 2D-only session never builds it), so callers that
+    /// keep the frame pump alive for a pending warm queue must check this or a
+    /// 2D-only game with materials would redraw forever.
+    #[inline]
+    pub fn has_three_d(&self) -> bool {
+        self.three_d.is_some()
+    }
+
+    /// Monotonic count of pipeline sets the main 3D world has compiled, from
+    /// both the warm queue and lazy first-draw misses. Callers diff it across a
+    /// frame; camera-stream worlds are deliberately excluded (they stay lazy by
+    /// design and would blur the main view's reading).
+    #[inline]
+    pub fn pipeline_compiles_3d(&self) -> u64 {
+        self.three_d
+            .as_ref()
+            .map_or(0, |three_d| three_d.pipeline_compiles())
+    }
+
+    // Drain queued material warms into the main 3D pipeline caches, bounded by
+    // a per-frame budget. Leaves the queue untouched until `three_d` exists (it
+    // is created lazily on the first 3D frame); camera-stream worlds stay lazy
+    // on purpose.
+    //
+    // Draining the whole queue in one frame is the scene-transition spike: a
+    // scene load queues every material at once and each new material shape
+    // costs a WGSL compile plus four pipeline creations per render path. Cache
+    // hits stay free and never count against the budget, so nothing slows down
+    // for scenes whose pipelines are already built.
+    //
+    // Returns how many materials compiled this frame.
     pub fn warm_material_pipelines(
         &mut self,
         materials: &mut Vec<std::sync::Arc<perro_render_bridge::Material3D>>,
         static_shader_lookup: Option<crate::StaticShaderLookup>,
-    ) {
+        max_compiles: usize,
+        time_budget: Option<std::time::Duration>,
+    ) -> usize {
         if materials.is_empty() {
-            return;
+            return 0;
         }
         let Some(three_d) = self.three_d.as_mut() else {
-            return;
+            return 0;
         };
-        for material in materials.drain(..) {
-            three_d.warm_material_pipelines(&self.device, &material, static_shader_lookup);
-        }
+        three_d.warm_material_pipelines_budgeted(
+            &self.device,
+            materials,
+            static_shader_lookup,
+            max_compiles,
+            time_budget,
+        )
     }
 
     pub fn invalidate_custom_material_pipelines(&mut self) {

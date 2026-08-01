@@ -280,6 +280,15 @@ struct Harness {
 
 impl Harness {
     fn prepare(&mut self, draws: &[Draw3DInstance], force_full_rebuild: bool) -> Duration {
+        self.prepare_with_camera(draws, force_full_rebuild, Camera3DState::default())
+    }
+
+    fn prepare_with_camera(
+        &mut self,
+        draws: &[Draw3DInstance],
+        force_full_rebuild: bool,
+        camera: Camera3DState,
+    ) -> Duration {
         self.revision += 1;
         let start = Instant::now();
         self.gpu.prepare(
@@ -290,7 +299,7 @@ impl Harness {
                 shared_textures: &mut self.shared_textures,
                 mesh_arena: &mut self.mesh_arena,
                 mesh_arena_compact_allowed: true,
-                camera: Camera3DState::default(),
+                camera,
                 lighting: &self.lighting,
                 draws,
                 draws_revision: self.revision,
@@ -300,7 +309,10 @@ impl Harness {
                 width: 256,
                 height: 256,
                 static_texture_lookup: None,
-                static_mesh_lookup: None,
+                // Answers for exactly one source (the LOD test's mesh) and
+                // hands back empty bytes for everything else, which falls
+                // through to the same asset path an absent lookup takes.
+                static_mesh_lookup: Some(lod_test_mesh_lookup),
                 static_shader_lookup: self.static_shader_lookup,
             },
         );
@@ -1181,5 +1193,421 @@ fn identical_restage_gates_the_indirect_upload_with_cull_active() {
             "an identical forced restage must upload nothing, indirect included"
         );
         assert_eq!(harness.gpu.last_prepare_step_timing.full_rebuilds, 1);
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Camera-movement / shadow interaction
+// ---------------------------------------------------------------------------
+
+fn shadow_lighting() -> Lighting3DState {
+    let mut lighting = Lighting3DState::default();
+    lighting.ray_lights[0] = Some(perro_render_bridge::RayLight3DState {
+        direction: [-0.5, -1.0, -0.2],
+        color: [1.0, 1.0, 1.0],
+        intensity: 1.0,
+        cast_shadows: true,
+        shadow_strength: 0.82,
+        shadow_depth_bias: 0.00018,
+        shadow_normal_bias: 0.045,
+    });
+    lighting.spot_lights[0] = Some(SpotLight3DState {
+        position: [0.0, 6.0, 0.0],
+        direction: [0.0, -1.0, 0.0],
+        color: [1.0, 1.0, 1.0],
+        intensity: 1.0,
+        range: 24.0,
+        inner_angle_radians: 0.3,
+        outer_angle_radians: 0.6,
+        cast_shadows: true,
+        shadow_strength: 0.82,
+        shadow_depth_bias: 0.00018,
+        shadow_normal_bias: 0.045,
+    });
+    lighting.point_lights[0] = Some(PointLight3DState {
+        position: [4.0, 3.0, 4.0],
+        color: [1.0, 1.0, 1.0],
+        intensity: 1.0,
+        range: 18.0,
+        cast_shadows: true,
+        shadow_strength: 0.82,
+        shadow_depth_bias: 0.00018,
+        shadow_normal_bias: 0.045,
+    });
+    lighting
+}
+
+fn orbit_camera(angle: f32) -> Camera3DState {
+    Camera3DState {
+        position: [angle.sin() * 12.0, 3.0, angle.cos() * 12.0],
+        rotation: Quat::from_rotation_y(angle).to_array(),
+        ..Camera3DState::default()
+    }
+}
+
+/// Stand-in for the shadow render pass: every layer the current setup drives
+/// gets drawn and marked valid.
+fn mark_shadow_layers_rendered(gpu: &mut Gpu3D) {
+    if !gpu.shadow_pass_enabled || !gpu.has_shadow_casters {
+        return;
+    }
+    for index in active_shadow_layers(gpu) {
+        if let Some(valid) = gpu.shadow_layer_valid.get_mut(index) {
+            *valid = true;
+        }
+    }
+}
+
+fn active_shadow_layers(gpu: &Gpu3D) -> Vec<usize> {
+    let mut out = Vec::new();
+    if gpu.ray_shadow_enabled {
+        out.extend(0..MAX_SHADOW_RAY_CASCADES);
+    }
+    let spot_base = MAX_SHADOW_RAY_LIGHTS * MAX_SHADOW_RAY_CASCADES;
+    out.extend((0..gpu.spot_shadow_count).map(|spot| spot_base + spot));
+    let point_base = spot_base + MAX_SHADOW_SPOT_LIGHTS;
+    out.extend(
+        (0..gpu.point_shadow_count * POINT_SHADOW_FACE_COUNT).map(|layer| point_base + layer),
+    );
+    out
+}
+
+fn invalid_shadow_layers(gpu: &Gpu3D) -> (u32, u32, u32) {
+    let spot_base = MAX_SHADOW_RAY_LIGHTS * MAX_SHADOW_RAY_CASCADES;
+    let point_base = spot_base + MAX_SHADOW_SPOT_LIGHTS;
+    let mut ray = 0;
+    let mut spot = 0;
+    let mut point = 0;
+    for index in active_shadow_layers(gpu) {
+        if gpu.shadow_layer_valid.get(index).copied().unwrap_or(false) {
+            continue;
+        }
+        if index < spot_base {
+            ray += 1;
+        } else if index < point_base {
+            spot += 1;
+        } else {
+            point += 1;
+        }
+    }
+    (ray, spot, point)
+}
+
+/// A moving camera forces a full prepare rebuild every frame (LOD selection is
+/// camera-driven), which used to raise `shadow_casters_dirty` and re-render
+/// EVERY shadow layer -- including the spot/point layers, whose view matrices
+/// are light-local and cannot move with the camera. Only the cascades may
+/// re-render: they follow the camera by construction.
+#[test]
+fn camera_motion_keeps_light_local_shadow_layers_cached() {
+    pollster::block_on(async {
+        let Some((device, queue)) = test_device().await else {
+            eprintln!("skip camera-motion shadow cache test: no wgpu adapter");
+            return;
+        };
+        let (mut harness, mesh, material) = upload_harness(device, queue, false);
+        harness.lighting = shadow_lighting();
+        let draws: Vec<Draw3DInstance> = (0..24)
+            .map(|i| regular_draw(i, mesh, material, Color::WHITE))
+            .collect();
+        harness.prepare_with_camera(&draws, true, orbit_camera(0.0));
+        assert!(harness.gpu.ray_shadow_enabled);
+        assert_eq!(harness.gpu.spot_shadow_count, 1);
+        assert_eq!(harness.gpu.point_shadow_count, 1);
+        mark_shadow_layers_rendered(&mut harness.gpu);
+
+        const FRAMES: u32 = 16;
+        let mut rebuilds = 0;
+        let mut totals = (0u32, 0u32, 0u32);
+        for step in 1..=FRAMES {
+            // ~0.2 degrees of orbit per frame: "the camera moved a bit".
+            harness.prepare_with_camera(&draws, false, orbit_camera(step as f32 * 0.0035));
+            rebuilds += harness.gpu.last_prepare_step_timing.full_rebuilds;
+            let (ray, spot, point) = invalid_shadow_layers(&harness.gpu);
+            totals = (totals.0 + ray, totals.1 + spot, totals.2 + point);
+            mark_shadow_layers_rendered(&mut harness.gpu);
+        }
+        println!(
+            "{FRAMES} small-camera-move frames: full_rebuilds={rebuilds}              re-rendered layers ray={} spot={} point={}",
+            totals.0, totals.1, totals.2
+        );
+        assert_eq!(
+            (totals.1, totals.2),
+            (0, 0),
+            "static spot/point lights must keep their cached depth while only the camera moves"
+        );
+        assert_eq!(
+            totals.0,
+            FRAMES * MAX_SHADOW_RAY_CASCADES as u32,
+            "cascades follow the camera and must still re-render"
+        );
+
+        // ...and the cache must still drop when a caster actually moves.
+        let mut moved = draws.clone();
+        moved[3] = Draw3DInstance {
+            instance_mats: Arc::from([identity_at(37.0)]),
+            ..moved[3].clone()
+        };
+        harness.prepare_with_camera(&moved, false, orbit_camera(FRAMES as f32 * 0.0035));
+        let (_, spot, point) = invalid_shadow_layers(&harness.gpu);
+        assert_eq!(
+            (spot, point),
+            (1, POINT_SHADOW_FACE_COUNT as u32),
+            "a moved caster must invalidate every shadow layer"
+        );
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Camera motion vs multimesh staging reuse (LOD banding)
+// ---------------------------------------------------------------------------
+
+const LOD_MESH_SOURCE: &str = "__prepare_lod_mesh__";
+
+/// A 3-LOD mesh, hand-encoded as a raw-payload `pmesh` (nothing in-process
+/// bakes LOD variants: `load_mesh_from_source` only ever reads them off an
+/// asset). Positions are the 6 axis points of a unit octahedron, so the bbox
+/// center is the origin and `bounds_radius` is exactly 1.0 -- which puts the
+/// two live band edges (`LOD_DISTANCE_RADIUS_SCALES[0..2]`) at 36 and 54 world
+/// units from the camera.
+fn lod_test_mesh_bytes() -> &'static [u8] {
+    use perro_asset_formats::pmesh;
+    static BYTES: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    BYTES
+        .get_or_init(|| {
+            const VERTS: [[f32; 3]; 6] = [
+                [1.0, 0.0, 0.0],
+                [-1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, -1.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [0.0, 0.0, -1.0],
+            ];
+            const FACES: [[u32; 3]; 8] = [
+                [0, 2, 4],
+                [2, 1, 4],
+                [1, 3, 4],
+                [3, 0, 4],
+                [2, 0, 5],
+                [1, 2, 5],
+                [3, 1, 5],
+                [0, 3, 5],
+            ];
+            // Triangle count per LOD; each LOD owns its own index block.
+            const LOD_FACES: [usize; 3] = [8, 4, 2];
+
+            let mut payload = Vec::new();
+            for vertex in VERTS {
+                for axis in vertex {
+                    payload.extend_from_slice(&axis.to_le_bytes());
+                }
+            }
+            let mut starts = [0u32; LOD_FACES.len()];
+            let mut counts = [0u32; LOD_FACES.len()];
+            let mut cursor = 0u32;
+            for (lod, faces) in LOD_FACES.iter().copied().enumerate() {
+                starts[lod] = cursor;
+                counts[lod] = faces as u32 * 3;
+                cursor += counts[lod];
+                for face in FACES.iter().take(faces) {
+                    for index in face {
+                        payload.extend_from_slice(&index.to_le_bytes());
+                    }
+                }
+            }
+            // One surface per LOD...
+            for (start, count) in starts.iter().zip(counts.iter()) {
+                payload.extend_from_slice(&start.to_le_bytes());
+                payload.extend_from_slice(&count.to_le_bytes());
+            }
+            // ...and the LOD table pointing at it (no meshlets).
+            for (lod, (start, count)) in starts.iter().zip(counts.iter()).enumerate() {
+                for word in [*start, *count, lod as u32, 1, 0, 0] {
+                    payload.extend_from_slice(&word.to_le_bytes());
+                }
+            }
+
+            let mut out = Vec::with_capacity(41 + payload.len());
+            out.extend_from_slice(pmesh::MAGIC);
+            out.extend_from_slice(&pmesh::VERSION_V2.to_le_bytes());
+            out.extend_from_slice(&pmesh::FLAG_PAYLOAD_RAW.to_le_bytes());
+            out.extend_from_slice(&(VERTS.len() as u32).to_le_bytes());
+            out.extend_from_slice(&cursor.to_le_bytes());
+            out.extend_from_slice(&(LOD_FACES.len() as u32).to_le_bytes());
+            out.extend_from_slice(&0u32.to_le_bytes()); // meshlets
+            out.extend_from_slice(&(LOD_FACES.len() as u32).to_le_bytes());
+            out.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+            out.extend_from_slice(&0u32.to_le_bytes()); // blend shapes
+            out.extend_from_slice(&payload);
+            out
+        })
+        .as_slice()
+}
+
+fn lod_test_mesh_lookup(path_hash: u64) -> &'static [u8] {
+    if path_hash == perro_ids::string_to_u64(LOD_MESH_SOURCE) {
+        lod_test_mesh_bytes()
+    } else {
+        &[]
+    }
+}
+
+fn lod_test_camera(position: [f32; 3]) -> Camera3DState {
+    Camera3DState {
+        position,
+        ..Camera3DState::default()
+    }
+}
+
+fn lod_dense_draw(index: u32, mesh: MeshID, material: MaterialID, x: f32) -> Draw3DInstance {
+    let mut draw = dense_draw(index, mesh, material);
+    if let Some(dense) = draw.dense_multimesh.as_mut() {
+        dense.node_model = identity_at(x);
+    }
+    draw
+}
+
+/// Which baked LOD each dense batch drew from, as arena index ranges: two
+/// prepares that picked the same bands produce the same set.
+fn multimesh_lod_ranges(gpu: &Gpu3D) -> std::collections::BTreeSet<(u32, u32)> {
+    gpu.multimesh_batches
+        .iter()
+        .map(|batch| (batch.mesh.index_start, batch.mesh.index_count))
+        .collect()
+}
+
+/// User-reported spike: frame hitches in multimesh scenes whenever the camera
+/// moves. Cause was the staging-reuse key -- it required exact camera equality
+/// for every dense draw whose mesh has baked LODs, so a camera that moved at
+/// all denied reuse on EVERY full-rebuild frame and repacked all 100k
+/// instances (plus the hash + upload) for byte-identical output.
+///
+/// The camera reaches the dense packing only through `select_mesh_lod`, which
+/// quantizes distance/radius into a baked LOD index, so reuse is now keyed on
+/// that band. A camera drifting a few centimetres keeps every band and reuses;
+/// a jump that flips one repacks, and must match a forced repack.
+#[test]
+fn multimesh_staging_reuse_survives_camera_motion_across_lod_bands() {
+    pollster::block_on(async {
+        let Some((device, queue)) = test_device().await else {
+            eprintln!("skip multimesh LOD camera-motion test: no wgpu adapter");
+            return;
+        };
+        let mesh_arena = SharedMeshArena::new(&device, false, false);
+        let gpu = new_gpu_3d(&device, &queue, &mesh_arena);
+        let mut resources = ResourceStore::new();
+        let mesh = resources.create_mesh(LOD_MESH_SOURCE, true);
+        let material =
+            resources.create_material(Material3D::default(), Some("__prepare_lod_mat__"), true);
+        let mut harness = Harness {
+            device,
+            queue,
+            gpu,
+            resources,
+            shared_textures: SharedTextureStore::default(),
+            mesh_arena,
+            lighting: Lighting3DState::default(),
+            revision: 0,
+            static_shader_lookup: None,
+        };
+
+        // Dense draws march down +X from 4 to 151 units. With band edges at 36
+        // and 54, every draw sits at least 1 unit clear of an edge, and all
+        // three bands are populated.
+        let mut draws: Vec<Draw3DInstance> = (0..DENSE_DRAWS)
+            .map(|i| lod_dense_draw(i, mesh, material, 4.0 + i as f32 * 3.0))
+            .collect();
+        draws.extend((0..REGULAR_DRAWS).map(|i| regular_draw(i, mesh, material, Color::WHITE)));
+
+        harness.prepare_with_camera(&draws, true, lod_test_camera([0.0; 3]));
+        assert_eq!(
+            harness.gpu.staged_multimesh_instances.len(),
+            (DENSE_DRAWS * DENSE_INSTANCES) as usize
+        );
+        let cold_ranges = multimesh_lod_ranges(&harness.gpu);
+        // If the LOD mesh failed to load, every draw shares one range and the
+        // rest of this test proves nothing.
+        assert_eq!(
+            cold_ranges.len(),
+            3,
+            "dense draws did not resolve 3 distinct baked LODs ({cold_ranges:?})"
+        );
+
+        // Semantic change on an unrelated regular draw: forces the full-rebuild
+        // path every frame while nothing multimesh moves -- exactly the frame
+        // shape that used to repack.
+        let flip = |draws: &mut Vec<Draw3DInstance>, on: bool| {
+            let modulate = if on {
+                Color::from([0.5, 1.0, 1.0, 1.0])
+            } else {
+                Color::WHITE
+            };
+            draws[DENSE_DRAWS as usize] = regular_draw(0, mesh, material, modulate);
+        };
+
+        const FRAMES: u32 = 60;
+        let reuse_before = harness.gpu.multimesh_staging_reuse_count;
+        let mut moving_total = Duration::ZERO;
+        let mut camera = lod_test_camera([0.0; 3]);
+        for frame in 1..=FRAMES {
+            flip(&mut draws, frame % 2 == 0);
+            // ~1cm of drift per frame plus a little sway: a camera in motion,
+            // nowhere near a band edge.
+            let t = frame as f32;
+            camera = lod_test_camera([t * 0.01, (t * 0.3).sin() * 0.05, (t * 0.2).cos() * 0.05]);
+            moving_total += harness.prepare_with_camera(&draws, false, camera.clone());
+            assert_eq!(
+                harness.gpu.last_prepare_step_timing.full_rebuilds, 1,
+                "frame {frame} skipped the full-rebuild path"
+            );
+        }
+        let reuses = (harness.gpu.multimesh_staging_reuse_count - reuse_before) as u32;
+        let repacks = FRAMES - reuses;
+
+        // Same draws, same camera, forced through the repack path: the reuse
+        // path must have produced exactly those bytes.
+        let reused = snapshot(&harness.gpu);
+        let repack_time = harness.prepare_with_camera(&draws, true, camera);
+        let repacked = snapshot(&harness.gpu);
+        assert!(
+            reused == repacked,
+            "staging kept across camera motion diverges from a full repack"
+        );
+        println!(
+            "moving camera, {FRAMES} full-rebuild frames ({DENSE_DRAWS} dense x \
+             {DENSE_INSTANCES} inst, 3-LOD mesh): repacks={repacks} reuses={reuses} \
+             avg_prepare={:?} (forced repack={repack_time:?})",
+            moving_total / FRAMES,
+        );
+        assert!(
+            repacks <= 2,
+            "camera motion repacked the multimesh staging on {repacks}/{FRAMES} frames"
+        );
+
+        // A jump big enough to flip bands must deny reuse -- and the repack it
+        // forces must match what a forced full rebuild produces.
+        let far = lod_test_camera([-400.0, 0.0, 0.0]);
+        flip(&mut draws, false);
+        let reuse_before = harness.gpu.multimesh_staging_reuse_count;
+        harness.prepare_with_camera(&draws, false, far.clone());
+        assert_eq!(
+            harness.gpu.last_prepare_step_timing.full_rebuilds, 1,
+            "band-flip frame skipped the full-rebuild path"
+        );
+        assert_eq!(
+            harness.gpu.multimesh_staging_reuse_count, reuse_before,
+            "a flipped LOD band must repack the multimesh staging"
+        );
+        let flipped = snapshot(&harness.gpu);
+        let flipped_ranges = multimesh_lod_ranges(&harness.gpu);
+        assert_ne!(
+            flipped_ranges, cold_ranges,
+            "camera jump did not actually flip any baked LOD band"
+        );
+        harness.prepare_with_camera(&draws, true, far);
+        assert!(
+            flipped == snapshot(&harness.gpu),
+            "band-flip repack diverges from a forced full repack"
+        );
     });
 }

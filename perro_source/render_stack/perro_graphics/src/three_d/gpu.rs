@@ -162,9 +162,26 @@ struct MultiMeshDrawSnapshot {
     node_model: [[f32; 4]; 4],
     resolved_blend: ResolvedMeshBlend,
     // `select_mesh_lod` only reads the camera when the mesh has >1 baked LOD;
-    // scenes without LOD variants stay reusable while the camera moves.
-    lod_sensitive: bool,
+    // `None` (single-LOD mesh) is camera-independent staging and stays reusable
+    // however far the camera moves.
+    lod_band: Option<MultiMeshLodBand>,
     param_range: Range<u32>,
+}
+
+/// The camera-derived LOD band one dense draw's staged rows were packed at.
+///
+/// Camera position reaches the multimesh staging only through
+/// `select_mesh_lod`, which quantizes distance/radius into a baked LOD index --
+/// so the staged bytes are a function of the BAND, not of the camera. Keeping
+/// the band's inputs (`lod_count`, `bounds_radius`; the mesh cannot change
+/// under them without a resource dirty forcing a full rebuild) lets the reuse
+/// check recompute the index for the new camera in a few flops per dense draw
+/// and deny reuse only when it actually flips.
+#[derive(Clone, Copy)]
+struct MultiMeshLodBand {
+    lod_count: u32,
+    bounds_radius: f32,
+    index: u32,
 }
 
 mod mesh_presets;
@@ -923,6 +940,15 @@ pub struct Gpu3D {
     // Monotonic GC-tick counter for the pipeline LRU (bumped once per
     // shrink_tick; see evict_stale_pipelines).
     pipeline_gc_tick: u64,
+    // Monotonic count of pipeline sets compiled by this instance (see
+    // pipeline_compiles). Frame code diffs it to report per-frame compiles;
+    // the warm queue's budget uses it to tell a cache hit from a compile.
+    pipeline_compiles: u64,
+    // Bitmask of RenderPath3D values this instance has resolved a real draw
+    // for (1 = Rigid, 2 = Skinned, 4 = MultiMesh). Speculative pipeline warming
+    // is restricted to these paths (plus Rigid) so a scene with no skinned or
+    // multimesh geometry never compiles those variants.
+    render_paths_drawn: u8,
     shader_variant_mode: crate::ShaderVariantMode,
     custom_pipeline_tokens: AHashMap<CustomPipelineKey, u32>,
     custom_shader_sources: AHashMap<Arc<str>, Arc<str>>,
@@ -1111,6 +1137,8 @@ pub struct Gpu3D {
     // rebuilds. See MultiMeshDrawSnapshot.
     multimesh_staging_cache: Vec<MultiMeshDrawSnapshot>,
     multimesh_staging_cache_valid: bool,
+    // Camera the staged rows were packed at, kept as the cheap skip for the
+    // per-draw LOD-band recompute: same camera => same band, no math.
     multimesh_staging_cache_camera: [f32; 3],
     // Telemetry: full rebuilds that skipped the multimesh repack.
     multimesh_staging_reuse_count: u64,
@@ -1361,10 +1389,17 @@ pub struct Gpu3D {
     // Per shadow layer (flat cascade/spot/point-face index) cache validity. A
     // valid layer retains prior depth contents and skips its render pass.
     shadow_layer_valid: Vec<bool>,
-    // Set when any shadow-caster geometry moved this frame (full rebuild,
-    // transform patch, or multimesh instance/pose upload). Invalidates all
-    // shadow layers in update_shadow_state.
+    // Set when any shadow-caster geometry MAY have moved this frame (full
+    // rebuild, transform patch, or multimesh instance/pose upload). A full
+    // rebuild is not proof of movement -- a camera-only frame restages
+    // byte-identical casters -- so update_shadow_state confirms it against
+    // `last_shadow_caster_key` before invalidating every layer.
     shadow_casters_dirty: bool,
+    // Content fingerprint of everything the shadow depth passes read (staged
+    // caster lanes + the batch geometry the passes walk). Equal keys across two
+    // frames prove the caster set did not move, which keeps the static
+    // spot/point layers cached while the camera moves.
+    last_shadow_caster_key: Option<u64>,
     // Input memo for update_shadow_state: when camera, lights, caster flag and
     // target sizes all match the previous call (and no casters moved), the
     // whole shadow setup -- O(draw_batches) focus fitting, cascade math and
@@ -2665,3 +2700,7 @@ mod prepare_tests;
 #[cfg(test)]
 #[path = "../../tests/unit/three_d_indirect_compact_tests.rs"]
 mod indirect_compact_tests;
+
+#[cfg(test)]
+#[path = "../../tests/unit/three_d_pipeline_warm_tests.rs"]
+mod pipeline_warm_tests;

@@ -68,6 +68,45 @@ pub(super) fn build_mesh_lod_ranges(args: BuildMeshLodRangesArgs<'_>) -> Vec<Mes
     out
 }
 
+/// Which baked LOD a mesh at `world_pos` resolves to for this camera.
+///
+/// Split out of `select_mesh_lod` so the multimesh staging-reuse check can ask
+/// the same question without touching the asset: the camera enters the dense
+/// multimesh packing ONLY through this index (it picks the index/surface ranges
+/// the batches are built from), so staged rows stay valid across camera motion
+/// until this band flips.
+pub(super) fn select_mesh_lod_index(
+    lod_count: usize,
+    bounds_radius: f32,
+    world_pos: [f32; 3],
+    camera_pos: [f32; 3],
+    control: LODOptions3D,
+) -> usize {
+    if lod_count <= 1 {
+        return 0;
+    }
+    let dx = world_pos[0] - camera_pos[0];
+    let dy = world_pos[1] - camera_pos[1];
+    let dz = world_pos[2] - camera_pos[2];
+    let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+    let radius = bounds_radius.max(0.001);
+    let ratio = dist / radius;
+    let last = lod_count.saturating_sub(1);
+    let baked_index = LOD_DISTANCE_RADIUS_SCALES
+        .iter()
+        .take(last)
+        .filter(|&&threshold| ratio > threshold)
+        .count()
+        .min(last);
+    let auto_quality = usize::from(LODOptions3D::MAX).saturating_sub(baked_index);
+    let min_quality = usize::from(control.min_lod.min(LODOptions3D::MAX));
+    let max_quality = usize::from(control.max_lod.min(LODOptions3D::MAX)).max(min_quality);
+    let quality = auto_quality.clamp(min_quality, max_quality);
+    usize::from(LODOptions3D::MAX)
+        .saturating_sub(quality)
+        .min(last)
+}
+
 pub(super) fn select_mesh_lod<'a>(
     mesh: &'a MeshAssetRange,
     model: Option<&[[f32; 4]; 4]>,
@@ -90,27 +129,13 @@ pub(super) fn select_mesh_lod<'a>(
             packed: None,
         };
     };
-    let world_pos = [model[3][0], model[3][1], model[3][2]];
-    let dx = world_pos[0] - camera_pos[0];
-    let dy = world_pos[1] - camera_pos[1];
-    let dz = world_pos[2] - camera_pos[2];
-    let dist = (dx * dx + dy * dy + dz * dz).sqrt();
-    let radius = mesh.bounds_radius.max(0.001);
-    let ratio = dist / radius;
-    let mut baked_index = LOD_DISTANCE_RADIUS_SCALES
-        .iter()
-        .take(mesh.lods.len().saturating_sub(1))
-        .filter(|&&threshold| ratio > threshold)
-        .count();
-    let last = mesh.lods.len().saturating_sub(1);
-    baked_index = baked_index.min(last);
-    let auto_quality = usize::from(LODOptions3D::MAX).saturating_sub(baked_index);
-    let min_quality = usize::from(control.min_lod.min(LODOptions3D::MAX));
-    let max_quality = usize::from(control.max_lod.min(LODOptions3D::MAX)).max(min_quality);
-    let quality = auto_quality.clamp(min_quality, max_quality);
-    let baked_index = usize::from(LODOptions3D::MAX)
-        .saturating_sub(quality)
-        .min(last);
+    let baked_index = select_mesh_lod_index(
+        mesh.lods.len(),
+        mesh.bounds_radius,
+        [model[3][0], model[3][1], model[3][2]],
+        camera_pos,
+        control,
+    );
     let lod = &mesh.lods[baked_index];
     MeshLodView {
         full: lod.full,
@@ -220,6 +245,50 @@ mod tests {
             },
         );
         assert_eq!(clamped.full.index_start, 30);
+    }
+
+    /// The multimesh staging-reuse check bands on `select_mesh_lod_index`
+    /// while the packer bands on `select_mesh_lod`; if the two ever disagree,
+    /// reuse would keep rows staged from a different LOD.
+    #[test]
+    fn select_mesh_lod_index_agrees_with_select_mesh_lod() {
+        let mesh = mesh();
+        let controls = [
+            LODOptions3D::default(),
+            LODOptions3D {
+                min_lod: LODOptions3D::MEDIUM_LOW,
+                max_lod: LODOptions3D::MAX,
+            },
+            LODOptions3D {
+                min_lod: LODOptions3D::MIN,
+                max_lod: LODOptions3D::LOW,
+            },
+        ];
+        for control in controls {
+            for step in 0..400u32 {
+                let distance = step as f32 * 0.75;
+                let model = glam::Mat4::from_translation(glam::Vec3::new(distance, 0.0, 0.0))
+                    .to_cols_array_2d();
+                let camera = [0.0, 0.0, 0.0];
+                let view = select_mesh_lod(&mesh, Some(&model), camera, control);
+                let index = select_mesh_lod_index(
+                    mesh.lods.len(),
+                    mesh.bounds_radius,
+                    [distance, 0.0, 0.0],
+                    camera,
+                    control,
+                );
+                assert_eq!(
+                    view.full.index_start, mesh.lods[index].full.index_start,
+                    "band {index} disagrees with the selected LOD at {distance}"
+                );
+            }
+        }
+        // A single-LOD mesh has no band at all, whatever the camera does.
+        assert_eq!(
+            select_mesh_lod_index(1, 1.0, [0.0; 3], [900.0, 0.0, 0.0], LODOptions3D::default()),
+            0
+        );
     }
 
     #[test]

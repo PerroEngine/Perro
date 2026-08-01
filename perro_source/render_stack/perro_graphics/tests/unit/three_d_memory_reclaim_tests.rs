@@ -6,6 +6,7 @@
 //! available.
 use super::*;
 use crate::gpu_shrink::SHRINK_LOW_TICKS;
+use crate::three_d::gpu::buffers::mesh_arena::MESH_ARENA_COMPACT_MAX_DEFER_TICKS;
 use perro_ids::{MeshID, TextureID};
 use perro_structs::UnitVector4;
 
@@ -196,6 +197,131 @@ fn dead_mesh_ranges_trigger_arena_compaction_from_the_gc_tick() {
     // no-op: no pointless full rebuild.
     arena.request_compact();
     assert!(!arena.compact_if_needed(&device, true));
+}
+
+/// Sizes the *other* half of a scene-transition frame against the pipeline-warm
+/// half: what one mesh costs to repack and upload into the arena, and what a
+/// compaction's forced re-append of a whole scene costs. Diagnostic only - it
+/// reports rather than asserting a wall time - but it is what says whether
+/// budgeting mesh uploads is worth doing next to budgeting pipeline compiles.
+#[test]
+fn mesh_arena_append_cost_report() {
+    let Some((device, queue)) = pollster::block_on(test_device()) else {
+        eprintln!("no wgpu adapter; skipping mesh arena append cost report");
+        return;
+    };
+    let mut arena = new_arena(&device);
+    const MESHES: usize = 24;
+    let before = arena.memory_report().rigid_arena_bytes;
+
+    let start = std::time::Instant::now();
+    for _ in 0..MESHES {
+        arena
+            .append_mesh_data(
+                &device,
+                &queue,
+                "test://append_cost",
+                decoded_mesh(TEST_MESH_VERTICES),
+                false,
+            )
+            .expect("append_mesh_data");
+    }
+    let elapsed = start.elapsed();
+    let appended = arena.memory_report().rigid_arena_bytes - before;
+    eprintln!(
+        "[mesh-arena] {MESHES} appends totalling {:.1}MiB: {:.2}ms total, {:.2}ms per mesh",
+        appended as f64 / (1024.0 * 1024.0),
+        elapsed.as_secs_f64() * 1e3,
+        elapsed.as_secs_f64() * 1e3 / MESHES as f64,
+    );
+}
+
+/// A scene transition drops the outgoing scene's mesh ranges while the incoming
+/// scene's meshes are still streaming in, so the arena reads as mostly-dead
+/// while it is really mid-refill. Compacting there is the worst possible time:
+/// it throws away every range the new scene resolved so far and forces a full
+/// CPU decode + repack + re-upload of all of them in one frame, only for the
+/// rest of the load to append on top. The GC tick therefore waits for a tick
+/// with no appends, and gives up waiting after
+/// `MESH_ARENA_COMPACT_MAX_DEFER_TICKS`.
+#[test]
+fn arena_compaction_waits_for_a_tick_with_no_mesh_appends() {
+    let Some((device, queue)) = pollster::block_on(test_device()) else {
+        eprintln!("no wgpu adapter; skipping mesh arena compaction churn test");
+        return;
+    };
+    let mut arena = new_arena(&device);
+    // `vertices` is what makes a mesh count as outgoing bulk or as an
+    // incoming trickle: the incoming ones stay small so the live share stays
+    // under half throughout the load, which is exactly the reading that used to
+    // fire a compaction mid-transition.
+    let append = |arena: &mut SharedMeshArena, id: u32, vertices: usize| {
+        let range = arena
+            .append_mesh_data(
+                &device,
+                &queue,
+                "test://churn_mesh",
+                decoded_mesh(vertices),
+                false,
+            )
+            .expect("append_mesh_data");
+        arena
+            .custom_mesh_ranges
+            .insert(MeshID::from_parts(id, 1), rigid_entry(range));
+    };
+
+    // Outgoing scene.
+    for id in 1..=3u32 {
+        append(&mut arena, id, TEST_MESH_VERTICES);
+    }
+    arena.reclaim_tick();
+    assert!(!arena.memory_report().mesh_compact_requested);
+
+    // Transition: old ranges dropped, new scene starts streaming in. Every GC
+    // tick during the load sees "less than half live" and must still hold off.
+    arena.custom_mesh_ranges.clear();
+    for tick in 0..MESH_ARENA_COMPACT_MAX_DEFER_TICKS {
+        append(&mut arena, 100 + tick, 1_000);
+        let report = arena.memory_report();
+        assert!(
+            report.mesh_arena_live_bytes * 2 < report.mesh_arena_bytes,
+            "the mid-load arena must actually look mostly-dead (tick {tick})"
+        );
+        arena.reclaim_tick();
+        assert!(
+            !arena.memory_report().mesh_compact_requested,
+            "compaction must not be requested mid-load (tick {tick})"
+        );
+    }
+
+    // Load finishes: a quiet tick, and the reclaim goes through.
+    arena.reclaim_tick();
+    assert!(
+        arena.memory_report().mesh_compact_requested,
+        "a settled arena under half live must still compact"
+    );
+    assert!(arena.compact_if_needed(&device, true));
+
+    // Content that streams meshes forever must not defer the reclaim forever:
+    // after the cap, a churning arena compacts anyway.
+    for id in 200..203u32 {
+        append(&mut arena, id, TEST_MESH_VERTICES);
+    }
+    arena.custom_mesh_ranges.clear();
+    let mut requested_after = None;
+    for tick in 0..=MESH_ARENA_COMPACT_MAX_DEFER_TICKS {
+        append(&mut arena, 300 + tick, 1_000);
+        arena.reclaim_tick();
+        if arena.memory_report().mesh_compact_requested {
+            requested_after = Some(tick);
+            break;
+        }
+    }
+    assert_eq!(
+        requested_after,
+        Some(MESH_ARENA_COMPACT_MAX_DEFER_TICKS),
+        "a permanently churning arena must compact after the defer cap"
+    );
 }
 
 /// The split-arena win: rigid-only meshes stay out of the 48B/vertex skinned

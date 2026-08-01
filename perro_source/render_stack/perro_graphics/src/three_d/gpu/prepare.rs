@@ -20,6 +20,15 @@ fn estimate_draw_instance_capacity(draws: &[Draw3DInstance]) -> (usize, usize) {
     (regular, multimesh)
 }
 
+/// World position a dense multimesh draw picks its baked LOD from -- the same
+/// `lod_model` the staging loop feeds `select_mesh_lod`, so the reuse check and
+/// the packer always band on identical inputs.
+#[inline]
+fn lod_world_position(draw: &Draw3DInstance, dense: &DenseMultiMeshDraw3D) -> [f32; 3] {
+    let model = draw.instance_mats.first().unwrap_or(&dense.node_model);
+    [model[3][0], model[3][1], model[3][2]]
+}
+
 fn vertex_modifier_bound(modifiers: &[VertexModifier3D], mesh_radius: f32) -> f32 {
     let radius = mesh_radius.max(0.0);
     modifiers.iter().fold(0.0, |bound, modifier| {
@@ -1192,7 +1201,20 @@ impl Gpu3D {
             }
             if let Some(dense) = &draw.dense_multimesh {
                 let draw_model = Mat4::from_cols_array_2d(&dense.node_model);
-                let lod_sensitive = mesh_asset.lods.len() > 1;
+                // The one camera-derived input these staged rows bake in. A
+                // single-LOD mesh has none, so its staging survives any camera
+                // move; a multi-LOD mesh survives until the band flips.
+                let lod_band = (mesh_asset.lods.len() > 1).then(|| MultiMeshLodBand {
+                    lod_count: mesh_asset.lods.len() as u32,
+                    bounds_radius: mesh_asset.bounds_radius,
+                    index: select_mesh_lod_index(
+                        mesh_asset.lods.len(),
+                        mesh_asset.bounds_radius,
+                        lod_world_position(draw, dense),
+                        camera.position,
+                        draw.lod,
+                    ) as u32,
+                });
                 for entry in surface_entries.iter() {
                     let material: &Material3D = &entry.material;
                     self.ensure_standard_material_texture_slots(
@@ -1378,7 +1400,7 @@ impl Gpu3D {
                     draw: draw.clone(),
                     node_model: dense.node_model,
                     resolved_blend,
-                    lod_sensitive,
+                    lod_band,
                     param_range,
                 });
                 continue;
@@ -2777,8 +2799,16 @@ impl Gpu3D {
     /// reorder or an insert invalidates), each draw's poses (pose-`Arc`
     /// identity, pinned in the snapshot so the pointer cannot be recycled),
     /// world transform, material/surface bindings and scene-resolved blend, and
-    /// the camera when a mesh has baked LODs. `force_full_rebuild` (raised on
-    /// any resource dirty) covers mesh/material/texture edits.
+    /// the baked LOD BAND when a mesh has LOD variants.
+    /// `force_full_rebuild` (raised on any resource dirty) covers
+    /// mesh/material/texture edits.
+    ///
+    /// The band is the whole camera dependency. `select_mesh_lod` turns
+    /// distance/radius into a discrete LOD index and nothing else in the dense
+    /// path reads the camera, so a camera that moves without flipping any
+    /// draw's index reproduces byte-identical staging -- gating on camera
+    /// equality instead denied reuse every frame the camera moved and repacked
+    /// the whole scene (~3.7ms @ 100k instances) for nothing.
     ///
     /// Custom-material params ride on the same key: they are a pure function of
     /// the surface bindings (material id + per-surface overrides) plus the
@@ -2808,8 +2838,21 @@ impl Gpu3D {
             };
             if snapshot.node_model != dense.node_model
                 || snapshot.resolved_blend != mesh_blends[draw_index]
-                || (snapshot.lod_sensitive && camera_moved)
                 || !same_multimesh_except_node_model(&snapshot.draw, draw)
+            {
+                return false;
+            }
+            // `draw.lod` is proven equal to the snapshot's by the compare
+            // above, so the band recompute sees the packer's exact inputs.
+            if camera_moved
+                && let Some(band) = snapshot.lod_band
+                && select_mesh_lod_index(
+                    band.lod_count as usize,
+                    band.bounds_radius,
+                    lod_world_position(draw, dense),
+                    camera_position,
+                    draw.lod,
+                ) != band.index as usize
             {
                 return false;
             }

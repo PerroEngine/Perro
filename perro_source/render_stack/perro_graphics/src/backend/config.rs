@@ -46,6 +46,7 @@ impl PerroGraphics {
             static_mesh_lookup: None,
             static_shader_lookup: None,
             pending_pipeline_warms: Vec::new(),
+            last_pipeline_compiles_3d: 0,
             custom_shader_animated_cache: AHashMap::new(),
             retained_animated_material_memo: None,
             animated_stream_nodes_scratch: ahash::AHashSet::new(),

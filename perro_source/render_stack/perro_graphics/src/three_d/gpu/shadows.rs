@@ -209,12 +209,124 @@ impl Gpu3D {
         }
         if shrunk {
             self.rebuild_shadow_bind_group(device);
-            self.shadow_casters_dirty = true;
-            for valid in &mut self.shadow_layer_valid {
-                *valid = false;
-            }
+            self.invalidate_shadow_layers();
         }
         shrunk
+    }
+
+    /// Unconditional "every layer's depth contents are gone" reset. Used by the
+    /// paths that recreate the atlases or the bind groups the shadow passes
+    /// draw through; unlike `shadow_casters_dirty` it is not subject to the
+    /// caster-fingerprint confirmation in `update_shadow_state` (nothing about
+    /// the *casters* changed -- the target did).
+    pub(super) fn invalidate_shadow_layers(&mut self) {
+        self.shadow_casters_dirty = true;
+        for valid in &mut self.shadow_layer_valid {
+            *valid = false;
+        }
+    }
+
+    /// Fingerprint of everything the shadow depth passes read: the staged
+    /// caster lanes (via the content hashes the upload gates already computed
+    /// this prepare, so this costs no second pass over the instance bytes) plus
+    /// the batch geometry the passes walk.
+    ///
+    /// `None` means at least one lane's content is unknown -- a span patch
+    /// clears its hash -- which always counts as "moved".
+    fn shadow_caster_key(&self) -> Option<u64> {
+        use std::hash::{BuildHasher, Hasher};
+        fn lane(
+            hasher: &mut impl Hasher,
+            staged_len: usize,
+            uploaded: Option<(usize, u64)>,
+        ) -> bool {
+            hasher.write_usize(staged_len);
+            if staged_len == 0 {
+                return true;
+            }
+            match uploaded {
+                Some((len, hash)) => {
+                    hasher.write_usize(len);
+                    hasher.write_u64(hash);
+                    true
+                }
+                None => false,
+            }
+        }
+        let mut hasher =
+            ahash::RandomState::with_seeds(0x5ad0_0001, 0x5ad0_0002, 0x5ad0_0003, 0x5ad0_0004)
+                .build_hasher();
+        let known = lane(
+            &mut hasher,
+            self.staged_instance_transforms.len(),
+            self.last_uploaded_instance_transforms_hash,
+        ) && lane(
+            &mut hasher,
+            self.staged_rigid_instance_meta.len(),
+            self.last_uploaded_rigid_instance_meta_hash,
+        ) && lane(
+            &mut hasher,
+            // Mirrors the upload gate: with no skinned draw staged, nothing
+            // reads the rows, so they are staged but never sent (and so carry
+            // no content hash).
+            if self.staged_has_skinned {
+                self.staged_skinned_instance_meta.len()
+            } else {
+                0
+            },
+            self.last_uploaded_skinned_instance_meta_hash,
+        ) && lane(
+            &mut hasher,
+            self.staged_skeletons.len(),
+            self.last_uploaded_skeletons_hash,
+        ) && lane(
+            &mut hasher,
+            self.staged_blend_shape_weights.len(),
+            self.last_uploaded_blend_shape_weights_hash,
+        ) && lane(
+            &mut hasher,
+            self.staged_blend_shape_instance_meta.len(),
+            self.last_uploaded_blend_shape_meta_hash,
+        ) && lane(
+            &mut hasher,
+            self.staged_multimesh_instances.len(),
+            self.last_uploaded_multimesh_instances_hash,
+        ) && lane(
+            &mut hasher,
+            self.staged_multimesh_draw_params.len(),
+            self.last_uploaded_multimesh_draw_params_hash,
+        );
+        if !known {
+            return None;
+        }
+        // Multimesh blend-shape tails are revision-gated rather than hashed.
+        std::hash::Hash::hash(&self.uploaded_multimesh_blend_meta, &mut hasher);
+        std::hash::Hash::hash(&self.uploaded_multimesh_blend_weights, &mut hasher);
+        hasher.write_usize(self.shadow_batch_indices.len());
+        for &index in &self.shadow_batch_indices {
+            let batch = self.draw_batches.get(index)?;
+            hasher.write_u32(batch.mesh.index_start);
+            hasher.write_u32(batch.mesh.index_count);
+            hasher.write_i32(batch.mesh.base_vertex);
+            hasher.write_u32(batch.instance_start);
+            hasher.write_u32(batch.instance_count);
+            hasher.write_u8(batch.path as u8);
+            hasher.write_u8(u8::from(batch.packed_lod));
+            hasher.write_u8(u8::from(batch.double_sided));
+        }
+        hasher.write_usize(self.multimesh_batches.len());
+        for batch in self.multimesh_batches.iter() {
+            hasher.write_u32(batch.mesh.index_start);
+            hasher.write_u32(batch.mesh.index_count);
+            hasher.write_i32(batch.mesh.base_vertex);
+            hasher.write_u32(batch.instance_start);
+            hasher.write_u32(batch.instance_count);
+            hasher.write_u32(batch.draw_param_index);
+            hasher.write_u8(u8::from(batch.casts_shadows));
+            hasher.write_u8(u8::from(batch.mesh_blend));
+            hasher.write_u8(u8::from(batch.double_sided));
+        }
+        Some(hasher.finish())
     }
 
     fn rebuild_shadow_bind_group(&mut self, device: &wgpu::Device) {
@@ -327,11 +439,10 @@ impl Gpu3D {
         self.shadow_layer_shrink.ray.note_used(ray_layers);
         self.shadow_layer_shrink.spot.note_used(spot_layers);
         self.shadow_layer_shrink.point.note_used(point_layers);
-        if self.ensure_shadow_atlas_capacity(device, ray_layers, spot_layers, point_layers) {
-            // Fresh atlas layers hold garbage depth: force every layer to
-            // re-render this frame instead of trusting the per-layer cache.
-            self.shadow_casters_dirty = true;
-        }
+        // Fresh atlas layers hold garbage depth: force every layer to re-render
+        // this frame instead of trusting the per-layer cache.
+        let atlas_recreated =
+            self.ensure_shadow_atlas_capacity(device, ray_layers, spot_layers, point_layers);
         if self.last_shadow_scenes.len() != SHADOW_CAMERA_COUNT {
             self.last_shadow_scenes.resize(SHADOW_CAMERA_COUNT, None);
         }
@@ -345,7 +456,20 @@ impl Gpu3D {
         // Casters moved (rebuild / transform patch / multimesh upload) or a
         // resize/sample-count change touched the shadow targets: every layer's
         // depth is stale this frame.
-        let casters_dirty = self.shadow_casters_dirty;
+        //
+        // A full rebuild raises `shadow_casters_dirty` for every restage, and a
+        // moving camera forces one every frame (LOD selection is camera-driven)
+        // even though it reproduces byte-identical caster geometry. Confirming
+        // the flag against the caster fingerprint keeps the light-local
+        // spot/point layers -- whose view matrices never move with the camera --
+        // cached instead of re-rendering all of them every frame the camera
+        // moves. The cascade layers still re-render: their scene uniform
+        // genuinely changes (`scene_changed` below).
+        let caster_key = self.shadow_caster_key();
+        let casters_dirty = atlas_recreated
+            || (self.shadow_casters_dirty
+                && (caster_key.is_none() || self.last_shadow_caster_key != caster_key));
+        self.last_shadow_caster_key = caster_key;
         self.shadow_casters_dirty = false;
         for (index, scene) in setup.scenes.iter().copied().enumerate() {
             // Cache the frustum planes so shadow draws can sphere-cull per view.
@@ -712,6 +836,23 @@ fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScen
         Vec3::Y
     };
     let (right_axis, up_axis) = light_stable_axes(dir, up);
+    // Widest light-plane extent of the (world-static) caster box. Used as the
+    // stable upper bound on a cascade's window: it does not move with the
+    // camera, so it cannot reintroduce per-frame window resizing.
+    let scene_span = scene_corners.as_deref().and_then(|corners| {
+        let span = |axis: Vec3| {
+            let mut min = f32::INFINITY;
+            let mut max = f32::NEG_INFINITY;
+            for p in corners {
+                let v = axis.dot(*p);
+                min = min.min(v);
+                max = max.max(v);
+            }
+            max - min
+        };
+        let span = span(right_axis).max(span(up_axis));
+        span.is_finite().then_some(span)
+    });
     let mut scenes = Vec::with_capacity(MAX_SHADOW_RAY_CASCADES);
     let mut matrices = [Mat4::IDENTITY; MAX_SHADOW_RAY_CASCADES];
     let mut texels = [0.0f32; MAX_SHADOW_RAY_CASCADES];
@@ -736,30 +877,48 @@ fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScen
             .fold(0.0f32, f32::max)
             .clamp(2.0, 600.0);
         let distance = (radius * 3.0).max(80.0);
-        let mut eye = center - dir * distance;
-        let mut target = center;
-        let mut view = Mat4::look_at_rh(eye, target, up);
+        let eye = center - dir * distance;
+        let view = Mat4::look_at_rh(eye, center, up);
         let (mut ls_min, mut ls_max) =
             cascade_light_bounds(&corners, scene_corners.as_deref(), view)?;
-        let span_x = (ls_max.x - ls_min.x).max(2.0);
-        let span_y = (ls_max.y - ls_min.y).max(2.0);
-        let wupt_x = (span_x / shadow_map_size as f32).max(1.0e-6);
-        let wupt_y = (span_y / shadow_map_size as f32).max(1.0e-6);
+        // Stable window size. The slice's bounding-sphere diameter is invariant
+        // under camera rotation AND translation (it depends only on fov, aspect
+        // and this cascade's split distances), and the caster-box span is
+        // world-static, so the min of the two never changes with camera motion.
+        // A per-frame fit of the light-space AABB -- which is what the XY
+        // clamp in `cascade_light_bounds` produces -- would resize the window
+        // every frame and make the texel grid below meaningless.
+        //
+        // Coverage still holds: the window is centred on the clamped fit, whose
+        // extent is at most `min(slice extent, caster-box extent) <= size`.
+        let mut size = 2.0 * radius;
+        if let Some(scene_span) = scene_span {
+            size = size.min(scene_span);
+        }
+        // Margin for the sub-texel snap below plus the PCF kernel reach.
+        let size = (size * 1.05).max(2.0);
+        let texel = (size / shadow_map_size as f32).max(1.0e-6);
+        // Snap the window's min corner to a texel grid anchored in the LIGHT's
+        // frame, not the camera's: `right_axis`/`up_axis` come from the light
+        // direction alone, and `axis.dot(eye)` converts a light-space
+        // coordinate to that absolute light-plane coordinate (light space is
+        // `axis.dot(p - eye)`). Quantizing there makes the window advance in
+        // whole texels as the camera moves, so a static receiver keeps sampling
+        // the same texel centres instead of crawling across the map.
+        //
+        // The previous form -- shifting `eye` (and the look-at target) by the
+        // rounding delta and then re-fitting the bounds in the shifted frame --
+        // cancelled itself out exactly: translating the frame and re-measuring
+        // the same world window in it leaves `eye . axis + ls_min` unchanged.
         let center_ls_x = (ls_min.x + ls_max.x) * 0.5;
         let center_ls_y = (ls_min.y + ls_max.y) * 0.5;
-        let center_delta = right_axis * ((center_ls_x / wupt_x).round() * wupt_x - center_ls_x)
-            + up_axis * ((center_ls_y / wupt_y).round() * wupt_y - center_ls_y);
-        eye += center_delta;
-        target += center_delta;
-        view = Mat4::look_at_rh(eye, target, up);
-        (ls_min, ls_max) = cascade_light_bounds(&corners, scene_corners.as_deref(), view)?;
-        let xy_pad = ((ls_max.x - ls_min.x).max(ls_max.y - ls_min.y) * 0.08).max(1.0);
-        ls_min.x -= xy_pad;
-        ls_max.x += xy_pad;
-        ls_min.y -= xy_pad;
-        ls_max.y += xy_pad;
-        texels[cascade] =
-            ((ls_max.x - ls_min.x).max(ls_max.y - ls_min.y) / shadow_map_size as f32).max(1.0e-4);
+        let anchor_x = right_axis.dot(eye);
+        let anchor_y = up_axis.dot(eye);
+        ls_min.x = ((center_ls_x - size * 0.5 + anchor_x) / texel).floor() * texel - anchor_x;
+        ls_min.y = ((center_ls_y - size * 0.5 + anchor_y) / texel).floor() * texel - anchor_y;
+        ls_max.x = ls_min.x + size;
+        ls_max.y = ls_min.y + size;
+        texels[cascade] = texel.max(1.0e-4);
         let z_pad = (radius * 0.65).max(12.0);
         // With scene bounds, ls_max.z already reaches the caster closest to the
         // light; the near plane must follow it even past the eye (negative near
@@ -1367,4 +1526,101 @@ mod tests {
             );
         }
     }
+    /// The stable (bounding-sphere) window must still cover every cascade's
+    /// camera slice, at any camera orientation -- otherwise receivers near a
+    /// slice edge sample outside the map and read as fully lit.
+    #[test]
+    fn every_cascade_window_covers_its_camera_slice() {
+        let mut ground = caster_batch();
+        ground.local_radius = 400.0;
+        let batches = [ground];
+        let instances = [identity_instance()];
+        for (yaw, pitch) in [(0.0, 0.0), (0.9, 0.3), (2.4, -0.6), (4.1, 0.15)] {
+            let view = camera(Quat::from_rotation_y(yaw) * Quat::from_rotation_x(pitch));
+            let setup = build_shadow_setup(ShadowSetupArgs {
+                camera: &view,
+                lighting: &lighting_with_ray([-0.5, -1.0, -0.2]),
+                draw_batches: &batches,
+                staged_instances: &instances,
+                fallback_focus_center: Vec3::ZERO,
+                fallback_focus_radius: 64.0,
+                viewport_width: 1280,
+                viewport_height: 720,
+                shadow_map_size: SHADOW_MAP_SIZE,
+                has_casters: true,
+            });
+            let splits = setup.uniform.ray_splits;
+            for cascade in 0..MAX_SHADOW_RAY_CASCADES {
+                let corners = camera_frustum_slice_corners_world(
+                    &view,
+                    1280,
+                    720,
+                    if cascade == 0 { 0.0 } else { splits[cascade - 1] },
+                    splits[cascade],
+                )
+                .expect("slice corners must be finite");
+                let light = Mat4::from_cols_array_2d(&setup.uniform.ray_light_view_proj[cascade]);
+                for corner in corners {
+                    let clip = light * corner.extend(1.0);
+                    assert!(
+                        clip.x.abs() <= 1.0 && clip.y.abs() <= 1.0,
+                        "cascade {cascade} window misses slice corner {corner}                          (clip {clip}) at yaw {yaw} pitch {pitch}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Stable cascaded shadow maps: as the camera moves, a cascade's window
+    /// must advance in WHOLE shadow texels, so a static receiver keeps sampling
+    /// the same texel centres. When it slides continuously instead, every
+    /// shadow edge in the scene crawls/shimmers while the camera moves -- the
+    /// classic "shadows look weird when I move" artifact.
+    #[test]
+    fn cascade_window_advances_in_whole_texels_under_camera_motion() {
+        let mut ground = caster_batch();
+        ground.local_radius = 60.0;
+        let batches = [ground];
+        let instances = [identity_instance()];
+        let mut prev: Option<(f32, f32, f32)> = None;
+        for step in 0..12 {
+            let mut moving = camera(Quat::IDENTITY);
+            // 1 mm per frame: far below one shadow texel at any cascade.
+            moving.position[0] = step as f32 * 0.001;
+            let setup = build_shadow_setup(ShadowSetupArgs {
+                camera: &moving,
+                lighting: &lighting_with_ray([-0.5, -1.0, -0.2]),
+                draw_batches: &batches,
+                staged_instances: &instances,
+                fallback_focus_center: Vec3::ZERO,
+                fallback_focus_radius: 64.0,
+                viewport_width: 1280,
+                viewport_height: 720,
+                shadow_map_size: SHADOW_MAP_SIZE,
+                has_casters: true,
+            });
+            // Where a fixed world point lands in cascade 0's shadow map.
+            let view_proj = Mat4::from_cols_array_2d(&setup.uniform.ray_light_view_proj[0]);
+            let clip = view_proj * Vec3::ZERO.extend(1.0);
+            let map = SHADOW_MAP_SIZE as f32;
+            let u = (clip.x * 0.5 + 0.5) * map;
+            let v = (clip.y * 0.5 + 0.5) * map;
+            let texel = setup.uniform.ray_texel[0];
+            if let Some((prev_u, prev_v, prev_texel)) = prev {
+                for (axis, delta) in [("u", u - prev_u), ("v", v - prev_v)] {
+                    let off_grid = (delta - delta.round()).abs();
+                    assert!(
+                        off_grid < 0.01,
+                        "cascade window slid {delta} texels on {axis} (step {step}):                          a sub-texel camera move must shift it by a whole texel or not at all"
+                    );
+                }
+                assert!(
+                    (texel - prev_texel).abs() <= prev_texel * 1.0e-4,
+                    "cascade texel size must not resize with camera motion                      ({prev_texel} -> {texel})"
+                );
+            }
+            prev = Some((u, v, texel));
+        }
+    }
+
 }

@@ -42,6 +42,19 @@ const MESH_ARENA_COMPACT_MIN_BYTES: usize = 16 * 1024 * 1024;
 /// the appended bytes still reachable through `custom_mesh_ranges`.
 const MESH_ARENA_COMPACT_LIVE_RATIO_DEN: usize = 2;
 
+/// GC ticks a compaction request may be deferred for arena churn before it is
+/// raised anyway. A scene transition is exactly the shape that trips the live
+/// ratio for the wrong reason - the outgoing scene's meshes are dropped while
+/// the incoming scene's are still streaming in, so the arena looks half dead
+/// while it is really mid-refill - and compacting there pays a full CPU decode,
+/// repack and re-upload of every mesh the new scene resolved so far, in one
+/// frame, only to have the rest of the load append on top of it. Waiting for a
+/// tick with no appends puts the compaction after the load instead of inside
+/// it. The cap keeps content that streams meshes forever (open worlds) from
+/// deferring the reclaim indefinitely; at the 60-frame GC interval it is a few
+/// seconds of churn before compaction happens regardless.
+pub(in super::super) const MESH_ARENA_COMPACT_MAX_DEFER_TICKS: u32 = 5;
+
 /// Snapshot of the shared mesh arena's GPU memory. Reported once for the whole
 /// process, not once per view -- that is the point of the store.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -145,6 +158,14 @@ pub(crate) struct SharedMeshArena {
     pub(in super::super) custom_mesh_ranges: AHashMap<MeshID, MeshAssetEntry>,
 
     mesh_compact_requested: bool,
+    /// Meshes appended since the arena was created. `reclaim_tick` compares it
+    /// against `appends_at_last_reclaim_tick` to tell a settled arena from one
+    /// still being filled by an in-flight scene load.
+    appends: u64,
+    appends_at_last_reclaim_tick: u64,
+    /// Consecutive `reclaim_tick`s that wanted to compact but deferred for
+    /// churn. Capped by `MESH_ARENA_COMPACT_MAX_DEFER_TICKS`.
+    compact_deferred_ticks: u32,
     /// Decode-time meshlet decision. Identical for every `Gpu3D` (both come
     /// from the same `Gpu` config), which is what makes one shared arena legal.
     meshlets_enabled: bool,
@@ -253,6 +274,9 @@ impl SharedMeshArena {
             builtin_meshlets,
             custom_mesh_ranges: AHashMap::new(),
             mesh_compact_requested: false,
+            appends: 0,
+            appends_at_last_reclaim_tick: 0,
+            compact_deferred_ticks: 0,
             meshlets_enabled,
             dev_meshlets,
             buffer_generation: 1,
@@ -356,13 +380,28 @@ impl SharedMeshArena {
     /// turns it into `force_full_rebuild` in every view in the same frame (via
     /// `layout_generation`).
     pub(crate) fn reclaim_tick(&mut self) {
+        let appended_since_last_tick = self.appends != self.appends_at_last_reclaim_tick;
+        self.appends_at_last_reclaim_tick = self.appends;
         let report = self.memory_report();
-        if report.mesh_arena_bytes >= MESH_ARENA_COMPACT_MIN_BYTES
+        let worth_compacting = report.mesh_arena_bytes >= MESH_ARENA_COMPACT_MIN_BYTES
             && report.mesh_arena_live_bytes * MESH_ARENA_COMPACT_LIVE_RATIO_DEN
-                < report.mesh_arena_bytes
-        {
-            self.mesh_compact_requested = true;
+                < report.mesh_arena_bytes;
+        if !worth_compacting {
+            self.compact_deferred_ticks = 0;
+            return;
         }
+        // Meshes landed since the previous tick, so the "half the arena is
+        // dead" reading is most likely a scene transition mid-refill, not a
+        // settled arena worth rebuilding. Wait for a quiet tick (see
+        // MESH_ARENA_COMPACT_MAX_DEFER_TICKS).
+        if appended_since_last_tick
+            && self.compact_deferred_ticks < MESH_ARENA_COMPACT_MAX_DEFER_TICKS
+        {
+            self.compact_deferred_ticks += 1;
+            return;
+        }
+        self.compact_deferred_ticks = 0;
+        self.mesh_compact_requested = true;
     }
 
     /// Resolve a mesh id/source into its buffer range through the caller-held
@@ -505,6 +544,9 @@ impl SharedMeshArena {
         if decoded.vertices.is_empty() || decoded.indices.is_empty() {
             return None;
         }
+        // Churn marker for `reclaim_tick`: an arena still taking appends is
+        // mid-load, and its live-byte ratio must not be trusted.
+        self.appends = self.appends.wrapping_add(1);
         let DecodedMesh {
             vertices: decoded_vertices,
             indices: decoded_indices,

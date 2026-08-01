@@ -52,6 +52,20 @@ const GC_MAX_DROPS_PER_KIND: usize = 64;
 // CPU pixel copy is reclaimed. GPU copies are untouched; a later re-upload
 // (new camera stream, texture invalidation) re-decodes from source.
 const DECODED_TEXTURE_EVICT_TTL_TICKS: u64 = 10;
+// Per-frame ceiling on speculative pipeline warms (see
+// `Gpu::warm_material_pipelines`). A scene load queues every material it
+// creates at once; each *new* material shape costs a WGSL compile plus four
+// `create_render_pipeline` calls per render path, measured at ~26ms per shape
+// per path on a discrete GPU. Draining the queue unbounded turned a 16-shape
+// scene switch into a single ~960ms frame. Cache hits are free and excluded, so
+// re-entering a warm scene still drains in one frame.
+//
+// The count is the hard stop; the time budget is what usually bites, and is
+// sized so a warm frame stays inside a 30fps slot even when one shape lands
+// slower than measured. Both are deliberately generous rather than minimal:
+// warming too slowly just moves the compile to the first visible draw.
+const PIPELINE_WARM_MAX_COMPILES_PER_FRAME: usize = 2;
+const PIPELINE_WARM_TIME_BUDGET: Duration = Duration::from_millis(6);
 const PARALLEL_COMMAND_SUMMARY_MIN: usize = 10_000;
 const PARALLEL_RENDER_PREPARE_MIN: usize = 4_096;
 const MAX_RUNTIME_TEXTURE_DIMENSION: u32 = 8_192;
@@ -178,6 +192,14 @@ pub struct DrawFrameTiming {
     pub sprite_batches_2d: u32,
     pub sprite_bind_group_switches_2d: u32,
     pub draw_batches_3d: u32,
+    /// 3D pipeline sets compiled this frame, from the speculative warm queue
+    /// (see `PIPELINE_WARM_MAX_COMPILES_PER_FRAME`) and from lazy first-draw
+    /// misses alike. Each one is a WGSL compile plus four
+    /// `create_render_pipeline` calls, so a non-zero value is usually the whole
+    /// explanation for a slow scene-transition frame.
+    pub pipeline_compiles_3d: u32,
+    /// Materials still queued for warming after this frame's budget ran out.
+    pub pipeline_warms_pending_3d: u32,
     pub pipeline_switches_3d: u32,
     pub texture_bind_group_switches_3d: u32,
     pub draw_instances_3d: u32,
@@ -482,6 +504,9 @@ pub struct PerroGraphics {
     // materials created/written since last frame; drained b4 gpu render 2
     // compile their pipelines at load time instead of first visible draw.
     pending_pipeline_warms: Vec<Arc<Material3D>>,
+    // Gpu::pipeline_compiles_3d at the end of the previous frame; the diff is
+    // reported as DrawFrameTiming::pipeline_compiles_3d.
+    last_pipeline_compiles_3d: u64,
     // shader_path_hash -> shader reads perro_time/delta/frame_index. gates
     // the continuous-redraw path: static custom shaders don't force it.
     custom_shader_animated_cache: AHashMap<u64, bool>,

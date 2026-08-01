@@ -1,4 +1,8 @@
 use super::*;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 
 fn next_custom_pipeline_token(
     tokens: &AHashMap<CustomPipelineKey, u32>,
@@ -162,6 +166,7 @@ impl Gpu3D {
         // replicate, so hooked customs stay out of shadow/prepass batches.
         self.custom_pipeline_vertex_hooks
             .insert(token, has_vertex_hook);
+        self.pipeline_compiles = self.pipeline_compiles.wrapping_add(1);
         let wgsl = if path == RenderPath3D::MultiMesh {
             build_custom_multimesh_material_shader(shader_source.as_ref(), lighting)
         } else if path == RenderPath3D::Rigid {
@@ -317,11 +322,20 @@ impl Gpu3D {
         Some(token)
     }
 
-    // Pre-compile every render-path pipeline this material can hit so its
-    // first visible draw never pays shader-module + pipeline creation.
-    // Reuses material_pipeline_kind, so cache hits make repeats free and
-    // builtin non-variant materials cost nothing (prebuilt at init).
-    pub(crate) fn warm_material_pipelines(
+    // Pre-compile the render-path pipelines this material can hit so its first
+    // visible draw never pays shader-module + pipeline creation. Cache hits
+    // make repeats free and builtin non-variant materials cost nothing
+    // (prebuilt at init).
+    //
+    // Only paths this instance has actually drawn are warmed, plus Rigid (the
+    // path a plain static mesh takes, and the one a fresh instance is most
+    // likely to need first). Warming all three unconditionally doubled the cost
+    // of every scene load for the common case of a scene with no skinned or
+    // multimesh geometry: a measured ~26ms per new material shape per path.
+    // A path that shows up later still works - it just compiles lazily on its
+    // first draw, which is the pre-existing behaviour for anything the warm
+    // queue misses.
+    fn warm_material_pipelines(
         &mut self,
         device: &wgpu::Device,
         material: &Material3D,
@@ -332,11 +346,140 @@ impl Gpu3D {
             RenderPath3D::Skinned,
             RenderPath3D::MultiMesh,
         ] {
-            let _ = self.material_pipeline_kind(device, path, material, true, static_shader_lookup);
+            if path != RenderPath3D::Rigid && !self.render_path_drawn(path) {
+                continue;
+            }
+            // Deliberately the non-noting entry: warming must not teach the
+            // instance that a path is in use, or the first warm would unlock
+            // every other path for every later warm.
+            let _ = self.material_pipeline_kind_for_path(
+                device,
+                path,
+                material,
+                true,
+                static_shader_lookup,
+            );
         }
     }
 
+    #[inline]
+    fn render_path_bit(path: RenderPath3D) -> u8 {
+        match path {
+            RenderPath3D::Rigid => 1,
+            RenderPath3D::Skinned => 2,
+            RenderPath3D::MultiMesh => 4,
+        }
+    }
+
+    #[inline]
+    fn render_path_drawn(&self, path: RenderPath3D) -> bool {
+        self.render_paths_drawn & Self::render_path_bit(path) != 0
+    }
+
+    /// Monotonic count of pipeline *sets* this instance has compiled (one per
+    /// new builtin feature combo or custom shader/path pair; each is one WGSL
+    /// parse/validate plus four `create_render_pipeline` calls). Frame code
+    /// diffs it to report `pipeline_compiles_3d` for a frame.
+    #[inline]
+    pub(crate) fn pipeline_compiles(&self) -> u64 {
+        self.pipeline_compiles
+    }
+
+    #[cfg(test)]
+    pub(super) fn builtin_variant_pipeline_count(&self) -> usize {
+        self.builtin_variant_pipelines.len()
+    }
+
+    #[cfg(test)]
+    pub(super) fn pipeline_registry_for_test(&self) -> &PipelineRegistry {
+        &self.pipelines
+    }
+
+    #[cfg(test)]
+    pub(super) fn note_render_path_for_test(&mut self, path: RenderPath3D) {
+        self.render_paths_drawn |= Self::render_path_bit(path);
+    }
+
+    /// Drain queued scene materials into the pipeline caches, stopping at the
+    /// first limit hit: `max_compiles` materials that actually compiled, or
+    /// `time_budget` of wall clock. At least one material is always attempted
+    /// so a drain can never stall.
+    ///
+    /// A scene load queues every material it creates at once, and draining the
+    /// lot in the frame before `render` is the scene-transition spike: cache
+    /// hits are free, but each *new* material shape costs a WGSL compile plus
+    /// four `create_render_pipeline` calls per render path - measured at ~60ms
+    /// per shape (two paths) on a discrete GPU, so 16 new shapes stalled one
+    /// frame for ~960ms. Spreading them keeps a transition at a few slow frames
+    /// instead of one enormous one. Materials that hit the cache cost nothing
+    /// and do not count against the budget, so a scene re-entered with warm
+    /// caches still drains in a single frame.
+    ///
+    /// Returns how many materials compiled; leaves the rest queued in order.
+    pub(crate) fn warm_material_pipelines_budgeted(
+        &mut self,
+        device: &wgpu::Device,
+        materials: &mut Vec<Arc<Material3D>>,
+        static_shader_lookup: Option<StaticShaderLookup>,
+        max_compiles: usize,
+        time_budget: Option<std::time::Duration>,
+    ) -> usize {
+        if materials.is_empty() {
+            return 0;
+        }
+        // A zero budget would consume nothing, and the caller keeps the frame
+        // pump awake while the queue is non-empty - so it must always make
+        // progress.
+        let max_compiles = max_compiles.max(1);
+        let start = time_budget.map(|_| Instant::now());
+        let mut compiled = 0_usize;
+        let mut consumed = 0_usize;
+        for material in materials.iter() {
+            if compiled >= max_compiles {
+                break;
+            }
+            // Checked only after something compiled: a run of cache hits is
+            // ~free and must not burn the frame's whole drain.
+            if compiled > 0
+                && let (Some(start), Some(budget)) = (start, time_budget)
+                && start.elapsed() >= budget
+            {
+                break;
+            }
+            let before = self.pipeline_compiles;
+            self.warm_material_pipelines(device, material, static_shader_lookup);
+            consumed += 1;
+            if self.pipeline_compiles != before {
+                compiled += 1;
+            }
+        }
+        materials.drain(..consumed);
+        compiled
+    }
+
+    /// Prepare's entry point: resolving a real draw's pipeline is also how the
+    /// instance learns which render paths it serves, which is what keeps
+    /// `warm_material_pipelines` from compiling skinned/multimesh variants for
+    /// a scene that has neither.
     pub(super) fn material_pipeline_kind(
+        &mut self,
+        device: &wgpu::Device,
+        render_path: RenderPath3D,
+        material: &Material3D,
+        receive_shadows: bool,
+        static_shader_lookup: Option<StaticShaderLookup>,
+    ) -> MaterialPipelineKind {
+        self.render_paths_drawn |= Self::render_path_bit(render_path);
+        self.material_pipeline_kind_for_path(
+            device,
+            render_path,
+            material,
+            receive_shadows,
+            static_shader_lookup,
+        )
+    }
+
+    fn material_pipeline_kind_for_path(
         &mut self,
         device: &wgpu::Device,
         render_path: RenderPath3D,
@@ -427,6 +570,7 @@ impl Gpu3D {
         if self.builtin_variant_pipelines.contains_key(&key) {
             return true;
         }
+        self.pipeline_compiles = self.pipeline_compiles.wrapping_add(1);
         let shader = if path == RenderPath3D::Rigid {
             create_standard_shader_module_rigid_variant(device, kind, features)
         } else {
