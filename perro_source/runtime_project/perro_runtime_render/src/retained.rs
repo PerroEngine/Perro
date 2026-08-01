@@ -434,6 +434,12 @@ pub struct RenderUiState {
     /// re-applied after the clear.
     pub deferred_dirty: Vec<(NodeID, u16)>,
     pub defer_dirty_marks: bool,
+    /// Live `UiScrollContainer` ids, cached for the idle-frame scroll-animation
+    /// probe. Rebuilt only when the arena structural revision moves, so an idle
+    /// frame costs one deref per scroll container instead of a whole-arena scan.
+    pub scroll_container_ids: Vec<NodeID>,
+    /// Arena structural revision `scroll_container_ids` was built from.
+    pub scroll_container_ids_revision: Option<u64>,
 }
 
 pub type RenderUiSystem = RenderUiState;
@@ -516,6 +522,8 @@ impl RenderUiState {
             event_signal_name_scratch: String::new(),
             deferred_dirty: Vec::new(),
             defer_dirty_marks: false,
+            scroll_container_ids: Vec::new(),
+            scroll_container_ids_revision: None,
         }
     }
 

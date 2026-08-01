@@ -256,6 +256,8 @@ pub(crate) struct NodeIndexState {
     // (Tag and name indices live on NodeArena, maintained by node lifecycle.)
     pub(crate) query_spatial_pos_2d: Vec<Option<perro_structs::Vector2>>,
     pub(crate) query_spatial_pos_3d: Vec<Option<perro_structs::Vector3>>,
+    /// candidate bit-marks + subtree walk stack/stamps reused across queries.
+    pub(crate) query_scratch: crate::rt_ctx::query::QueryScratch,
 }
 
 impl NodeIndexState {
@@ -263,6 +265,7 @@ impl NodeIndexState {
         Self {
             query_spatial_pos_2d: Vec::new(),
             query_spatial_pos_3d: Vec::new(),
+            query_scratch: crate::rt_ctx::query::QueryScratch::default(),
         }
     }
 }
@@ -273,6 +276,10 @@ pub(crate) struct NodeApiScratchState {
     pub(crate) remove_visited: AHashSet<NodeID>,
     /// Reused DFS stack for UI dirty-subtree walks (reparent / visibility).
     pub(crate) ui_walk_stack: Vec<NodeID>,
+    /// Last `with_node_mut` "after" UI snapshot, reused as the next call's
+    /// "before" so a repeated mutation of one node fingerprints its payload
+    /// once per call instead of twice.
+    pub(crate) ui_snapshot_memo: crate::rt_ctx::nodes::helpers::UiSnapshotMemo,
 }
 
 impl NodeApiScratchState {
@@ -282,6 +289,7 @@ impl NodeApiScratchState {
             remove_postorder: Vec::new(),
             remove_visited: AHashSet::default(),
             ui_walk_stack: Vec::new(),
+            ui_snapshot_memo: Default::default(),
         }
     }
 }

@@ -796,21 +796,29 @@ impl Runtime {
         }
     }
 
-    pub(super) fn has_active_scroll_container_animation(&self) -> bool {
-        // node_types lane pre-filter (1B/slot): only scroll-container slots
-        // deref their SceneNode. A set/clear counter was considered instead,
-        // but `UiScrollContainer::scroll_to` is a pub field-level API scripts
-        // reach through `with_node_mut` (no runtime hook, no ui-payload dirty
-        // fingerprint), so a counter would miss script-started animations and
-        // stall them; the lane probe stays the correctness safety net.
-        let type_slots = self.nodes.node_type_slots();
-        (1..self.nodes.slot_count()).any(|index| {
-            type_slots[index] == perro_nodes::NodeType::UiScrollContainer
-                && matches!(
-                    self.nodes.slot_get(index).map(|(_, node)| &node.data),
-                    Some(SceneNodeData::UiScrollContainer(scroller))
-                        if scroller.scroll_animation.is_some()
-                )
+    pub(super) fn has_active_scroll_container_animation(&mut self) -> bool {
+        // The animation flag itself cannot be counted: `UiScrollContainer::
+        // scroll_to` is a pub field-level API scripts reach through
+        // `with_node_mut` (no runtime hook, no ui-payload dirty fingerprint), so
+        // a start/stop counter would miss script-started animations and stall
+        // them. The *set of scroll containers* only moves on structural arena
+        // changes, so cache that instead: an idle frame then derefs K scroll
+        // containers rather than scanning every slot.
+        let revision = self.nodes.structural_revision();
+        if self.render_ui.scroll_container_ids_revision != Some(revision) {
+            let mut ids = std::mem::take(&mut self.render_ui.scroll_container_ids);
+            ids.clear();
+            self.nodes
+                .append_type_ids(perro_nodes::NodeType::UiScrollContainer, &mut ids);
+            self.render_ui.scroll_container_ids = ids;
+            self.render_ui.scroll_container_ids_revision = Some(revision);
+        }
+        self.render_ui.scroll_container_ids.iter().any(|&id| {
+            matches!(
+                self.nodes.get(id).map(|node| &node.data),
+                Some(SceneNodeData::UiScrollContainer(scroller))
+                    if scroller.scroll_animation.is_some()
+            )
         })
     }
 }

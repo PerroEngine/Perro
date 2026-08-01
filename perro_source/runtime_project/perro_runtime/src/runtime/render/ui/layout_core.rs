@@ -343,6 +343,13 @@ impl Runtime {
         if self.render_ui.retained_commands.remove(&node).is_some() {
             self.queue_render_command(RenderCommand::Ui(Box::new(UiCommand::RemoveNode { node })));
         }
+        // A deleted color picker never reaches the wheel emit pass again, so its
+        // synthetic wheel node would stay retained (and drawn) forever. Only the
+        // gone-from-arena case clears it: a merely hidden picker keeps its
+        // retained wheel so the next pass compares equal instead of churning.
+        if self.nodes.get(node).is_none() {
+            self.remove_retained_color_wheel(color_picker_wheel_render_node(node));
+        }
     }
 
     pub(super) fn remove_no_longer_visible_ui_nodes(

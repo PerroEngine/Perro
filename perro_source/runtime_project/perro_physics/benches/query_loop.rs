@@ -55,29 +55,11 @@ fn cast_100(system: &mut PhysicsSystem, filter: &PhysicsQueryFilter) -> u32 {
 fn bench_query_loop(c: &mut Criterion) {
     let filter = PhysicsQueryFilter::default();
 
-    // new path: pipeline refit 1x, casts reuse
+    // queries borrow the broad-phase BVH (maintained in step); no refit path
+    // exists anymore, so the old forced-refit comparison case is gone.
     let mut system = build_system(1024);
     c.bench_function("raycast_2d_x100_static_world", |b| {
         b.iter(|| black_box(cast_100(&mut system, &filter)))
-    });
-
-    // old path sim: force refit b4 every cast (pre-fix behavior)
-    let mut forced = build_system(1024);
-    c.bench_function("raycast_2d_x100_forced_refit", |b| {
-        b.iter(|| {
-            let mut hits = 0u32;
-            for i in 0..100u32 {
-                forced.query_pipeline_dirty_2d = true;
-                let origin = Vector2::new((i % 32) as f32 * 2.0, -5.0);
-                if forced
-                    .raycast_2d(origin, Vector2::new(0.0, 1.0), black_box(200.0), &filter)
-                    .is_some()
-                {
-                    hits += 1;
-                }
-            }
-            black_box(hits)
-        })
     });
 }
 

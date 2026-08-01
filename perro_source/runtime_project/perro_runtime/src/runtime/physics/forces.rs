@@ -389,25 +389,19 @@ impl Runtime {
 
     pub(super) fn queue_water_forces_2d(&mut self) {
         let active_world = self.active_physics_world();
-        // active-world entries: clear Vec in place (kp alloc, refill this tick);
-        // other worlds: kp data; dead nodes: drop entry.
+        // active-world entries: drop (refilled this tick); other worlds: kp
+        // data; dead nodes: drop entry. dropping instead of clear-in-place kp
+        // both maps free of drained-empty entries, so the fixed-step skip gate
+        // reduces 2 a map is_empty() instead of a per-entry emptiness scan.
         let mut pending_queries = std::mem::take(&mut self.pending_water_queries_2d);
-        pending_queries.retain(|id, list| match self.node_world(*id) {
-            Some(world) if world == active_world => {
-                list.clear();
-                true
-            }
-            Some(_) => true,
+        pending_queries.retain(|id, _| match self.node_world(*id) {
+            Some(world) => world != active_world,
             None => false,
         });
         self.pending_water_queries_2d = pending_queries;
         let mut contacts = std::mem::take(&mut self.water_contacts_2d);
-        contacts.retain(|id, list| match self.node_world(*id) {
-            Some(world) if world == active_world => {
-                list.clear();
-                true
-            }
-            Some(_) => true,
+        contacts.retain(|id, _| match self.node_world(*id) {
+            Some(world) => world != active_world,
             None => false,
         });
         self.water_contacts_2d = contacts;
@@ -573,24 +567,16 @@ impl Runtime {
 
     pub(super) fn queue_water_forces_3d(&mut self) {
         let active_world = self.active_physics_world();
-        // see queue_water_forces_2d: clear-in-place / kp / drop split.
+        // see queue_water_forces_2d: drop active-world / kp other / drop dead.
         let mut pending_queries = std::mem::take(&mut self.pending_water_queries_3d);
-        pending_queries.retain(|id, list| match self.node_world(*id) {
-            Some(world) if world == active_world => {
-                list.clear();
-                true
-            }
-            Some(_) => true,
+        pending_queries.retain(|id, _| match self.node_world(*id) {
+            Some(world) => world != active_world,
             None => false,
         });
         self.pending_water_queries_3d = pending_queries;
         let mut contacts = std::mem::take(&mut self.water_contacts_3d);
-        contacts.retain(|id, list| match self.node_world(*id) {
-            Some(world) if world == active_world => {
-                list.clear();
-                true
-            }
-            Some(_) => true,
+        contacts.retain(|id, _| match self.node_world(*id) {
+            Some(world) => world != active_world,
             None => false,
         });
         self.water_contacts_3d = contacts;

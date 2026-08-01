@@ -76,6 +76,61 @@ impl Runtime {
             .unwrap_or(local)
     }
 
+    /// Parsed tileset 4 a tilemap node w/o cloning the `TileSetRef` on the hot
+    /// path: the parsed cache is id-keyed, so only a cold miss pays the clone +
+    /// full resolve. Ret (cache key, parsed tileset).
+    fn resolve_tilemap_tileset_2d(
+        &mut self,
+        id: NodeID,
+    ) -> Option<(u64, std::rc::Rc<crate::runtime::render_2d::ParsedTileset2D>)> {
+        let (key, empty) = self.nodes.get(id).and_then(|node| match &node.data {
+            SceneNodeData::TileMap2D(tilemap) => {
+                Some((tilemap.tileset.id().as_u64(), tilemap.tileset.is_empty()))
+            }
+            _ => None,
+        })?;
+        if empty {
+            return None;
+        }
+        if let Some(tileset) = self.render_2d.tileset_cache.get(&key) {
+            return Some((key, tileset.clone()));
+        }
+        let source = self.nodes.get(id).and_then(|node| match &node.data {
+            SceneNodeData::TileMap2D(tilemap) => Some(tilemap.tileset.clone()),
+            _ => None,
+        })?;
+        let tileset = crate::runtime::render_2d::resolve_tileset_2d(self, &source)?;
+        Some((key, tileset))
+    }
+
+    /// Memoized fold of a parsed tileset's collision tiles. Parsed tilesets
+    /// never mutate in place, so `Rc` identity is the validity signal; the memo
+    /// holds the `Rc` so a freed address can't be reused into a false hit.
+    /// Entries drop themselves once the tileset cache lets go of the tileset.
+    fn tileset_collision_hash_2d(
+        &mut self,
+        key: u64,
+        tileset: &std::rc::Rc<crate::runtime::render_2d::ParsedTileset2D>,
+    ) -> u64 {
+        if let Some((cached, hash)) = self.tileset_collision_hash_cache_2d.get(&key)
+            && std::rc::Rc::ptr_eq(cached, tileset)
+        {
+            return *hash;
+        }
+        let mut hash = hash_u64(0, key);
+        for tile in tileset.tiles.iter() {
+            if tile.collision {
+                hash = hash_u64(hash, tile.id as u64);
+                hash = hash_tile_collision_shape_2d(hash, &tile.collision_shape);
+            }
+        }
+        self.tileset_collision_hash_cache_2d
+            .retain(|_, (cached, _)| std::rc::Rc::strong_count(cached) > 1);
+        self.tileset_collision_hash_cache_2d
+            .insert(key, (tileset.clone(), hash));
+        hash
+    }
+
     pub(super) fn collect_body_descs_2d(&mut self) -> Vec<BodyDesc2D> {
         #[cfg(any(test, feature = "bench"))]
         self.physics_collect_calls_2d
@@ -163,28 +218,31 @@ impl Runtime {
                 continue;
             };
             // resolve tileset b4 node borrow; avoid full tilemap clone / step
-            let tileset_source = self.nodes.get(id).and_then(|node| match &node.data {
-                SceneNodeData::TileMap2D(tilemap) => Some(tilemap.tileset.clone()),
-                _ => None,
-            });
-            let tileset = tileset_source
+            let is_tilemap = self
+                .nodes
+                .get(id)
+                .is_some_and(|node| matches!(&node.data, SceneNodeData::TileMap2D(_)));
+            let tileset = if is_tilemap {
+                self.resolve_tilemap_tileset_2d(id)
+            } else {
+                None
+            };
+            // fold the tileset's collision tiles once per parsed tileset, not
+            // once per tilemap per step (memo b4 the node borrow below).
+            let tileset_collision_hash = tileset
                 .as_ref()
-                .and_then(|source| crate::runtime::render_2d::resolve_tileset_2d(self, source));
-            let is_tilemap = tileset_source.is_some();
+                .map(|(key, tileset)| self.tileset_collision_hash_2d(*key, tileset));
+            let tileset = tileset.map(|(_, tileset)| tileset);
             let mut shape_signature = body_signature_seed(kind);
             if let Some(node) = self.nodes.get(id) {
                 if let SceneNodeData::TileMap2D(tilemap) = &node.data {
+                    // tile content stay hashed inline: tile edits carry no
+                    // per-node mutation signal (arena revisions are global +
+                    // move every step in a live scene), + a stale content hash
+                    // = missed collider rebuild.
                     shape_signature = hash_tilemap_2d(shape_signature, tilemap);
-                    if let Some(tileset) = tileset.as_deref() {
-                        for tile in tileset.tiles.iter() {
-                            if tile.collision {
-                                shape_signature = hash_u64(shape_signature, tile.id as u64);
-                                shape_signature = hash_tile_collision_shape_2d(
-                                    shape_signature,
-                                    &tile.collision_shape,
-                                );
-                            }
-                        }
+                    if let Some(hash) = tileset_collision_hash {
+                        shape_signature = hash_u64(shape_signature, hash);
                     }
                 } else {
                     if let SceneNodeData::WaterBody2D(water) = &node.data {

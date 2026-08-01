@@ -202,23 +202,30 @@ impl Runtime {
 
     pub(crate) fn physics_fixed_step_timed(&mut self) -> RuntimePhysicsStepTiming {
         let total_start = Instant::now();
+        // world list = f(physics body/joint node sets, node_world); both move
+        // only on structural chg. topology-stable steps reuse the sorted list
+        // + skip the 2 stale-world retain passes below.
+        let structural_revision = self.nodes.structural_revision();
+        let rebuild_worlds = self.physics_world_ids_revision != Some(structural_revision);
         let mut worlds = std::mem::take(&mut self.physics_world_ids_scratch);
-        worlds.clear();
-        for id in self
-            .internal_updates
-            .physics_body_nodes_2d
-            .iter()
-            .chain(self.internal_updates.physics_body_nodes_3d.iter())
-            .chain(self.internal_updates.physics_joint_nodes_2d.iter())
-            .chain(self.internal_updates.physics_joint_nodes_3d.iter())
-            .copied()
-        {
-            if let Some(world) = self.node_world(id) {
-                worlds.push(world);
+        if rebuild_worlds {
+            worlds.clear();
+            for id in self
+                .internal_updates
+                .physics_body_nodes_2d
+                .iter()
+                .chain(self.internal_updates.physics_body_nodes_3d.iter())
+                .chain(self.internal_updates.physics_joint_nodes_2d.iter())
+                .chain(self.internal_updates.physics_joint_nodes_3d.iter())
+                .copied()
+            {
+                if let Some(world) = self.node_world(id) {
+                    worlds.push(world);
+                }
             }
+            worlds.sort_unstable_by_key(|id| (id.index(), id.generation()));
+            worlds.dedup();
         }
-        worlds.sort_unstable_by_key(|id| (id.index(), id.generation()));
-        worlds.dedup();
 
         let mut total = RuntimePhysicsStepTiming {
             pre_transforms: std::time::Duration::ZERO,
@@ -244,15 +251,21 @@ impl Runtime {
             total.signals += timing.signals;
         }
         self.activate_physics_world(NodeID::nil());
-        self.physics.retain_worlds(&worlds);
-        self.physics_synced_world_revisions.retain(|world, _| {
-            world.is_nil()
-                || worlds
-                    .binary_search_by_key(&(world.index(), world.generation()), |id| {
-                        (id.index(), id.generation())
-                    })
-                    .is_ok()
-        });
+        if rebuild_worlds {
+            // only worlds in the list ever get activated, so new physics worlds
+            // / synced-revision entries can only appear 4 members of the list:
+            // an unchanged list has nothing stale 2 prune.
+            self.physics.retain_worlds(&worlds);
+            self.physics_synced_world_revisions.retain(|world, _| {
+                world.is_nil()
+                    || worlds
+                        .binary_search_by_key(&(world.index(), world.generation()), |id| {
+                            (id.index(), id.generation())
+                        })
+                        .is_ok()
+            });
+            self.physics_world_ids_revision = Some(structural_revision);
+        }
         self.physics_world_ids_scratch = worlds;
         total.total = total_start.elapsed();
         total
@@ -279,16 +292,12 @@ impl Runtime {
             && self.water_samples.is_empty()
             && self.water_sample_times.is_empty()
             && self.water_body_samples.is_empty()
-            && self
-                .pending_water_queries_2d
-                .values()
-                .all(|list| list.is_empty())
-            && self
-                .pending_water_queries_3d
-                .values()
-                .all(|list| list.is_empty())
-            && self.water_contacts_2d.values().all(|list| list.is_empty())
-            && self.water_contacts_3d.values().all(|list| list.is_empty())
+            // drained entries are dropped (see queue_water_forces_2d), so a
+            // non-empty map always means live data: no per-entry scan needed.
+            && self.pending_water_queries_2d.is_empty()
+            && self.pending_water_queries_3d.is_empty()
+            && self.water_contacts_2d.is_empty()
+            && self.water_contacts_3d.is_empty()
             && self.physics.active_area_overlaps_2d.is_empty()
             && self.physics.active_area_overlaps_3d.is_empty()
             && self.physics.can_skip_step()
@@ -396,6 +405,7 @@ impl Runtime {
     pub(crate) fn clear_physics(&mut self) {
         self.physics.clear_all();
         self.physics_synced_world_revisions.clear();
+        self.physics_world_ids_revision = None;
         self.character_fall_speed_2d.clear();
         self.character_fall_speed_3d.clear();
         self.character_sweep_hit_2d.clear();

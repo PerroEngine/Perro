@@ -260,7 +260,13 @@ fn indexed_all_candidates_intersect_smallest_sets_first() {
         QueryExpr::Tags(vec![b]),
         QueryExpr::Tags(vec![c]),
     ]);
-    let candidates = candidate_ids_from_index(&Some(expr), Some(&index), 8).expect("candidate ids");
+    let candidates = candidate_ids_from_index(
+        &Some(expr),
+        Some(&index),
+        8,
+        &mut QueryScratch::default(),
+    )
+    .expect("candidate ids");
 
     assert!(candidates.exact);
     assert_eq!(candidates.ids, vec![id4]);
@@ -283,7 +289,13 @@ fn indexed_all_with_nonindexed_predicate_uses_small_tag_seed() {
         QueryExpr::Name(vec!["target".to_string()]),
         QueryExpr::Tags(vec![rare]),
     ]);
-    let candidates = candidate_ids_from_index(&Some(expr), Some(&index), 8).expect("candidate ids");
+    let candidates = candidate_ids_from_index(
+        &Some(expr),
+        Some(&index),
+        8,
+        &mut QueryScratch::default(),
+    )
+    .expect("candidate ids");
 
     assert!(!candidates.exact);
     assert_eq!(candidates.ids, vec![id3]);
@@ -299,7 +311,13 @@ fn indexed_missing_required_tag_returns_exact_empty() {
     index.insert(present, [id1].into_iter().collect());
 
     let expr = QueryExpr::All(vec![QueryExpr::Tags(vec![present, missing])]);
-    let candidates = candidate_ids_from_index(&Some(expr), Some(&index), 8).expect("candidate ids");
+    let candidates = candidate_ids_from_index(
+        &Some(expr),
+        Some(&index),
+        8,
+        &mut QueryScratch::default(),
+    )
+    .expect("candidate ids");
 
     assert!(candidates.exact);
     assert!(candidates.ids.is_empty());

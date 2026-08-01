@@ -101,7 +101,11 @@ impl Runtime {
             self.attach_created_children(parent_id, &root_ids);
         }
 
-        self.nodes.rebuild_packed_children();
+        // No packed-children rebuild here: `NodeArena::children` falls back to
+        // authoritative per-node storage while the CSR cache is stale, and the
+        // amortized `refresh_packed_children` gate runs every update / fixed
+        // tick. Rebuilding per call made batch creation O(n*k) (one full CSR
+        // rebuild per collection entry).
         ids
     }
 

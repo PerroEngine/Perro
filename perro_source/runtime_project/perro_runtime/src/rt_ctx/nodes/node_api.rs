@@ -106,6 +106,23 @@ impl NodeAPI for Runtime {
             return None;
         }
 
+        // Const-gated so the optimizer strips the memo probe for node types
+        // that can never be UI nodes.
+        let track_ui = T::NODE_TYPE.is_a(NodeType::UiNode);
+        // Reuse the previous mutation's "after" snapshot as this call's
+        // "before". Valid only while the arena mutation revision is unchanged
+        // (every mutable accessor bumps it), which is the common
+        // mutate-the-same-node-again case. Must be taken before the mutable
+        // borrow below, which bumps the revision itself.
+        let memo_before = if track_ui {
+            let revision = self.nodes.mutation_revision();
+            self.node_api_scratch
+                .ui_snapshot_memo
+                .take_valid(id, revision)
+        } else {
+            None
+        };
+
         let (
             transform_changed,
             ui_before,
@@ -121,16 +138,18 @@ impl NodeAPI for Runtime {
             // physics types mark the change after the mutation below.
             let node = self.nodes.get_mut_untracked_non_physics(id)?;
 
-            // Const-gated so the optimizer strips camera/UI capture for node
-            // types that can never be those variants.
-            let track_ui = T::NODE_TYPE.is_a(NodeType::UiNode);
+            // Const-gated so the optimizer strips camera capture for node types
+            // that can never be those variants.
             let track_camera_2d = T::NODE_TYPE == NodeType::Camera2D;
             let track_camera_3d = T::NODE_TYPE == NodeType::Camera3D;
             // Single-pass snapshots replace the old before/after deep clone of
             // `SceneNodeData`. `local_snapshot` folds visibility + base modulate
             // into one match; `ui_snapshot` captures the UI base + payload
             // fingerprints only when this type is a UI node.
-            let ui_before = track_ui.then(|| ui_snapshot(&node.data)).flatten();
+            let ui_before = match memo_before {
+                Some(memo) => Some(memo),
+                None => track_ui.then(|| ui_snapshot(&node.data)).flatten(),
+            };
             let (visible_before, modulate_before) = local_snapshot(&node.data);
             let cam_2d_before = if track_camera_2d {
                 match &node.data {
@@ -240,6 +259,14 @@ impl NodeAPI for Runtime {
         if modulate_changed {
             self.force_rerender(id);
         }
+        if let Some(after) = ui_after {
+            // Key on the revision as of now: the dirty marks above never touch
+            // node data, so this snapshot still describes the node exactly.
+            let revision = self.nodes.mutation_revision();
+            self.node_api_scratch
+                .ui_snapshot_memo
+                .store(id, revision, after);
+        }
         value
     }
 
@@ -344,10 +371,8 @@ impl NodeAPI for Runtime {
             let changed = before.transform_2d != after.transform_2d
                 || before.transform_3d != after.transform_3d;
             let base_changed = if canonical_base {
-                let base_2d_after =
-                    Some(node.with_base_ref::<Node2D, _>(Clone::clone));
-                let base_3d_after =
-                    Some(node.with_base_ref::<Node3D, _>(Clone::clone));
+                let base_2d_after = Some(node.with_base_ref::<Node2D, _>(Clone::clone));
+                let base_3d_after = Some(node.with_base_ref::<Node3D, _>(Clone::clone));
                 base_2d_before != base_2d_after
                     || base_3d_before != base_3d_after
                     || ui_before != ui_after
@@ -725,8 +750,13 @@ impl NodeAPI for Runtime {
             let _ = self.nodes.remove(current);
         }
 
-        self.scene_ownership_roots
-            .retain(|scene_root, owner| !visited.contains(scene_root) && !visited.contains(owner));
+        // Most projects never register a scene-ownership root, so the full
+        // retain scan is pure overhead on the common removal path.
+        if !self.scene_ownership_roots.is_empty() {
+            self.scene_ownership_roots.retain(|scene_root, owner| {
+                !visited.contains(scene_root) && !visited.contains(owner)
+            });
+        }
 
         stack.clear();
         postorder.clear();
@@ -785,6 +815,7 @@ impl NodeAPI for Runtime {
                 query.expr,
                 Some(self.nodes.tag_index()),
                 self.nodes.slot_count(),
+                &mut self.node_index.query_scratch,
             )
         } else {
             None
@@ -803,6 +834,7 @@ impl NodeAPI for Runtime {
             spatial.as_ref(),
             Some(self.nodes.tag_index()),
             candidates,
+            &mut self.node_index.query_scratch,
         );
         self.recycle_query_spatial_index(spatial);
         out
@@ -815,6 +847,7 @@ impl NodeAPI for Runtime {
                 query.expr,
                 Some(self.nodes.tag_index()),
                 self.nodes.slot_count(),
+                &mut self.node_index.query_scratch,
             )
         } else {
             None
@@ -833,6 +866,7 @@ impl NodeAPI for Runtime {
             spatial.as_ref(),
             Some(self.nodes.tag_index()),
             Some(candidates),
+            &mut self.node_index.query_scratch,
         );
         self.recycle_query_spatial_index(spatial);
         out

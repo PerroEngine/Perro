@@ -1238,9 +1238,10 @@ impl Runtime {
             };
             let wheel_node = color_picker_wheel_render_node(picker_id);
             if !popup_open || !show_selector {
-                self.queue_render_command(RenderCommand::Ui(Box::new(UiCommand::RemoveNode {
-                    node: wheel_node,
-                })));
+                // Retained-state removal: queue the RemoveNode only on the
+                // open -> closed transition. Every closed picker used to queue
+                // a boxed command per extraction pass.
+                self.remove_retained_color_wheel(wheel_node);
                 continue;
             }
             let Some(popup_rect) = computed.get(&popup_id).copied().or_else(|| {
@@ -1268,15 +1269,39 @@ impl Runtime {
                 rotation_radians: 0.0,
                 z_index: self.ui_effective_z(popup_id).saturating_add(1),
             };
-            self.queue_render_command(RenderCommand::Ui(Box::new(UiCommand::UpsertColorWheel {
+            // Compare-before-queue, mirroring the scrollbar path: an open picker
+            // whose wheel did not move/recolor queues nothing.
+            let command = UiCommand::UpsertColorWheel {
                 node: wheel_node,
                 rect: rect_state,
                 clip_rect: self.ui_effective_clip_rect_screen(popup_id, computed, viewport),
                 mode: picker_mode,
                 selected: color.to_rgba(),
-            })));
+            };
+            if self.render_ui.retained_commands.get(&wheel_node) != Some(&command) {
+                self.queue_render_command(RenderCommand::Ui(Box::new(command.clone())));
+                self.render_ui.retained_commands.insert(wheel_node, command);
+            }
         }
         self.ui_node_ids_scratch = picker_ids;
+    }
+
+    /// Drop a retained color-wheel entry and tell the renderer, if one exists.
+    ///
+    /// The wheel is a synthetic render node (no arena slot), so it is tracked in
+    /// `retained_commands` under [`color_picker_wheel_render_node`] and never
+    /// enters `visible_now` / `prev_visible`.
+    pub(super) fn remove_retained_color_wheel(&mut self, wheel_node: NodeID) {
+        if self
+            .render_ui
+            .retained_commands
+            .remove(&wheel_node)
+            .is_some()
+        {
+            self.queue_render_command(RenderCommand::Ui(Box::new(UiCommand::RemoveNode {
+                node: wheel_node,
+            })));
+        }
     }
 
     pub(super) fn color_picker_parent_for_swatch(&self, swatch_id: NodeID) -> Option<NodeID> {

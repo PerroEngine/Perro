@@ -21,7 +21,8 @@ use std::borrow::Cow;
 use crate::Runtime;
 use crate::runtime::state::{DirtyState, TransformRuntimeState};
 
-mod helpers;
+// `pub(crate)` so `runtime::state` can hold the UI snapshot memo type.
+pub(crate) mod helpers;
 use helpers::*;
 
 const SPATIAL_INVERSE_SCALE_EPSILON: f32 = 1.0e-5;

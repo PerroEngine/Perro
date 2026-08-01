@@ -247,6 +247,10 @@ pub(crate) struct WorldMembershipCache {
     /// the membership walk. lets extraction passes visit stream candidates
     /// without a full arena type-scan per pass.
     stream_nodes: Vec<NodeID>,
+    /// SubView2D/3D + UiSubView count seen by the membership walk. 0 = no node
+    /// can own a non-nil world, so per-dispatch suspend checks early-out w/o
+    /// touching the owner table.
+    sub_view_count: usize,
 }
 
 /// Live game runtime state.
@@ -438,11 +442,20 @@ pub struct Runtime {
     physics_water_forces_scratch_2d: Vec<physics::WaterBodyForce2D>,
     physics_water_forces_scratch_3d: Vec<physics::WaterBodyForce3D>,
     /// memo 4 physics root inverse (world id, root mat, inv); kill per-body
+    /// per-tileset fold of collision tiles: (parsed tileset, hash). parsed
+    /// tilesets are immutable, so Rc identity gate the memo; kp the Rc so a
+    /// reused address can't read as a hit. Entries self-drop when the tileset
+    /// cache releases the tileset.
+    tileset_collision_hash_cache_2d: AHashMap<u64, (Rc<render_2d::ParsedTileset2D>, u64)>,
     /// matrix inversion in physics_transform_2d/3d.
     physics_root_inv_2d: Option<(NodeID, glam::Mat3, glam::Mat3)>,
     physics_root_inv_3d: Option<(NodeID, glam::Mat4, glam::Mat4)>,
     /// reusable sorted world list 4 fixed-step dispatch + stale-world prune.
     physics_world_ids_scratch: Vec<NodeID>,
+    /// `nodes.structural_revision()` @ last build of the list above. body/joint
+    /// node sets + node_world both move only on structural chg, so a match let
+    /// the fixed step reuse the list + skip the 2 stale-world retain passes.
+    physics_world_ids_revision: Option<u64>,
     /// reusable subtree-walk stack 4 force_rerender; avoid per-node
     /// children_slice().to_vec() alloc on every visited node.
     force_rerender_stack_scratch: Vec<NodeID>,
@@ -771,9 +784,11 @@ impl Runtime {
             physics_water_bins_scratch_3d: Vec::new(),
             physics_water_forces_scratch_2d: Vec::new(),
             physics_water_forces_scratch_3d: Vec::new(),
+            tileset_collision_hash_cache_2d: AHashMap::new(),
             physics_root_inv_2d: None,
             physics_root_inv_3d: None,
             physics_world_ids_scratch: Vec::new(),
+            physics_world_ids_revision: None,
             force_rerender_stack_scratch: Vec::new(),
             ui_node_ids_scratch: Vec::new(),
             audio: AudioPropagationState::new(),
@@ -982,6 +997,15 @@ impl Runtime {
     }
 
     pub(crate) fn apply_loaded_skeleton_bones(&mut self) {
+        // no pending source = nothing 2 apply. skip the poll (4 mutex locks +
+        // 2 try_recv / frame): every consumer of the bone cache
+        // (cached_bones_2d/3d, load_skeleton_*) polls on its own, so a landed
+        // load can never starve while both maps stay empty.
+        if self.pending_skeleton_sources_2d.is_empty()
+            && self.pending_skeleton_sources_3d.is_empty()
+        {
+            return;
+        }
         self.resource_api.poll_skeleton_bone_loads();
         let mut changed_2d = Vec::new();
         // Nodes freed before their async bone load landed: the entry can never

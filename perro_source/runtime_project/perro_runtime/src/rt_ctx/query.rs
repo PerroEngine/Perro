@@ -26,6 +26,82 @@ pub(crate) struct QuerySpatialIndex {
     pub pos_3d: Vec<Option<Vector3>>,
 }
 
+/// Per-query scratch kept on the runtime (see `NodeIndexState`) so candidate
+/// dedup + subtree walks stop allocating a bit-mark buffer / visited set /
+/// stack per query.
+///
+/// `marks` is handed out through [`Self::take_marks`] / [`Self::put_marks`]:
+/// every user finishes with the buffer before its caller takes it (candidate
+/// recursion computes all children first), so one buffer serves the whole
+/// nested walk.
+#[derive(Default)]
+pub(crate) struct QueryScratch {
+    marks: Vec<u64>,
+    /// reusable DFS stack 4 subtree scans.
+    stack: Vec<NodeID>,
+    /// slot-indexed visit stamps; a slot counts as visited this walk when the
+    /// stamp matches `visit_epoch` + the generation matches the id (a dead id
+    /// can't shadow the live node sharing its slot).
+    visit_stamp: Vec<u32>,
+    visit_generation: Vec<u32>,
+    visit_epoch: u32,
+}
+
+impl QueryScratch {
+    /// Zeroed bit-mark buffer sized 4 `slot_count` slots. Caller must hand it
+    /// back with [`Self::put_marks`].
+    fn take_marks(&mut self, slot_count: usize) -> Vec<u64> {
+        let bit_words = slot_count.max(1).div_ceil(64);
+        let mut marks = std::mem::take(&mut self.marks);
+        marks.clear();
+        marks.resize(bit_words, 0);
+        marks
+    }
+
+    fn put_marks(&mut self, marks: Vec<u64>) {
+        self.marks = marks;
+    }
+
+    /// Start a subtree walk: bump the epoch + return the reusable stack.
+    fn begin_visit(&mut self, slot_count: usize) -> Vec<NodeID> {
+        self.visit_epoch = self.visit_epoch.wrapping_add(1);
+        if self.visit_epoch == 0 {
+            // wrapped: stale 0 stamps would read as visited.
+            self.visit_stamp.iter_mut().for_each(|stamp| *stamp = 0);
+            self.visit_epoch = 1;
+        }
+        if self.visit_stamp.len() < slot_count {
+            self.visit_stamp.resize(slot_count, 0);
+            self.visit_generation.resize(slot_count, 0);
+        }
+        let mut stack = std::mem::take(&mut self.stack);
+        stack.clear();
+        stack
+    }
+
+    fn end_visit(&mut self, mut stack: Vec<NodeID>) {
+        stack.clear();
+        self.stack = stack;
+    }
+
+    /// Stamp `id` as visited; false when it was already visited this walk.
+    #[inline]
+    fn visit(&mut self, id: NodeID) -> bool {
+        let index = id.index() as usize;
+        if index >= self.visit_stamp.len() {
+            return false;
+        }
+        if self.visit_stamp[index] == self.visit_epoch
+            && self.visit_generation[index] == id.generation()
+        {
+            return false;
+        }
+        self.visit_stamp[index] = self.visit_epoch;
+        self.visit_generation[index] = id.generation();
+        true
+    }
+}
+
 // Only exercised directly by tests now; the live call sites in `nodes.rs`
 // hoist candidate computation and go through `query_node_ids_with_candidates`.
 #[cfg(test)]
@@ -35,7 +111,8 @@ pub(super) fn query_node_ids(
     spatial: Option<&QuerySpatialIndex>,
     tag_index: Option<&AHashMap<TagID, AHashSet<NodeID>>>,
 ) -> Vec<NodeID> {
-    query_node_ids_with_worker_override(arena, query, spatial, None, tag_index, None)
+    let mut scratch = QueryScratch::default();
+    query_node_ids_with_worker_override(arena, query, spatial, None, tag_index, None, &mut scratch)
 }
 
 /// Same as [`query_node_ids`] but reuses a candidate set the caller already
@@ -47,6 +124,7 @@ pub(super) fn query_node_ids_with_candidates(
     spatial: Option<&QuerySpatialIndex>,
     tag_index: Option<&AHashMap<TagID, AHashSet<NodeID>>>,
     candidates: Option<QueryCandidates>,
+    scratch: &mut QueryScratch,
 ) -> Vec<NodeID> {
     query_node_ids_with_worker_override(
         arena,
@@ -55,6 +133,7 @@ pub(super) fn query_node_ids_with_candidates(
         None,
         tag_index,
         Some(PrecomputedCandidates { candidates }),
+        scratch,
     )
 }
 
@@ -66,7 +145,8 @@ pub(super) fn query_first_node_id(
     spatial: Option<&QuerySpatialIndex>,
     tag_index: Option<&AHashMap<TagID, AHashSet<NodeID>>>,
 ) -> Option<NodeID> {
-    query_first_node_id_with_candidates(arena, query, spatial, tag_index, None)
+    let mut scratch = QueryScratch::default();
+    query_first_node_id_with_candidates(arena, query, spatial, tag_index, None, &mut scratch)
 }
 
 /// Same as [`query_first_node_id`] but reuses a candidate set the caller
@@ -77,6 +157,7 @@ pub(super) fn query_first_node_id_with_candidates(
     spatial: Option<&QuerySpatialIndex>,
     tag_index: Option<&AHashMap<TagID, AHashSet<NodeID>>>,
     precomputed: Option<Option<QueryCandidates>>,
+    scratch: &mut QueryScratch,
 ) -> Option<NodeID> {
     let slot_count = arena.slot_count();
     if slot_count <= 1 {
@@ -92,7 +173,7 @@ pub(super) fn query_first_node_id_with_candidates(
         QueryScope::Root => {
             let candidates = match precomputed {
                 Some(candidates) => candidates,
-                None => candidate_ids_from_index(query.expr, tag_index, slot_count),
+                None => candidate_ids_from_index(query.expr, tag_index, slot_count, scratch),
             };
             if let Some(candidates) = candidates {
                 if candidates.exact {
@@ -108,7 +189,7 @@ pub(super) fn query_first_node_id_with_candidates(
             if root_id.is_nil() {
                 None
             } else {
-                first_in_subtree(arena, root_id, &plan, spatial)
+                first_in_subtree(arena, root_id, &plan, spatial, scratch)
             }
         }
     }
@@ -128,6 +209,7 @@ fn query_node_ids_with_worker_override(
     worker_override: Option<usize>,
     tag_index: Option<&AHashMap<TagID, AHashSet<NodeID>>>,
     precomputed: Option<PrecomputedCandidates>,
+    scratch: &mut QueryScratch,
 ) -> Vec<NodeID> {
     #[cfg(feature = "profile")]
     let start = Instant::now();
@@ -162,7 +244,7 @@ fn query_node_ids_with_worker_override(
         QueryScope::Root => {
             let candidates = match precomputed {
                 Some(precomputed) => precomputed.candidates,
-                None => candidate_ids_from_index(query.expr, tag_index, slot_count),
+                None => candidate_ids_from_index(query.expr, tag_index, slot_count, scratch),
             };
             if let Some(candidates) = candidates {
                 if candidates.exact {
@@ -200,7 +282,7 @@ fn query_node_ids_with_worker_override(
             if root_id.is_nil() {
                 Vec::new()
             } else {
-                scan_subtree(arena, root_id, &plan, spatial)
+                scan_subtree(arena, root_id, &plan, spatial, scratch)
             }
         }
     };
@@ -226,10 +308,17 @@ pub(super) fn candidate_ids_from_index<'a>(
     expr: &'a Option<QueryExpr>,
     tag_index: Option<&'a AHashMap<TagID, AHashSet<NodeID>>>,
     slot_count: usize,
+    scratch: &mut QueryScratch,
 ) -> Option<QueryCandidates> {
     let query_expr = expr.as_ref()?;
     let index = tag_index?;
-    candidate_ids_for_expr(query_expr, TagClauseContext::Any, index, slot_count)
+    candidate_ids_for_expr(
+        query_expr,
+        TagClauseContext::Any,
+        index,
+        slot_count,
+        scratch,
+    )
 }
 
 fn candidate_ids_for_expr(
@@ -237,6 +326,7 @@ fn candidate_ids_for_expr(
     tag_ctx: TagClauseContext,
     tag_index: &AHashMap<TagID, AHashSet<NodeID>>,
     slot_count: usize,
+    scratch: &mut QueryScratch,
 ) -> Option<QueryCandidates> {
     match expr {
         QueryExpr::Tags(tags) => match tag_ctx {
@@ -245,12 +335,12 @@ fn candidate_ids_for_expr(
                 exact: true,
             }),
             TagClauseContext::Any => Some(QueryCandidates {
-                ids: tag_union_candidates(tags, tag_index, slot_count),
+                ids: tag_union_candidates(tags, tag_index, slot_count, scratch),
                 exact: true,
             }),
         },
-        QueryExpr::All(children) => candidate_ids_for_all(children, tag_index, slot_count),
-        QueryExpr::Any(children) => candidate_ids_for_any(children, tag_index, slot_count),
+        QueryExpr::All(children) => candidate_ids_for_all(children, tag_index, slot_count, scratch),
+        QueryExpr::Any(children) => candidate_ids_for_any(children, tag_index, slot_count, scratch),
         QueryExpr::Not(_)
         | QueryExpr::Name(_)
         | QueryExpr::IsType(_)
@@ -267,6 +357,7 @@ fn candidate_ids_for_all(
     children: &[QueryExpr],
     tag_index: &AHashMap<TagID, AHashSet<NodeID>>,
     slot_count: usize,
+    scratch: &mut QueryScratch,
 ) -> Option<QueryCandidates> {
     if children.is_empty() {
         return None;
@@ -276,7 +367,7 @@ fn candidate_ids_for_all(
     let mut all_children_indexed = true;
     for child in children {
         if let Some(candidates) =
-            candidate_ids_for_expr(child, TagClauseContext::All, tag_index, slot_count)
+            candidate_ids_for_expr(child, TagClauseContext::All, tag_index, slot_count, scratch)
         {
             indexed.push(candidates);
         } else {
@@ -288,8 +379,12 @@ fn candidate_ids_for_all(
     }
 
     indexed.sort_by_key(|candidates| candidates.ids.len());
-    let ids =
-        intersect_candidate_vectors(indexed.iter().map(|candidates| &candidates.ids), slot_count);
+    // children are done w/ the shared mark buffer by here.
+    let ids = intersect_candidate_vectors(
+        indexed.iter().map(|candidates| &candidates.ids),
+        slot_count,
+        scratch,
+    );
     Some(QueryCandidates {
         ids,
         exact: all_children_indexed && indexed.iter().all(|candidates| candidates.exact),
@@ -300,6 +395,7 @@ fn candidate_ids_for_any(
     children: &[QueryExpr],
     tag_index: &AHashMap<TagID, AHashSet<NodeID>>,
     slot_count: usize,
+    scratch: &mut QueryScratch,
 ) -> Option<QueryCandidates> {
     if children.is_empty() {
         return None;
@@ -312,6 +408,7 @@ fn candidate_ids_for_any(
             TagClauseContext::Any,
             tag_index,
             slot_count,
+            scratch,
         )?);
     }
 
@@ -320,11 +417,12 @@ fn candidate_ids_for_any(
         sum.saturating_add(candidates.ids.len())
     });
     let mut ids = Vec::with_capacity(total_candidates.min(slot_count));
-    let bit_words = slot_count.max(1).div_ceil(64);
-    let mut marks = vec![0u64; bit_words];
+    // children are done w/ the shared mark buffer by here.
+    let mut marks = scratch.take_marks(slot_count);
     for candidates in &indexed {
         push_unique_ids(&candidates.ids, &mut marks, &mut ids);
     }
+    scratch.put_marks(marks);
     Some(QueryCandidates {
         ids,
         exact: indexed.iter().all(|candidates| candidates.exact),
@@ -367,6 +465,7 @@ fn tag_union_candidates(
     tags: &[TagID],
     tag_index: &AHashMap<TagID, AHashSet<NodeID>>,
     slot_count: usize,
+    scratch: &mut QueryScratch,
 ) -> Vec<NodeID> {
     if tags.is_empty() {
         return Vec::new();
@@ -384,19 +483,20 @@ fn tag_union_candidates(
         .iter()
         .fold(0usize, |sum, set| sum.saturating_add(set.len()));
     let mut out = Vec::with_capacity(total_candidates.min(slot_count));
-    let bit_words = slot_count.max(1).div_ceil(64);
-    let mut marks = vec![0u64; bit_words];
+    let mut marks = scratch.take_marks(slot_count);
     for set in sets {
         for &id in set {
             push_unique_id(id, &mut marks, &mut out);
         }
     }
+    scratch.put_marks(marks);
     out
 }
 
 fn intersect_candidate_vectors<'a>(
     mut candidates: impl Iterator<Item = &'a Vec<NodeID>>,
     slot_count: usize,
+    scratch: &mut QueryScratch,
 ) -> Vec<NodeID> {
     let Some(seed) = candidates.next() else {
         return Vec::new();
@@ -404,8 +504,7 @@ fn intersect_candidate_vectors<'a>(
     let Some(first) = candidates.next() else {
         return seed.clone();
     };
-    let bit_words = slot_count.max(1).div_ceil(64);
-    let mut marks = vec![0u64; bit_words];
+    let mut marks = scratch.take_marks(slot_count);
     let mut out = seed.clone();
     for candidate in std::iter::once(first).chain(candidates) {
         for &id in candidate {
@@ -417,6 +516,7 @@ fn intersect_candidate_vectors<'a>(
         }
         marks.fill(0);
     }
+    scratch.put_marks(marks);
     out
 }
 
@@ -510,12 +610,13 @@ fn scan_subtree(
     root_id: NodeID,
     plan: &QueryPlan,
     spatial: Option<&QuerySpatialIndex>,
+    scratch: &mut QueryScratch,
 ) -> Vec<NodeID> {
     let mut out = Vec::new();
-    let mut stack = vec![root_id];
-    let mut seen = AHashSet::default();
+    let mut stack = scratch.begin_visit(arena.slot_count());
+    stack.push(root_id);
     while let Some(id) = stack.pop() {
-        if !seen.insert(id) {
+        if !scratch.visit(id) {
             continue;
         }
         let Some(node) = arena.get(id) else {
@@ -528,6 +629,7 @@ fn scan_subtree(
             stack.extend(children.iter().copied());
         }
     }
+    scratch.end_visit(stack);
     out
 }
 
@@ -587,24 +689,28 @@ fn first_in_subtree(
     root_id: NodeID,
     plan: &QueryPlan,
     spatial: Option<&QuerySpatialIndex>,
+    scratch: &mut QueryScratch,
 ) -> Option<NodeID> {
-    let mut stack = vec![root_id];
-    let mut seen = AHashSet::default();
+    let mut stack = scratch.begin_visit(arena.slot_count());
+    stack.push(root_id);
+    let mut found = None;
     while let Some(id) = stack.pop() {
-        if !seen.insert(id) {
+        if !scratch.visit(id) {
             continue;
         }
         let Some(node) = arena.get(id) else {
             continue;
         };
         if matches_query(node, id.index() as usize, plan, spatial) {
-            return Some(id);
+            found = Some(id);
+            break;
         }
         if let Some(children) = arena.children(id) {
             stack.extend(children.iter().copied());
         }
     }
-    None
+    scratch.end_visit(stack);
+    found
 }
 
 fn first_in_candidates(

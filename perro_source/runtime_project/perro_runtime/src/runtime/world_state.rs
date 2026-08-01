@@ -125,6 +125,7 @@ impl Runtime {
         cache.members.clear();
         cache.members_shared.clear();
         cache.stream_nodes.clear();
+        cache.sub_view_count = 0;
 
         let mut visited = vec![false; slot_count];
         let mut stack = Vec::with_capacity(self.nodes.len());
@@ -149,6 +150,7 @@ impl Runtime {
                 cache.stream_nodes.push(id);
             }
             let child_owner = if Self::is_sub_view_data(&node.data) {
+                cache.sub_view_count += 1;
                 id
             } else {
                 owner
@@ -173,6 +175,10 @@ impl Runtime {
                 cache.members.entry(NodeID::nil()).or_default().push(id);
                 if Self::is_stream_node_data(&node.data) {
                     cache.stream_nodes.push(id);
+                }
+                // count here too: over-count only disables the fast path.
+                if Self::is_sub_view_data(&node.data) {
+                    cache.sub_view_count += 1;
                 }
             }
         }
@@ -409,7 +415,17 @@ impl Runtime {
         result
     }
 
+    /// True when the arena holds >=1 SubView2D/3D / UiSubView node. Scenes w/o
+    /// sub-views (the common case) skip the owner lookup on every dispatch.
+    fn has_sub_views(&self) -> bool {
+        self.refresh_world_membership();
+        self.world_membership.borrow().sub_view_count > 0
+    }
+
     pub(crate) fn sub_view_ancestor(&self, node: NodeID) -> Option<NodeID> {
+        if !self.has_sub_views() {
+            return None;
+        }
         self.node_world(node).filter(|world| !world.is_nil())
     }
 

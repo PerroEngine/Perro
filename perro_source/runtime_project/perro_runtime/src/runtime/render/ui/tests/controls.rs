@@ -1040,4 +1040,115 @@ mod controls {
         runtime.extract_render_ui_commands();
         assert_eq!(runtime.render_ui.focused_ui_node, Some(right));
     }
+
+    fn count_wheel_commands(commands: &[RenderCommand], wheel: NodeID) -> (usize, usize) {
+        let mut upserts = 0;
+        let mut removes = 0;
+        for command in commands {
+            let RenderCommand::Ui(ui) = command else {
+                continue;
+            };
+            match &**ui {
+                UiCommand::UpsertColorWheel { node, .. } if *node == wheel => upserts += 1,
+                UiCommand::RemoveNode { node } if *node == wheel => removes += 1,
+                _ => {}
+            }
+        }
+        (upserts, removes)
+    }
+
+    fn drain_wheel_commands(runtime: &mut Runtime, wheel: NodeID) -> (usize, usize) {
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        count_wheel_commands(&commands, wheel)
+    }
+
+    #[test]
+    fn ui_color_picker_wheel_commands_are_retained() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut picker = perro_ui::UiColorPicker::new();
+        picker.button.layout.size = UiVector2::pixels(120.0, 32.0);
+        let picker_id =
+            insert_ui_node(&mut runtime, SceneNodeData::UiColorPicker(Box::new(picker)));
+        let wheel = color_picker_wheel_render_node(picker_id);
+
+        // Closed picker: no wheel traffic at all, on any pass.
+        runtime.extract_render_ui_commands();
+        assert_eq!(drain_wheel_commands(&mut runtime, wheel), (0, 0));
+        runtime.mark_needs_rerender(picker_id);
+        runtime.extract_render_ui_commands();
+        assert_eq!(drain_wheel_commands(&mut runtime, wheel), (0, 0));
+
+        // Open it: exactly one upsert, then nothing while it sits unchanged.
+        let _ = runtime.with_node_mut::<perro_ui::UiColorPicker, _, _>(picker_id, |picker| {
+            picker.popup_open = true;
+        });
+        runtime.extract_render_ui_commands();
+        runtime.extract_render_ui_commands();
+        let (upserts, removes) = drain_wheel_commands(&mut runtime, wheel);
+        assert_eq!(removes, 0);
+        assert!(upserts >= 1, "opening the popup must upsert the wheel");
+
+        // Settled open wheel: further passes queue nothing.
+        runtime.mark_needs_rerender(picker_id);
+        runtime.extract_render_ui_commands();
+        assert_eq!(drain_wheel_commands(&mut runtime, wheel), (0, 0));
+
+        // Close it: exactly one remove, on the transition only.
+        let _ = runtime.with_node_mut::<perro_ui::UiColorPicker, _, _>(picker_id, |picker| {
+            picker.popup_open = false;
+        });
+        runtime.extract_render_ui_commands();
+        assert_eq!(drain_wheel_commands(&mut runtime, wheel), (0, 1));
+        runtime.mark_needs_rerender(picker_id);
+        runtime.extract_render_ui_commands();
+        assert_eq!(drain_wheel_commands(&mut runtime, wheel), (0, 0));
+    }
+
+    #[test]
+    fn ui_snapshot_memo_matches_a_fresh_before_snapshot() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut label = perro_ui::UiLabel::new();
+        label.layout.size = UiVector2::pixels(200.0, 40.0);
+        label.text = "a".into();
+        let id = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(Box::new(label)));
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        // Seeds the memo with the post-mutation snapshot.
+        let _ = runtime.with_node_mut::<perro_ui::UiLabel, _, _>(id, |label| {
+            label.text = "b".into();
+        });
+        let index = id.index() as usize;
+        assert!(runtime.dirty.ui_flags_at(index) & Runtime::UI_DIRTY_TEXT != 0);
+        runtime.clear_dirty_flags();
+
+        // Memo hit: rewriting the same value must stay gated (no dirty flags).
+        let _ = runtime.with_node_mut::<perro_ui::UiLabel, _, _>(id, |label| {
+            label.text = "b".into();
+        });
+        assert_eq!(runtime.dirty.ui_flags_at(index), 0);
+
+        // Out-of-band arena write bumps the mutation revision, so the memo must
+        // not be reused as "before" even though the next mutation writes back
+        // exactly the memoized value.
+        if let Some(mut node) = runtime.nodes.get_mut(id)
+            && let SceneNodeData::UiLabel(label) = &mut node.data
+        {
+            label.text = "zzz".into();
+        }
+        runtime.clear_dirty_flags();
+        let _ = runtime.with_node_mut::<perro_ui::UiLabel, _, _>(id, |label| {
+            label.text = "b".into();
+        });
+        assert!(
+            runtime.dirty.ui_flags_at(index) & Runtime::UI_DIRTY_TEXT != 0,
+            "stale snapshot memo hid a real payload change"
+        );
+    }
 }

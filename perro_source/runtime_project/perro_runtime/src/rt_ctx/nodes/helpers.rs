@@ -241,10 +241,170 @@ fn feed_style(h: &mut ahash::AHasher, s: &perro_ui::UiStyle) {
     feed_depth_effect(h, &s.inner_highlight);
 }
 
+/// Sink that streams `Debug` output straight into the hasher. Used only by the
+/// one engine struct with private contents; avoids the `format!` String alloc
+/// the old fallback paid on every fingerprint pass.
+struct HashFmt<'a>(&'a mut ahash::AHasher);
+
+impl std::fmt::Write for HashFmt<'_> {
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        self.0.write(s.as_bytes());
+        Ok(())
+    }
+}
+
+#[inline]
+fn feed_unit(h: &mut ahash::AHasher, u: perro_structs::Unit) {
+    h.write_u8(u.0);
+}
+
+/// Feed an engine struct field-by-field. Every arm writes a discriminant byte
+/// first so two structs with identical field bytes (e.g. `Vector2` vs
+/// `IVector2`) cannot collide.
+fn feed_engine_struct(h: &mut ahash::AHasher, s: &perro_variant::EngineStruct) {
+    use perro_variant::EngineStruct;
+    match s {
+        EngineStruct::Vector2(v) => {
+            h.write_u8(1);
+            feed_f32(h, v.x);
+            feed_f32(h, v.y);
+        }
+        EngineStruct::Vector3(v) => {
+            h.write_u8(2);
+            feed_f32(h, v.x);
+            feed_f32(h, v.y);
+            feed_f32(h, v.z);
+        }
+        EngineStruct::Vector4(v) => {
+            h.write_u8(3);
+            feed_f32(h, v.x);
+            feed_f32(h, v.y);
+            feed_f32(h, v.z);
+            feed_f32(h, v.w);
+        }
+        EngineStruct::IVector2(v) => {
+            h.write_u8(4);
+            h.write_i32(v.x);
+            h.write_i32(v.y);
+        }
+        EngineStruct::IVector3(v) => {
+            h.write_u8(5);
+            h.write_i32(v.x);
+            h.write_i32(v.y);
+            h.write_i32(v.z);
+        }
+        EngineStruct::IVector4(v) => {
+            h.write_u8(6);
+            h.write_i32(v.x);
+            h.write_i32(v.y);
+            h.write_i32(v.z);
+            h.write_i32(v.w);
+        }
+        EngineStruct::UVector2(v) => {
+            h.write_u8(7);
+            h.write_u32(v.x);
+            h.write_u32(v.y);
+        }
+        EngineStruct::UVector3(v) => {
+            h.write_u8(8);
+            h.write_u32(v.x);
+            h.write_u32(v.y);
+            h.write_u32(v.z);
+        }
+        EngineStruct::UVector4(v) => {
+            h.write_u8(9);
+            h.write_u32(v.x);
+            h.write_u32(v.y);
+            h.write_u32(v.z);
+            h.write_u32(v.w);
+        }
+        EngineStruct::UnitVector2(v) => {
+            h.write_u8(10);
+            feed_unit(h, v.x);
+            feed_unit(h, v.y);
+        }
+        EngineStruct::UnitVector3(v) => {
+            h.write_u8(11);
+            feed_unit(h, v.x);
+            feed_unit(h, v.y);
+            feed_unit(h, v.z);
+        }
+        EngineStruct::UnitVector4(v) => {
+            h.write_u8(12);
+            feed_unit(h, v.x);
+            feed_unit(h, v.y);
+            feed_unit(h, v.z);
+            feed_unit(h, v.w);
+        }
+        EngineStruct::Matrix2(m) => {
+            h.write_u8(13);
+            for value in m.0.to_cols_array() {
+                feed_f32(h, value);
+            }
+        }
+        EngineStruct::Matrix3(m) => {
+            h.write_u8(14);
+            for value in m.0.to_cols_array() {
+                feed_f32(h, value);
+            }
+        }
+        EngineStruct::Matrix4(m) => {
+            h.write_u8(15);
+            for value in m.0.to_cols_array() {
+                feed_f32(h, value);
+            }
+        }
+        EngineStruct::Transform2D(t) => {
+            h.write_u8(16);
+            feed_vector2(h, t.position);
+            feed_vector2(h, t.scale);
+            feed_f32(h, t.rotation);
+        }
+        EngineStruct::Transform3D(t) => {
+            h.write_u8(17);
+            feed_f32(h, t.position.x);
+            feed_f32(h, t.position.y);
+            feed_f32(h, t.position.z);
+            feed_f32(h, t.scale.x);
+            feed_f32(h, t.scale.y);
+            feed_f32(h, t.scale.z);
+            feed_f32(h, t.rotation.x);
+            feed_f32(h, t.rotation.y);
+            feed_f32(h, t.rotation.z);
+            feed_f32(h, t.rotation.w);
+        }
+        EngineStruct::Quaternion(q) => {
+            h.write_u8(18);
+            feed_f32(h, q.x);
+            feed_f32(h, q.y);
+            feed_f32(h, q.z);
+            feed_f32(h, q.w);
+        }
+        EngineStruct::VisualAccessibilitySettings(settings) => {
+            h.write_u8(19);
+            match &settings.color_blind {
+                Some(color_blind) => {
+                    h.write_u8(1);
+                    h.write_u8(color_blind.filter as u8);
+                    feed_f32(h, color_blind.strength);
+                }
+                None => h.write_u8(0),
+            }
+        }
+        EngineStruct::PostProcessSet(set) => {
+            // Only struct left with private contents; stream its Debug output
+            // into the hasher instead of building a String.
+            h.write_u8(20);
+            use std::fmt::Write as _;
+            let _ = write!(HashFmt(h), "{set:?}");
+        }
+    }
+}
+
 /// Feed a Variant structurally so option/item value changes are detected without
 /// cloning. Floats are hashed by bit pattern (see NaN note above).
 fn feed_variant(h: &mut ahash::AHasher, v: &perro_variant::Variant) {
-    use perro_variant::{EngineStruct, Number, Variant};
+    use perro_variant::{Number, Variant};
     match v {
         Variant::Null => h.write_u8(0),
         Variant::Bool(b) => {
@@ -282,32 +442,7 @@ fn feed_variant(h: &mut ahash::AHasher, v: &perro_variant::Variant) {
         }
         Variant::EngineStruct(s) => {
             h.write_u8(6);
-            // Struct math types are Copy plain-data; hash their debug-stable field
-            // bytes via a small dispatch. Any change flips the fingerprint.
-            match s {
-                EngineStruct::Vector2(v) => {
-                    feed_f32(h, v.x);
-                    feed_f32(h, v.y);
-                }
-                EngineStruct::Vector3(v) => {
-                    feed_f32(h, v.x);
-                    feed_f32(h, v.y);
-                    feed_f32(h, v.z);
-                }
-                EngineStruct::Vector4(v) => {
-                    feed_f32(h, v.x);
-                    feed_f32(h, v.y);
-                    feed_f32(h, v.z);
-                    feed_f32(h, v.w);
-                }
-                other => {
-                    // Remaining engine structs are compared via Debug bytes; this
-                    // path is not exercised by dropdown/treelist option values in
-                    // practice but keeps detection conservative.
-                    use std::hash::Hash;
-                    format!("{other:?}").hash(h);
-                }
-            }
+            feed_engine_struct(h, s);
         }
         Variant::Array(items) => {
             h.write_u8(7);
@@ -330,7 +465,7 @@ fn feed_variant(h: &mut ahash::AHasher, v: &perro_variant::Variant) {
 /// One `u64` fingerprint per flag-group for a UI widget payload. Groups mirror
 /// the branches of the old `classify_ui_node_payload_change`.
 #[derive(Clone, Copy, PartialEq)]
-pub(super) struct UiPayloadFingerprint {
+pub(crate) struct UiPayloadFingerprint {
     // Which widget variant produced this fingerprint. Two snapshots with
     // different tags mean the underlying data enum arm changed (which the old
     // code treated as "no payload flags" via its `_ => 0` fallthrough), so we
@@ -714,9 +849,46 @@ pub(super) fn base_spatial_snapshot(data: &SceneNodeData) -> BaseSpatialSnapshot
 
 /// Compact UI snapshot: the Copy-content base plus payload fingerprints.
 #[derive(Clone)]
-pub(super) struct UiSnapshot {
+pub(crate) struct UiSnapshot {
     pub base: UiNode,
     pub payload: UiPayloadFingerprint,
+}
+
+/// Single-entry memo of the last `with_node_mut` "after" UI snapshot.
+///
+/// Scripts overwhelmingly mutate the same node repeatedly within a frame
+/// (`with_node_mut` per field), and each call used to fingerprint the payload
+/// twice: once before and once after. The "after" snapshot of call N is exactly
+/// the "before" snapshot of call N+1 as long as nothing else touched the arena
+/// in between, which the arena mutation revision proves: every mutable accessor
+/// bumps it, so an unchanged revision means no write could have happened.
+///
+/// One slot is enough — a second node's mutation simply replaces the entry.
+#[derive(Default)]
+pub(crate) struct UiSnapshotMemo {
+    entry: Option<(perro_ids::NodeID, u64, UiSnapshot)>,
+}
+
+impl UiSnapshotMemo {
+    /// Take the memoized snapshot for `id` if it was stored at `revision`.
+    /// Taking clears the slot: the caller is about to mutate the node, so the
+    /// stored value is about to be stale either way.
+    pub(crate) fn take_valid(
+        &mut self,
+        id: perro_ids::NodeID,
+        revision: u64,
+    ) -> Option<UiSnapshot> {
+        match &self.entry {
+            Some((memo_id, memo_revision, _)) if *memo_id == id && *memo_revision == revision => {
+                self.entry.take().map(|(_, _, snapshot)| snapshot)
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn store(&mut self, id: perro_ids::NodeID, revision: u64, snapshot: UiSnapshot) {
+        self.entry = Some((id, revision, snapshot));
+    }
 }
 
 /// Build a UI snapshot in a single pass. Returns `None` for non-UI data.
