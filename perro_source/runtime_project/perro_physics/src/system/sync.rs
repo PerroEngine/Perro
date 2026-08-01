@@ -86,20 +86,19 @@ impl PhysicsSystem {
                 let target_pos = transform_to_iso2(body.global);
                 let current_pos = rb.position();
                 let pos_changed =
-                    !approx_eq_f32(
-                        current_pos.translation.vector.x,
-                        target_pos.translation.vector.x,
-                    ) || !approx_eq_f32(
-                        current_pos.translation.vector.y,
-                        target_pos.translation.vector.y,
-                    ) || !approx_eq_f32(current_pos.rotation.angle(), target_pos.rotation.angle());
+                    !approx_eq_f32(current_pos.translation.x, target_pos.translation.x)
+                        || !approx_eq_f32(current_pos.translation.y, target_pos.translation.y)
+                        || !approx_eq_f32(
+                            current_pos.rotation.angle(),
+                            target_pos.rotation.angle(),
+                        );
                 if pos_changed {
                     rb.set_position(target_pos, true);
                 }
 
                 if let Some(rigid) = body.rigid {
                     let target_lin =
-                        na2::Vector2::new(rigid.linear_velocity.x, rigid.linear_velocity.y);
+                        r2::Vector::new(rigid.linear_velocity.x, rigid.linear_velocity.y);
                     let current_lin = rb.linvel();
                     if !approx_eq_f32(current_lin.x, target_lin.x)
                         || !approx_eq_f32(current_lin.y, target_lin.y)
@@ -119,7 +118,7 @@ impl PhysicsSystem {
                         rb.set_angular_damping(rigid.angular_damping);
                     }
                     rb.set_additional_mass(rigid.mass.max(0.0), true);
-                    let target_speed_sq = target_lin.norm_squared();
+                    let target_speed_sq = target_lin.length_squared();
                     let target_ccd = rigid.continuous_collision_detection
                         && target_speed_sq >= CCD_MIN_SPEED_SQ_2D;
                     if rb.is_ccd_enabled() != target_ccd {
@@ -296,25 +295,19 @@ impl PhysicsSystem {
                 let target_pos = transform_to_iso3(body.global);
                 let current_pos = rb.position();
                 let pos_changed =
-                    !approx_eq_f32(
-                        current_pos.translation.vector.x,
-                        target_pos.translation.vector.x,
-                    ) || !approx_eq_f32(
-                        current_pos.translation.vector.y,
-                        target_pos.translation.vector.y,
-                    ) || !approx_eq_f32(
-                        current_pos.translation.vector.z,
-                        target_pos.translation.vector.z,
-                    ) || !approx_eq_f32(current_pos.rotation.i, target_pos.rotation.i)
-                        || !approx_eq_f32(current_pos.rotation.j, target_pos.rotation.j)
-                        || !approx_eq_f32(current_pos.rotation.k, target_pos.rotation.k)
+                    !approx_eq_f32(current_pos.translation.x, target_pos.translation.x)
+                        || !approx_eq_f32(current_pos.translation.y, target_pos.translation.y)
+                        || !approx_eq_f32(current_pos.translation.z, target_pos.translation.z)
+                        || !approx_eq_f32(current_pos.rotation.x, target_pos.rotation.x)
+                        || !approx_eq_f32(current_pos.rotation.y, target_pos.rotation.y)
+                        || !approx_eq_f32(current_pos.rotation.z, target_pos.rotation.z)
                         || !approx_eq_f32(current_pos.rotation.w, target_pos.rotation.w);
                 if pos_changed {
                     rb.set_position(target_pos, true);
                 }
 
                 if let Some(rigid) = body.rigid {
-                    let target_lin = na3::Vector3::new(
+                    let target_lin = r3::Vector::new(
                         rigid.linear_velocity.x,
                         rigid.linear_velocity.y,
                         rigid.linear_velocity.z,
@@ -327,7 +320,7 @@ impl PhysicsSystem {
                         rb.set_linvel(target_lin, true);
                     }
 
-                    let target_ang = na3::Vector3::new(
+                    let target_ang = r3::Vector::new(
                         rigid.angular_velocity.x,
                         rigid.angular_velocity.y,
                         rigid.angular_velocity.z,
@@ -349,7 +342,7 @@ impl PhysicsSystem {
                         rb.set_angular_damping(rigid.angular_damping);
                     }
                     rb.set_additional_mass(rigid.mass.max(0.0), true);
-                    let target_speed_sq = target_lin.norm_squared();
+                    let target_speed_sq = target_lin.length_squared();
                     let target_ccd = rigid.continuous_collision_detection
                         && target_speed_sq >= CCD_MIN_SPEED_SQ_3D;
                     if rb.is_ccd_enabled() != target_ccd {
@@ -765,5 +758,76 @@ mod tests {
                 .map(|world| world.joint_map.len()),
             serial.world_3d.as_ref().map(|world| world.joint_map.len())
         );
+    }
+
+    #[test]
+    fn joint_island_churn_keeps_simd_solver_indices_valid() {
+        let mut system = PhysicsSystem::new();
+
+        for cycle in 0..96 {
+            // Alternate 8/12 bodies to force island slot shrink + handle reuse.
+            let body_count = if cycle % 4 == 0 { 8 } else { 12 };
+            let mut bodies = (1..=body_count).map(body_3d).collect::<Vec<_>>();
+            for (index, body) in bodies.iter_mut().enumerate() {
+                body.global.position = Vector3::new(index as f32 * 0.8, 2.0, 0.0);
+                body.sync_signature = cycle as u64 + 1;
+            }
+            system.sync_world_3d(&bodies, asset_context(), |_, _| {});
+
+            let mut joints = Vec::new();
+            for body in 1..body_count {
+                let id = NodeID::new(100 + body);
+                let body_a = NodeID::new(body);
+                let body_b = NodeID::new(body + 1);
+                let anchor_a = Vector3::new(0.4, 0.0, 0.0);
+                let anchor_b = Vector3::new(-0.4, 0.0, 0.0);
+                let kind = match body % 3 {
+                    0 => crate::JointKind3D::Fixed,
+                    1 => crate::JointKind3D::Ball,
+                    _ => crate::JointKind3D::Hinge {
+                        axis: Vector3::new(0.0, 0.0, 1.0),
+                    },
+                };
+                joints.push(crate::JointDesc3D {
+                    id,
+                    body_a,
+                    body_b,
+                    anchor_a,
+                    anchor_b,
+                    enabled: true,
+                    collide_connected: false,
+                    kind,
+                    signature: joint_signature_3d(
+                        body_a, body_b, anchor_a, anchor_b, true, false, kind,
+                    ),
+                });
+            }
+            if cycle % 2 == 0 {
+                joints.retain(|joint| joint.id.as_u64() % 2 == 0);
+            }
+            system.sync_joints_3d(&joints);
+
+            if cycle % 3 == 0 {
+                let world = system.world_3d.as_mut().expect("3d world");
+                for body in [2, 5, 8] {
+                    if let Some(state) = world.body_map.get(&NodeID::new(body))
+                        && let Some(rb) = world.bodies.get_mut(state.handle)
+                    {
+                        rb.sleep();
+                    }
+                }
+            }
+
+            system.queue_impulse_3d(NodeID::new(body_count), Vector3::new(0.2, 0.1, 0.0));
+            system.apply_pending_impulses_3d(1.0);
+            system.step_world_3d(-9.81, 1.0 / 60.0);
+
+            let world = system.world_3d.as_ref().expect("3d world");
+            assert!(world.bodies.iter().all(|(_, body)| {
+                body.translation().is_finite()
+                    && body.linvel().is_finite()
+                    && body.angvel().is_finite()
+            }));
+        }
     }
 }

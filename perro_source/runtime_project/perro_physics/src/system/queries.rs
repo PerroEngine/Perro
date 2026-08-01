@@ -17,24 +17,21 @@ impl PhysicsSystem {
         max_distance: f32,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsRayHit2D> {
+        self.update_query_pipeline_2d();
         if max_distance <= 0.0 || !max_distance.is_finite() {
             return None;
         }
 
-        let dir = na2::Vector2::new(direction.x, direction.y);
-        let dir_len = dir.norm();
+        let dir = r2::Vector::new(direction.x, direction.y);
+        let dir_len = dir.length();
         if dir_len <= 0.000_001 || !dir_len.is_finite() {
             return None;
         }
         let dir = dir / dir_len;
 
-        let world = self.world_2d.as_mut()?;
-        if self.query_pipeline_dirty_2d {
-            world.query_pipeline.update(&world.colliders);
-            self.query_pipeline_dirty_2d = false;
-        }
+        let world = self.world_2d.as_ref()?;
 
-        let ray = r2::Ray::new(na2::Point2::new(origin.x, origin.y), dir);
+        let ray = r2::Ray::new(r2::Vector::new(origin.x, origin.y), dir);
         let excluded = filter.exclude_nodes.as_slice();
         let layers = filter.layers.bits();
         let mask = filter.mask.bits();
@@ -49,14 +46,8 @@ impl PhysicsSystem {
                     .unwrap_or(true)
         };
         let query_filter = query_filter_2d(filter).predicate(&predicate);
-        let (collider, hit) = world.query_pipeline.cast_ray_and_get_normal(
-            &world.bodies,
-            &world.colliders,
-            &ray,
-            max_distance,
-            true,
-            query_filter,
-        )?;
+        let query_pipeline = query_pipeline_2d(world, query_filter);
+        let (collider, hit) = query_pipeline.cast_ray_and_get_normal(&ray, max_distance, true)?;
         let node = *world.collider_owners.get(&collider)?;
         let point = ray.point_at(hit.time_of_impact);
 
@@ -93,24 +84,21 @@ impl PhysicsSystem {
         max_distance: f32,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsRayHit3D> {
+        self.update_query_pipeline_3d();
         if max_distance <= 0.0 || !max_distance.is_finite() {
             return None;
         }
 
-        let dir = na3::Vector3::new(direction.x, direction.y, direction.z);
-        let dir_len = dir.norm();
+        let dir = r3::Vector::new(direction.x, direction.y, direction.z);
+        let dir_len = dir.length();
         if dir_len <= 0.000_001 || !dir_len.is_finite() {
             return None;
         }
         let dir = dir / dir_len;
 
-        let world = self.world_3d.as_mut()?;
-        if self.query_pipeline_dirty_3d {
-            world.query_pipeline.update(&world.colliders);
-            self.query_pipeline_dirty_3d = false;
-        }
+        let world = self.world_3d.as_ref()?;
 
-        let ray = r3::Ray::new(na3::Point3::new(origin.x, origin.y, origin.z), dir);
+        let ray = r3::Ray::new(r3::Vector::new(origin.x, origin.y, origin.z), dir);
         let excluded = filter.exclude_nodes.as_slice();
         let layers = filter.layers.bits();
         let mask = filter.mask.bits();
@@ -125,14 +113,8 @@ impl PhysicsSystem {
                     .unwrap_or(true)
         };
         let query_filter = query_filter_3d(filter).predicate(&predicate);
-        let (collider, hit) = world.query_pipeline.cast_ray_and_get_normal(
-            &world.bodies,
-            &world.colliders,
-            &ray,
-            max_distance,
-            true,
-            query_filter,
-        )?;
+        let query_pipeline = query_pipeline_3d(world, query_filter);
+        let (collider, hit) = query_pipeline.cast_ray_and_get_normal(&ray, max_distance, true)?;
         let node = *world.collider_owners.get(&collider)?;
         let point = ray.point_at(hit.time_of_impact);
 
@@ -152,23 +134,19 @@ impl PhysicsSystem {
         max_distance: f32,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsShapeHit2D> {
+        self.update_query_pipeline_2d();
         if max_distance <= 0.0 || !max_distance.is_finite() {
             return None;
         }
-        let dir = na2::Vector2::new(direction.x, direction.y);
-        let dir_len = dir.norm();
+        let dir = r2::Vector::new(direction.x, direction.y);
+        let dir_len = dir.length();
         if dir_len <= 0.000_001 || !dir_len.is_finite() {
             return None;
         }
 
         let world = self.world_2d.as_mut()?;
         let shape = shared_shape_2d(shape)?;
-        if self.query_pipeline_dirty_2d {
-            world.query_pipeline.update(&world.colliders);
-            self.query_pipeline_dirty_2d = false;
-        }
-
-        let shape_pos = na2::Isometry2::new(na2::Vector2::new(origin.x, origin.y), 0.0);
+        let shape_pos = r2::Pose::new(r2::Vector::new(origin.x, origin.y), 0.0);
         let shape_vel = dir / dir_len * max_distance;
         let excluded = filter.exclude_nodes.as_slice();
         let layers = filter.layers.bits();
@@ -184,14 +162,12 @@ impl PhysicsSystem {
                     .unwrap_or(true)
         };
         let query_filter = query_filter_2d(filter).predicate(&predicate);
-        let (collider, hit) = world.query_pipeline.cast_shape(
-            &world.bodies,
-            &world.colliders,
+        let query_pipeline = query_pipeline_2d(world, query_filter);
+        let (collider, hit) = query_pipeline.cast_shape(
             &shape_pos,
-            &shape_vel,
+            shape_vel,
             shape.as_ref(),
             rapier2d::parry::query::ShapeCastOptions::with_max_time_of_impact(1.0),
-            query_filter,
         )?;
         let node = *world.collider_owners.get(&collider)?;
         let point = hit.transform1_by(&shape_pos).witness1;
@@ -212,23 +188,19 @@ impl PhysicsSystem {
         max_distance: f32,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsShapeHit3D> {
+        self.update_query_pipeline_3d();
         if max_distance <= 0.0 || !max_distance.is_finite() {
             return None;
         }
-        let dir = na3::Vector3::new(direction.x, direction.y, direction.z);
-        let dir_len = dir.norm();
+        let dir = r3::Vector::new(direction.x, direction.y, direction.z);
+        let dir_len = dir.length();
         if dir_len <= 0.000_001 || !dir_len.is_finite() {
             return None;
         }
 
         let world = self.world_3d.as_mut()?;
         let shape = shared_shape_3d(shape)?;
-        if self.query_pipeline_dirty_3d {
-            world.query_pipeline.update(&world.colliders);
-            self.query_pipeline_dirty_3d = false;
-        }
-
-        let shape_pos = na3::Isometry3::translation(origin.x, origin.y, origin.z);
+        let shape_pos = r3::Pose::translation(origin.x, origin.y, origin.z);
         let shape_vel = dir / dir_len * max_distance;
         let excluded = filter.exclude_nodes.as_slice();
         let layers = filter.layers.bits();
@@ -244,14 +216,12 @@ impl PhysicsSystem {
                     .unwrap_or(true)
         };
         let query_filter = query_filter_3d(filter).predicate(&predicate);
-        let (collider, hit) = world.query_pipeline.cast_shape(
-            &world.bodies,
-            &world.colliders,
+        let query_pipeline = query_pipeline_3d(world, query_filter);
+        let (collider, hit) = query_pipeline.cast_shape(
             &shape_pos,
-            &shape_vel,
+            shape_vel,
             shape.as_ref(),
             rapier3d::parry::query::ShapeCastOptions::with_max_time_of_impact(1.0),
-            query_filter,
         )?;
         let node = *world.collider_owners.get(&collider)?;
         let point = hit.transform1_by(&shape_pos).witness1;
@@ -271,14 +241,11 @@ impl PhysicsSystem {
         margin: f32,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult2D> {
+        self.update_query_pipeline_2d();
         if !target.x.is_finite() || !target.y.is_finite() {
             return None;
         }
         let world = self.world_2d.as_mut()?;
-        if self.query_pipeline_dirty_2d {
-            world.query_pipeline.update(&world.colliders);
-            self.query_pipeline_dirty_2d = false;
-        }
         let state = world.body_map.get(&body_id)?;
         let rb = world.bodies.get(state.handle)?;
         let start_orig = *rb.position();
@@ -302,11 +269,11 @@ impl PhysicsSystem {
         // before sweeping, so a body starting inside a static collider is not
         // stuck w/ time_of_impact=0 in every direction.
         let skin = margin.max(RECOVERY_SKIN_2D);
-        let mut recovery = na2::Vector2::zeros();
+        let mut recovery = r2::Vector::ZERO;
         // scratch hit buf: kp alloc across calls (up to 16 fills / char / frame).
         let mut hits = std::mem::take(&mut self.recovery_hits_2d);
         for _ in 0..RECOVERY_ITERATIONS {
-            let mut iter_push = na2::Vector2::zeros();
+            let mut iter_push = r2::Vector::ZERO;
             let mut penetrating = false;
             for collider_handle in &state.colliders {
                 let Some(collider) = world.colliders.get(*collider_handle) else {
@@ -319,19 +286,14 @@ impl PhysicsSystem {
                     .position_wrt_parent()
                     .copied()
                     .unwrap_or_else(|| *collider.position());
-                let shape_pos = na2::Translation2::from(recovery) * start_orig * local_pos;
+                let shape_pos = r2::Pose::from_translation(recovery) * start_orig * local_pos;
                 let shape = collider.shape();
                 hits.clear();
-                world.query_pipeline.intersections_with_shape(
-                    &world.bodies,
-                    &world.colliders,
-                    &shape_pos,
-                    shape,
-                    query_filter,
-                    |handle| {
-                        hits.push(handle);
-                        true
-                    },
+                let query_pipeline = query_pipeline_2d(world, query_filter);
+                hits.extend(
+                    query_pipeline
+                        .intersect_shape(shape_pos, shape)
+                        .map(|(handle, _)| handle),
                 );
                 for other_handle in hits.iter().copied() {
                     let Some(other) = world.colliders.get(other_handle) else {
@@ -349,7 +311,7 @@ impl PhysicsSystem {
                     if contact.dist < skin {
                         penetrating = true;
                         let depth = skin - contact.dist;
-                        iter_push -= contact.normal1.into_inner() * depth;
+                        iter_push -= contact.normal1 * depth;
                     }
                 }
             }
@@ -357,7 +319,7 @@ impl PhysicsSystem {
                 break;
             }
             recovery += iter_push;
-            let recovery_len = recovery.norm();
+            let recovery_len = recovery.length();
             if recovery_len > RECOVERY_MAX_2D {
                 recovery *= RECOVERY_MAX_2D / recovery_len;
                 break;
@@ -366,15 +328,15 @@ impl PhysicsSystem {
         hits.clear();
         self.recovery_hits_2d = hits;
 
-        let start = na2::Translation2::from(recovery) * start_orig;
-        let delta = na2::Vector2::new(
-            target.x - start.translation.vector.x,
-            target.y - start.translation.vector.y,
+        let start = r2::Pose::from_translation(recovery) * start_orig;
+        let delta = r2::Vector::new(
+            target.x - start.translation.x,
+            target.y - start.translation.y,
         );
-        let distance = delta.norm();
+        let distance = delta.length();
         if distance <= 0.000_001 {
             return Some(PhysicsMoveResult2D {
-                position: Vector2::new(start.translation.vector.x, start.translation.vector.y),
+                position: Vector2::new(start.translation.x, start.translation.y),
                 hit: None,
                 clipped: false,
             });
@@ -393,14 +355,12 @@ impl PhysicsSystem {
                 .copied()
                 .unwrap_or_else(|| *collider.position());
             let shape_pos = start * local_pos;
-            let Some((hit_collider, hit)) = world.query_pipeline.cast_shape(
-                &world.bodies,
-                &world.colliders,
+            let query_pipeline = query_pipeline_2d(world, query_filter);
+            let Some((hit_collider, hit)) = query_pipeline.cast_shape(
                 &shape_pos,
-                &delta,
+                delta,
                 collider.shape(),
                 rapier2d::parry::query::ShapeCastOptions::with_max_time_of_impact(1.0),
-                query_filter,
             ) else {
                 continue;
             };
@@ -424,8 +384,8 @@ impl PhysicsSystem {
             .unwrap_or(distance);
         let dir = delta / distance;
         let position = Vector2::new(
-            start.translation.vector.x + dir.x * travel,
-            start.translation.vector.y + dir.y * travel,
+            start.translation.x + dir.x * travel,
+            start.translation.y + dir.y * travel,
         );
         Some(PhysicsMoveResult2D {
             position,
@@ -441,14 +401,11 @@ impl PhysicsSystem {
         margin: f32,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult3D> {
+        self.update_query_pipeline_3d();
         if !target.x.is_finite() || !target.y.is_finite() || !target.z.is_finite() {
             return None;
         }
         let world = self.world_3d.as_mut()?;
-        if self.query_pipeline_dirty_3d {
-            world.query_pipeline.update(&world.colliders);
-            self.query_pipeline_dirty_3d = false;
-        }
         let state = world.body_map.get(&body_id)?;
         let rb = world.bodies.get(state.handle)?;
         let start_orig = *rb.position();
@@ -472,11 +429,11 @@ impl PhysicsSystem {
         // before sweeping, so a body starting inside a static collider is not
         // stuck w/ time_of_impact=0 in every direction.
         let skin = margin.max(RECOVERY_SKIN_3D);
-        let mut recovery = na3::Vector3::zeros();
+        let mut recovery = r3::Vector::ZERO;
         // scratch hit buf: kp alloc across calls (up to 16 fills / char / frame).
         let mut hits = std::mem::take(&mut self.recovery_hits_3d);
         for _ in 0..RECOVERY_ITERATIONS {
-            let mut iter_push = na3::Vector3::zeros();
+            let mut iter_push = r3::Vector::ZERO;
             let mut penetrating = false;
             for collider_handle in &state.colliders {
                 let Some(collider) = world.colliders.get(*collider_handle) else {
@@ -489,19 +446,14 @@ impl PhysicsSystem {
                     .position_wrt_parent()
                     .copied()
                     .unwrap_or_else(|| *collider.position());
-                let shape_pos = na3::Translation3::from(recovery) * start_orig * local_pos;
+                let shape_pos = r3::Pose::from_translation(recovery) * start_orig * local_pos;
                 let shape = collider.shape();
                 hits.clear();
-                world.query_pipeline.intersections_with_shape(
-                    &world.bodies,
-                    &world.colliders,
-                    &shape_pos,
-                    shape,
-                    query_filter,
-                    |handle| {
-                        hits.push(handle);
-                        true
-                    },
+                let query_pipeline = query_pipeline_3d(world, query_filter);
+                hits.extend(
+                    query_pipeline
+                        .intersect_shape(shape_pos, shape)
+                        .map(|(handle, _)| handle),
                 );
                 for other_handle in hits.iter().copied() {
                     let Some(other) = world.colliders.get(other_handle) else {
@@ -519,7 +471,7 @@ impl PhysicsSystem {
                     if contact.dist < skin {
                         penetrating = true;
                         let depth = skin - contact.dist;
-                        iter_push -= contact.normal1.into_inner() * depth;
+                        iter_push -= contact.normal1 * depth;
                     }
                 }
             }
@@ -527,7 +479,7 @@ impl PhysicsSystem {
                 break;
             }
             recovery += iter_push;
-            let recovery_len = recovery.norm();
+            let recovery_len = recovery.length();
             if recovery_len > RECOVERY_MAX_3D {
                 recovery *= RECOVERY_MAX_3D / recovery_len;
                 break;
@@ -536,19 +488,19 @@ impl PhysicsSystem {
         hits.clear();
         self.recovery_hits_3d = hits;
 
-        let start = na3::Translation3::from(recovery) * start_orig;
-        let delta = na3::Vector3::new(
-            target.x - start.translation.vector.x,
-            target.y - start.translation.vector.y,
-            target.z - start.translation.vector.z,
+        let start = r3::Pose::from_translation(recovery) * start_orig;
+        let delta = r3::Vector::new(
+            target.x - start.translation.x,
+            target.y - start.translation.y,
+            target.z - start.translation.z,
         );
-        let distance = delta.norm();
+        let distance = delta.length();
         if distance <= 0.000_001 {
             return Some(PhysicsMoveResult3D {
                 position: Vector3::new(
-                    start.translation.vector.x,
-                    start.translation.vector.y,
-                    start.translation.vector.z,
+                    start.translation.x,
+                    start.translation.y,
+                    start.translation.z,
                 ),
                 hit: None,
                 clipped: false,
@@ -568,14 +520,12 @@ impl PhysicsSystem {
                 .copied()
                 .unwrap_or_else(|| *collider.position());
             let shape_pos = start * local_pos;
-            let Some((hit_collider, hit)) = world.query_pipeline.cast_shape(
-                &world.bodies,
-                &world.colliders,
+            let query_pipeline = query_pipeline_3d(world, query_filter);
+            let Some((hit_collider, hit)) = query_pipeline.cast_shape(
                 &shape_pos,
-                &delta,
+                delta,
                 collider.shape(),
                 rapier3d::parry::query::ShapeCastOptions::with_max_time_of_impact(1.0),
-                query_filter,
             ) else {
                 continue;
             };
@@ -599,9 +549,9 @@ impl PhysicsSystem {
             .unwrap_or(distance);
         let dir = delta / distance;
         let position = Vector3::new(
-            start.translation.vector.x + dir.x * travel,
-            start.translation.vector.y + dir.y * travel,
-            start.translation.vector.z + dir.z * travel,
+            start.translation.x + dir.x * travel,
+            start.translation.y + dir.y * travel,
+            start.translation.z + dir.z * travel,
         );
         Some(PhysicsMoveResult3D {
             position,
@@ -691,7 +641,7 @@ impl PhysicsSystem {
         };
         for collider_handle in &state.colliders {
             for pair in world.narrow_phase.contact_pairs_with(*collider_handle) {
-                if !pair.has_any_active_contact {
+                if !pair.has_any_active_contact() {
                     continue;
                 }
                 let Some(&a) = world.collider_owners.get(&pair.collider1) else {
@@ -743,7 +693,7 @@ impl PhysicsSystem {
         };
         for collider_handle in &state.colliders {
             for pair in world.narrow_phase.contact_pairs_with(*collider_handle) {
-                if !pair.has_any_active_contact {
+                if !pair.has_any_active_contact() {
                     continue;
                 }
                 let Some(&a) = world.collider_owners.get(&pair.collider1) else {
@@ -783,9 +733,16 @@ impl PhysicsSystem {
             return;
         }
         if let Some(world) = self.world_2d.as_mut() {
-            world.query_pipeline.update(&world.colliders);
-            self.query_pipeline_dirty_2d = false;
+            world.query_bvh = rapier2d::parry::partitioning::Bvh::from_iter(
+                rapier2d::parry::partitioning::BvhBuildStrategy::default(),
+                world.colliders.iter().filter_map(|(handle, collider)| {
+                    collider
+                        .is_enabled()
+                        .then_some((handle.into_raw_parts().0 as usize, collider.compute_aabb()))
+                }),
+            );
         }
+        self.query_pipeline_dirty_2d = false;
     }
 
     pub fn update_query_pipeline_3d(&mut self) {
@@ -793,9 +750,16 @@ impl PhysicsSystem {
             return;
         }
         if let Some(world) = self.world_3d.as_mut() {
-            world.query_pipeline.update(&world.colliders);
-            self.query_pipeline_dirty_3d = false;
+            world.query_bvh = rapier3d::parry::partitioning::Bvh::from_iter(
+                rapier3d::parry::partitioning::BvhBuildStrategy::default(),
+                world.colliders.iter().filter_map(|(handle, collider)| {
+                    collider
+                        .is_enabled()
+                        .then_some((handle.into_raw_parts().0 as usize, collider.compute_aabb()))
+                }),
+            );
         }
+        self.query_pipeline_dirty_3d = false;
     }
 }
 
@@ -913,7 +877,7 @@ mod recovery_tests {
             .bodies
             .get_mut(handle)
             .expect("test or bench setup must succeed");
-        rb.set_position(na2::Isometry2::translation(pos.x, pos.y), true);
+        rb.set_position(r2::Pose::translation(pos.x, pos.y), true);
         system.query_pipeline_dirty_2d = true;
     }
 
@@ -931,7 +895,7 @@ mod recovery_tests {
             .bodies
             .get_mut(handle)
             .expect("test or bench setup must succeed");
-        rb.set_position(na3::Isometry3::translation(pos.x, pos.y, pos.z), true);
+        rb.set_position(r3::Pose::translation(pos.x, pos.y, pos.z), true);
         system.query_pipeline_dirty_3d = true;
     }
 

@@ -3,9 +3,9 @@ use perro_nodes::{Shape2D, Shape3D};
 use perro_runtime_api::sub_apis::{PhysicsRayHit2D, PhysicsRayHit3D};
 use perro_structs::{BitMask, Transform2D, Transform3D, Vector2, Vector3};
 
-use crate::na3;
+use crate::r3;
 
-pub type TriMeshData = (Vec<na3::Point3<f32>>, Vec<[u32; 3]>);
+pub type TriMeshData = (Vec<r3::Vector>, Vec<[u32; 3]>);
 
 #[derive(Clone, Copy, Debug)]
 pub enum AudioRaycastInput {

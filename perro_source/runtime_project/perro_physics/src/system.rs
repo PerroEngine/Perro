@@ -11,7 +11,7 @@ use rayon::prelude::*;
 use crate::{
     AreaOverlap, AudioRaycastInput, AudioRaycastResult, BodyPair, PendingForce2D, PendingForce3D,
     PendingImpulse2D, PendingImpulse3D, PhysicsAssetContext, PhysicsWorld2D, PhysicsWorld3D,
-    TriMeshData, helpers::*, na2, na3, r2, r3,
+    TriMeshData, helpers::*, r2, r3,
 };
 
 const MAX_RIGID_SPEED_2D: f32 = 80.0;
@@ -200,7 +200,7 @@ impl PhysicsSystem {
         self.world_2d_idle_cached = self
             .world_2d
             .as_ref()
-            .is_none_or(|world| world.islands.active_dynamic_bodies().is_empty());
+            .is_none_or(|world| world.islands.active_bodies().next().is_none());
     }
 
     /// 3d twin of [`Self::refresh_world_2d_idle_cache`]; same post-step-only rule.
@@ -208,7 +208,7 @@ impl PhysicsSystem {
         self.world_3d_idle_cached = self
             .world_3d
             .as_ref()
-            .is_none_or(|world| world.islands.active_dynamic_bodies().is_empty());
+            .is_none_or(|world| world.islands.active_bodies().next().is_none());
     }
 
     pub(crate) fn refresh_world_idle_cache(&mut self) {

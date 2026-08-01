@@ -94,7 +94,7 @@ fn step_world_2d_slot(world: &mut Option<PhysicsWorld2D>, gravity_y: f32, fixed_
     world.gravity.y = gravity_y;
     world.integration_parameters.dt = fixed_delta.max(0.000_1);
     world.pipeline.step(
-        &world.gravity,
+        world.gravity,
         &world.integration_parameters,
         &mut world.islands,
         &mut world.broad_phase,
@@ -104,7 +104,6 @@ fn step_world_2d_slot(world: &mut Option<PhysicsWorld2D>, gravity_y: f32, fixed_
         &mut world.impulse_joints,
         &mut world.multibody_joints,
         &mut world.ccd_solver,
-        None,
         &(),
         &(),
     );
@@ -117,7 +116,7 @@ fn step_world_3d_slot(world: &mut Option<PhysicsWorld3D>, gravity_y: f32, fixed_
     world.gravity.y = gravity_y;
     world.integration_parameters.dt = fixed_delta.max(0.000_1);
     world.pipeline.step(
-        &world.gravity,
+        world.gravity,
         &world.integration_parameters,
         &mut world.islands,
         &mut world.broad_phase,
@@ -127,7 +126,6 @@ fn step_world_3d_slot(world: &mut Option<PhysicsWorld3D>, gravity_y: f32, fixed_
         &mut world.impulse_joints,
         &mut world.multibody_joints,
         &mut world.ccd_solver,
-        None,
         &(),
         &(),
     );
@@ -159,7 +157,7 @@ fn apply_pending_impulses_2d_parts(
         if !len_sq.is_finite() || len_sq <= 0.000_001 {
             continue;
         }
-        rb.apply_impulse(na2::Vector2::new(x, y), true);
+        rb.apply_impulse(r2::Vector::new(x, y), true);
         clamp_rb_speed_2d(rb, MAX_RIGID_SPEED_2D);
     }
     *pending = pending_taken;
@@ -193,7 +191,7 @@ fn apply_pending_forces_2d_parts(
         if !len_sq.is_finite() || len_sq <= 0.000_001 {
             continue;
         }
-        rb.apply_impulse(na2::Vector2::new(x, y), true);
+        rb.apply_impulse(r2::Vector::new(x, y), true);
         clamp_rb_speed_2d(rb, MAX_RIGID_SPEED_2D);
     }
     *pending = pending_taken;
@@ -226,7 +224,7 @@ fn apply_pending_impulses_3d_parts(
         if !len_sq.is_finite() || len_sq <= 0.000_001 {
             continue;
         }
-        rb.apply_impulse(na3::Vector3::new(x, y, z), true);
+        rb.apply_impulse(r3::Vector::new(x, y, z), true);
         clamp_rb_speed_3d(rb, MAX_RIGID_SPEED_3D);
     }
     *pending = pending_taken;
@@ -261,7 +259,7 @@ fn apply_pending_forces_3d_parts(
         if !len_sq.is_finite() || len_sq <= 0.000_001 {
             continue;
         }
-        rb.apply_impulse(na3::Vector3::new(x, y, z), true);
+        rb.apply_impulse(r3::Vector::new(x, y, z), true);
         clamp_rb_speed_3d(rb, MAX_RIGID_SPEED_3D);
     }
     *pending = pending_taken;
@@ -456,8 +454,8 @@ mod tests {
             .bodies
             .get(body_3d.body_map[&id_3d].handle)
             .expect("test or bench setup must succeed");
-        assert!(body_2d.linvel().iter().all(|value| value.is_finite()));
-        assert!(body_3d.linvel().iter().all(|value| value.is_finite()));
+        assert!(body_2d.linvel().is_finite());
+        assert!(body_3d.linvel().is_finite());
     }
 
     fn pose_2d(system: &PhysicsSystem, id: NodeID) -> [f32; 2] {

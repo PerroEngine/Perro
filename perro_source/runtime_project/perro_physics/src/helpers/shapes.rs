@@ -198,8 +198,8 @@ pub fn clamp_rb_speed_2d(rb: &mut r2::RigidBody, max_speed: f32) {
     if max_speed <= 0.0 {
         return;
     }
-    let current = *rb.linvel();
-    let speed_sq = current.norm_squared();
+    let current = rb.linvel();
+    let speed_sq = current.length_squared();
     let max_sq = max_speed * max_speed;
     if speed_sq <= max_sq || speed_sq <= 0.0 {
         return;
@@ -212,8 +212,8 @@ pub fn clamp_rb_speed_3d(rb: &mut r3::RigidBody, max_speed: f32) {
     if max_speed <= 0.0 {
         return;
     }
-    let current = *rb.linvel();
-    let speed_sq = current.norm_squared();
+    let current = rb.linvel();
+    let speed_sq = current.length_squared();
     let max_sq = max_speed * max_speed;
     if speed_sq <= max_sq || speed_sq <= 0.0 {
         return;
@@ -229,12 +229,12 @@ pub fn build_rigid_body_2d(desc: &BodyDesc2D) -> r2::RigidBody {
         BodyKind::Rigid => r2::RigidBodyBuilder::dynamic(),
         BodyKind::Character => r2::RigidBodyBuilder::kinematic_position_based(),
     }
-    .position(transform_to_iso2(desc.global))
+    .pose(transform_to_iso2(desc.global))
     .enabled(desc.enabled);
 
     if let Some(rigid) = desc.rigid.as_ref() {
         builder = builder
-            .linvel(na2::Vector2::new(
+            .linvel(r2::Vector::new(
                 rigid.linear_velocity.x,
                 rigid.linear_velocity.y,
             ))
@@ -261,17 +261,17 @@ pub fn build_rigid_body_3d(desc: &BodyDesc3D) -> r3::RigidBody {
         BodyKind::Rigid => r3::RigidBodyBuilder::dynamic(),
         BodyKind::Character => r3::RigidBodyBuilder::kinematic_position_based(),
     }
-    .position(transform_to_iso3(desc.global))
+    .pose(transform_to_iso3(desc.global))
     .enabled(desc.enabled);
 
     if let Some(rigid) = desc.rigid.as_ref() {
         builder = builder
-            .linvel(na3::Vector3::new(
+            .linvel(r3::Vector::new(
                 rigid.linear_velocity.x,
                 rigid.linear_velocity.y,
                 rigid.linear_velocity.z,
             ))
-            .angvel(na3::Vector3::new(
+            .angvel(r3::Vector::new(
                 rigid.angular_velocity.x,
                 rigid.angular_velocity.y,
                 rigid.angular_velocity.z,
@@ -312,7 +312,7 @@ pub fn collider_builder_2d(desc: &ShapeDesc2D) -> Option<r2::Collider> {
             let points = points
                 .iter()
                 .filter(|p| p.x.is_finite() && p.y.is_finite())
-                .map(|p| na2::Point2::new(p.x * sx, p.y * sy))
+                .map(|p| r2::Vector::new(p.x * sx, p.y * sy))
                 .collect::<Vec<_>>();
             r2::ColliderBuilder::convex_hull(&points)?
         }
@@ -320,8 +320,8 @@ pub fn collider_builder_2d(desc: &ShapeDesc2D) -> Option<r2::Collider> {
 
     Some(
         shape
-            .position(na2::Isometry2::new(
-                na2::Vector2::new(desc.local.position.x, desc.local.position.y),
+            .position(r2::Pose::new(
+                r2::Vector::new(desc.local.position.x, desc.local.position.y),
                 desc.local.rotation,
             ))
             .sensor(desc.sensor)
@@ -518,6 +518,7 @@ pub fn interaction_groups_2d(layer: BitMask, mask: BitMask) -> r2::InteractionGr
     r2::InteractionGroups::new(
         r2::Group::from_bits_truncate(layer.bits()),
         r2::Group::from_bits_truncate(!mask.bits()),
+        r2::InteractionTestMode::And,
     )
 }
 
@@ -525,6 +526,7 @@ pub fn interaction_groups_3d(layer: BitMask, mask: BitMask) -> r3::InteractionGr
     r3::InteractionGroups::new(
         r3::Group::from_bits_truncate(layer.bits()),
         r3::Group::from_bits_truncate(!mask.bits()),
+        r3::InteractionTestMode::And,
     )
 }
 

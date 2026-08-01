@@ -1,7 +1,7 @@
 use super::*;
 
 pub fn simplify_trimesh_data(
-    vertices: Vec<na3::Point3<f32>>,
+    vertices: Vec<r3::Vector>,
     triangles: Vec<[u32; 3]>,
 ) -> Option<TriMeshData> {
     let (vertices, triangles) = weld_and_filter_mesh(vertices, triangles)?;
@@ -14,12 +14,12 @@ pub fn simplify_trimesh_data(
 }
 
 pub fn weld_and_filter_mesh(
-    vertices: Vec<na3::Point3<f32>>,
+    vertices: Vec<r3::Vector>,
     triangles: Vec<[u32; 3]>,
 ) -> Option<TriMeshData> {
     let mut remap = vec![0u32; vertices.len()];
     let mut map = AHashMap::<(i64, i64, i64), u32>::default();
-    let mut out_vertices = Vec::<na3::Point3<f32>>::new();
+    let mut out_vertices = Vec::<r3::Vector>::new();
     let eps = 0.0001f32;
     for (idx, v) in vertices.iter().enumerate() {
         let key = (
@@ -68,7 +68,7 @@ pub fn weld_and_filter_mesh(
 }
 
 pub fn simplify_coplanar_mesh(
-    vertices: &[na3::Point3<f32>],
+    vertices: &[r3::Vector],
     triangles: &[[u32; 3]],
 ) -> Option<TriMeshData> {
     if triangles.len() < 16 {
@@ -78,16 +78,16 @@ pub fn simplify_coplanar_mesh(
     let p0 = vertices[first[0] as usize];
     let p1 = vertices[first[1] as usize];
     let p2 = vertices[first[2] as usize];
-    let n = (p1 - p0).cross(&(p2 - p0));
-    let n_len = n.norm();
+    let n = (p1 - p0).cross(p2 - p0);
+    let n_len = n.length();
     if n_len <= 1.0e-6 {
         return None;
     }
     let n = n / n_len;
-    let plane_d = n.dot(&p0.coords);
+    let plane_d = n.dot(p0);
     let plane_eps = 0.0025f32;
     for p in vertices {
-        let dist = (n.dot(&p.coords) - plane_d).abs();
+        let dist = (n.dot(*p) - plane_d).abs();
         if dist > plane_eps {
             return None;
         }
@@ -133,7 +133,7 @@ pub fn simplify_coplanar_mesh(
         return None;
     }
 
-    let mut new_vertices = Vec::<na3::Point3<f32>>::with_capacity(hull.len());
+    let mut new_vertices = Vec::<r3::Vector>::with_capacity(hull.len());
     for p in &hull {
         new_vertices.push(unproject_axis_on_plane(*p, axis, n, plane_d));
     }
@@ -157,7 +157,7 @@ pub fn dominant_axis_3d(x: f32, y: f32, z: f32) -> usize {
     }
 }
 
-pub fn project_axis_3d(p: na3::Point3<f32>, axis: usize) -> [f32; 2] {
+pub fn project_axis_3d(p: r3::Vector, axis: usize) -> [f32; 2] {
     match axis {
         0 => [p.y, p.z],
         1 => [p.x, p.z],
@@ -165,30 +165,25 @@ pub fn project_axis_3d(p: na3::Point3<f32>, axis: usize) -> [f32; 2] {
     }
 }
 
-pub fn unproject_axis_on_plane(
-    p: [f32; 2],
-    axis: usize,
-    n: na3::Vector3<f32>,
-    d: f32,
-) -> na3::Point3<f32> {
+pub fn unproject_axis_on_plane(p: [f32; 2], axis: usize, n: r3::Vector, d: f32) -> r3::Vector {
     match axis {
         0 => {
             let y = p[0];
             let z = p[1];
             let x = (d - n.y * y - n.z * z) / n.x.max(1.0e-6).copysign(n.x);
-            na3::Point3::new(x, y, z)
+            r3::Vector::new(x, y, z)
         }
         1 => {
             let x = p[0];
             let z = p[1];
             let y = (d - n.x * x - n.z * z) / n.y.max(1.0e-6).copysign(n.y);
-            na3::Point3::new(x, y, z)
+            r3::Vector::new(x, y, z)
         }
         _ => {
             let x = p[0];
             let y = p[1];
             let z = (d - n.x * x - n.y * y) / n.z.max(1.0e-6).copysign(n.z);
-            na3::Point3::new(x, y, z)
+            r3::Vector::new(x, y, z)
         }
     }
 }
@@ -254,10 +249,10 @@ pub fn cross2(a: [f32; 2], b: [f32; 2]) -> f32 {
     a[0] * b[1] - a[1] * b[0]
 }
 
-pub fn triangle_area_sq(a: na3::Point3<f32>, b: na3::Point3<f32>, c: na3::Point3<f32>) -> f32 {
+pub fn triangle_area_sq(a: r3::Vector, b: r3::Vector, c: r3::Vector) -> f32 {
     let ab = b - a;
     let ac = c - a;
-    ab.cross(&ac).norm_squared() * 0.25
+    ab.cross(ac).length_squared() * 0.25
 }
 
 pub fn split_source_fragment(source: &str) -> (&str, Option<&str>) {
@@ -290,91 +285,91 @@ pub fn triangle_points_2d(
     kind: Triangle2DKind,
     width: f32,
     height: f32,
-) -> Option<[na2::Point2<f32>; 3]> {
+) -> Option<[r2::Vector; 3]> {
     let w = width.abs().max(0.0001);
     let mut h = height.abs().max(0.0001);
     let points = match kind {
         Triangle2DKind::Equilateral => {
             h = h.max((3.0f32).sqrt() * 0.5 * w);
             [
-                na2::Point2::new(-w * 0.5, -h / 3.0),
-                na2::Point2::new(w * 0.5, -h / 3.0),
-                na2::Point2::new(0.0, 2.0 * h / 3.0),
+                r2::Vector::new(-w * 0.5, -h / 3.0),
+                r2::Vector::new(w * 0.5, -h / 3.0),
+                r2::Vector::new(0.0, 2.0 * h / 3.0),
             ]
         }
         Triangle2DKind::Right => [
-            na2::Point2::new(-w / 3.0, -h / 3.0),
-            na2::Point2::new(2.0 * w / 3.0, -h / 3.0),
-            na2::Point2::new(-w / 3.0, 2.0 * h / 3.0),
+            r2::Vector::new(-w / 3.0, -h / 3.0),
+            r2::Vector::new(2.0 * w / 3.0, -h / 3.0),
+            r2::Vector::new(-w / 3.0, 2.0 * h / 3.0),
         ],
         Triangle2DKind::Isosceles => [
-            na2::Point2::new(-w * 0.5, -h * 0.5),
-            na2::Point2::new(w * 0.5, -h * 0.5),
-            na2::Point2::new(0.0, h * 0.5),
+            r2::Vector::new(-w * 0.5, -h * 0.5),
+            r2::Vector::new(w * 0.5, -h * 0.5),
+            r2::Vector::new(0.0, h * 0.5),
         ],
     };
     Some(points)
 }
 
-pub fn tri_prism_points(width: f32, height: f32, depth: f32) -> Vec<na3::Point3<f32>> {
+pub fn tri_prism_points(width: f32, height: f32, depth: f32) -> Vec<r3::Vector> {
     let hw = width.abs().max(0.0001) * 0.5;
     let hh = height.abs().max(0.0001) * 0.5;
     let hd = depth.abs().max(0.0001) * 0.5;
     vec![
-        na3::Point3::new(-hw, -hh, -hd),
-        na3::Point3::new(hw, -hh, -hd),
-        na3::Point3::new(0.0, hh, -hd),
-        na3::Point3::new(-hw, -hh, hd),
-        na3::Point3::new(hw, -hh, hd),
-        na3::Point3::new(0.0, hh, hd),
+        r3::Vector::new(-hw, -hh, -hd),
+        r3::Vector::new(hw, -hh, -hd),
+        r3::Vector::new(0.0, hh, -hd),
+        r3::Vector::new(-hw, -hh, hd),
+        r3::Vector::new(hw, -hh, hd),
+        r3::Vector::new(0.0, hh, hd),
     ]
 }
 
-pub fn triangular_pyramid_points(width: f32, height: f32, depth: f32) -> Vec<na3::Point3<f32>> {
+pub fn triangular_pyramid_points(width: f32, height: f32, depth: f32) -> Vec<r3::Vector> {
     let hw = width.abs().max(0.0001) * 0.5;
     let hh = height.abs().max(0.0001) * 0.5;
     let hd = depth.abs().max(0.0001) * 0.5;
     vec![
-        na3::Point3::new(-hw, -hh, -hd),
-        na3::Point3::new(hw, -hh, -hd),
-        na3::Point3::new(0.0, -hh, hd),
-        na3::Point3::new(0.0, hh, 0.0),
+        r3::Vector::new(-hw, -hh, -hd),
+        r3::Vector::new(hw, -hh, -hd),
+        r3::Vector::new(0.0, -hh, hd),
+        r3::Vector::new(0.0, hh, 0.0),
     ]
 }
 
-pub fn square_pyramid_points(width: f32, height: f32, depth: f32) -> Vec<na3::Point3<f32>> {
+pub fn square_pyramid_points(width: f32, height: f32, depth: f32) -> Vec<r3::Vector> {
     let hw = width.abs().max(0.0001) * 0.5;
     let hh = height.abs().max(0.0001) * 0.5;
     let hd = depth.abs().max(0.0001) * 0.5;
     vec![
-        na3::Point3::new(-hw, -hh, -hd),
-        na3::Point3::new(hw, -hh, -hd),
-        na3::Point3::new(hw, -hh, hd),
-        na3::Point3::new(-hw, -hh, hd),
-        na3::Point3::new(0.0, hh, 0.0),
+        r3::Vector::new(-hw, -hh, -hd),
+        r3::Vector::new(hw, -hh, -hd),
+        r3::Vector::new(hw, -hh, hd),
+        r3::Vector::new(-hw, -hh, hd),
+        r3::Vector::new(0.0, hh, 0.0),
     ]
 }
 
-pub fn transform_to_iso2(transform: Transform2D) -> na2::Isometry2<f32> {
-    na2::Isometry2::new(
-        na2::Vector2::new(transform.position.x, transform.position.y),
+pub fn transform_to_iso2(transform: Transform2D) -> r2::Pose {
+    r2::Pose::new(
+        r2::Vector::new(transform.position.x, transform.position.y),
         transform.rotation,
     )
 }
 
-pub fn transform_to_iso3(transform: Transform3D) -> na3::Isometry3<f32> {
-    let rotation = na3::UnitQuaternion::from_quaternion(na3::Quaternion::new(
-        transform.rotation.w,
+pub fn transform_to_iso3(transform: Transform3D) -> r3::Pose {
+    let rotation = r3::Rotation::from_xyzw(
         transform.rotation.x,
         transform.rotation.y,
         transform.rotation.z,
-    ));
-    na3::Isometry3::from_parts(
-        na3::Translation3::new(
+        transform.rotation.w,
+    );
+    r3::Pose::from_parts(
+        r3::Vector::new(
             transform.position.x,
             transform.position.y,
             transform.position.z,
         ),
-        rotation,
+        rotation.normalize(),
     )
 }

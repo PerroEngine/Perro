@@ -795,7 +795,7 @@ impl Runtime {
                 body.translation().z,
             );
             let rot = body.rotation();
-            let rotation = Quaternion::new(rot.i, rot.j, rot.k, rot.w);
+            let rotation = Quaternion::new(rot.x, rot.y, rot.z, rot.w);
             let lin = Vector3::new(body.linvel().x, body.linvel().y, body.linvel().z);
             let ang = Vector3::new(body.angvel().x, body.angvel().y, body.angvel().z);
             let sleeping = body.is_sleeping();

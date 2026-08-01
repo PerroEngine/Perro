@@ -12,7 +12,7 @@ impl Runtime {
         entered_pairs.clear();
 
         for pair in world.narrow_phase.contact_pairs() {
-            if !pair.has_any_active_contact {
+            if !pair.has_any_active_contact() {
                 continue;
             }
             let Some(&a) = world.collider_owners.get(&pair.collider1) else {
@@ -53,7 +53,7 @@ impl Runtime {
         entered_pairs.clear();
 
         for pair in world.narrow_phase.contact_pairs() {
-            if !pair.has_any_active_contact {
+            if !pair.has_any_active_contact() {
                 continue;
             }
             let Some(&a) = world.collider_owners.get(&pair.collider1) else {

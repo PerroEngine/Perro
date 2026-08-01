@@ -427,6 +427,59 @@ mod interpolation {
     }
 
     #[test]
+    fn water_sample_caches_drop_dead_nodes() {
+        let mut runtime = Runtime::new();
+        let water_id = NodeAPI::create::<WaterBody3D>(&mut runtime);
+        let body_id = NodeAPI::create::<RigidBody3D>(&mut runtime);
+        let live_water_id = NodeAPI::create::<WaterBody3D>(&mut runtime);
+
+        for id in [water_id, live_water_id] {
+            runtime.water_samples.insert(
+                id,
+                perro_nodes::WaterPhysicsSample {
+                    height: 1.0,
+                    velocity: Vector2::ZERO,
+                    foam: 0.0,
+                },
+            );
+            runtime.water_sample_times.insert(id, 0.5);
+        }
+        for water in [water_id, live_water_id] {
+            runtime.water_body_samples.insert(
+                crate::runtime::WaterBodySampleKey {
+                    water,
+                    body: body_id,
+                    point: 0,
+                },
+                crate::runtime::WaterBodySampleCache {
+                    local: Vector2::ZERO,
+                    height: 1.0,
+                    velocity: Vector2::ZERO,
+                    foam: 0.0,
+                    sample_time: 0.5,
+                },
+            );
+        }
+
+        assert!(NodeAPI::remove_node(&mut runtime, water_id));
+        runtime.prune_dead_water_samples();
+
+        assert!(!runtime.water_samples.contains_key(&water_id));
+        assert!(!runtime.water_sample_times.contains_key(&water_id));
+        assert!(runtime.water_samples.contains_key(&live_water_id));
+        assert_eq!(runtime.water_body_samples.len(), 1);
+
+        // Dead *body* side of the key prunes too, which re-enables the
+        // physics fast-path skip.
+        assert!(NodeAPI::remove_node(&mut runtime, body_id));
+        assert!(NodeAPI::remove_node(&mut runtime, live_water_id));
+        runtime.prune_dead_water_samples();
+        assert!(runtime.water_samples.is_empty());
+        assert!(runtime.water_sample_times.is_empty());
+        assert!(runtime.water_body_samples.is_empty());
+    }
+
+    #[test]
     fn water_3d_buoyancy_recovers_body_below_depth() {
         let mut runtime = Runtime::new();
         let water_id = NodeAPI::create::<WaterBody3D>(&mut runtime);

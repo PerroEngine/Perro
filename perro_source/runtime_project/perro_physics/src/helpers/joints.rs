@@ -58,8 +58,8 @@ pub fn joint_signature_3d(
 }
 
 pub fn build_joint_2d(desc: &JointDesc2D) -> r2::GenericJoint {
-    let anchor_a = na2::Point2::new(desc.anchor_a.x, desc.anchor_a.y);
-    let anchor_b = na2::Point2::new(desc.anchor_b.x, desc.anchor_b.y);
+    let anchor_a = r2::Vector::new(desc.anchor_a.x, desc.anchor_a.y);
+    let anchor_b = r2::Vector::new(desc.anchor_b.x, desc.anchor_b.y);
     match desc.kind {
         JointKind2D::Pin => r2::RevoluteJointBuilder::new()
             .contacts_enabled(desc.collide_connected)
@@ -86,8 +86,8 @@ pub fn build_joint_2d(desc: &JointDesc2D) -> r2::GenericJoint {
 }
 
 pub fn build_joint_3d(desc: &JointDesc3D) -> r3::GenericJoint {
-    let anchor_a = na3::Point3::new(desc.anchor_a.x, desc.anchor_a.y, desc.anchor_a.z);
-    let anchor_b = na3::Point3::new(desc.anchor_b.x, desc.anchor_b.y, desc.anchor_b.z);
+    let anchor_a = r3::Vector::new(desc.anchor_a.x, desc.anchor_a.y, desc.anchor_a.z);
+    let anchor_b = r3::Vector::new(desc.anchor_b.x, desc.anchor_b.y, desc.anchor_b.z);
     match desc.kind {
         JointKind3D::Ball => r3::SphericalJointBuilder::new()
             .contacts_enabled(desc.collide_connected)
@@ -96,9 +96,9 @@ pub fn build_joint_3d(desc: &JointDesc3D) -> r3::GenericJoint {
             .into(),
         JointKind3D::Hinge { axis } => {
             let axis = if axis.x * axis.x + axis.y * axis.y + axis.z * axis.z <= 0.000_001 {
-                na3::Vector3::y_axis()
+                r3::Vector::Y
             } else {
-                na3::Unit::new_normalize(na3::Vector3::new(axis.x, axis.y, axis.z))
+                r3::Vector::new(axis.x, axis.y, axis.z).normalize()
             };
             r3::RevoluteJointBuilder::new(axis)
                 .contacts_enabled(desc.collide_connected)

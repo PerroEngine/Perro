@@ -168,7 +168,7 @@ pub fn decode_pmesh_trimesh(bytes: &[u8], sx: f32, sy: f32, sz: f32) -> Option<T
         let x = f32::from_le_bytes(raw[off..off + 4].try_into().ok()?);
         let y = f32::from_le_bytes(raw[off + 4..off + 8].try_into().ok()?);
         let z = f32::from_le_bytes(raw[off + 8..off + 12].try_into().ok()?);
-        vertices.push(na3::Point3::new(x * sx, y * sy, z * sz));
+        vertices.push(r3::Vector::new(x * sx, y * sy, z * sz));
     }
 
     let mut triangles = Vec::new();
@@ -251,7 +251,7 @@ pub fn decode_render_pmesh_trimesh(bytes: &[u8], sx: f32, sy: f32, sz: f32) -> O
     let mut vertices = Vec::with_capacity(vertex_count);
     for i in 0..vertex_count {
         let off = i * stride;
-        vertices.push(na3::Point3::new(
+        vertices.push(r3::Vector::new(
             f32::from_le_bytes(raw[off..off + 4].try_into().ok()?) * sx,
             f32::from_le_bytes(raw[off + 4..off + 8].try_into().ok()?) * sy,
             f32::from_le_bytes(raw[off + 8..off + 12].try_into().ok()?) * sz,
@@ -330,11 +330,14 @@ pub fn load_trimesh_from_gltf_bytes(
 ) -> Option<TriMeshData> {
     // buffers only: import_slice decodes every embedded image to RGBA, which
     // this collision path never uses.
-    let gltf::Gltf { document: doc, blob } = gltf::Gltf::from_slice(bytes).ok()?;
+    let gltf::Gltf {
+        document: doc,
+        blob,
+    } = gltf::Gltf::from_slice(bytes).ok()?;
     let buffers = gltf::import_buffers(&doc, None, blob).ok()?;
     let mesh = doc.meshes().nth(mesh_index)?;
 
-    let mut vertices = Vec::<na3::Point3<f32>>::new();
+    let mut vertices = Vec::<r3::Vector>::new();
     let mut triangles = Vec::<[u32; 3]>::new();
 
     for primitive in mesh.primitives() {
@@ -352,7 +355,7 @@ pub fn load_trimesh_from_gltf_bytes(
             return None;
         };
         for p in &local_positions {
-            vertices.push(na3::Point3::new(p[0] * sx, p[1] * sy, p[2] * sz));
+            vertices.push(r3::Vector::new(p[0] * sx, p[1] * sy, p[2] * sz));
         }
 
         if let Some(indices_reader) = reader.read_indices() {

@@ -12,15 +12,15 @@ impl PhysicsSystem {
             return None;
         }
 
-        let dir = na2::Vector2::new(direction.x, direction.y);
-        let dir_len = dir.norm();
+        let dir = r2::Vector::new(direction.x, direction.y);
+        let dir_len = dir.length();
         if dir_len <= 0.000_001 || !dir_len.is_finite() {
             return None;
         }
         let dir = dir / dir_len;
 
         let world = self.world_2d.as_ref()?;
-        let ray = r2::Ray::new(na2::Point2::new(origin.x, origin.y), dir);
+        let ray = r2::Ray::new(r2::Vector::new(origin.x, origin.y), dir);
         let excluded = filter.exclude_nodes.as_slice();
         let layers = filter.layers.bits();
         let mask = filter.mask.bits();
@@ -35,14 +35,8 @@ impl PhysicsSystem {
                     .unwrap_or(true)
         };
         let query_filter = query_filter_2d(filter).predicate(&predicate);
-        let (collider, hit) = world.query_pipeline.cast_ray_and_get_normal(
-            &world.bodies,
-            &world.colliders,
-            &ray,
-            max_distance,
-            true,
-            query_filter,
-        )?;
+        let query_pipeline = query_pipeline_2d(world, query_filter);
+        let (collider, hit) = query_pipeline.cast_ray_and_get_normal(&ray, max_distance, true)?;
         let node = *world.collider_owners.get(&collider)?;
         let point = ray.point_at(hit.time_of_impact);
 
@@ -65,28 +59,22 @@ impl PhysicsSystem {
             return None;
         }
 
-        let dir = na3::Vector3::new(direction.x, direction.y, direction.z);
-        let dir_len = dir.norm();
+        let dir = r3::Vector::new(direction.x, direction.y, direction.z);
+        let dir_len = dir.length();
         if dir_len <= 0.000_001 || !dir_len.is_finite() {
             return None;
         }
         let dir = dir / dir_len;
 
         let world = self.world_3d.as_ref()?;
-        let ray = r3::Ray::new(na3::Point3::new(origin.x, origin.y, origin.z), dir);
+        let ray = r3::Ray::new(r3::Vector::new(origin.x, origin.y, origin.z), dir);
         let filter = if include_areas {
             r3::QueryFilter::new()
         } else {
             r3::QueryFilter::new().exclude_sensors()
         };
-        let (collider, hit) = world.query_pipeline.cast_ray_and_get_normal(
-            &world.bodies,
-            &world.colliders,
-            &ray,
-            max_distance,
-            true,
-            filter,
-        )?;
+        let query_pipeline = query_pipeline_3d(world, filter);
+        let (collider, hit) = query_pipeline.cast_ray_and_get_normal(&ray, max_distance, true)?;
         let node = *world.collider_owners.get(&collider)?;
         let point = ray.point_at(hit.time_of_impact);
 

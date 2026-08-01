@@ -18,7 +18,7 @@ use perro_structs::{BitMask, Transform2D, Transform3D, Vector2, Vector3};
 use crate::{
     BodyDesc2D, BodyDesc3D, BodyKind, JointDesc2D, JointDesc3D, JointKind2D, JointKind3D,
     PhysicsWorld2D, PhysicsWorld3D, ShapeDesc2D, ShapeDesc3D, ShapeKind2D, ShapeKind3D,
-    TriMeshData, na2, na3, r2, r3,
+    TriMeshData, r2, r3,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,3 +50,29 @@ pub use hashing::*;
 pub use joints::*;
 pub use shapes::*;
 pub use trimesh::*;
+
+pub fn query_pipeline_2d<'a>(
+    world: &'a PhysicsWorld2D,
+    filter: r2::QueryFilter<'a>,
+) -> r2::QueryPipeline<'a> {
+    r2::QueryPipeline {
+        dispatcher: world.narrow_phase.query_dispatcher(),
+        bvh: &world.query_bvh,
+        bodies: &world.bodies,
+        colliders: &world.colliders,
+        filter,
+    }
+}
+
+pub fn query_pipeline_3d<'a>(
+    world: &'a PhysicsWorld3D,
+    filter: r3::QueryFilter<'a>,
+) -> r3::QueryPipeline<'a> {
+    r3::QueryPipeline {
+        dispatcher: world.narrow_phase.query_dispatcher(),
+        bvh: &world.query_bvh,
+        bodies: &world.bodies,
+        colliders: &world.colliders,
+        filter,
+    }
+}
