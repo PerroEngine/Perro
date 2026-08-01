@@ -1220,6 +1220,17 @@ impl Gpu3D {
                         draw.lod,
                     ) as u32,
                 });
+                // A mesh with no blend-shape targets makes every per-instance
+                // meta row byte-identical (weight_count 0, same shape range),
+                // and the multimesh shader early-outs on weight_count == 0, so
+                // one shared row backs the whole draw instead of 32B/instance.
+                let shared_blend_meta_id = (mesh_asset.blend_shape_target_count == 0
+                    && !dense.instances.is_empty())
+                .then(|| {
+                    let id = self.staged_multimesh_blend_meta.len() as u32;
+                    self.stage_multimesh_blend_shape_instance(mesh_asset, &[]);
+                    id
+                });
                 for entry in surface_entries.iter() {
                     let material: &Material3D = &entry.material;
                     self.ensure_standard_material_texture_slots(
@@ -1306,8 +1317,7 @@ impl Gpu3D {
                     // Item 3: reuse packed geometry lanes when this exact pose Arc
                     // was packed on a prior build. Only quaternion pack + lane copy
                     // are cached; draw_id/blend_meta_id are build-order specific
-                    // and stay fresh, and blend metadata is still staged per
-                    // instance below.
+                    // and stay fresh, and blend metadata is still staged below.
                     let pose_key = Arc::as_ptr(&dense.instances) as *const () as usize;
                     self.multimesh_pose_pack_cache_seen.insert(pose_key);
                     let cached_geom = self
@@ -1321,15 +1331,21 @@ impl Gpu3D {
                         })
                         .map(|(_, packed)| packed.clone());
                     for (index, pose) in dense.instances.iter().enumerate() {
-                        let weights = if pose.has_blend_shape_weight_override {
-                            pose.blend_shape_weights.as_ref()
-                        } else {
-                            draw.blend_shape_weights.as_ref()
-                        };
                         // Tail-local id / weight start; both are rebased onto
                         // the rigid staging lengths once the loop is done.
-                        let blend_meta_id = self.staged_multimesh_blend_meta.len() as u32;
-                        self.stage_multimesh_blend_shape_instance(mesh_asset, weights);
+                        let blend_meta_id = match shared_blend_meta_id {
+                            Some(id) => id,
+                            None => {
+                                let weights = if pose.has_blend_shape_weight_override {
+                                    pose.blend_shape_weights.as_ref()
+                                } else {
+                                    draw.blend_shape_weights.as_ref()
+                                };
+                                let id = self.staged_multimesh_blend_meta.len() as u32;
+                                self.stage_multimesh_blend_shape_instance(mesh_asset, weights);
+                                id
+                            }
+                        };
                         let (position, rotation, scale) = match &cached_geom {
                             Some(geom) => {
                                 let g = geom[index];
