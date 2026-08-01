@@ -101,10 +101,12 @@ pub(super) fn upload_or_grow_buffer(
     }
     let capacity = required.next_power_of_two();
     *capacity_bytes = capacity;
+    // COPY_SRC so the GC tick can shrink the buffer with a content-preserving
+    // GPU->GPU prefix copy (see `gpu_shrink`).
     let buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
         size: capacity,
-        usage: usage | wgpu::BufferUsages::COPY_DST,
+        usage: usage | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
         mapped_at_creation: false,
     });
     queue.write_buffer(&buffer, 0, bytes);

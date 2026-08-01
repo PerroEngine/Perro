@@ -59,6 +59,10 @@ pub(super) struct SsaoPass {
     sample_pipeline: wgpu::RenderPipeline,
     blur_pipeline: Option<wgpu::RenderPipeline>,
     settings: SsaoTargetSettings,
+    // Last uniform pushed. Every field is view/quality state - nothing here
+    // carries frame time - so a static camera re-sends identical bytes each
+    // frame. `encode` runs behind `&self`, hence the `Cell`.
+    last_uniform: std::cell::Cell<Option<SsaoUniform>>,
 }
 
 impl SsaoPass {
@@ -137,6 +141,7 @@ impl SsaoPass {
             sample_pipeline,
             blur_pipeline,
             settings,
+            last_uniform: std::cell::Cell::new(None),
         }
     }
 
@@ -188,7 +193,15 @@ impl SsaoPass {
         encoder: &mut wgpu::CommandEncoder,
         uniform: SsaoUniform,
     ) {
-        queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&uniform));
+        let bytes = bytemuck::bytes_of(&uniform);
+        let unchanged = self
+            .last_uniform
+            .get()
+            .is_some_and(|last| bytemuck::bytes_of(&last) == bytes);
+        if !unchanged {
+            self.last_uniform.set(Some(uniform));
+            queue.write_buffer(&self.uniform, 0, bytes);
+        }
         draw_fullscreen(
             encoder,
             "perro_ssao_sample",

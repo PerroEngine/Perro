@@ -467,6 +467,257 @@ mod tests {
         assert_eq!(body_samples[0].body, submitted_body);
         assert_eq!(body_samples[0].height, 4.0);
     }
+
+    // --- coastline upload gating -------------------------------------------
+
+    fn idle_coastline_water_2d() -> Water2DState {
+        let mut water = test_water_2d();
+        water.resolution = [256, 256];
+        water.impacts = Arc::from([]);
+        water.coastline_shapes = Arc::from([WaterCoastlineShape2D::Circle {
+            center: [0.0, 0.0],
+            radius: 4.0,
+        }]);
+        water
+    }
+
+    #[test]
+    fn idle_coastline_raster_skips_repeat_work_2d() {
+        let node = NodeID::from_parts(7, 0);
+        let mut cache: HashMap<NodeID, CachedCoastline> = HashMap::new();
+        let water = idle_coastline_water_2d();
+        let cells = water_cell_count([256, 256]);
+        let mut out = vec![[0.0f32; 4]; cells];
+
+        assert!(raster_coastline_2d(
+            &mut out,
+            [256, 256],
+            &water,
+            node,
+            &mut cache,
+            (0, cells)
+        ));
+        let first = out.clone();
+        // Same static signature, still no impacts -> no blend loop, no upload.
+        for _ in 0..8 {
+            assert!(!raster_coastline_2d(
+                &mut out,
+                [256, 256],
+                &water,
+                node,
+                &mut cache,
+                (0, cells)
+            ));
+        }
+        assert_eq!(out, first);
+
+        // A new impact re-opens the gate and the wake lands in the cells.
+        let mut splashed = water.clone();
+        splashed.impacts = Arc::from([perro_render_bridge::WaterImpact2D {
+            position: [0.0, 0.0],
+            velocity: [1.0, 0.0],
+            strength: 2.0,
+            radius: 6.0,
+            cavitation: 0.5,
+        }]);
+        assert!(raster_coastline_2d(
+            &mut out,
+            [256, 256],
+            &splashed,
+            node,
+            &mut cache,
+            (0, cells)
+        ));
+        assert_ne!(out, first);
+        // Dropping the impact must write once more to clear the wake, then gate.
+        assert!(raster_coastline_2d(
+            &mut out,
+            [256, 256],
+            &water,
+            node,
+            &mut cache,
+            (0, cells)
+        ));
+        assert_eq!(out, first);
+        assert!(!raster_coastline_2d(
+            &mut out,
+            [256, 256],
+            &water,
+            node,
+            &mut cache,
+            (0, cells)
+        ));
+        // A slot move (offsets shifted by another water resizing) forces a write.
+        assert!(raster_coastline_2d(
+            &mut out,
+            [256, 256],
+            &water,
+            node,
+            &mut cache,
+            (cells, cells)
+        ));
+    }
+
+    #[test]
+    fn idle_coastline_raster_skips_repeat_work_3d() {
+        let node = NodeID::from_parts(8, 0);
+        let mut cache: HashMap<NodeID, CachedCoastline> = HashMap::new();
+        let mut water = test_water_3d();
+        water.resolution = [128, 128];
+        water.impacts = Arc::from([]);
+        water.coastline_shapes = Arc::from([WaterCoastlineShape3D::Sphere {
+            center: [0.0, 0.0, 0.0],
+            radius: 4.0,
+        }]);
+        let cells = water_cell_count([128, 128]);
+        let mut out = vec![[0.0f32; 4]; cells];
+
+        assert!(raster_coastline_3d(
+            &mut out,
+            [128, 128],
+            &water,
+            node,
+            &mut cache,
+            (0, cells)
+        ));
+        for _ in 0..4 {
+            assert!(!raster_coastline_3d(
+                &mut out,
+                [128, 128],
+                &water,
+                node,
+                &mut cache,
+                (0, cells)
+            ));
+        }
+    }
+
+    #[test]
+    fn impacts_only_water_gates_when_idle() {
+        // No coastline shapes: the impacts-only raster path must gate too.
+        let node = NodeID::from_parts(9, 0);
+        let mut cache: HashMap<NodeID, CachedCoastline> = HashMap::new();
+        let mut water = test_water_2d();
+        water.resolution = [64, 64];
+        water.impacts = Arc::from([]);
+        let cells = water_cell_count([64, 64]);
+        let mut out = vec![[1.0f32; 4]; cells];
+
+        assert!(raster_coastline_2d(
+            &mut out,
+            [64, 64],
+            &water,
+            node,
+            &mut cache,
+            (0, cells)
+        ));
+        assert_eq!(out, vec![[0.0f32; 4]; cells]);
+        assert!(!raster_coastline_2d(
+            &mut out,
+            [64, 64],
+            &water,
+            node,
+            &mut cache,
+            (0, cells)
+        ));
+    }
+
+    async fn water_test_device() -> Option<(wgpu::Device, wgpu::Queue)> {
+        let instance = wgpu::Instance::default();
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::LowPower,
+                compatible_surface: None,
+                force_fallback_adapter: false,
+                apply_limit_buckets: false,
+            })
+            .await
+            .ok()?;
+        adapter
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("perro_water_gate_test_device"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                experimental_features: wgpu::ExperimentalFeatures::disabled(),
+                memory_hints: wgpu::MemoryHints::Performance,
+                trace: wgpu::Trace::default(),
+            })
+            .await
+            .ok()
+    }
+
+    fn camera_uniform_bgl(device: &wgpu::Device, label: &str) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some(label),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT | wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        })
+    }
+
+    #[test]
+    fn idle_water_prepare_stops_uploading_coastline_cells() {
+        let Some((device, queue)) = pollster::block_on(water_test_device()) else {
+            // No adapter in this environment; the CPU gate tests still cover it.
+            return;
+        };
+        let camera_2d_bgl = camera_uniform_bgl(&device, "perro_water_test_camera2d");
+        let camera_3d_bgl = camera_uniform_bgl(&device, "perro_water_test_camera3d");
+        let depth = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("perro_water_test_depth"),
+            size: wgpu::Extent3d {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Depth32Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let depth_view = depth.create_view(&wgpu::TextureViewDescriptor::default());
+        let mut water_gpu = GpuWater::new(
+            &device,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            1,
+            &camera_2d_bgl,
+            &camera_3d_bgl,
+            &depth_view,
+            4,
+            4,
+        );
+
+        let waters = [(NodeID::from_parts(3, 0), idle_coastline_water_2d())];
+        let ctx = WaterPrepareContext {
+            camera_2d_position: [0.0, 0.0],
+            camera_3d_position: [0.0, 0.0, 0.0],
+            camera_3d_frustum_planes: [[0.0, 0.0, 0.0, 1.0]; 6],
+            sky_color: [0.0, 0.0, 0.0],
+            time_seconds: 0.0,
+            delta_seconds: 1.0 / 60.0,
+        };
+        water_gpu.prepare(&device, &queue, &waters, &[], ctx);
+        let after_first = water_gpu.coastline_upload_bytes();
+        let cells = water_cell_count([256, 256]) as u64;
+        assert_eq!(after_first, cells * 16);
+
+        for frame in 1..=10u32 {
+            let mut ctx = ctx;
+            ctx.time_seconds = frame as f32 / 60.0;
+            water_gpu.prepare(&device, &queue, &waters, &[], ctx);
+        }
+        // Idle 256x256 water: 10 frames of coastline uploads elided entirely.
+        assert_eq!(water_gpu.coastline_upload_bytes(), after_first);
+    }
 }
 
 #[cfg(test)]

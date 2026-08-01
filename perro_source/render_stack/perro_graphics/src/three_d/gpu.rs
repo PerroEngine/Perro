@@ -829,10 +829,20 @@ struct Gpu3DShrink {
     // One tracker for the frustum-cull item triple (static + dynamic +
     // indirect); ensure_frustum_cull_capacity grows them in lockstep.
     frustum_cull_items: ShrinkTracker,
+    multimesh_shadow_identity: ShrinkTracker,
     // CPU-side staging vec trackers (shrink_to instead of buffer realloc).
     staged_instance_transforms_vec: ShrinkTracker,
     staged_multimesh_instances_vec: ShrinkTracker,
     staged_multimesh_draw_params_vec: ShrinkTracker,
+    staged_rigid_instance_meta_vec: ShrinkTracker,
+    staged_skinned_instance_meta_vec: ShrinkTracker,
+    staged_blend_shape_weights_vec: ShrinkTracker,
+    staged_blend_shape_meta_vec: ShrinkTracker,
+    staged_skeletons_vec: ShrinkTracker,
+    indirect_staging_vec: ShrinkTracker,
+    frustum_cull_static_staging_vec: ShrinkTracker,
+    frustum_cull_dynamic_staging_vec: ShrinkTracker,
+    last_draw_instance_spans_vec: ShrinkTracker,
     compact_instance_owner_vec: ShrinkTracker,
     compact_dst_transforms_vec: ShrinkTracker,
     compact_dst_rigid_meta_vec: ShrinkTracker,
@@ -886,6 +896,11 @@ pub struct Gpu3D {
     // multimesh instance count; never touched by the GPU cull compute pass.
     multimesh_shadow_identity_buffer: wgpu::Buffer,
     multimesh_shadow_identity_capacity: usize,
+    // Identity rows already primed in `multimesh_shadow_identity_buffer`.
+    // Nothing else writes that buffer and `visible_indices[i] == i` is
+    // position-independent, so a primed prefix stays valid forever; only the
+    // tail past this mark ever needs an upload.
+    multimesh_shadow_identity_uploaded_len: usize,
     shadow_buffer: wgpu::Buffer,
     shadow_bind_group: wgpu::BindGroup,
     // Shadow atlases start as 1x1 single-layer dummies and grow lazily
@@ -1178,6 +1193,31 @@ pub struct Gpu3D {
     last_frustum_params: Option<FrustumCullParamsGpu>,
     last_hiz_params: Option<HizCullParamsGpu>,
     last_prepare_step_timing: Prepare3DStepTiming,
+    // Per-prepare upload accounting (reset at the top of `prepare`). Every
+    // gated staging upload notes its byte count here, so the skip gates below
+    // are directly observable from tests / debug overlays.
+    last_prepare_upload_stats: FrameUploadStats,
+    // (len, hash) of the last-uploaded rigid-side staging vecs. Skinned/blend
+    // animation changes the draw list every frame, so those scenes take the
+    // full-rebuild path continuously and restage byte-identical transforms /
+    // metas / cull inputs around the one lane that actually moved. Hashing the
+    // staged bytes (what a `write_buffer` would send) and comparing against the
+    // last upload skips the redundant traffic without a CPU mirror. Reset to
+    // `None` whenever the matching buffer is recreated (capacity grow/shrink =
+    // undefined contents) or a partial-span write desyncs the whole-vec hash.
+    last_uploaded_instance_transforms_hash: Option<(usize, u64)>,
+    last_uploaded_rigid_instance_meta_hash: Option<(usize, u64)>,
+    last_uploaded_skinned_instance_meta_hash: Option<(usize, u64)>,
+    last_uploaded_blend_shape_weights_hash: Option<(usize, u64)>,
+    last_uploaded_blend_shape_meta_hash: Option<(usize, u64)>,
+    last_uploaded_skeletons_hash: Option<(usize, u64)>,
+    last_uploaded_frustum_cull_static_hash: Option<(usize, u64)>,
+    last_uploaded_frustum_cull_dynamic_hash: Option<(usize, u64)>,
+    // True when this build staged at least one instance that actually resolves
+    // a bone palette. Only the skinned pipelines sample `skinned_instances`, so
+    // a rigid-only scene can skip that upload entirely: no shader reads the
+    // rows, and the parallel rigid meta lane still owns every instance index.
+    staged_has_skinned: bool,
     draw_batches: Vec<DrawBatch>,
     opaque_batch_indices: Vec<usize>,
     alpha_batch_indices: Vec<usize>,
@@ -1403,6 +1443,13 @@ pub struct Gpu3D {
     debug_edge_instances_scratch: Vec<BuiltInstanceParts>,
     camera_bind_group_generation: u32,
     multimesh_bind_group_generation: u32,
+    // GPU memory reclamation (see `reclaim_memory_tick` in
+    // gpu/buffers/mesh.rs). Layer high-water trackers for the two grow-only
+    // texture arrays, plus the deferred mesh-arena compaction request a GC tick
+    // raises and the next prepare consumes.
+    shadow_layer_shrink: shadows::ShadowLayerShrink,
+    decal_layer_shrink: shadows::LayerShrinkTracker,
+    mesh_compact_requested: bool,
     perf_counters: RenderPerfCounters,
 }
 
@@ -1421,6 +1468,15 @@ pub struct Prepare3D<'a> {
     pub static_texture_lookup: Option<StaticTextureLookup>,
     pub static_mesh_lookup: Option<StaticMeshLookup>,
     pub static_shader_lookup: Option<StaticShaderLookup>,
+}
+
+/// Per-prepare `queue.write_buffer` accounting for the 3D staging uploads that
+/// carry a skip-identical gate. Cheap enough to keep always on (two adds per
+/// upload); read back with [`Gpu3D::prepare_upload_stats`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FrameUploadStats {
+    pub write_buffer_calls: u32,
+    pub write_buffer_bytes: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

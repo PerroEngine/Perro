@@ -1,40 +1,92 @@
 use super::*;
 
+/// Static (shape/grid/param) signature for a 2D water coastline field. Covers
+/// the empty-shape case too so the impacts-only path can be gated the same way.
+fn coastline_static_signature_2d(width: usize, height: usize, water: &Water2DState) -> u64 {
+    let mut hasher = coastline_hasher();
+    width.hash(&mut hasher);
+    height.hash(&mut hasher);
+    water.size[0].to_bits().hash(&mut hasher);
+    water.size[1].to_bits().hash(&mut hasher);
+    water.coastline_foam_width.max(0.001).to_bits().hash(&mut hasher);
+    water
+        .coastline_cutoff_softness
+        .max(0.001)
+        .to_bits()
+        .hash(&mut hasher);
+    water.coastline_shapes.len().hash(&mut hasher);
+    for shape in water.coastline_shapes.iter() {
+        hash_coastline_shape_2d(shape, &mut hasher);
+    }
+    hasher.finish()
+}
+
+/// Full content signature: static field + the frame-varying impacts wake.
+/// Only the impact fields the rasterizers actually read are hashed (position,
+/// strength, radius, cavitation) - velocity never reaches the coastline cells.
+/// Keep this in sync if the wake math starts reading more.
+fn coastline_content_signature(
+    static_signature: u64,
+    impacts: impl ExactSizeIterator<Item = ([f32; 3], f32, f32, f32)>,
+) -> u64 {
+    let mut hasher = coastline_hasher();
+    static_signature.hash(&mut hasher);
+    impacts.len().hash(&mut hasher);
+    for (position, strength, radius, cavitation) in impacts {
+        hash_f32_slice(&position, &mut hasher);
+        strength.to_bits().hash(&mut hasher);
+        radius.to_bits().hash(&mut hasher);
+        cavitation.to_bits().hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
+/// Raster one water's coastline cells into its slot of the shared scratch.
+///
+/// Returns `true` when the slot was (re)written. A `false` return means the
+/// cached content signature and slot both match the last write, so the scratch
+/// (and therefore the GPU buffer, which the shaders only ever read) already
+/// holds the right values and the caller can skip the upload.
 pub(super) fn raster_coastline_2d(
     out: &mut [[f32; 4]],
     resolution: [u32; 2],
     water: &Water2DState,
     node: NodeID,
     cache: &mut HashMap<NodeID, CachedCoastline>,
-) {
+    slot: (usize, usize),
+) -> bool {
     let width = resolution[0].clamp(1, 256) as usize;
     let height = resolution[1].clamp(1, 256) as usize;
+    let signature = coastline_static_signature_2d(width, height, water);
+    let content = coastline_content_signature(
+        signature,
+        water.impacts.iter().map(|impact| {
+            (
+                [impact.position[0], impact.position[1], 0.0],
+                impact.strength,
+                impact.radius,
+                impact.cavitation,
+            )
+        }),
+    );
+    let entry = cache.entry(node).or_insert_with(CachedCoastline::new);
+    if entry.written == Some((content, slot)) {
+        return false;
+    }
+    entry.written = Some((content, slot));
+
     if water.coastline_shapes.is_empty() {
-        cache.remove(&node);
+        entry.signature = signature;
+        if !entry.base.is_empty() {
+            entry.base = Vec::new();
+        }
         raster_impacts_2d(out, width, height, water);
-        return;
+        return true;
     }
     let foam_width = water.coastline_foam_width.max(0.001);
     let softness = water.coastline_cutoff_softness.max(0.001);
 
-    let mut hasher = coastline_hasher();
-    width.hash(&mut hasher);
-    height.hash(&mut hasher);
-    water.size[0].to_bits().hash(&mut hasher);
-    water.size[1].to_bits().hash(&mut hasher);
-    foam_width.to_bits().hash(&mut hasher);
-    softness.to_bits().hash(&mut hasher);
-    water.coastline_shapes.len().hash(&mut hasher);
-    for shape in water.coastline_shapes.iter() {
-        hash_coastline_shape_2d(shape, &mut hasher);
-    }
-    let signature = hasher.finish();
-
     let cell_count = width * height;
-    let entry = cache.entry(node).or_insert_with(|| CachedCoastline {
-        signature,
-        base: Vec::new(),
-    });
     // Rebuild the static field only when the shapes/params/grid changed.
     if entry.signature != signature || entry.base.len() != cell_count {
         entry.signature = signature;
@@ -85,6 +137,7 @@ pub(super) fn raster_coastline_2d(
             out[i] = [solid, edge_foam, wake, spill_energy.max(wake.abs())];
         }
     }
+    true
 }
 
 pub(super) fn coastline_hasher() -> ahash::AHasher {
@@ -274,41 +327,67 @@ pub(super) fn distance_segment(p: [f32; 2], a: [f32; 2], b: [f32; 2]) -> f32 {
     (dx * dx + dy * dy).sqrt()
 }
 
+/// Static (shape/grid/param) signature for a 3D water coastline field.
+fn coastline_static_signature_3d(width: usize, height: usize, water: &Water3DState) -> u64 {
+    let mut hasher = coastline_hasher();
+    width.hash(&mut hasher);
+    height.hash(&mut hasher);
+    water.size[0].to_bits().hash(&mut hasher);
+    water.size[1].to_bits().hash(&mut hasher);
+    water.coastline_foam_width.max(0.001).to_bits().hash(&mut hasher);
+    water
+        .coastline_cutoff_softness
+        .max(0.001)
+        .to_bits()
+        .hash(&mut hasher);
+    water.coastline_shapes.len().hash(&mut hasher);
+    for shape in water.coastline_shapes.iter() {
+        hash_coastline_shape_3d(shape, &mut hasher);
+    }
+    hasher.finish()
+}
+
+/// 3D analog of [`raster_coastline_2d`]; same skip contract.
 pub(super) fn raster_coastline_3d(
     out: &mut [[f32; 4]],
     resolution: [u32; 2],
     water: &Water3DState,
     node: NodeID,
     cache: &mut HashMap<NodeID, CachedCoastline>,
-) {
+    slot: (usize, usize),
+) -> bool {
     let width = resolution[0].clamp(1, 256) as usize;
     let height = resolution[1].clamp(1, 256) as usize;
+    let signature = coastline_static_signature_3d(width, height, water);
+    let content = coastline_content_signature(
+        signature,
+        water.impacts.iter().map(|impact| {
+            (
+                impact.position,
+                impact.strength,
+                impact.radius,
+                impact.cavitation,
+            )
+        }),
+    );
+    let entry = cache.entry(node).or_insert_with(CachedCoastline::new);
+    if entry.written == Some((content, slot)) {
+        return false;
+    }
+    entry.written = Some((content, slot));
+
     if water.coastline_shapes.is_empty() {
-        cache.remove(&node);
+        entry.signature = signature;
+        if !entry.base.is_empty() {
+            entry.base = Vec::new();
+        }
         raster_impacts_3d(out, width, height, water);
-        return;
+        return true;
     }
     let foam_width = water.coastline_foam_width.max(0.001);
     let softness = water.coastline_cutoff_softness.max(0.001);
 
-    let mut hasher = coastline_hasher();
-    width.hash(&mut hasher);
-    height.hash(&mut hasher);
-    water.size[0].to_bits().hash(&mut hasher);
-    water.size[1].to_bits().hash(&mut hasher);
-    foam_width.to_bits().hash(&mut hasher);
-    softness.to_bits().hash(&mut hasher);
-    water.coastline_shapes.len().hash(&mut hasher);
-    for shape in water.coastline_shapes.iter() {
-        hash_coastline_shape_3d(shape, &mut hasher);
-    }
-    let signature = hasher.finish();
-
     let cell_count = width * height;
-    let entry = cache.entry(node).or_insert_with(|| CachedCoastline {
-        signature,
-        base: Vec::new(),
-    });
     // Rebuild the static field only when the shapes/params/grid changed.
     if entry.signature != signature || entry.base.len() != cell_count {
         entry.signature = signature;
@@ -359,6 +438,7 @@ pub(super) fn raster_coastline_3d(
             out[i] = [solid, edge_foam, wake, spill_energy.max(wake.abs())];
         }
     }
+    true
 }
 
 pub(super) fn coastline_fill(signed: f32, foam_width: f32, softness: f32) -> (f32, f32, f32) {

@@ -1,3 +1,4 @@
+use core::sync::atomic::{AtomicU64, Ordering};
 use perro_structs::TextureFilterMode;
 
 pub(crate) struct RgbaMipLevel {
@@ -229,6 +230,88 @@ pub(crate) fn write_rgba_texture_streaming(
     });
 }
 
+std::thread_local! {
+    /// Active stream fan-out dedupe scope, see [`StreamWriteDedupe`].
+    static STREAM_WRITE_DEDUPE: std::cell::RefCell<Option<StreamDedupeState>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[derive(Default)]
+struct StreamDedupeState {
+    // Handles already written at base level during this scope. Tiny (one entry
+    // per distinct shared texture reachable from the consumer caches), so a
+    // linear scan beats hashing.
+    seen: Vec<wgpu::Texture>,
+    written: u32,
+    skipped: u32,
+}
+
+/// RAII dedupe scope for the camera-stream / webcam texture fan-out.
+///
+/// A single decoded RGBA frame is pushed at every consumer cache (2D, late
+/// overlay, per-stream 2D, UI, 3D material by id and by source, per-stream 3D
+/// ×2). Those caches routinely resolve to the *same* `SharedGpuTexture`, so the
+/// naive fan-out uploads the identical bytes up to eight times per frame. While
+/// this scope is alive, `write_texture_base_level` performs at most one upload
+/// per distinct `wgpu::Texture`; the consumers still run their own bookkeeping
+/// (residency checks, UI supersample invalidation) and still report success, so
+/// no caller's residency assumption changes.
+pub(crate) struct StreamWriteDedupe {
+    _not_send: core::marker::PhantomData<*const ()>,
+}
+
+impl StreamWriteDedupe {
+    pub(crate) fn begin() -> Self {
+        STREAM_WRITE_DEDUPE.with(|slot| {
+            *slot.borrow_mut() = Some(StreamDedupeState::default());
+        });
+        Self {
+            _not_send: core::marker::PhantomData,
+        }
+    }
+}
+
+impl Drop for StreamWriteDedupe {
+    fn drop(&mut self) {
+        STREAM_WRITE_DEDUPE.with(|slot| {
+            let Some(state) = slot.borrow_mut().take() else {
+                return;
+            };
+            STREAM_WRITES.fetch_add(state.written as u64, Ordering::Relaxed);
+            STREAM_WRITES_ELIDED.fetch_add(state.skipped as u64, Ordering::Relaxed);
+        });
+    }
+}
+
+static STREAM_WRITES: AtomicU64 = AtomicU64::new(0);
+static STREAM_WRITES_ELIDED: AtomicU64 = AtomicU64::new(0);
+
+/// `(distinct base-level uploads issued, redundant uploads elided)` totalled
+/// over every completed [`StreamWriteDedupe`] scope.
+pub(crate) fn stream_write_totals() -> (u64, u64) {
+    (
+        STREAM_WRITES.load(Ordering::Relaxed),
+        STREAM_WRITES_ELIDED.load(Ordering::Relaxed),
+    )
+}
+
+/// Returns false when an active dedupe scope already uploaded this texture.
+fn stream_dedupe_admit(texture: &wgpu::Texture) -> bool {
+    STREAM_WRITE_DEDUPE.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let Some(state) = slot.as_mut() else {
+            return true;
+        };
+        if state.seen.iter().any(|seen| seen == texture) {
+            state.skipped = state.skipped.saturating_add(1);
+            return false;
+        }
+        state.seen.push(texture.clone());
+        state.written = state.written.saturating_add(1);
+        true
+    })
+}
+
 /// Upload rgba into mip level 0 of an existing texture (no mip regen). Used by
 /// the stream-texture in-place path so per-frame webcam/video writes reuse the
 /// resident GPU texture + bind group instead of recreating them.
@@ -239,6 +322,9 @@ pub(crate) fn write_texture_base_level(
     height: u32,
     rgba: &[u8],
 ) {
+    if !stream_dedupe_admit(texture) {
+        return;
+    }
     queue.write_texture(
         wgpu::TexelCopyTextureInfo {
             texture,
@@ -347,5 +433,79 @@ mod tests {
         let levels = build_rgba_levels_for_filter(&rgba, 4, 4, TextureFilterMode::Linear);
         assert_eq!(levels.len(), 1);
         assert_eq!((levels[0].width, levels[0].height), (4, 4));
+    }
+
+    async fn dedupe_test_device() -> Option<(wgpu::Device, wgpu::Queue)> {
+        let instance = wgpu::Instance::default();
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::LowPower,
+                compatible_surface: None,
+                force_fallback_adapter: false,
+                apply_limit_buckets: false,
+            })
+            .await
+            .ok()?;
+        adapter
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("perro_stream_dedupe_test_device"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                experimental_features: wgpu::ExperimentalFeatures::disabled(),
+                memory_hints: wgpu::MemoryHints::Performance,
+                trace: wgpu::Trace::default(),
+            })
+            .await
+            .ok()
+    }
+
+    fn dedupe_test_texture(device: &wgpu::Device, label: &str) -> wgpu::Texture {
+        device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(label),
+            size: wgpu::Extent3d {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        })
+    }
+
+    #[test]
+    fn stream_write_scope_uploads_once_per_distinct_texture() {
+        let Some((device, queue)) = pollster::block_on(dedupe_test_device()) else {
+            // No adapter available in this environment.
+            return;
+        };
+        let shared = dedupe_test_texture(&device, "perro_stream_dedupe_shared");
+        let other = dedupe_test_texture(&device, "perro_stream_dedupe_other");
+        let rgba = [255u8; 4 * 4 * 4];
+        let (base_writes, base_elided) = stream_write_totals();
+
+        {
+            let _scope = StreamWriteDedupe::begin();
+            // The camera-stream fan-out reaches the same SharedGpuTexture from
+            // up to eight consumer caches; only two distinct textures here.
+            for _ in 0..7 {
+                write_texture_base_level(&queue, &shared, 4, 4, &rgba);
+            }
+            write_texture_base_level(&queue, &other, 4, 4, &rgba);
+        }
+        let (writes, elided) = stream_write_totals();
+        assert_eq!(writes - base_writes, 2);
+        assert_eq!(elided - base_elided, 6);
+
+        // Outside a scope every call still uploads (mip/decal paths rely on it).
+        write_texture_base_level(&queue, &shared, 4, 4, &rgba);
+        write_texture_base_level(&queue, &shared, 4, 4, &rgba);
+        let (after, after_elided) = stream_write_totals();
+        assert_eq!(after, writes);
+        assert_eq!(after_elided, elided);
+        queue.submit(std::iter::empty());
     }
 }

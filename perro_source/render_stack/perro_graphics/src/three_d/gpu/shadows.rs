@@ -1,4 +1,74 @@
 use super::*;
+use crate::gpu_shrink::SHRINK_LOW_TICKS;
+
+/// High-water tracker for grow-only *layer* arrays (shadow atlases, decal
+/// texture array). Same policy as `crate::gpu_shrink::ShrinkTracker` -- shrink
+/// after `SHRINK_LOW_TICKS` consecutive low ticks -- but the target is the
+/// exact observed layer need instead of `used * 2`: these arrays re-render
+/// (shadows) or re-upload (decals) their contents after a shrink, so nothing is
+/// preserved and headroom would only waste memory.
+#[derive(Debug, Default, Clone, Copy)]
+pub(super) struct LayerShrinkTracker {
+    /// Peak need noted since the last GC tick.
+    peak: u32,
+    /// Most recent need; persists across ticks so an owner whose update is
+    /// skipped (state unchanged, contents still drawn) never shrinks below the
+    /// layers it last asked for.
+    last: u32,
+    low_ticks: u32,
+}
+
+impl LayerShrinkTracker {
+    #[inline]
+    pub(super) fn note_used(&mut self, used: u32) {
+        self.last = used;
+        if used > self.peak {
+            self.peak = used;
+        }
+    }
+
+    /// Periodic GC tick. `Some(target)` (always `< allocated`) once the
+    /// observed need stayed below `allocated` for `SHRINK_LOW_TICKS`
+    /// consecutive ticks.
+    pub(super) fn tick(&mut self, allocated: u32) -> Option<u32> {
+        let used = self.peak.max(self.last);
+        self.peak = self.last;
+        if used >= allocated {
+            self.low_ticks = 0;
+            return None;
+        }
+        self.low_ticks += 1;
+        if self.low_ticks < SHRINK_LOW_TICKS {
+            return None;
+        }
+        self.low_ticks = 0;
+        Some(used)
+    }
+}
+
+/// Per-atlas layer trackers for the three shadow arrays.
+#[derive(Debug, Default, Clone, Copy)]
+pub(super) struct ShadowLayerShrink {
+    pub(super) ray: LayerShrinkTracker,
+    pub(super) spot: LayerShrinkTracker,
+    pub(super) point: LayerShrinkTracker,
+}
+
+/// Recreate one shadow atlas at `layers`. `layers == 0` restores the 1x1
+/// single-layer placeholder the constructor allocates (empty layer-view vec, so
+/// every shadow render loop clamps back to zero).
+fn recreate_shadow_atlas(
+    device: &wgpu::Device,
+    label: &'static str,
+    size: u32,
+    layers: u32,
+) -> (wgpu::Texture, wgpu::TextureView, Vec<wgpu::TextureView>) {
+    if layers == 0 {
+        let (texture, view, _) = create_shadow_map_array_texture(device, label, 1, 1);
+        return (texture, view, Vec::new());
+    }
+    create_shadow_map_array_texture(device, label, size, layers)
+}
 
 const DEFAULT_SHADOW_STRENGTH: f32 = 0.82;
 const DEFAULT_SHADOW_DEPTH_BIAS: f32 = 0.00003;
@@ -74,6 +144,79 @@ impl Gpu3D {
         recreated
     }
 
+    /// GC-tick half of the lazy shadow atlases: once an atlas needs fewer
+    /// layers than it holds for `SHRINK_LOW_TICKS` consecutive ticks, recreate
+    /// it at the observed need (0 => back to the 1x1 placeholder). Worst case
+    /// this returns 64 + 64 + 96 MB per `Gpu3D` -- and every camera-stream
+    /// subview owns its own set.
+    ///
+    /// No content is preserved: a fresh atlas holds garbage depth, so every
+    /// layer is forced to re-render through `shadow_casters_dirty` (which also
+    /// defeats `update_shadow_state`'s input memo) plus a direct
+    /// `shadow_layer_valid` reset -- the same invalidation the grow path uses.
+    pub(super) fn shrink_shadow_atlases_tick(&mut self, device: &wgpu::Device) -> bool {
+        let mut shrunk = false;
+        if let Some(target) = self
+            .shadow_layer_shrink
+            .ray
+            .tick(self.ray_shadow_layers_allocated)
+        {
+            let (texture, view, layer_views) = recreate_shadow_atlas(
+                device,
+                "perro_ray_shadow_map",
+                self.shadow_map_size,
+                target,
+            );
+            self._shadow_map_texture = texture;
+            self.shadow_map_view = view;
+            self.shadow_layer_views = layer_views;
+            self.ray_shadow_layers_allocated = target;
+            shrunk = true;
+        }
+        if let Some(target) = self
+            .shadow_layer_shrink
+            .spot
+            .tick(self.spot_shadow_layers_allocated)
+        {
+            let (texture, view, layer_views) = recreate_shadow_atlas(
+                device,
+                "perro_spot_shadow_map",
+                self.shadow_spot_map_size,
+                target,
+            );
+            self._spot_shadow_map_texture = texture;
+            self.spot_shadow_map_view = view;
+            self.spot_shadow_layer_views = layer_views;
+            self.spot_shadow_layers_allocated = target;
+            shrunk = true;
+        }
+        if let Some(target) = self
+            .shadow_layer_shrink
+            .point
+            .tick(self.point_shadow_layers_allocated)
+        {
+            let (texture, view, layer_views) = recreate_shadow_atlas(
+                device,
+                "perro_point_shadow_map",
+                self.shadow_point_map_size,
+                target,
+            );
+            self._point_shadow_map_texture = texture;
+            self.point_shadow_map_view = view;
+            self.point_shadow_layer_views = layer_views;
+            self.point_shadow_layers_allocated = target;
+            shrunk = true;
+        }
+        if shrunk {
+            self.rebuild_shadow_bind_group(device);
+            self.shadow_casters_dirty = true;
+            for valid in &mut self.shadow_layer_valid {
+                *valid = false;
+            }
+        }
+        shrunk
+    }
+
     fn rebuild_shadow_bind_group(&mut self, device: &wgpu::Device) {
         self.shadow_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_shadow3d_bg"),
@@ -147,6 +290,11 @@ impl Gpu3D {
             self.ray_shadow_enabled = false;
             self.spot_shadow_count = 0;
             self.point_shadow_count = 0;
+            // Nothing needs an atlas: let the GC tick reclaim whatever a
+            // pre-disable frame allocated.
+            self.shadow_layer_shrink.ray.note_used(0);
+            self.shadow_layer_shrink.spot.note_used(0);
+            self.shadow_layer_shrink.point.note_used(0);
             return;
         }
         let mut setup = build_shadow_setup(ShadowSetupArgs {
@@ -173,6 +321,12 @@ impl Gpu3D {
         };
         let spot_layers = setup.spot_count as u32;
         let point_layers = setup.point_count.saturating_mul(POINT_SHADOW_FACE_COUNT) as u32;
+        // High-water for the GC-tick shrink pass. Noted here (not in the ensure
+        // helper) so a *drop* in demand is recorded too; frames that take the
+        // input memo above keep the tracker's last value.
+        self.shadow_layer_shrink.ray.note_used(ray_layers);
+        self.shadow_layer_shrink.spot.note_used(spot_layers);
+        self.shadow_layer_shrink.point.note_used(point_layers);
         if self.ensure_shadow_atlas_capacity(device, ray_layers, spot_layers, point_layers) {
             // Fresh atlas layers hold garbage depth: force every layer to
             // re-render this frame instead of trusting the per-layer cache.

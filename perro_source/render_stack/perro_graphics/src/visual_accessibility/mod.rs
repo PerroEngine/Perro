@@ -28,6 +28,8 @@ pub struct VisualAccessibilityProcessor {
     // view varies between frames (sampler + uniform buffer are stable), so we
     // rebuild solely when that view identity changes or on resize.
     cached_bind_group: Option<(usize, wgpu::BindGroup)>,
+    // Filter + strength are user settings, not frame state; push only on change.
+    last_uniform: Option<(u32, u32)>,
     // Frames without any consumer of the intermediate (no post chain, no
     // accessibility filter); the full-res target releases to 1x1 after enough.
     idle_frames: u32,
@@ -151,6 +153,7 @@ impl VisualAccessibilityProcessor {
             pipeline,
             uniform_buffer,
             cached_bind_group: None,
+            last_uniform: None,
             idle_frames: 0,
         }
     }
@@ -223,7 +226,11 @@ impl VisualAccessibilityProcessor {
             _pad2: 0,
             params0: [color_blind.strength.clamp(0.0, 1.0), 0.0, 0.0, 0.0],
         };
-        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniform));
+        let uniform_key = (uniform.mode, uniform.params0[0].to_bits());
+        if self.last_uniform != Some(uniform_key) {
+            self.last_uniform = Some(uniform_key);
+            queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniform));
+        }
 
         let input_view_id = input_view as *const _ as usize;
         if self

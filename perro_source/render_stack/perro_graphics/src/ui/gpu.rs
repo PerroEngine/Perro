@@ -1,5 +1,6 @@
 use crate::{
     backend::StaticTextureLookup,
+    gpu_shrink::{ShrinkTracker, shrink_buffer_preserving},
     resources::ResourceStore,
     shared_textures::{
         SharedGpuTexture, SharedTextureColorSpace, SharedTextureKey, SharedTextureStore,
@@ -33,6 +34,12 @@ const UI_SUPERSAMPLE_SCALE: u32 = 2;
 // so HDR headroom inside UI-embedded viewports does not survive it.
 const UI_SUPERSAMPLE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 const UI_HARFBUZZ_TEXTURE_ID: TextureId = TextureId::Managed(1);
+// Consecutive GC ticks with no UI pass encoded before the supersample target is
+// released; it recreates on demand (and the recreation forces a redraw).
+const UI_TARGET_IDLE_RELEASE_TICKS: u32 = 3;
+// Shrink floors for the mesh buffers: below these the GC leaves them alone.
+const UI_MIN_VERTEX_BYTES: usize = 8 * 1024;
+const UI_MIN_INDEX_BYTES: usize = 4 * 1024;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Zeroable, Pod)]
@@ -131,6 +138,30 @@ pub struct GpuUi {
     prepared_mesh_signature: Option<UiMeshSignature>,
     prepared_revision: u64,
     prepared_viewport: [u32; 2],
+    // Retained supersample raster. The target keeps the previous frame's UI
+    // pixels, so a frame whose UI did not change re-encodes only the cheap
+    // full-screen composite instead of re-rasterizing up to 4x swapchain
+    // pixels. `supersample_dirty` is the catch-all invalidation flag for
+    // content that mutates under a stable mesh signature (texture deltas,
+    // texture eviction, stream writes); `rasterized_*` pin the state the
+    // retained pixels were produced from.
+    supersample_dirty: bool,
+    rasterized_signature: Option<UiMeshSignature>,
+    rasterized_render_viewport: [u32; 2],
+    // Prepared meshes that sample per-frame-mutable inputs can never be
+    // retained: scene depth changes whenever the 3D pass runs, and webcam /
+    // camera-stream textures are rewritten in place under the same texture id.
+    prepared_uses_depth_test: bool,
+    prepared_uses_live_texture: bool,
+    // Ids bound to externally owned views (camera-stream outputs): the view
+    // stays put while its pixels are re-rendered every frame.
+    external_image_texture_ids: AHashSet<TextureID>,
+    shrink_vertices: ShrinkTracker,
+    shrink_indices: ShrinkTracker,
+    supersample_idle_ticks: u32,
+    used_since_shrink_tick: bool,
+    ui_supersample_redraws: u64,
+    ui_supersample_composites: u64,
     // Per-adapter render pixel budget (low-memory adapters cap at 1080p); the
     // supersample target obeys it instead of only the global frame cap.
     max_render_pixels: u64,
@@ -433,6 +464,18 @@ impl GpuUi {
             prepared_mesh_signature: None,
             prepared_revision: u64::MAX,
             prepared_viewport: [0, 0],
+            supersample_dirty: true,
+            rasterized_signature: None,
+            rasterized_render_viewport: [0, 0],
+            prepared_uses_depth_test: false,
+            prepared_uses_live_texture: false,
+            external_image_texture_ids: AHashSet::new(),
+            shrink_vertices: ShrinkTracker::default(),
+            shrink_indices: ShrinkTracker::default(),
+            supersample_idle_ticks: 0,
+            used_since_shrink_tick: false,
+            ui_supersample_redraws: 0,
+            ui_supersample_composites: 0,
             max_render_pixels: u64::MAX,
             perf_counters: UiPerfCounters::default(),
         }
@@ -481,6 +524,12 @@ impl GpuUi {
                 _pad: [0.0, 0.0],
             }),
         );
+        // Atlas pixels change under an unchanged mesh signature (a partial
+        // glyph delta reuses the same primitives), so any delta drops the
+        // retained raster.
+        if !textures_delta.set.is_empty() || !textures_delta.free.is_empty() {
+            self.supersample_dirty = true;
+        }
         for (texture_id, delta) in &textures_delta.set {
             if *texture_id == TextureId::default() {
                 self.apply_font_delta(device, queue, delta, texture_size);
@@ -518,6 +567,8 @@ impl GpuUi {
         self.vertices.reserve(mesh_totals.vertex_count);
         self.indices.reserve(mesh_totals.index_count);
         self.perf_counters = UiPerfCounters::default();
+        let mut uses_depth_test = false;
+        let mut uses_live_texture = false;
         for (primitive_index, primitive) in primitives.iter().enumerate() {
             let Primitive::Mesh(mesh) = &primitive.primitive else {
                 continue;
@@ -553,6 +604,8 @@ impl GpuUi {
                 .get(primitive_index)
                 .and_then(Option::as_deref)
                 .filter(|depths| depths.len() == mesh.vertices.len());
+            uses_depth_test |= depths.is_some();
+            uses_live_texture |= self.is_live_texture(mesh.texture_id);
             self.vertices
                 .extend(
                     mesh.vertices
@@ -580,8 +633,20 @@ impl GpuUi {
         self.perf_counters.draw_calls = self.meshes.len() as u32;
         self.upload_mesh_buffers(device, queue);
         self.prepared_mesh_signature = Some(mesh_signature);
+        self.prepared_uses_depth_test = uses_depth_test;
+        self.prepared_uses_live_texture = uses_live_texture;
         self.prepared_revision = revision;
         self.prepared_viewport = viewport;
+    }
+
+    /// True when the mesh samples a texture whose pixels are rewritten under a
+    /// stable id: webcam/video streams and camera-stream (subviewport) outputs.
+    fn is_live_texture(&self, texture_id: TextureId) -> bool {
+        let TextureId::User(raw) = texture_id else {
+            return false;
+        };
+        let key = TextureID::from_u64(raw);
+        self.stream_texture_ids.contains(&key) || self.external_image_texture_ids.contains(&key)
     }
 
     pub fn render_pass(
@@ -596,21 +661,20 @@ impl GpuUi {
         if self.meshes.is_empty() {
             return;
         }
+        if self.vertex_buffer.is_none() || self.index_buffer.is_none() {
+            return;
+        }
+        self.used_since_shrink_tick = true;
         let viewport = [viewport[0].max(1), viewport[1].max(1)];
         let render_viewport = supersampled_size(
             viewport,
             self.max_texture_dimension_2d,
             self.max_render_pixels,
         );
-        self.ensure_supersample_target(device, render_viewport);
-        let (Some(vertex_buffer), Some(index_buffer)) =
-            (self.vertex_buffer.as_ref(), self.index_buffer.as_ref())
-        else {
+        let target_created = self.ensure_supersample_target(device, render_viewport);
+        if self.supersample_target.is_none() {
             return;
-        };
-        let Some(target) = self.supersample_target.as_ref() else {
-            return;
-        };
+        }
         // rebuilt only when the bound view changes (incl None <-> Some); the
         // group was otherwise recreated every single frame.
         let scene_depth_generation = scene_depth.map_or(0, |(_, generation)| generation);
@@ -629,49 +693,86 @@ impl GpuUi {
                 }));
             self.scene_depth_bind_group_generation = scene_depth_generation;
         }
+        // The supersample target retains the previous frame's pixels, so the
+        // raster is re-encoded only when something it depends on moved:
+        //   - the target was just (re)created (its contents are undefined),
+        //   - the prepared mesh set changed (or was invalidated to `None`),
+        //   - the render viewport / supersample size changed,
+        //   - a texture delta, eviction, external rebind or stream write
+        //     landed (`supersample_dirty`),
+        //   - the prepared UI samples per-frame-mutable inputs: scene depth
+        //     (depth-tested Label3D-style meshes; the depth buffer is rewritten
+        //     every 3D frame at an unchanged view generation) or a
+        //     webcam/camera-stream texture rewritten under a stable id.
+        // Otherwise only the full-screen composite is encoded.
+        let needs_raster = target_created
+            || self.supersample_dirty
+            || self.prepared_mesh_signature.is_none()
+            || self.rasterized_signature != self.prepared_mesh_signature
+            || self.rasterized_render_viewport != render_viewport
+            || self.prepared_uses_depth_test
+            || self.prepared_uses_live_texture;
+        if needs_raster {
+            self.ui_supersample_redraws = self.ui_supersample_redraws.wrapping_add(1);
+            self.rasterized_signature = self.prepared_mesh_signature;
+            self.rasterized_render_viewport = render_viewport;
+            self.supersample_dirty = false;
+        }
+        self.ui_supersample_composites = self.ui_supersample_composites.wrapping_add(1);
+        let (Some(vertex_buffer), Some(index_buffer)) =
+            (self.vertex_buffer.as_ref(), self.index_buffer.as_ref())
+        else {
+            return;
+        };
+        let Some(target) = self.supersample_target.as_ref() else {
+            return;
+        };
         let Some(scene_depth_bind_group) = self.scene_depth_bind_group.as_ref() else {
             return;
         };
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("perro_ui_pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &target.view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                    store: wgpu::StoreOp::Store,
-                },
-                depth_slice: None,
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-        pass.set_bind_group(2, scene_depth_bind_group, &[]);
-        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-        pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        for mesh in &self.meshes {
-            if mesh.clip_rect[2] == 0 || mesh.clip_rect[3] == 0 {
-                continue;
+        if needs_raster {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("perro_ui_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &target.view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+            pass.set_bind_group(2, scene_depth_bind_group, &[]);
+            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            for mesh in &self.meshes {
+                if mesh.clip_rect[2] == 0 || mesh.clip_rect[3] == 0 {
+                    continue;
+                }
+                let Some(bind_group) = self.ui_texture_bind_group(mesh.texture_id) else {
+                    continue;
+                };
+                pass.set_bind_group(1, bind_group, &[]);
+                pass.set_scissor_rect(
+                    mesh.clip_rect[0],
+                    mesh.clip_rect[1],
+                    mesh.clip_rect[2].min(render_viewport[0]),
+                    mesh.clip_rect[3].min(render_viewport[1]),
+                );
+                let start = mesh.index_start;
+                pass.draw_indexed(start..start.saturating_add(mesh.index_count), 0, 0..1);
             }
-            let Some(bind_group) = self.ui_texture_bind_group(mesh.texture_id) else {
-                continue;
-            };
-            pass.set_bind_group(1, bind_group, &[]);
-            pass.set_scissor_rect(
-                mesh.clip_rect[0],
-                mesh.clip_rect[1],
-                mesh.clip_rect[2].min(render_viewport[0]),
-                mesh.clip_rect[3].min(render_viewport[1]),
-            );
-            let start = mesh.index_start;
-            pass.draw_indexed(start..start.saturating_add(mesh.index_count), 0, 0..1);
         }
-        drop(pass);
 
+        // Always composited: the swapchain image is fresh every frame, so the
+        // retained target only skips the raster, never the blend onto output.
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("perro_ui_composite_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -703,6 +804,96 @@ impl GpuUi {
         self.indices.clear();
         self.prepared_mesh_signature = None;
         self.prepared_revision = u64::MAX;
+        self.prepared_uses_depth_test = false;
+        self.prepared_uses_live_texture = false;
+        self.supersample_dirty = true;
+        // The buffers keep their high-water capacity; tell the GC the live
+        // content is now empty so it can decay them.
+        self.shrink_vertices.note_used(0);
+        self.shrink_indices.note_used(0);
+    }
+
+    /// Supersample rasters encoded since creation. A frame whose UI is
+    /// unchanged bumps only `ui_supersample_composites`.
+    pub fn ui_supersample_redraws(&self) -> u64 {
+        self.ui_supersample_redraws
+    }
+
+    /// UI composite passes encoded since creation (one per rendered frame).
+    pub fn ui_supersample_composites(&self) -> u64 {
+        self.ui_supersample_composites
+    }
+
+    pub fn supersample_target_allocated(&self) -> bool {
+        self.supersample_target.is_some()
+    }
+
+    pub fn mesh_buffer_capacity_bytes(&self) -> [u64; 2] {
+        [self.vertex_capacity_bytes, self.index_capacity_bytes]
+    }
+
+    pub fn mesh_mirror_capacity(&self) -> [usize; 2] {
+        [self.vertices.capacity(), self.indices.capacity()]
+    }
+
+    /// Periodic GC tick: decay the mesh buffers (GPU + CPU mirrors) toward
+    /// current usage, and release the supersample target once the UI pass has
+    /// not been encoded for `UI_TARGET_IDLE_RELEASE_TICKS` ticks. The target
+    /// recreates on demand and its recreation forces a redraw.
+    pub fn shrink_tick(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        if let Some(new_capacity) = self
+            .shrink_vertices
+            .tick(self.vertex_capacity_bytes as usize, UI_MIN_VERTEX_BYTES)
+        {
+            let new_capacity = align_buffer_bytes(new_capacity);
+            if let Some(buffer) = self.vertex_buffer.take() {
+                self.vertex_buffer = Some(shrink_buffer_preserving(
+                    device,
+                    queue,
+                    &buffer,
+                    "perro_ui_vertices",
+                    new_capacity as u64,
+                    wgpu::BufferUsages::VERTEX
+                        | wgpu::BufferUsages::COPY_DST
+                        | wgpu::BufferUsages::COPY_SRC,
+                ));
+            }
+            self.vertex_capacity_bytes = new_capacity as u64;
+            self.vertices
+                .shrink_to(new_capacity / std::mem::size_of::<UiVertexGpu>());
+        }
+        if let Some(new_capacity) = self
+            .shrink_indices
+            .tick(self.index_capacity_bytes as usize, UI_MIN_INDEX_BYTES)
+        {
+            let new_capacity = align_buffer_bytes(new_capacity);
+            if let Some(buffer) = self.index_buffer.take() {
+                self.index_buffer = Some(shrink_buffer_preserving(
+                    device,
+                    queue,
+                    &buffer,
+                    "perro_ui_indices",
+                    new_capacity as u64,
+                    wgpu::BufferUsages::INDEX
+                        | wgpu::BufferUsages::COPY_DST
+                        | wgpu::BufferUsages::COPY_SRC,
+                ));
+            }
+            self.index_capacity_bytes = new_capacity as u64;
+            self.indices
+                .shrink_to(new_capacity / std::mem::size_of::<u32>());
+        }
+        if self.used_since_shrink_tick {
+            self.used_since_shrink_tick = false;
+            self.supersample_idle_ticks = 0;
+            return;
+        }
+        self.supersample_idle_ticks = self.supersample_idle_ticks.saturating_add(1);
+        if self.supersample_idle_ticks >= UI_TARGET_IDLE_RELEASE_TICKS {
+            self.supersample_idle_ticks = 0;
+            self.supersample_target = None;
+            self.supersample_dirty = true;
+        }
     }
 
     fn mesh_signature(
@@ -734,8 +925,10 @@ impl GpuUi {
     }
 
     fn upload_mesh_buffers(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
-        let vertex_bytes = bytemuck::cast_slice(&self.vertices);
-        let index_bytes = bytemuck::cast_slice(&self.indices);
+        let vertex_bytes: &[u8] = bytemuck::cast_slice(&self.vertices);
+        let index_bytes: &[u8] = bytemuck::cast_slice(&self.indices);
+        self.shrink_vertices.note_used(vertex_bytes.len());
+        self.shrink_indices.note_used(index_bytes.len());
         self.vertex_buffer = upload_or_grow_buffer(
             device,
             queue,
@@ -756,14 +949,16 @@ impl GpuUi {
         );
     }
 
-    fn ensure_supersample_target(&mut self, device: &wgpu::Device, size: [u32; 2]) {
+    /// Returns true when the target was (re)created, i.e. its contents are
+    /// undefined and the retained raster must be redrawn.
+    fn ensure_supersample_target(&mut self, device: &wgpu::Device, size: [u32; 2]) -> bool {
         let size = [size[0].max(1), size[1].max(1)];
         if self
             .supersample_target
             .as_ref()
             .is_some_and(|target| target.size == size)
         {
-            return;
+            return false;
         }
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("perro_ui_supersample_texture"),
@@ -800,6 +995,7 @@ impl GpuUi {
             bind_group,
             size,
         });
+        true
     }
 
     fn apply_font_delta(
@@ -1088,12 +1284,15 @@ impl GpuUi {
         }
         self.prepared_mesh_signature = None;
         self.prepared_revision = u64::MAX;
+        self.supersample_dirty = true;
     }
 
     pub fn invalidate_image_texture(&mut self, texture: TextureID) {
         self.image_textures.remove(&texture);
+        self.external_image_texture_ids.remove(&texture);
         self.prepared_mesh_signature = None;
         self.prepared_revision = u64::MAX;
+        self.supersample_dirty = true;
     }
 
     pub fn set_stream_texture(&mut self, texture: TextureID, is_stream: bool) {
@@ -1102,6 +1301,7 @@ impl GpuUi {
         } else if self.stream_texture_ids.remove(&texture) {
             self.image_textures.remove(&texture);
         }
+        self.supersample_dirty = true;
     }
 
     /// In-place base-level upload for a resident UI stream image texture. Returns
@@ -1124,6 +1324,9 @@ impl GpuUi {
             return false;
         }
         write_texture_base_level(queue, &shared.texture, width, height, rgba);
+        // Same texture id, new pixels: the retained raster is stale even though
+        // the mesh signature is unchanged.
+        self.supersample_dirty = true;
         true
     }
 
@@ -1240,9 +1443,19 @@ impl GpuUi {
                 size: [size[0].max(1), size[1].max(1)],
             },
         );
+        // The view is externally owned (camera-stream output) and re-rendered
+        // every frame under this same id, so meshes sampling it can never be
+        // retained.
+        self.external_image_texture_ids.insert(texture_key);
         self.prepared_mesh_signature = None;
         self.prepared_revision = u64::MAX;
+        self.supersample_dirty = true;
     }
+}
+
+/// wgpu buffer sizes must be a multiple of `COPY_BUFFER_ALIGNMENT`.
+fn align_buffer_bytes(bytes: usize) -> usize {
+    bytes.next_multiple_of(wgpu::COPY_BUFFER_ALIGNMENT as usize)
 }
 
 fn hash_f32(value: f32, hasher: &mut impl Hasher) {
@@ -1347,6 +1560,10 @@ fn push_ui_mesh(
         texture_id,
     });
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/ui_gpu_tests.rs"]
+mod ui_gpu_tests;
 
 #[cfg(test)]
 mod tests {

@@ -50,7 +50,121 @@ fn prepare_fast_path_eligible(force_full_rebuild: bool, eligible: bool) -> bool 
     !force_full_rebuild && eligible
 }
 
+/// Field-wise adoption of `src` into `dst` that only touches the `Arc` lanes
+/// whose allocation actually changed.
+///
+/// The retained producer hands out the same `Arc` when a lane's content is
+/// unchanged, so a moving-but-not-animated draw differs in `instance_mats`
+/// alone and an animated character in `skeleton` alone. A blanket
+/// `dst.clone_from(src)` still pays inc+dec on all five shared lanes of every
+/// draw in the scene; the pointer probes below cut that to the lanes that
+/// moved (typically one) and never reallocate the destination.
+#[inline]
+fn adopt_draw_in_place(dst: &mut Draw3DInstance, src: &Draw3DInstance) {
+    // Copy lanes: unconditional, no refcount traffic.
+    dst.node = src.node;
+    dst.kind.clone_from(&src.kind);
+    dst.debug_color = src.debug_color;
+    dst.meshlet_override = src.meshlet_override;
+    dst.lod = src.lod;
+    dst.blend = src.blend;
+    dst.cast_shadows = src.cast_shadows;
+    dst.receive_shadows = src.receive_shadows;
+    if !Arc::ptr_eq(&dst.surfaces, &src.surfaces) {
+        dst.surfaces = src.surfaces.clone();
+    }
+    if !Arc::ptr_eq(&dst.instance_mats, &src.instance_mats) {
+        dst.instance_mats = src.instance_mats.clone();
+    }
+    if !Arc::ptr_eq(&dst.blend_shape_weights, &src.blend_shape_weights) {
+        dst.blend_shape_weights = src.blend_shape_weights.clone();
+    }
+    match (dst.skeleton.as_mut(), src.skeleton.as_ref()) {
+        (Some(dst_skeleton), Some(src_skeleton))
+            if Arc::ptr_eq(&dst_skeleton.matrices, &src_skeleton.matrices) => {}
+        (_, src_skeleton) => dst.skeleton = src_skeleton.cloned(),
+    }
+    match (dst.dense_multimesh.as_mut(), src.dense_multimesh.as_ref()) {
+        (Some(dst_dense), Some(src_dense))
+            if Arc::ptr_eq(&dst_dense.instances, &src_dense.instances) =>
+        {
+            dst_dense.node_model = src_dense.node_model;
+            dst_dense.instance_scale = src_dense.instance_scale;
+        }
+        (_, src_dense) => dst.dense_multimesh = src_dense.cloned(),
+    }
+}
+
 impl Gpu3D {
+    /// Upload accounting for the last `prepare` (see [`FrameUploadStats`]).
+    pub fn prepare_upload_stats(&self) -> FrameUploadStats {
+        self.last_prepare_upload_stats
+    }
+
+    #[inline]
+    pub(super) fn note_upload(&mut self, bytes: usize) {
+        self.note_uploads(1, bytes);
+    }
+
+    #[inline]
+    pub(super) fn note_uploads(&mut self, calls: u32, bytes: usize) {
+        self.last_prepare_upload_stats.write_buffer_calls = self
+            .last_prepare_upload_stats
+            .write_buffer_calls
+            .saturating_add(calls);
+        self.last_prepare_upload_stats.write_buffer_bytes = self
+            .last_prepare_upload_stats
+            .write_buffer_bytes
+            .saturating_add(bytes as u64);
+    }
+
+    /// Restage the per-batch indirect draw records and upload them.
+    ///
+    /// Deliberately NOT skip-gated on staged-byte equality, unlike every other
+    /// staging upload here: `frustum_cull.wgsl` / `hiz_occlusion_cull.wgsl`
+    /// bind this buffer `read_write` and zero `instance_count` for culled
+    /// batches, then rebuild a survivor's count as `max(current, 1)`. The GPU
+    /// copy therefore diverges from the staging vec after every cull dispatch,
+    /// and a multi-instance batch that comes back into frustum would resurrect
+    /// with one instance instead of its real count. Gating this needs the
+    /// shader to source the count from the read-only static record (there are
+    /// three spare `cull_flags` words) rather than from the command itself.
+    pub(super) fn rebuild_and_upload_indirect(&mut self, queue: &wgpu::Queue) {
+        self.indirect_staging.clear();
+        self.indirect_staging.reserve(self.draw_batches.len());
+        for batch in &self.draw_batches {
+            self.indirect_staging.push(DrawIndexedIndirectGpu {
+                index_count: batch.mesh.index_count,
+                instance_count: batch.instance_count,
+                first_index: batch.mesh.index_start,
+                base_vertex: batch.mesh.base_vertex,
+                first_instance: batch.instance_start,
+            });
+        }
+        let bytes = std::mem::size_of_val(self.indirect_staging.as_slice());
+        queue.write_buffer(
+            &self.indirect_buffer,
+            0,
+            bytemuck::cast_slice(&self.indirect_staging),
+        );
+        self.note_upload(bytes);
+    }
+
+    /// Refresh `last_draws` from this frame's draw list without rebuilding the
+    /// vector. See [`adopt_draw_in_place`]: same observable state, but the
+    /// per-frame refcount churn drops from every shared lane of every draw to
+    /// only the lanes that changed.
+    fn sync_last_draws(&mut self, draws: &[Draw3DInstance]) {
+        if self.last_draws.len() != draws.len() {
+            self.last_draws.clear();
+            self.last_draws.extend_from_slice(draws);
+            return;
+        }
+        for (dst, src) in self.last_draws.iter_mut().zip(draws.iter()) {
+            adopt_draw_in_place(dst, src);
+        }
+    }
+
     /// Writes the per-frame shader globals (time / resolution) into the scene
     /// uniform tail. Runs inside `prepare`, and standalone on frames where
     /// prepare is skipped so `perro_time()`-driven shaders keep animating.
@@ -84,6 +198,7 @@ impl Gpu3D {
 
     pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, frame: Prepare3D<'_>) {
         let mut step_timing = Prepare3DStepTiming::default();
+        self.last_prepare_upload_stats = FrameUploadStats::default();
         if self.gpu_occlusion_enabled && HIZ_DEBUG_READBACK_ENABLED {
             if self.pending_hiz_debug_map_rx.is_some() {
                 let _ = device.poll(wgpu::PollType::Poll);
@@ -269,22 +384,7 @@ impl Gpu3D {
                 if frustum_inputs_invalid {
                     let indirect_start = Instant::now();
                     self.ensure_frustum_cull_capacity(device, self.draw_batches.len());
-                    self.indirect_staging.clear();
-                    self.indirect_staging.reserve(self.draw_batches.len());
-                    for batch in &self.draw_batches {
-                        self.indirect_staging.push(DrawIndexedIndirectGpu {
-                            index_count: batch.mesh.index_count,
-                            instance_count: batch.instance_count,
-                            first_index: batch.mesh.index_start,
-                            base_vertex: batch.mesh.base_vertex,
-                            first_instance: batch.instance_start,
-                        });
-                    }
-                    queue.write_buffer(
-                        &self.indirect_buffer,
-                        0,
-                        bytemuck::cast_slice(&self.indirect_staging),
-                    );
+                    self.rebuild_and_upload_indirect(queue);
                     step_timing.indirect_prep += indirect_start.elapsed();
 
                     let cull_start = Instant::now();
@@ -361,16 +461,27 @@ impl Gpu3D {
                     self.merged_instance_spans_scratch.push(span);
                 }
             }
+            let mut patched_bytes = 0usize;
             for span in self.merged_instance_spans_scratch.iter() {
                 let byte_start =
                     span.start as u64 * std::mem::size_of::<TransformInstanceGpu>() as u64;
+                let slice = &self.staged_instance_transforms[span.start as usize..span.end as usize];
+                patched_bytes += std::mem::size_of_val(slice);
                 queue.write_buffer(
                     &self.instance_transform_buffer,
                     byte_start,
-                    bytemuck::cast_slice(
-                        &self.staged_instance_transforms[span.start as usize..span.end as usize],
-                    ),
+                    bytemuck::cast_slice(slice),
                 );
+            }
+            if patched_bytes > 0 {
+                let calls = self.merged_instance_spans_scratch.len() as u32;
+                self.note_uploads(calls, patched_bytes);
+                // Partial spans keep the GPU in sync with the staging vec, but
+                // the whole-vec hash the full-rebuild gate compares against no
+                // longer describes what was sent. Drop it rather than re-hash
+                // the whole (potentially multi-MB) vec on the fast path; the
+                // next full rebuild pays one upload to re-prime it.
+                self.last_uploaded_instance_transforms_hash = None;
             }
             // The multimesh block below reuses the merged scratch; keep the
             // transform spans for the mesh-blend sphere refresh.
@@ -433,18 +544,21 @@ impl Gpu3D {
                         self.merged_instance_spans_scratch.push(span);
                     }
                 }
+                let mut patched_bytes = 0usize;
                 for span in self.merged_instance_spans_scratch.iter() {
                     let byte_start =
                         span.start as u64 * std::mem::size_of::<MultiMeshDrawParamGpu>() as u64;
+                    let slice = &self.staged_multimesh_draw_params
+                        [span.start as usize..span.end as usize];
+                    patched_bytes += std::mem::size_of_val(slice);
                     queue.write_buffer(
                         &self.multimesh_draw_params_buffer,
                         byte_start,
-                        bytemuck::cast_slice(
-                            &self.staged_multimesh_draw_params
-                                [span.start as usize..span.end as usize],
-                        ),
+                        bytemuck::cast_slice(slice),
                     );
                 }
+                let calls = self.merged_instance_spans_scratch.len() as u32;
+                self.note_uploads(calls, patched_bytes);
                 // GPU buffer now equals the staged vec again; keep the
                 // skip-identical hash in sync so the next full restage can
                 // still gate its upload.
@@ -466,22 +580,7 @@ impl Gpu3D {
                 if frustum_inputs_invalid {
                     let indirect_start = Instant::now();
                     self.ensure_frustum_cull_capacity(device, self.draw_batches.len());
-                    self.indirect_staging.clear();
-                    self.indirect_staging.reserve(self.draw_batches.len());
-                    for batch in &self.draw_batches {
-                        self.indirect_staging.push(DrawIndexedIndirectGpu {
-                            index_count: batch.mesh.index_count,
-                            instance_count: batch.instance_count,
-                            first_index: batch.mesh.index_start,
-                            base_vertex: batch.mesh.base_vertex,
-                            first_instance: batch.instance_start,
-                        });
-                    }
-                    queue.write_buffer(
-                        &self.indirect_buffer,
-                        0,
-                        bytemuck::cast_slice(&self.indirect_staging),
-                    );
+                    self.rebuild_and_upload_indirect(queue);
                     step_timing.indirect_prep += indirect_start.elapsed();
 
                     let cull_start = Instant::now();
@@ -529,6 +628,8 @@ impl Gpu3D {
                         // instance: refresh the dynamic model. Multi instance:
                         // the static half carries the merged world sphere, so it
                         // must be recomputed and re-uploaded as well.
+                        let mut patched_calls = 0u32;
+                        let mut patched_bytes = 0usize;
                         for batch_span in self.dirty_cull_batch_spans_scratch.iter() {
                             let mut static_dirty = false;
                             for batch_idx in batch_span.clone() {
@@ -557,27 +658,37 @@ impl Gpu3D {
                             let byte_start = (batch_span.start
                                 * std::mem::size_of::<FrustumCullDynamicGpu>())
                                 as u64;
+                            let dynamic_slice = &self.frustum_cull_dynamic_staging
+                                [batch_span.start..batch_span.end];
+                            patched_calls += 1;
+                            patched_bytes += std::mem::size_of_val(dynamic_slice);
                             queue.write_buffer(
                                 &self.frustum_cull_dynamic_buffer,
                                 byte_start,
-                                bytemuck::cast_slice(
-                                    &self.frustum_cull_dynamic_staging
-                                        [batch_span.start..batch_span.end],
-                                ),
+                                bytemuck::cast_slice(dynamic_slice),
                             );
                             if static_dirty {
                                 let byte_start = (batch_span.start
                                     * std::mem::size_of::<FrustumCullStaticGpu>())
                                     as u64;
+                                let static_slice = &self.frustum_cull_static_staging
+                                    [batch_span.start..batch_span.end];
+                                patched_calls += 1;
+                                patched_bytes += std::mem::size_of_val(static_slice);
                                 queue.write_buffer(
                                     &self.frustum_cull_static_buffer,
                                     byte_start,
-                                    bytemuck::cast_slice(
-                                        &self.frustum_cull_static_staging
-                                            [batch_span.start..batch_span.end],
-                                    ),
+                                    bytemuck::cast_slice(static_slice),
                                 );
                             }
+                        }
+                        // Span writes keep the GPU equal to the staging vecs but
+                        // invalidate the whole-vec hashes the full-rebuild gate
+                        // compares against (see the instance-transform note).
+                        if patched_calls > 0 {
+                            self.note_uploads(patched_calls, patched_bytes);
+                            self.last_uploaded_frustum_cull_dynamic_hash = None;
+                            self.last_uploaded_frustum_cull_static_hash = None;
                         }
                         step_timing.cull_input_prep += cull_start.elapsed();
                     }
@@ -624,8 +735,7 @@ impl Gpu3D {
             // Transform patch moved rigid + multimesh casters; drop the cache.
             self.shadow_casters_dirty = true;
             self.update_shadow_state(device, queue, &camera, lighting, self.has_shadow_casters);
-            self.last_draws.clear();
-            self.last_draws.extend_from_slice(draws);
+            self.sync_last_draws(draws);
             self.last_draws_revision = draws_revision;
             self.last_total_drawn =
                 self.staged_instance_transforms.len() + self.staged_multimesh_instances.len();
@@ -634,8 +744,7 @@ impl Gpu3D {
         }
 
         self.frustum_gpu_inputs_valid = false;
-        self.last_draws.clear();
-        self.last_draws.extend_from_slice(draws);
+        self.sync_last_draws(draws);
         self.last_draws_revision = draws_revision;
 
         // Scene-resolved mesh blend is an input to the multimesh staging (it is
@@ -769,7 +878,7 @@ impl Gpu3D {
                 // hitting the pose-Arc pointer fast path even if the producer
                 // handed out an equal-but-new Arc (the deep compare that just
                 // accepted it is the slow path).
-                snapshot.draw = draw.clone();
+                adopt_draw_in_place(&mut snapshot.draw, draw);
                 reused_dense_index += 1;
                 self.last_draw_instance_spans
                     .push(draw_instance_start..draw_instance_start);
@@ -1878,6 +1987,14 @@ impl Gpu3D {
                 self.occlusion_query_keys_this_frame.len() as u32,
             );
         }
+        // Only batches on the skinned path sample `skinned_instances` (the
+        // rigid / depth-prepass / shadow-rigid shaders read the parallel rigid
+        // lane instead), so this is exactly "does the skinned meta buffer have
+        // a reader this frame".
+        self.staged_has_skinned = self
+            .draw_batches
+            .iter()
+            .any(|batch| matches!(batch.path, RenderPath3D::Skinned));
         self.ensure_instance_transform_capacity(device, self.staged_instance_transforms.len());
         self.ensure_rigid_instance_meta_capacity(device, self.staged_rigid_instance_meta.len());
         self.ensure_skinned_instance_meta_capacity(device, self.staged_skinned_instance_meta.len());
@@ -1900,49 +2017,93 @@ impl Gpu3D {
             (self.staged_blend_shape_instance_meta.len() + self.staged_multimesh_blend_meta.len())
                 .max(1),
         );
+        // Skip-identical gates on the rigid-side staging. Skinned / blend-shape
+        // animation changes the draw list every frame, so those scenes never
+        // reach the transform-only fast path and restage all five lanes below
+        // even though only one of them (usually the bone palettes) actually
+        // moved. Hashing what a `write_buffer` would send is far cheaper than
+        // sending it, and unlike a CPU mirror it costs no extra memory.
         if !self.staged_instance_transforms.is_empty() {
-            queue.write_buffer(
-                &self.instance_transform_buffer,
-                0,
-                bytemuck::cast_slice(&self.staged_instance_transforms),
-            );
+            let hash = super::pod_slice_len_hash(&self.staged_instance_transforms);
+            if self.last_uploaded_instance_transforms_hash != Some(hash) {
+                let bytes = std::mem::size_of_val(self.staged_instance_transforms.as_slice());
+                queue.write_buffer(
+                    &self.instance_transform_buffer,
+                    0,
+                    bytemuck::cast_slice(&self.staged_instance_transforms),
+                );
+                self.last_uploaded_instance_transforms_hash = Some(hash);
+                self.note_upload(bytes);
+            }
         }
         if !self.staged_rigid_instance_meta.is_empty() {
-            queue.write_buffer(
-                &self.rigid_instance_meta_buffer,
-                0,
-                bytemuck::cast_slice(&self.staged_rigid_instance_meta),
-            );
+            let hash = super::pod_slice_len_hash(&self.staged_rigid_instance_meta);
+            if self.last_uploaded_rigid_instance_meta_hash != Some(hash) {
+                let bytes = std::mem::size_of_val(self.staged_rigid_instance_meta.as_slice());
+                queue.write_buffer(
+                    &self.rigid_instance_meta_buffer,
+                    0,
+                    bytemuck::cast_slice(&self.staged_rigid_instance_meta),
+                );
+                self.last_uploaded_rigid_instance_meta_hash = Some(hash);
+                self.note_upload(bytes);
+            }
         }
-        if !self.staged_skinned_instance_meta.is_empty() {
-            queue.write_buffer(
-                &self.skinned_instance_meta_buffer,
-                0,
-                bytemuck::cast_slice(&self.staged_skinned_instance_meta),
-            );
+        // Only the skinned pipelines sample `skinned_instances`; a scene with no
+        // bone palettes has no reader at all, so the rows stay unsent.
+        if !self.staged_skinned_instance_meta.is_empty() && self.staged_has_skinned {
+            let hash = super::pod_slice_len_hash(&self.staged_skinned_instance_meta);
+            if self.last_uploaded_skinned_instance_meta_hash != Some(hash) {
+                let bytes = std::mem::size_of_val(self.staged_skinned_instance_meta.as_slice());
+                queue.write_buffer(
+                    &self.skinned_instance_meta_buffer,
+                    0,
+                    bytemuck::cast_slice(&self.staged_skinned_instance_meta),
+                );
+                self.last_uploaded_skinned_instance_meta_hash = Some(hash);
+                self.note_upload(bytes);
+            }
         }
         if !self.staged_blend_shape_weights.is_empty() {
-            queue.write_buffer(
-                &self.blend_shape_weight_buffer,
-                0,
-                bytemuck::cast_slice(&self.staged_blend_shape_weights),
-            );
+            let hash = super::pod_slice_len_hash(&self.staged_blend_shape_weights);
+            if self.last_uploaded_blend_shape_weights_hash != Some(hash) {
+                let bytes = std::mem::size_of_val(self.staged_blend_shape_weights.as_slice());
+                queue.write_buffer(
+                    &self.blend_shape_weight_buffer,
+                    0,
+                    bytemuck::cast_slice(&self.staged_blend_shape_weights),
+                );
+                self.last_uploaded_blend_shape_weights_hash = Some(hash);
+                self.note_upload(bytes);
+            }
         }
         if !self.staged_blend_shape_instance_meta.is_empty() {
-            queue.write_buffer(
-                &self.blend_shape_instance_meta_buffer,
-                0,
-                bytemuck::cast_slice(&self.staged_blend_shape_instance_meta),
-            );
+            let hash = super::pod_slice_len_hash(&self.staged_blend_shape_instance_meta);
+            if self.last_uploaded_blend_shape_meta_hash != Some(hash) {
+                let bytes = std::mem::size_of_val(self.staged_blend_shape_instance_meta.as_slice());
+                queue.write_buffer(
+                    &self.blend_shape_instance_meta_buffer,
+                    0,
+                    bytemuck::cast_slice(&self.staged_blend_shape_instance_meta),
+                );
+                self.last_uploaded_blend_shape_meta_hash = Some(hash);
+                self.note_upload(bytes);
+            }
         }
         self.upload_multimesh_blend_tails(queue);
         self.ensure_skeleton_capacity(device, self.staged_skeletons.len().max(1));
         if !self.staged_skeletons.is_empty() {
-            queue.write_buffer(
-                &self.skeleton_buffer,
-                0,
-                bytemuck::cast_slice(&self.staged_skeletons),
-            );
+            let hash = super::pod_slice_len_hash(&self.staged_skeletons);
+            if self.last_uploaded_skeletons_hash != Some(hash) {
+                let bytes = std::mem::size_of_val(self.staged_skeletons.as_slice());
+                queue.write_buffer(
+                    &self.skeleton_buffer,
+                    0,
+                    bytemuck::cast_slice(&self.staged_skeletons),
+                );
+                self.last_uploaded_skeletons_hash = Some(hash);
+                self.note_upload(bytes);
+            }
         }
         // Both arenas carry the multimesh tail after the regular rows.
         self.ensure_custom_params_capacity(
@@ -1957,22 +2118,28 @@ impl Gpu3D {
         if self.custom_params_meta_uploaded < self.staged_custom_params_meta.len() {
             let upload_start = self.custom_params_meta_uploaded;
             let byte_start = upload_start as u64 * std::mem::size_of::<u32>() as u64;
+            let bytes =
+                std::mem::size_of_val(&self.staged_custom_params_meta[upload_start..]);
             queue.write_buffer(
                 &self.custom_params_meta_buffer,
                 byte_start,
                 bytemuck::cast_slice(&self.staged_custom_params_meta[upload_start..]),
             );
             self.custom_params_meta_uploaded = self.staged_custom_params_meta.len();
+            self.note_upload(bytes);
         }
         if self.custom_params_values_uploaded < self.staged_custom_params_values.len() {
             let upload_start = self.custom_params_values_uploaded;
             let byte_start = upload_start as u64 * std::mem::size_of::<f32>() as u64;
+            let bytes =
+                std::mem::size_of_val(&self.staged_custom_params_values[upload_start..]);
             queue.write_buffer(
                 &self.custom_params_values_buffer,
                 byte_start,
                 bytemuck::cast_slice(&self.staged_custom_params_values[upload_start..]),
             );
             self.custom_params_values_uploaded = self.staged_custom_params_values.len();
+            self.note_upload(bytes);
         }
         self.upload_multimesh_custom_params_tail(queue);
         self.ensure_multimesh_draw_params_capacity(
@@ -1987,12 +2154,14 @@ impl Gpu3D {
         if !self.staged_multimesh_draw_params.is_empty() {
             let hash = super::pod_slice_len_hash(&self.staged_multimesh_draw_params);
             if self.last_uploaded_multimesh_draw_params_hash != Some(hash) {
+                let bytes = std::mem::size_of_val(self.staged_multimesh_draw_params.as_slice());
                 queue.write_buffer(
                     &self.multimesh_draw_params_buffer,
                     0,
                     bytemuck::cast_slice(&self.staged_multimesh_draw_params),
                 );
                 self.last_uploaded_multimesh_draw_params_hash = Some(hash);
+                self.note_upload(bytes);
             }
         }
         self.ensure_multimesh_instance_capacity(
@@ -2007,12 +2176,14 @@ impl Gpu3D {
         {
             let hash = super::pod_slice_len_hash(&self.staged_multimesh_instances);
             if self.last_uploaded_multimesh_instances_hash != Some(hash) {
+                let bytes = std::mem::size_of_val(self.staged_multimesh_instances.as_slice());
                 queue.write_buffer(
                     &self.multimesh_instance_buffer,
                     0,
                     bytemuck::cast_slice(&self.staged_multimesh_instances),
                 );
                 self.last_uploaded_multimesh_instances_hash = Some(hash);
+                self.note_upload(bytes);
             }
         }
         // Multimesh inputs are topology-only, so rebuild them on the full path.
@@ -2037,22 +2208,7 @@ impl Gpu3D {
         if frustum_cull_active {
             let indirect_start = Instant::now();
             self.ensure_frustum_cull_capacity(device, self.draw_batches.len());
-            self.indirect_staging.clear();
-            self.indirect_staging.reserve(self.draw_batches.len());
-            for batch in &self.draw_batches {
-                self.indirect_staging.push(DrawIndexedIndirectGpu {
-                    index_count: batch.mesh.index_count,
-                    instance_count: batch.instance_count,
-                    first_index: batch.mesh.index_start,
-                    base_vertex: batch.mesh.base_vertex,
-                    first_instance: batch.instance_start,
-                });
-            }
-            queue.write_buffer(
-                &self.indirect_buffer,
-                0,
-                bytemuck::cast_slice(&self.indirect_staging),
-            );
+            self.rebuild_and_upload_indirect(queue);
             step_timing.indirect_prep += indirect_start.elapsed();
 
             let cull_start = Instant::now();
@@ -2379,7 +2535,7 @@ impl Gpu3D {
                 return;
             };
             snapshot.node_model = dense.node_model;
-            snapshot.draw = draw.clone();
+            adopt_draw_in_place(&mut snapshot.draw, draw);
             index += 1;
         }
         if index != self.multimesh_staging_cache.len() {

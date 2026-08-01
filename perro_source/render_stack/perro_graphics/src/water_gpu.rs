@@ -159,6 +159,13 @@ pub struct GpuWater {
     // wake is re-blended each frame, so static coastlines skip the expensive
     // per-cell signed-distance raster.
     coastline_cache: HashMap<NodeID, CachedCoastline>,
+    // Forces the next coastline upload regardless of per-water gating. Set
+    // whenever the destination buffer identity changes (growth / GC shrink) or
+    // the scratch layout is reset.
+    coastline_force_upload: bool,
+    // Bytes actually pushed to `coastline_buffer`; the idle gate is asserted
+    // against this in tests.
+    coastline_upload_bytes: u64,
 }
 
 /// Cached static per-cell coastline field for one water node. `base` holds
@@ -167,6 +174,22 @@ pub struct GpuWater {
 struct CachedCoastline {
     signature: u64,
     base: Vec<[f32; 3]>,
+    /// `(content signature, (scratch offset, cell count))` of the last raster
+    /// this node wrote. When both still match, the persistent scratch already
+    /// holds the identical bytes, so the blend loop and the coastline upload
+    /// are both skipped. Safe because the coastline buffer is bound
+    /// `storage, read` in every water shader - the GPU never writes it back.
+    written: Option<(u64, (usize, usize))>,
+}
+
+impl CachedCoastline {
+    fn new() -> Self {
+        Self {
+            signature: 0,
+            base: Vec::new(),
+            written: None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -616,7 +639,17 @@ impl GpuWater {
             staged_render_chunks: Vec::new(),
             coastline_cells_scratch: Vec::new(),
             coastline_cache: HashMap::new(),
+            coastline_force_upload: true,
+            coastline_upload_bytes: 0,
         }
+    }
+
+    /// Total bytes written to the coastline storage buffer since creation.
+    /// Stays flat while every water's coastline field is idle. Profiling hook,
+    /// also the assertion target for the idle-water upload test.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn coastline_upload_bytes(&self) -> u64 {
+        self.coastline_upload_bytes
     }
 
     pub fn set_scene_depth_view(
@@ -798,6 +831,8 @@ impl GpuWater {
             self.render_3d_chunk_count = 0;
             self.readback_accum_seconds = 0.0;
             self.coastline_cache.clear();
+            self.coastline_cells_scratch.clear();
+            self.coastline_force_upload = true;
             self.readback_water_interval.clear();
             self.readback_water_accum.clear();
             // Nothing is drawn or simulated; let the GC tick reclaim the cell
@@ -814,8 +849,12 @@ impl GpuWater {
             self.staged_waters
                 .reserve(needed - self.staged_waters.capacity());
         }
-        self.coastline_cells_scratch.clear();
         self.staged_render_chunks.clear();
+        // The coastline scratch is persistent: it mirrors the GPU buffer, so a
+        // water whose field did not change keeps last frame's bytes in place
+        // and neither the blend loop nor the upload runs.
+        let mut coastline_dirty = self.coastline_force_upload;
+        self.coastline_force_upload = false;
         let mut cell_needed = 0usize;
         let mut readback_rate = 0.0f32;
         for (node, water) in waters_2d {
@@ -824,14 +863,18 @@ impl GpuWater {
             let cells = water_cell_count(lod.grid.sim);
             let offset = cell_needed;
             if cells > 0 {
-                self.coastline_cells_scratch
-                    .resize(offset.saturating_add(cells), [0.0; 4]);
-                raster_coastline_2d(
-                    &mut self.coastline_cells_scratch[offset..offset + cells],
+                let end = offset.saturating_add(cells);
+                if self.coastline_cells_scratch.len() < end {
+                    self.coastline_cells_scratch.resize(end, [0.0; 4]);
+                    coastline_dirty = true;
+                }
+                coastline_dirty |= raster_coastline_2d(
+                    &mut self.coastline_cells_scratch[offset..end],
                     lod.grid.sim,
                     water,
                     *node,
                     &mut self.coastline_cache,
+                    (offset, cells),
                 );
             }
             self.staged_waters.push(water_gpu_2d(
@@ -850,14 +893,18 @@ impl GpuWater {
             let cells = water_cell_count(lod.grid.sim);
             let offset = cell_needed;
             if cells > 0 {
-                self.coastline_cells_scratch
-                    .resize(offset.saturating_add(cells), [0.0; 4]);
-                raster_coastline_3d(
-                    &mut self.coastline_cells_scratch[offset..offset + cells],
+                let end = offset.saturating_add(cells);
+                if self.coastline_cells_scratch.len() < end {
+                    self.coastline_cells_scratch.resize(end, [0.0; 4]);
+                    coastline_dirty = true;
+                }
+                coastline_dirty |= raster_coastline_3d(
+                    &mut self.coastline_cells_scratch[offset..end],
                     lod.grid.sim,
                     water,
                     *node,
                     &mut self.coastline_cache,
+                    (offset, cells),
                 );
             }
             let staged = water_gpu_3d(
@@ -881,6 +928,12 @@ impl GpuWater {
                 );
             }
             cell_needed = cell_needed.saturating_add(cells);
+        }
+        // Total coastline cells staged this frame. Any length change means the
+        // slot layout moved, so re-upload the whole run.
+        if self.coastline_cells_scratch.len() != cell_needed {
+            self.coastline_cells_scratch.resize(cell_needed, [0.0; 4]);
+            coastline_dirty = true;
         }
         // Drop per-node caches for waters no longer present this frame. Same
         // node set keeps every map's size equal to the active water count. Only
@@ -938,7 +991,10 @@ impl GpuWater {
             self.staged_render_chunks.len(),
         );
         if rebuilt {
+            // Any buffer in the set may have been recreated (empty contents),
+            // so the coastline run must be pushed again.
             self.rebuild_cell_bind_groups(device);
+            coastline_dirty = true;
         }
         queue.write_buffer(
             &self.water_buffer,
@@ -952,12 +1008,12 @@ impl GpuWater {
                 bytemuck::cast_slice(&self.staged_render_chunks),
             );
         }
-        if !self.coastline_cells_scratch.is_empty() {
-            queue.write_buffer(
-                &self.coastline_buffer,
-                0,
-                bytemuck::cast_slice(&self.coastline_cells_scratch),
-            );
+        if coastline_dirty && !self.coastline_cells_scratch.is_empty() {
+            let bytes: &[u8] = bytemuck::cast_slice(&self.coastline_cells_scratch);
+            self.coastline_upload_bytes = self
+                .coastline_upload_bytes
+                .saturating_add(bytes.len() as u64);
+            queue.write_buffer(&self.coastline_buffer, 0, bytes);
         }
         let params = WaterParamsGpu {
             water_count: self.water_count,
@@ -1081,6 +1137,8 @@ impl GpuWater {
         self.readback_copy_encoded = false;
         self.staged_render_chunks.clear();
         self.coastline_cache.clear();
+        self.coastline_cells_scratch.clear();
+        self.coastline_force_upload = true;
         self.readback_water_interval.clear();
         self.readback_water_accum.clear();
     }
@@ -1382,6 +1440,9 @@ impl GpuWater {
             );
             self.coastline_capacity = new_cap;
             rebuilt = true;
+            // Prefix-preserving copy, but the buffer identity changed; force the
+            // next prepare to re-push rather than trusting the copy.
+            self.coastline_force_upload = true;
         }
         if rebuilt {
             self.rebuild_cell_bind_groups(device);

@@ -85,16 +85,35 @@ impl Gpu3D {
                     model_3: model_cols[3],
                 });
         }
-        queue.write_buffer(
-            &self.frustum_cull_static_buffer,
-            0,
-            bytemuck::cast_slice(&self.frustum_cull_static_staging),
-        );
-        queue.write_buffer(
-            &self.frustum_cull_dynamic_buffer,
-            0,
-            bytemuck::cast_slice(&self.frustum_cull_dynamic_staging),
-        );
+        // Skip-identical gates. Both halves are bound `read only` by
+        // frustum_cull.wgsl / hiz_occlusion_cull.wgsl, so the GPU copy never
+        // diverges from the staging vec and a matching content hash proves the
+        // upload would be a no-op. That is the steady state for a skinned or
+        // blend-shape scene: those never reach the transform-only fast path, so
+        // every frame re-runs this rebuild over unchanged batch topology and
+        // unchanged instance models.
+        let static_hash = super::pod_slice_len_hash(&self.frustum_cull_static_staging);
+        if self.last_uploaded_frustum_cull_static_hash != Some(static_hash) {
+            let bytes = std::mem::size_of_val(self.frustum_cull_static_staging.as_slice());
+            queue.write_buffer(
+                &self.frustum_cull_static_buffer,
+                0,
+                bytemuck::cast_slice(&self.frustum_cull_static_staging),
+            );
+            self.last_uploaded_frustum_cull_static_hash = Some(static_hash);
+            self.note_upload(bytes);
+        }
+        let dynamic_hash = super::pod_slice_len_hash(&self.frustum_cull_dynamic_staging);
+        if self.last_uploaded_frustum_cull_dynamic_hash != Some(dynamic_hash) {
+            let bytes = std::mem::size_of_val(self.frustum_cull_dynamic_staging.as_slice());
+            queue.write_buffer(
+                &self.frustum_cull_dynamic_buffer,
+                0,
+                bytemuck::cast_slice(&self.frustum_cull_dynamic_staging),
+            );
+            self.last_uploaded_frustum_cull_dynamic_hash = Some(dynamic_hash);
+            self.note_upload(bytes);
+        }
     }
 
     #[inline]

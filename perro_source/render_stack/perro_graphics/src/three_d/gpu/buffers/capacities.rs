@@ -23,6 +23,9 @@ impl Gpu3D {
             mapped_at_creation: false,
         });
         self.instance_transform_capacity = new_capacity;
+        // Fresh allocation: undefined contents, so the skip-identical gate must
+        // not match against what the old buffer held.
+        self.last_uploaded_instance_transforms_hash = None;
     }
 
     pub(in super::super) fn ensure_rigid_instance_meta_capacity(
@@ -47,6 +50,7 @@ impl Gpu3D {
             mapped_at_creation: false,
         });
         self.rigid_instance_meta_capacity = new_capacity;
+        self.last_uploaded_rigid_instance_meta_hash = None;
     }
 
     pub(in super::super) fn ensure_skinned_instance_meta_capacity(
@@ -71,6 +75,7 @@ impl Gpu3D {
             mapped_at_creation: false,
         });
         self.skinned_instance_meta_capacity = new_capacity;
+        self.last_uploaded_skinned_instance_meta_hash = None;
     }
 
     pub(in super::super) fn ensure_blend_shape_weight_capacity(
@@ -94,6 +99,7 @@ impl Gpu3D {
             mapped_at_creation: false,
         });
         self.blend_shape_weight_capacity = new_capacity;
+        self.last_uploaded_blend_shape_weights_hash = None;
         self.rebuild_camera_bind_groups(device);
     }
 
@@ -118,6 +124,7 @@ impl Gpu3D {
             mapped_at_creation: false,
         });
         self.blend_shape_instance_meta_capacity = new_capacity;
+        self.last_uploaded_blend_shape_meta_hash = None;
         self.rebuild_camera_bind_groups(device);
     }
 
@@ -526,6 +533,7 @@ impl Gpu3D {
         if needed == 0 {
             return;
         }
+        self.shrink.multimesh_shadow_identity.note_used(needed);
         if needed > self.multimesh_shadow_identity_capacity {
             let mut new_capacity = self.multimesh_shadow_identity_capacity.max(1);
             while new_capacity < needed {
@@ -538,6 +546,8 @@ impl Gpu3D {
                 mapped_at_creation: false,
             });
             self.multimesh_shadow_identity_capacity = new_capacity;
+            // Fresh allocation: nothing primed in it yet.
+            self.multimesh_shadow_identity_uploaded_len = 0;
             self.shadow_multimesh_bind_groups =
                 build_shadow_multimesh_bind_groups(ShadowMultimeshBgArgs {
                     device,
@@ -562,17 +572,30 @@ impl Gpu3D {
                         .unwrap_or(&self.ssao_fallback_view),
                 });
         }
+        // `visible_indices[i] == i` is position-independent, so a prefix that
+        // was already primed stays correct: nothing but this function ever
+        // writes the shadow identity buffer (unlike the cull identity, which
+        // the cull compute overwrites). Re-upload only the rows past what was
+        // primed -- a multimesh scene that merely restages hits zero bytes.
+        if needed <= self.multimesh_shadow_identity_uploaded_len {
+            return;
+        }
         // Reuse the cull identity staging (identical values); rebuild if short.
         if self.staged_multimesh_visible_identity.len() < needed {
             self.staged_multimesh_visible_identity.clear();
             self.staged_multimesh_visible_identity
                 .extend(0..needed as u32);
         }
+        let start = self.multimesh_shadow_identity_uploaded_len;
+        let slice = &self.staged_multimesh_visible_identity[start..needed];
+        let bytes = std::mem::size_of_val(slice);
         queue.write_buffer(
             &self.multimesh_shadow_identity_buffer,
-            0,
-            bytemuck::cast_slice(&self.staged_multimesh_visible_identity[..needed]),
+            (start * std::mem::size_of::<u32>()) as u64,
+            bytemuck::cast_slice(slice),
         );
+        self.multimesh_shadow_identity_uploaded_len = needed;
+        self.note_upload(bytes);
     }
 
     pub(in super::super) fn rebuild_multimesh_cull_bind_group(&mut self, device: &wgpu::Device) {
@@ -731,6 +754,7 @@ impl Gpu3D {
         });
         self.rebuild_camera_bind_groups(device);
         self.skeleton_capacity = new_capacity;
+        self.last_uploaded_skeletons_hash = None;
     }
 
     pub(in super::super) fn ensure_custom_params_capacity(
@@ -1035,6 +1059,42 @@ impl Gpu3D {
         }
         if let Some(new_cap) = self
             .shrink
+            .multimesh_shadow_identity
+            .tick(self.multimesh_shadow_identity_capacity, 256)
+        {
+            // Plain realloc, not `shrink_buffer_preserving`: the contents are
+            // `visible_indices[i] == i`, regenerated below, and this buffer
+            // carries no COPY_SRC (nothing ever reads it back).
+            let primed = self.multimesh_shadow_identity_uploaded_len.min(new_cap);
+            self.multimesh_shadow_identity_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("perro_multimesh_shadow_identity"),
+                size: ((new_cap * std::mem::size_of::<u32>()) as u64).max(4),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.multimesh_shadow_identity_capacity = new_cap;
+            self.multimesh_shadow_identity_uploaded_len = 0;
+            // Re-prime what the old buffer held: only a full rebuild calls
+            // `ensure_multimesh_shadow_identity`, so leaving the fresh buffer
+            // blank would let the frames until then draw multimesh shadows off
+            // an unwritten index buffer.
+            if primed > 0 {
+                if self.staged_multimesh_visible_identity.len() < primed {
+                    self.staged_multimesh_visible_identity.clear();
+                    self.staged_multimesh_visible_identity
+                        .extend(0..primed as u32);
+                }
+                queue.write_buffer(
+                    &self.multimesh_shadow_identity_buffer,
+                    0,
+                    bytemuck::cast_slice(&self.staged_multimesh_visible_identity[..primed]),
+                );
+                self.multimesh_shadow_identity_uploaded_len = primed;
+            }
+            rebuild_camera = true;
+        }
+        if let Some(new_cap) = self
+            .shrink
             .custom_params_meta
             .tick(self.custom_params_meta_capacity, 256)
         {
@@ -1182,6 +1242,9 @@ impl Gpu3D {
             self.frustum_cull_items_capacity = new_cap;
             self.indirect_capacity = new_cap;
             self.frustum_gpu_inputs_valid = false;
+            // Fresh allocations: the skip-identical gates must re-prime.
+            self.last_uploaded_frustum_cull_static_hash = None;
+            self.last_uploaded_frustum_cull_dynamic_hash = None;
         }
 
         // CPU staging mirrors: shrink_to when capacity stayed >4x the live
@@ -1200,6 +1263,51 @@ impl Gpu3D {
         shrink_staging_vec(
             &mut self.shrink.staged_multimesh_draw_params_vec,
             &mut self.staged_multimesh_draw_params,
+            256,
+        );
+        shrink_staging_vec(
+            &mut self.shrink.staged_rigid_instance_meta_vec,
+            &mut self.staged_rigid_instance_meta,
+            256,
+        );
+        shrink_staging_vec(
+            &mut self.shrink.staged_skinned_instance_meta_vec,
+            &mut self.staged_skinned_instance_meta,
+            256,
+        );
+        shrink_staging_vec(
+            &mut self.shrink.staged_blend_shape_weights_vec,
+            &mut self.staged_blend_shape_weights,
+            256,
+        );
+        shrink_staging_vec(
+            &mut self.shrink.staged_blend_shape_meta_vec,
+            &mut self.staged_blend_shape_instance_meta,
+            256,
+        );
+        shrink_staging_vec(
+            &mut self.shrink.staged_skeletons_vec,
+            &mut self.staged_skeletons,
+            64,
+        );
+        shrink_staging_vec(
+            &mut self.shrink.indirect_staging_vec,
+            &mut self.indirect_staging,
+            256,
+        );
+        shrink_staging_vec(
+            &mut self.shrink.frustum_cull_static_staging_vec,
+            &mut self.frustum_cull_static_staging,
+            256,
+        );
+        shrink_staging_vec(
+            &mut self.shrink.frustum_cull_dynamic_staging_vec,
+            &mut self.frustum_cull_dynamic_staging,
+            256,
+        );
+        shrink_staging_vec(
+            &mut self.shrink.last_draw_instance_spans_vec,
+            &mut self.last_draw_instance_spans,
             256,
         );
         shrink_staging_vec(
@@ -1284,6 +1392,8 @@ impl Gpu3D {
         self.frustum_cull_items_capacity = new_capacity;
         self.indirect_capacity = new_capacity;
         self.frustum_gpu_inputs_valid = false;
+        self.last_uploaded_frustum_cull_static_hash = None;
+        self.last_uploaded_frustum_cull_dynamic_hash = None;
     }
 
     // Recreate the indirect-count compaction buffers alongside the indirect

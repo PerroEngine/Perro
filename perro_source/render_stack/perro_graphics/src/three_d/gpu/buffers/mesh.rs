@@ -1,5 +1,130 @@
 use super::*;
 
+/// Widest mesh-arena vertex stride (skinned and rigid arenas hold one entry per
+/// vertex each, so the skinned stride bounds both).
+const MESH_VERTEX_STRIDE: usize = if std::mem::size_of::<SkinnedMeshVertex>()
+    > std::mem::size_of::<RigidMeshVertex>()
+{
+    std::mem::size_of::<SkinnedMeshVertex>()
+} else {
+    std::mem::size_of::<RigidMeshVertex>()
+};
+
+/// Arena floor for GC-driven compaction. Below this the stranded bytes are not
+/// worth the full re-resolve (every live mesh is decoded + re-uploaded), so
+/// small scenes never churn.
+const MESH_ARENA_COMPACT_MIN_BYTES: usize = 16 * 1024 * 1024;
+
+/// Live fraction under which the arena is worth compacting: less than half of
+/// the appended bytes still reachable through `custom_mesh_ranges`.
+const MESH_ARENA_COMPACT_LIVE_RATIO_DEN: usize = 2;
+
+/// Snapshot of the 3D renderer's reclaimable GPU memory. Same shape as the
+/// `PostPerfCounters` pattern: cheap to build, never on a hot path, read by
+/// tests and memory diagnostics.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Gpu3DMemoryReport {
+    /// Vertices appended to the shared mesh arena (builtin prefix included).
+    pub mesh_arena_vertices: usize,
+    /// Vertices still reachable: builtin prefix + live `custom_mesh_ranges`.
+    pub mesh_arena_live_vertices: usize,
+    pub mesh_arena_bytes: usize,
+    pub mesh_arena_live_bytes: usize,
+    pub mesh_index_len: usize,
+    /// True while a GC tick has asked the next prepare to compact the arena.
+    pub mesh_compact_requested: bool,
+    // Per-family buffer capacities (element counts).
+    pub vertex_capacity: usize,
+    pub index_capacity: usize,
+    pub packed_lod_vertex_capacity: usize,
+    pub packed_lod_index_capacity: usize,
+    pub blend_shape_delta_capacity: usize,
+    pub decal_buffer_capacity: usize,
+    // Shadow atlas layers: allocated vs what the last shadow update needed.
+    pub ray_shadow_layers_allocated: u32,
+    pub ray_shadow_layers_used: u32,
+    pub spot_shadow_layers_allocated: u32,
+    pub spot_shadow_layers_used: u32,
+    pub point_shadow_layers_allocated: u32,
+    pub point_shadow_layers_used: u32,
+    // Decal texture array layers: allocated vs textures holding a layer.
+    pub decal_layers_allocated: u32,
+    pub decal_layers_live: u32,
+}
+
+impl Gpu3D {
+    /// Vertices still reachable in the mesh arena: the builtin prefix (never
+    /// freed, always the arena's head) plus every live custom mesh range.
+    /// `blend_shape_vertex_count` is the mesh's own vertex count, recorded for
+    /// every appended mesh (blend shapes or not) in `append_mesh_data`.
+    fn mesh_arena_live_vertices(&self) -> usize {
+        self.builtin_vertex_len
+            + self
+                .custom_mesh_ranges
+                .values()
+                .map(|(_, range)| range.blend_shape_vertex_count as usize)
+                .sum::<usize>()
+    }
+
+    pub(in super::super) fn memory_report(&self) -> Gpu3DMemoryReport {
+        let live_vertices = self.mesh_arena_live_vertices().min(self.mesh_vertex_len);
+        Gpu3DMemoryReport {
+            mesh_arena_vertices: self.mesh_vertex_len,
+            mesh_arena_live_vertices: live_vertices,
+            mesh_arena_bytes: self.mesh_vertex_len * MESH_VERTEX_STRIDE,
+            mesh_arena_live_bytes: live_vertices * MESH_VERTEX_STRIDE,
+            mesh_index_len: self.mesh_index_len,
+            mesh_compact_requested: self.mesh_compact_requested,
+            vertex_capacity: self.vertex_capacity,
+            index_capacity: self.index_capacity,
+            packed_lod_vertex_capacity: self.packed_lod_vertex_capacity,
+            packed_lod_index_capacity: self.packed_lod_index_capacity,
+            blend_shape_delta_capacity: self.blend_shape_delta_capacity,
+            decal_buffer_capacity: self.decal_buffer_capacity,
+            ray_shadow_layers_allocated: self.ray_shadow_layers_allocated,
+            ray_shadow_layers_used: if self.ray_shadow_enabled {
+                MAX_SHADOW_RAY_CASCADES as u32
+            } else {
+                0
+            },
+            spot_shadow_layers_allocated: self.spot_shadow_layers_allocated,
+            spot_shadow_layers_used: self.spot_shadow_count as u32,
+            point_shadow_layers_allocated: self.point_shadow_layers_allocated,
+            point_shadow_layers_used: self
+                .point_shadow_count
+                .saturating_mul(POINT_SHADOW_FACE_COUNT) as u32,
+            decal_layers_allocated: self.decal_texture_layers,
+            decal_layers_live: self.decal_layer_by_texture.len() as u32,
+        }
+    }
+
+    /// Periodic GC tick for the grow-only GPU memory `shrink_tick` cannot
+    /// reclaim: the append-only mesh arena, the shadow atlases and the decal
+    /// texture array. Runs between frames (backend GC interval), so it only
+    /// ever needs the device.
+    pub fn reclaim_memory_tick(&mut self, device: &wgpu::Device) {
+        let report = self.memory_report();
+        // Mesh arena: dead meshes (scene switch, mesh-revision re-append) stay
+        // resident until the device-limit backstop (~340MB desktop) fires.
+        // Compaction itself is NOT safe here: it invalidates every resolved
+        // mesh range, and the draw batches that reference them are only rebuilt
+        // by the forced full prepare that follows it. So the tick only raises a
+        // request; `compact_custom_mesh_storage_if_needed` consumes it at the
+        // top of the next prepare, which turns it into `force_full_rebuild` in
+        // the same frame.
+        if report.mesh_arena_bytes >= MESH_ARENA_COMPACT_MIN_BYTES
+            && report.mesh_arena_live_bytes * MESH_ARENA_COMPACT_LIVE_RATIO_DEN
+                < report.mesh_arena_bytes
+        {
+            self.mesh_compact_requested = true;
+        }
+        // Both of these own their contents' lifetime (re-render / re-upload on
+        // demand), so they can shrink in place right here.
+        self.shrink_shadow_atlases_tick(device);
+        self.shrink_decal_texture_tick(device);
+    }
+}
+
 impl Gpu3D {
     /// Resolve a mesh id/source into its buffer range through the caller-held
     /// cache (the prepare loop `mem::take`s `custom_mesh_ranges` so the hit
@@ -587,13 +712,24 @@ impl Gpu3D {
     /// reaches the device's single-buffer limit. Built-in meshes always occupy
     /// the prefix; every live custom mesh is resolved again by the forced full
     /// prepare that follows this reset.
+    ///
+    /// Two triggers: the device-limit backstop below, and a request raised by
+    /// `reclaim_memory_tick` when most of the arena went dead. The GC tick
+    /// cannot compact directly -- this must run at the top of a prepare so the
+    /// `true` return can force a full rebuild in the same frame, before
+    /// anything draws through the invalidated ranges.
     pub(in super::super) fn compact_custom_mesh_storage_if_needed(
         &mut self,
         device: &wgpu::Device,
     ) -> bool {
-        let max_vertices = device.limits().max_buffer_size as usize
-            / std::mem::size_of::<SkinnedMeshVertex>().max(std::mem::size_of::<RigidMeshVertex>());
-        if self.mesh_vertex_len < max_vertices.saturating_mul(3) / 4 {
+        let requested = std::mem::take(&mut self.mesh_compact_requested);
+        let max_vertices = device.limits().max_buffer_size as usize / MESH_VERTEX_STRIDE;
+        if !requested && self.mesh_vertex_len < max_vertices.saturating_mul(3) / 4 {
+            return false;
+        }
+        // Nothing appended past the builtin prefix: compacting would only cost
+        // a pointless full rebuild.
+        if self.mesh_vertex_len <= self.builtin_vertex_len && self.custom_mesh_ranges.is_empty() {
             return false;
         }
 
@@ -609,6 +745,10 @@ impl Gpu3D {
         self.mesh_index_len = builtin_index_len;
         self.packed_lod_vertex_len = 0;
         self.packed_lod_index_len = 0;
+        // Packed-LOD params are only ever referenced by custom mesh ranges (the
+        // builtin prefix has no packed LODs), so the reset drops them with the
+        // ranges instead of letting the arena keep growing across compactions.
+        self.packed_lod_params.clear();
         self.blend_shape_delta_len = 0;
         self.custom_mesh_ranges.clear();
         true
@@ -688,3 +828,7 @@ impl Gpu3D {
         queue.submit([encoder.finish()]);
     }
 }
+
+#[cfg(test)]
+#[path = "../../../../tests/unit/three_d_memory_reclaim_tests.rs"]
+mod memory_reclaim_tests;

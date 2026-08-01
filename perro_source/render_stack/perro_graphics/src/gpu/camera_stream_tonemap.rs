@@ -52,10 +52,35 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 }
 "#;
 
+// Cached bind groups retained across frames. Stream targets are stable, so the
+// working set is one entry per live camera stream; the cap only guards against
+// unbounded retention if a project churns targets without going through
+// `remove_camera_stream`.
+const TONEMAP_BIND_CACHE_MAX: usize = 8;
+
+struct CachedTonemapBind {
+    // Identity key: `wgpu::TextureView` compares by underlying resource, and
+    // `GpuCameraStreamTarget` owns its views for the target's whole lifetime,
+    // so a matching view means a still-valid bind group.
+    input_view: wgpu::TextureView,
+    bind_group: wgpu::BindGroup,
+}
+
 pub(super) struct CameraStreamTonemap {
     bind_group_layout: wgpu::BindGroupLayout,
     pipeline: wgpu::RenderPipeline,
+    // NOTE: one config buffer shared by every stream. That is only sound while
+    // all streams tonemap with identical settings (global hdr status + the
+    // shared exposure). If per-stream tonemap settings ever land, the writes
+    // below would race within a frame: give each stream its own buffer (or a
+    // dynamic-offset slice) at that point.
     config_buffer: wgpu::Buffer,
+    // `apply` runs behind a shared borrow of `Gpu` (the caller holds borrows of
+    // the stream targets), hence interior mutability rather than `&mut self`.
+    bind_cache: std::cell::RefCell<Vec<CachedTonemapBind>>,
+    last_config: std::cell::Cell<Option<[u32; 4]>>,
+    bind_group_builds: std::cell::Cell<u64>,
+    config_writes: std::cell::Cell<u64>,
 }
 
 impl CameraStreamTonemap {
@@ -129,7 +154,23 @@ impl CameraStreamTonemap {
             bind_group_layout,
             pipeline,
             config_buffer,
+            bind_cache: std::cell::RefCell::new(Vec::new()),
+            last_config: std::cell::Cell::new(None),
+            bind_group_builds: std::cell::Cell::new(0),
+            config_writes: std::cell::Cell::new(0),
         }
+    }
+
+    /// Drop cached bind groups so the retired stream target's views and
+    /// textures actually release. Called when a target is removed or rebuilt.
+    pub(super) fn invalidate_bind_cache(&self) {
+        self.bind_cache.borrow_mut().clear();
+    }
+
+    /// `(bind groups built, config writes issued)` since creation.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(super) fn upload_counts(&self) -> (u64, u64) {
+        (self.bind_group_builds.get(), self.config_writes.get())
     }
 
     pub(super) fn apply(
@@ -155,21 +196,47 @@ impl CameraStreamTonemap {
             },
             0.0,
         ];
-        queue.write_buffer(&self.config_buffer, 0, bytemuck::bytes_of(&config));
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("perro_camera_stream_tonemap_bg"),
-            layout: &self.bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(input_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: self.config_buffer.as_entire_binding(),
-                },
-            ],
-        });
+        let config_bits = [
+            config[0].to_bits(),
+            config[1].to_bits(),
+            config[2].to_bits(),
+            config[3].to_bits(),
+        ];
+        if self.last_config.get() != Some(config_bits) {
+            self.last_config.set(Some(config_bits));
+            self.config_writes.set(self.config_writes.get() + 1);
+            queue.write_buffer(&self.config_buffer, 0, bytemuck::bytes_of(&config));
+        }
+        let mut cache = self.bind_cache.borrow_mut();
+        let cached = match cache.iter().position(|entry| &entry.input_view == input_view) {
+            Some(index) => index,
+            None => {
+                let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("perro_camera_stream_tonemap_bg"),
+                    layout: &self.bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(input_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: self.config_buffer.as_entire_binding(),
+                        },
+                    ],
+                });
+                self.bind_group_builds.set(self.bind_group_builds.get() + 1);
+                if cache.len() >= TONEMAP_BIND_CACHE_MAX {
+                    cache.remove(0);
+                }
+                cache.push(CachedTonemapBind {
+                    input_view: input_view.clone(),
+                    bind_group,
+                });
+                cache.len() - 1
+            }
+        };
+        let bind_group = &cache[cached].bind_group;
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("perro_camera_stream_tonemap_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -187,7 +254,7 @@ impl CameraStreamTonemap {
             multiview_mask: None,
         });
         pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, &bind_group, &[]);
+        pass.set_bind_group(0, bind_group, &[]);
         pass.draw(0..3, 0..1);
     }
 }
@@ -217,5 +284,128 @@ mod tests {
     #[test]
     fn hdr_path_keeps_display_headroom() {
         assert!(CAMERA_STREAM_TONEMAP_WGSL.contains("aces_filmic(peak / headroom) * headroom"));
+    }
+
+    async fn tonemap_test_device() -> Option<(wgpu::Device, wgpu::Queue)> {
+        let instance = wgpu::Instance::default();
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::LowPower,
+                compatible_surface: None,
+                force_fallback_adapter: false,
+                apply_limit_buckets: false,
+            })
+            .await
+            .ok()?;
+        adapter
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("perro_tonemap_test_device"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                experimental_features: wgpu::ExperimentalFeatures::disabled(),
+                memory_hints: wgpu::MemoryHints::Performance,
+                trace: wgpu::Trace::default(),
+            })
+            .await
+            .ok()
+    }
+
+    fn tonemap_test_target(device: &wgpu::Device) -> (wgpu::Texture, wgpu::TextureView) {
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("perro_tonemap_test_target"),
+            size: wgpu::Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        (texture, view)
+    }
+
+    #[test]
+    fn repeat_apply_reuses_bind_group_and_skips_config_write() {
+        let Some((device, queue)) = pollster::block_on(tonemap_test_device()) else {
+            // No adapter available in this environment.
+            return;
+        };
+        let tonemap = CameraStreamTonemap::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+        let (_input, input_view) = tonemap_test_target(&device);
+        let (_output, output_view) = tonemap_test_target(&device);
+        let settings = || CameraStreamTonemapSettings {
+            hdr_status: perro_structs::HdrStatus::default(),
+            exposure: 0.0,
+        };
+
+        for _ in 0..5 {
+            let mut encoder =
+                device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+            tonemap.apply(
+                &device,
+                &queue,
+                &mut encoder,
+                &input_view,
+                &output_view,
+                settings(),
+            );
+            queue.submit(Some(encoder.finish()));
+        }
+        // Stable stream target + stable settings: one bind group, one write.
+        assert_eq!(tonemap.upload_counts(), (1, 1));
+
+        // A second stream target needs its own bind group; settings unchanged.
+        let (_input_b, input_view_b) = tonemap_test_target(&device);
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        tonemap.apply(
+            &device,
+            &queue,
+            &mut encoder,
+            &input_view_b,
+            &output_view,
+            settings(),
+        );
+        queue.submit(Some(encoder.finish()));
+        assert_eq!(tonemap.upload_counts(), (2, 1));
+
+        // Exposure change reopens the config write, bind groups stay cached.
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        tonemap.apply(
+            &device,
+            &queue,
+            &mut encoder,
+            &input_view,
+            &output_view,
+            CameraStreamTonemapSettings {
+                hdr_status: perro_structs::HdrStatus::default(),
+                exposure: 1.5,
+            },
+        );
+        queue.submit(Some(encoder.finish()));
+        assert_eq!(tonemap.upload_counts(), (2, 2));
+
+        tonemap.invalidate_bind_cache();
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        tonemap.apply(
+            &device,
+            &queue,
+            &mut encoder,
+            &input_view,
+            &output_view,
+            CameraStreamTonemapSettings {
+                hdr_status: perro_structs::HdrStatus::default(),
+                exposure: 1.5,
+            },
+        );
+        queue.submit(Some(encoder.finish()));
+        assert_eq!(tonemap.upload_counts(), (3, 2));
     }
 }

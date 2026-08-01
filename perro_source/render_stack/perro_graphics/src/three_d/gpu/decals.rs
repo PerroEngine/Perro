@@ -322,6 +322,44 @@ impl Gpu3D {
         Some(layer)
     }
 
+    /// GC-tick half of the grow-only decal texture array (64 layers of 512^2
+    /// RGBA + mips ~= 87MB at the cap). Once the live texture set fits a
+    /// smaller array for `SHRINK_LOW_TICKS` consecutive ticks, the array is
+    /// recreated at that size.
+    ///
+    /// Layer contents cannot be copied across without the `ResourceStore` (not
+    /// available at GC time), so the shrink drops them: the texture -> layer map
+    /// is cleared and `decal_sources_pending` forces the next `prepare_decals`
+    /// to re-resolve every live decal texture. That re-resolve is also what
+    /// remaps the layer indices baked into the GPU decal records -- indices are
+    /// re-assigned from 0 up, so the surviving layers end up compacted, not
+    /// merely truncated.
+    pub(super) fn shrink_decal_texture_tick(&mut self, device: &wgpu::Device) -> bool {
+        // Match the grow path's power-of-two ladder so a shrink cannot land on
+        // a size the doubling in `grow_decal_texture` would skip past.
+        let live = self.decal_layer_by_texture.len() as u32;
+        let need = live
+            .max(DECAL_INITIAL_LAYERS)
+            .next_power_of_two()
+            .min(DECAL_MAX_LAYERS);
+        self.decal_layer_shrink.note_used(need);
+        let Some(target) = self.decal_layer_shrink.tick(self.decal_texture_layers) else {
+            return false;
+        };
+        let target = target.max(DECAL_INITIAL_LAYERS);
+        if target >= self.decal_texture_layers {
+            return false;
+        }
+        let (texture, view) = create_decal_texture_array(device, target);
+        self.decal_texture = texture;
+        self.decal_texture_view = view;
+        self.decal_texture_layers = target;
+        self.decal_layer_by_texture.clear();
+        self.decal_sources_pending = true;
+        self.rebuild_camera_bind_groups(device);
+        true
+    }
+
     // Double the layer count and re-upload every cached texture into the new
     // array (grow is rare; re-decoding keeps the cache pixel-free).
     fn grow_decal_texture(

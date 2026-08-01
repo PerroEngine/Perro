@@ -40,6 +40,11 @@ impl PerroGraphics {
                             gpu.remove_camera_stream(node, output_texture);
                         }
                         self.camera_stream_targets.remove(&node);
+                        // Direct drop: the frame-loop fallback in assets.rs only
+                        // sweeps when the memo outgrows the live stream list, so
+                        // a remove+add in the same frame would otherwise leave
+                        // this row behind until the counts happen to diverge.
+                        self.animated_stream_memo.remove(&node);
                         self.retained_camera_streams.retain(|(id, _)| *id != node);
                         if self.resources.drop_texture(output_texture)
                             && output_texture != camera_stream_texture_id(node)

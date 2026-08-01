@@ -270,6 +270,13 @@ pub struct GpuPointParticles3D {
     compute_map_fingerprint: u64,
     compute_map_uploaded_fingerprint: u64,
     compute_map_uploaded_count: usize,
+    // `(len, fingerprint)` of the last upload of the two static compute config
+    // buffers. Both are rebuilt identically every frame for an unedited emitter
+    // set, so an unchanged key skips the write entirely.
+    compute_expr_ops_uploaded: Option<(usize, u64)>,
+    compute_custom_params_uploaded: Option<(usize, u64)>,
+    // write_buffer calls issued for the two buffers above; asserted in tests.
+    compute_config_uploads: u64,
     // Usage trackers for the periodic buffer-shrink pass (crate::gpu_shrink).
     shrink_points: ShrinkTracker,
     shrink_billboards: ShrinkTracker,
@@ -281,3 +288,7 @@ pub struct GpuPointParticles3D {
     shrink_hybrid_spawn_origins: ShrinkTracker,
     shrink_hybrid_spawn_rotations: ShrinkTracker,
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/particles_upload_tests.rs"]
+mod upload_tests;

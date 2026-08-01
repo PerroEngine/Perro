@@ -11,6 +11,8 @@ impl Gpu {
         // no target => the stream rendered straight into a source texture
         // (webcam passthrough) that no consumer bound externally.
         let had_target = self.camera_stream_targets.remove(&node).is_some();
+        // Cached tonemap bind groups hold clones of this target's views.
+        self.camera_stream_tonemap.invalidate_bind_cache();
         self.camera_stream_content_revisions.remove(&node);
         self.camera_stream_external_bindings.remove(&node);
         self.camera_stream_3d_bindings.remove(&node);
@@ -137,6 +139,11 @@ impl Gpu {
         {
             return;
         }
+        // Miss path fan-out: several consumer caches usually resolve to the
+        // same SharedGpuTexture, so collapse repeat base-level writes of this
+        // one frame to a single upload per distinct GPU texture. Each consumer
+        // still runs its residency check and its own invalidation bookkeeping.
+        let dedupe = crate::texture_mips::StreamWriteDedupe::begin();
         if let Some(two_d) = self.two_d.as_mut() {
             two_d.write_stream_texture(queue, texture, width, height, rgba);
         }
@@ -164,6 +171,15 @@ impl Gpu {
             camera_stream_3d
                 .write_stream_material_texture_source(queue, source, width, height, rgba);
         }
+        drop(dedupe);
+    }
+
+    /// `(distinct base-level uploads issued, redundant uploads elided)` across
+    /// every `write_stream_texture` fan-out since startup. Profiling hook; the
+    /// dedupe itself is covered by `texture_mips`' own tests.
+    #[allow(dead_code)]
+    pub fn stream_texture_upload_counts(&self) -> (u64, u64) {
+        crate::texture_mips::stream_write_totals()
     }
 
     pub(super) fn ensure_camera_stream_target(
@@ -277,6 +293,8 @@ impl Gpu {
             );
             self.camera_stream_external_bindings.remove(&node);
             self.camera_stream_3d_bindings.remove(&node);
+            // The old views are retired; release the bind groups built on them.
+            self.camera_stream_tonemap.invalidate_bind_cache();
         }
         self.camera_stream_targets.get(&node)
     }

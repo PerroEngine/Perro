@@ -1799,6 +1799,7 @@ impl Gpu {
         let queue = self.queue.clone();
         if let Some(three_d) = self.three_d.as_mut() {
             three_d.shrink_tick(&device, &queue);
+            three_d.reclaim_memory_tick(&device);
         }
         if let Some(two_d) = self.two_d.as_mut() {
             two_d.shrink_tick(&device, &queue);
@@ -1812,8 +1813,12 @@ impl Gpu {
         if let Some(water) = self.water.as_mut() {
             water.shrink_tick(&device, &queue);
         }
+        if let Some(ui) = self.ui.as_mut() {
+            ui.shrink_tick(&device, &queue);
+        }
         for three_d in self.camera_stream_3d.values_mut() {
             three_d.shrink_tick(&device, &queue);
+            three_d.reclaim_memory_tick(&device);
         }
         for two_d in self.camera_stream_2d.values_mut() {
             two_d.shrink_tick(&device, &queue);

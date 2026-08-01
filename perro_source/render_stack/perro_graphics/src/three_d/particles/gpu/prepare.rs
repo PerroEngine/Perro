@@ -196,6 +196,11 @@ impl GpuPointParticles3D {
             queue.write_buffer(&self.hybrid_params_buffer, 0, bytemuck::bytes_of(&params));
         }
         if !self.compute_emitters.is_empty() {
+            // Capacity snapshots: `ensure_compute_capacity` only reports the
+            // spawn buffers, but a grown expr-op / custom-param buffer is a new
+            // (empty) allocation that must be repopulated.
+            let expr_capacity_before = self.compute_expr_op_capacity;
+            let custom_param_capacity_before = self.compute_custom_param_capacity;
             let compute_spawn_origin_recreated = self.ensure_compute_capacity(
                 device,
                 self.compute_emitters.len(),
@@ -204,6 +209,12 @@ impl GpuPointParticles3D {
                 self.compute_expr_ops.len(),
                 self.compute_custom_params.len(),
             );
+            if self.compute_expr_op_capacity != expr_capacity_before {
+                self.compute_expr_ops_uploaded = None;
+            }
+            if self.compute_custom_param_capacity != custom_param_capacity_before {
+                self.compute_custom_params_uploaded = None;
+            }
             let compute_spawn_full_upload = std::mem::take(&mut self.compute_spawn_full_upload)
                 || compute_spawn_origin_recreated;
             queue.write_buffer(
@@ -255,19 +266,38 @@ impl GpuPointParticles3D {
                 _pad: [0; 2],
             };
             queue.write_buffer(&self.compute_params_buffer, 0, bytemuck::bytes_of(&params));
+            // Static config: the expression program and the custom param block
+            // only change when an emitter's material/curve set is edited, so
+            // gate both on content instead of re-pushing them every frame.
             if !self.compute_expr_ops.is_empty() {
-                queue.write_buffer(
-                    &self.compute_expr_op_buffer,
-                    0,
-                    bytemuck::cast_slice(&self.compute_expr_ops),
+                let key = (
+                    self.compute_expr_ops.len(),
+                    pod_slice_fingerprint(&self.compute_expr_ops),
                 );
+                if self.compute_expr_ops_uploaded != Some(key) {
+                    self.compute_expr_ops_uploaded = Some(key);
+                    self.compute_config_uploads = self.compute_config_uploads.wrapping_add(1);
+                    queue.write_buffer(
+                        &self.compute_expr_op_buffer,
+                        0,
+                        bytemuck::cast_slice(&self.compute_expr_ops),
+                    );
+                }
             }
             if !self.compute_custom_params.is_empty() {
-                queue.write_buffer(
-                    &self.compute_custom_param_buffer,
-                    0,
-                    bytemuck::cast_slice(&self.compute_custom_params),
+                let key = (
+                    self.compute_custom_params.len(),
+                    pod_slice_fingerprint(&self.compute_custom_params),
                 );
+                if self.compute_custom_params_uploaded != Some(key) {
+                    self.compute_custom_params_uploaded = Some(key);
+                    self.compute_config_uploads = self.compute_config_uploads.wrapping_add(1);
+                    queue.write_buffer(
+                        &self.compute_custom_param_buffer,
+                        0,
+                        bytemuck::cast_slice(&self.compute_custom_params),
+                    );
+                }
             }
         }
 
@@ -282,4 +312,23 @@ impl GpuPointParticles3D {
         };
         queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uniform));
     }
+
+    /// Number of static compute-config uploads (expression ops + custom params)
+    /// issued since creation. Flat across frames that do not edit an emitter.
+    #[inline]
+    pub fn compute_config_upload_count(&self) -> u64 {
+        self.compute_config_uploads
+    }
+}
+
+/// FNV-1a fingerprint over a `Pod` slice's raw bytes.
+fn pod_slice_fingerprint<T: bytemuck::Pod>(values: &[T]) -> u64 {
+    let bytes: &[u8] = bytemuck::cast_slice(values);
+    let mut fingerprint = 0xcbf2_9ce4_8422_2325u64;
+    for chunk in bytes.chunks(4) {
+        let mut word = [0u8; 4];
+        word[..chunk.len()].copy_from_slice(chunk);
+        hash_u32(&mut fingerprint, u32::from_le_bytes(word));
+    }
+    fingerprint
 }

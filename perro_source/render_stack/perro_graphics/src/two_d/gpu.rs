@@ -176,6 +176,12 @@ pub struct Gpu2D {
     last_camera: Option<Camera2DUniform>,
     last_sprite_stage: Option<u64>,
     last_sprite_prepare: Option<SpritePrepareKey>,
+    // Content key (instance count + FNV over the instance bytes) of the last
+    // sprite instance run pushed to the GPU. A camera pan that does not change
+    // the visible set rebuilds an identical run, so the upload is skipped.
+    last_sprite_instance_upload: Option<(usize, u64)>,
+    // Counts sprite instance `write_buffer` calls; asserted in tests.
+    sprite_instance_uploads: u64,
     last_point_light_stage: Option<PointLightStageKey>,
     last_shadow_caster_stage: Option<ShadowCasterStageKey>,
     sprite_perf: SpritePerfCounters,
@@ -434,6 +440,8 @@ impl Gpu2D {
             last_camera: None,
             last_sprite_stage: None,
             last_sprite_prepare: None,
+            last_sprite_instance_upload: None,
+            sprite_instance_uploads: 0,
             last_point_light_stage: None,
             last_shadow_caster_stage: None,
             sprite_perf: SpritePerfCounters::default(),
@@ -473,6 +481,9 @@ impl Gpu2D {
                 vertex_usage,
             );
             self.sprite_instance_capacity = new_cap;
+            // Buffer identity changed; the content key can no longer vouch for
+            // what the GPU holds.
+            self.last_sprite_instance_upload = None;
         }
         if let Some(new_cap) = self
             .shrink_point_lights
@@ -726,11 +737,16 @@ impl Gpu2D {
             self.sprite_perf.draw_batches = self.sprite_batches.len() as u32;
             self.sprite_perf.bind_group_switches = self.sprite_batches.len() as u32;
             if !self.sprite_instances.is_empty() {
-                queue.write_buffer(
-                    &self.sprite_instance_buffer,
-                    0,
-                    bytemuck::cast_slice(&self.sprite_instances),
-                );
+                let key = sprite_instance_content_key(&self.sprite_instances);
+                if self.last_sprite_instance_upload != Some(key) {
+                    self.last_sprite_instance_upload = Some(key);
+                    self.sprite_instance_uploads = self.sprite_instance_uploads.wrapping_add(1);
+                    queue.write_buffer(
+                        &self.sprite_instance_buffer,
+                        0,
+                        bytemuck::cast_slice(&self.sprite_instances),
+                    );
+                }
             }
             self.last_sprite_prepare = Some(sprite_key);
         }
@@ -963,6 +979,13 @@ impl Gpu2D {
         self.sprite_perf.bind_group_switches
     }
 
+    /// Number of sprite instance buffer uploads issued since creation. Flat
+    /// across camera moves that leave the visible instance run identical.
+    #[inline]
+    pub fn sprite_instance_upload_count(&self) -> u64 {
+        self.sprite_instance_uploads
+    }
+
     #[inline]
     pub fn draw_call_count(&self, rect_draw_count: u32) -> u32 {
         u32::from(rect_draw_count > 0)
@@ -1121,6 +1144,8 @@ impl Gpu2D {
             mapped_at_creation: false,
         });
         self.sprite_instance_capacity = new_capacity;
+        // Fresh (empty) buffer: force the next prepare to push its run.
+        self.last_sprite_instance_upload = None;
     }
 
     fn ensure_point_light_instance_capacity(&mut self, device: &wgpu::Device, needed: usize) {
@@ -1279,6 +1304,20 @@ fn shadow_caster_stage_key_with_revision(
         len: casters.len(),
         hash: revision,
     }
+}
+
+/// Cheap content key for a staged sprite instance run: element count plus an
+/// FNV-1a pass over the raw instance bytes. `SpriteInstanceGpu` is `Pod`, so the
+/// byte view is the exact payload `write_buffer` would push.
+fn sprite_instance_content_key(instances: &[SpriteInstanceGpu]) -> (usize, u64) {
+    let bytes: &[u8] = bytemuck::cast_slice(instances);
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    for chunk in bytes.chunks(8) {
+        let mut word = [0u8; 8];
+        word[..chunk.len()].copy_from_slice(chunk);
+        hash = hash_mix(hash, u64::from_le_bytes(word));
+    }
+    (instances.len(), hash)
 }
 
 fn hash_f32_slice(mut hash: u64, values: &[f32]) -> u64 {
@@ -1600,3 +1639,7 @@ mod tests {
         assert_ne!(shadow_caster_stage_key(&base), shadow_caster_stage_key(&[]));
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/two_d_gpu_upload_tests.rs"]
+mod upload_tests;

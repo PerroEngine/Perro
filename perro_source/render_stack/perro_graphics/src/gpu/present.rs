@@ -716,6 +716,7 @@ impl PresentProcessor {
             exposure_state_buffer,
             exposure_uniform_buffer,
             output_uniform_buffer,
+            last_output_uniform: None,
             output_format,
             fxaa_active: false,
             fxaa: None,
@@ -1248,7 +1249,17 @@ impl PresentProcessor {
             headroom: finite_or(hdr_status.headroom, 1.0).max(1.0),
             _pad: [0.0; 2],
         };
-        queue.write_buffer(&self.output_uniform_buffer, 0, bytemuck::bytes_of(&output));
+        // HDR status is display state, not frame state: push only on change.
+        let output_bits = [
+            output.hdr_active.to_bits(),
+            output.headroom.to_bits(),
+            output._pad[0].to_bits(),
+            output._pad[1].to_bits(),
+        ];
+        if self.last_output_uniform != Some(output_bits) {
+            self.last_output_uniform = Some(output_bits);
+            queue.write_buffer(&self.output_uniform_buffer, 0, bytemuck::bytes_of(&output));
+        }
         if settings.auto_exposure {
             if let (Some(pipeline), Some(bind_group)) = (
                 self.exposure_pipeline.as_ref(),

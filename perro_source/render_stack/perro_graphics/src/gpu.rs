@@ -406,6 +406,9 @@ struct PresentProcessor {
     exposure_state_buffer: wgpu::Buffer,
     exposure_uniform_buffer: wgpu::Buffer,
     output_uniform_buffer: wgpu::Buffer,
+    // Bit pattern of the last `PresentOutputConfig` pushed. HDR status only
+    // moves on a display/settings change, so the per-frame write is skipped.
+    last_output_uniform: Option<[u32; 4]>,
     output_format: wgpu::TextureFormat,
     // FXAA gate: config requested it AND the live sample count is 1 (no FXAA
     // on top of MSAA). Resources below stay None until the first frame that

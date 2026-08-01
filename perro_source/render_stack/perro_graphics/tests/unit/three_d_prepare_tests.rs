@@ -9,7 +9,7 @@ use perro_ids::{MaterialID, MeshID, NodeID};
 use perro_render_bridge::{
     CustomMaterial3D, CustomMaterialLighting3D, CustomMaterialParam3D, CustomMaterialParamValue3D,
     DenseInstancePose3D, LODOptions3D, MaterialParamOverride3D, MeshSurfaceBinding3D,
-    StandardMaterial3D, VertexModifier3D,
+    SkeletonPalette, StandardMaterial3D, VertexModifier3D,
 };
 use perro_structs::Color;
 use std::borrow::Cow;
@@ -603,6 +603,305 @@ fn multimesh_custom_param_staging_reuse_matches_full_repack_and_is_cheaper() {
         assert!(
             reuse < repack,
             "custom-param staging reuse ({reuse:?}) is not cheaper than a repack ({repack:?})"
+        );
+    });
+}
+
+const SKINNED_BONES: usize = 64;
+// Kept under FRUSTUM_CULL_MIN_BATCHES so the GPU-cull uploads (whose indirect
+// records are GPU-mutated and therefore ungateable) stay out of the byte math.
+const UPLOAD_SCENE_DRAWS: u32 = 80;
+
+fn bone_palette(phase: f32) -> SkeletonPalette {
+    let matrices: Arc<[[[f32; 4]; 3]]> = (0..SKINNED_BONES)
+        .map(|bone| {
+            let offset = phase + bone as f32 * 0.01;
+            [
+                [1.0, 0.0, 0.0, offset],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ]
+        })
+        .collect::<Vec<_>>()
+        .into();
+    SkeletonPalette { matrices }
+}
+
+fn skinned_draw(index: u32, mesh: MeshID, material: MaterialID, phase: f32) -> Draw3DInstance {
+    Draw3DInstance {
+        skeleton: Some(bone_palette(phase)),
+        ..regular_draw(index, mesh, material, Color::WHITE)
+    }
+}
+
+/// Byte accounting for the staging uploads a `prepare` would issue if none of
+/// the lanes were gated, so the test can report "before" next to the gated
+/// "after".
+fn ungated_staging_bytes(gpu: &Gpu3D) -> usize {
+    std::mem::size_of_val(gpu.staged_instance_transforms.as_slice())
+        + std::mem::size_of_val(gpu.staged_rigid_instance_meta.as_slice())
+        + std::mem::size_of_val(gpu.staged_skinned_instance_meta.as_slice())
+        + std::mem::size_of_val(gpu.staged_blend_shape_weights.as_slice())
+        + std::mem::size_of_val(gpu.staged_blend_shape_instance_meta.as_slice())
+        + std::mem::size_of_val(gpu.staged_skeletons.as_slice())
+}
+
+/// `indirect_first_instance` gates the whole GPU frustum-cull path
+/// (`frustum_cull_default`), so the cull-input tests need it on.
+fn upload_harness(
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    indirect_first_instance: bool,
+) -> (Harness, MeshID, MaterialID) {
+    let cache = PipelineRegistryCache::new();
+    let pipelines = cache.get_or_create(&device, COLOR_FORMAT, 1);
+    let gpu = Gpu3D::new(
+        &device,
+        &queue,
+        COLOR_FORMAT,
+        Gpu3DConfig {
+            sample_count: 1,
+            width: 256,
+            height: 256,
+            meshlets_enabled: false,
+            dev_meshlets: false,
+            meshlet_debug_view: false,
+            occlusion_culling: crate::OcclusionCullingMode::Off,
+            ssao: crate::SsaoQuality::Off,
+            indirect_first_instance_enabled: indirect_first_instance,
+            multi_draw_indirect_enabled: false,
+            multi_draw_indirect_count_enabled: false,
+            texture_filter: TextureFilterMode::default(),
+            shader_variant_mode: crate::ShaderVariantMode::Generic,
+            shadow_pcf_high: false,
+        },
+        pipelines,
+    );
+    let mut resources = ResourceStore::new();
+    let mesh = resources.create_mesh("__upload_gate_test_mesh__", true);
+    let material =
+        resources.create_material(Material3D::default(), Some("__upload_gate_test_mat__"), true);
+    (
+        Harness {
+            device,
+            queue,
+            gpu,
+            resources,
+            shared_textures: SharedTextureStore::default(),
+            lighting: Lighting3DState::default(),
+            revision: 0,
+            static_shader_lookup: None,
+        },
+        mesh,
+        material,
+    )
+}
+
+/// A skinned draw whose palette changed defeats every fast path (the draw is
+/// not "same except model"), so prepare re-runs the whole rebuild. Only the
+/// bone palettes actually differ, so every other staging lane must gate its
+/// upload away.
+#[test]
+fn skeleton_only_change_uploads_only_the_skeleton_bytes() {
+    pollster::block_on(async {
+        let Some((device, queue)) = test_device().await else {
+            eprintln!("skip skeleton-only upload gate test: no wgpu adapter");
+            return;
+        };
+        let (mut harness, mesh, material) = upload_harness(device, queue, false);
+
+        let mut draws: Vec<Draw3DInstance> = (0..UPLOAD_SCENE_DRAWS)
+            .map(|i| regular_draw(i, mesh, material, Color::WHITE))
+            .collect();
+        draws.push(skinned_draw(UPLOAD_SCENE_DRAWS, mesh, material, 0.0));
+
+        harness.prepare(&draws, true);
+        let cold = harness.gpu.prepare_upload_stats();
+        let ungated = ungated_staging_bytes(&harness.gpu);
+        let skeleton_bytes = std::mem::size_of_val(harness.gpu.staged_skeletons.as_slice());
+        assert!(
+            harness.gpu.staged_has_skinned,
+            "scene setup produced no skinned batch"
+        );
+        assert_eq!(harness.gpu.staged_skeletons.len(), SKINNED_BONES);
+
+        // Animate the palette only. Same node, same model, same materials.
+        let last = draws.len() - 1;
+        draws[last] = skinned_draw(UPLOAD_SCENE_DRAWS, mesh, material, 1.0);
+        harness.prepare(&draws, false);
+        let animated = harness.gpu.prepare_upload_stats();
+
+        println!(
+            "skeleton-only frame ({UPLOAD_SCENE_DRAWS} rigid + 1 skinned x {SKINNED_BONES} bones): \
+             cold={} B, ungated restage={} B, gated restage={} B in {} write_buffer calls",
+            cold.write_buffer_bytes,
+            ungated,
+            animated.write_buffer_bytes,
+            animated.write_buffer_calls,
+        );
+        assert_eq!(
+            animated.write_buffer_bytes, skeleton_bytes as u64,
+            "a skeleton-only frame must upload the palettes and nothing else"
+        );
+        assert_eq!(animated.write_buffer_calls, 1);
+
+        // Re-preparing the exact same animated pose must upload nothing at all
+        // (the revision still bumps, so this is a real forced restage).
+        harness.prepare(&draws, true);
+        let repeat = harness.gpu.prepare_upload_stats();
+        assert_eq!(
+            repeat.write_buffer_bytes, 0,
+            "an identical forced restage must upload nothing"
+        );
+    });
+}
+
+/// Rigid-only scene: nothing samples `skinned_instances`, so those rows are
+/// never sent -- not even on the cold build.
+#[test]
+fn rigid_only_scene_never_uploads_skinned_meta() {
+    pollster::block_on(async {
+        let Some((device, queue)) = test_device().await else {
+            eprintln!("skip rigid-only upload gate test: no wgpu adapter");
+            return;
+        };
+        let (mut harness, mesh, material) = upload_harness(device, queue, false);
+
+        let draws: Vec<Draw3DInstance> = (0..UPLOAD_SCENE_DRAWS)
+            .map(|i| regular_draw(i, mesh, material, Color::WHITE))
+            .collect();
+
+        harness.prepare(&draws, true);
+        let cold = harness.gpu.prepare_upload_stats();
+        assert!(!harness.gpu.staged_has_skinned);
+        let skinned_bytes =
+            std::mem::size_of_val(harness.gpu.staged_skinned_instance_meta.as_slice());
+        assert!(
+            skinned_bytes > 0,
+            "rigid draws still stage a parallel skinned meta row; nothing to prove otherwise"
+        );
+        let transforms = std::mem::size_of_val(harness.gpu.staged_instance_transforms.as_slice());
+        let rigid_meta = std::mem::size_of_val(harness.gpu.staged_rigid_instance_meta.as_slice());
+        let blend_meta =
+            std::mem::size_of_val(harness.gpu.staged_blend_shape_instance_meta.as_slice());
+        println!(
+            "rigid-only cold build ({UPLOAD_SCENE_DRAWS} draws): uploaded={} B \
+             (transforms={transforms} rigid_meta={rigid_meta} blend_meta={blend_meta}), \
+             skinned_meta skipped={skinned_bytes} B",
+            cold.write_buffer_bytes
+        );
+        assert_eq!(
+            cold.write_buffer_bytes,
+            (transforms + rigid_meta + blend_meta) as u64,
+            "a rigid-only scene must not send skinned instance meta"
+        );
+
+        // Blend-shape lanes: no mesh in this scene carries targets, so the meta
+        // rows come out byte-identical every rebuild and gate away entirely.
+        harness.prepare(&draws, true);
+        assert_eq!(harness.gpu.prepare_upload_stats().write_buffer_bytes, 0);
+    });
+}
+
+/// The transform-only fast path refreshes `last_draws` by adopting the incoming
+/// draw's `Arc` lanes rather than deep-cloning the list: lanes that did not
+/// change keep the exact allocation they already held, and the one lane that did
+/// change points at the producer's `Arc` (no new allocation anywhere).
+#[test]
+fn transform_only_frame_updates_last_draws_by_refcount_only() {
+    pollster::block_on(async {
+        let Some((device, queue)) = test_device().await else {
+            eprintln!("skip last_draws adoption test: no wgpu adapter");
+            return;
+        };
+        let (mut harness, mesh, material) = upload_harness(device, queue, false);
+
+        let draws: Vec<Draw3DInstance> = (0..UPLOAD_SCENE_DRAWS)
+            .map(|i| regular_draw(i, mesh, material, Color::WHITE))
+            .collect();
+        harness.prepare(&draws, true);
+
+        let surfaces_before: Vec<*const MeshSurfaceBinding3D> = harness
+            .gpu
+            .last_draws
+            .iter()
+            .map(|draw| Arc::as_ptr(&draw.surfaces) as *const MeshSurfaceBinding3D)
+            .collect();
+
+        // Move exactly one draw; every other draw hands back the same Arcs.
+        let mut moved = draws.clone();
+        moved[3].instance_mats = Arc::from([identity_at(42.0)]);
+        harness.prepare(&moved, false);
+
+        for (index, draw) in harness.gpu.last_draws.iter().enumerate() {
+            assert!(
+                Arc::ptr_eq(&draw.surfaces, &moved[index].surfaces),
+                "draw {index}: surfaces lane was deep-copied instead of adopted"
+            );
+            assert!(
+                Arc::ptr_eq(&draw.instance_mats, &moved[index].instance_mats),
+                "draw {index}: instance_mats lane was deep-copied instead of adopted"
+            );
+            assert_eq!(
+                Arc::as_ptr(&draw.surfaces) as *const MeshSurfaceBinding3D,
+                surfaces_before[index],
+                "draw {index}: unchanged surfaces lane must keep its previous allocation"
+            );
+        }
+        println!(
+            "transform-only frame: {UPLOAD_SCENE_DRAWS} draws, last_draws refreshed with 0 lane \
+             reallocations ({} B patched)",
+            harness.gpu.prepare_upload_stats().write_buffer_bytes
+        );
+    });
+}
+
+/// Same skeleton-only frame, but with enough batches to turn the GPU frustum
+/// cull on: the cull's two read-only input halves are restaged byte-identically
+/// and must gate away. The indirect commands stay ungated on purpose (the cull
+/// compute mutates them in place), so they are the only extra traffic.
+#[test]
+fn skeleton_only_change_skips_the_frustum_cull_uploads() {
+    pollster::block_on(async {
+        let Some((device, queue)) = test_device().await else {
+            eprintln!("skip frustum-cull upload gate test: no wgpu adapter");
+            return;
+        };
+        let (mut harness, mesh, material) = upload_harness(device, queue, true);
+
+        // Same-material draws compact into one batch, so the cull is reached
+        // via FRUSTUM_CULL_MIN_INSTANCES rather than the batch-count threshold.
+        const CULLED_DRAWS: u32 = 1100;
+        let mut draws: Vec<Draw3DInstance> = (0..CULLED_DRAWS)
+            .map(|i| regular_draw(i, mesh, material, Color::WHITE))
+            .collect();
+        draws.push(skinned_draw(CULLED_DRAWS, mesh, material, 0.0));
+        harness.prepare(&draws, true);
+
+        let cull_active = harness.gpu.should_run_frustum_cull();
+        let cold = harness.gpu.prepare_upload_stats();
+        let skeleton_bytes = std::mem::size_of_val(harness.gpu.staged_skeletons.as_slice());
+        let indirect_bytes = std::mem::size_of_val(harness.gpu.indirect_staging.as_slice());
+        let cull_bytes = std::mem::size_of_val(harness.gpu.frustum_cull_static_staging.as_slice())
+            + std::mem::size_of_val(harness.gpu.frustum_cull_dynamic_staging.as_slice());
+
+        let last = draws.len() - 1;
+        draws[last] = skinned_draw(CULLED_DRAWS, mesh, material, 1.0);
+        harness.prepare(&draws, false);
+        let animated = harness.gpu.prepare_upload_stats();
+
+        let expected = skeleton_bytes as u64 + if cull_active { indirect_bytes as u64 } else { 0 };
+        println!(
+            "skeleton-only frame w/ frustum cull ({CULLED_DRAWS} rigid + 1 skinned, \
+             cull_active={cull_active}): cold={} B, gated restage={} B \
+             (skeleton={skeleton_bytes} indirect={indirect_bytes} cull_inputs_skipped={cull_bytes})",
+            cold.write_buffer_bytes, animated.write_buffer_bytes,
+        );
+        assert!(cull_active, "scene did not reach the GPU frustum-cull threshold");
+        assert!(cull_bytes > 0);
+        assert_eq!(
+            animated.write_buffer_bytes, expected,
+            "cull input halves must gate away on a skeleton-only restage"
         );
     });
 }
