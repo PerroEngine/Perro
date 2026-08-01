@@ -717,6 +717,7 @@ struct BatchHeavyStats {
     draw_instances_3d: u64,
     draw_material_refs_3d: u64,
     skip_prepare_2d: u64,
+    skip_render_3d: u64,
     skip_prepare_3d: u64,
     skip_prepare_particles_3d: u64,
     skip_prepare_3d_frustum: u64,

@@ -357,6 +357,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.batch_heavy.active_materials += present_timing.active_materials as u64;
             self.batch_heavy.active_textures += present_timing.active_textures as u64;
             self.batch_heavy.skip_prepare_2d += present_timing.skip_prepare_2d as u64;
+            self.batch_heavy.skip_render_3d += present_timing.skip_render_3d as u64;
             self.batch_heavy.skip_prepare_3d += present_timing.skip_prepare_3d as u64;
             self.batch_heavy.skip_prepare_particles_3d +=
                 present_timing.skip_prepare_particles_3d as u64;
@@ -727,10 +728,13 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     avg_draw_gpu_submit_finish_main_us,
                     avg_draw_gpu_submit_queue_main_us
                 );
+                let pct_skip_render_3d =
+                    (self.batch_heavy.skip_render_3d as f64 * 100.0) / self.batch.frames as f64;
                 println!(
-                    "draw skips: prep2d=({:.1}%) prep3d=({:.1}%) prep_particles3d=({:.1}%) frustum=({:.1}%) hiz=({:.1}%) indirect=({:.1}%) cull_inputs=({:.1}%)",
+                    "draw skips: prep2d=({:.1}%) prep3d=({:.1}%) render3d=({:.1}%) prep_particles3d=({:.1}%) frustum=({:.1}%) hiz=({:.1}%) indirect=({:.1}%) cull_inputs=({:.1}%)",
                     pct_skip_prepare_2d,
                     pct_skip_prepare_3d,
+                    pct_skip_render_3d,
                     pct_skip_prepare_particles_3d,
                     pct_skip_prepare_3d_frustum,
                     pct_skip_prepare_3d_hiz,

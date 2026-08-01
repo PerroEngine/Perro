@@ -454,6 +454,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.batch_heavy.active_materials += present_timing.active_materials as u64;
             self.batch_heavy.active_textures += present_timing.active_textures as u64;
             self.batch_heavy.skip_prepare_2d += present_timing.skip_prepare_2d as u64;
+            self.batch_heavy.skip_render_3d += present_timing.skip_render_3d as u64;
             self.batch_heavy.skip_prepare_3d += present_timing.skip_prepare_3d as u64;
             self.batch_heavy.skip_prepare_particles_3d +=
                 present_timing.skip_prepare_particles_3d as u64;

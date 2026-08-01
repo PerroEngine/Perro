@@ -117,6 +117,7 @@ pub struct PresentTiming {
     pub draw_material_refs_3d: u32,
     #[cfg(feature = "profile_heavy")]
     pub skip_prepare_2d: u32,
+    pub skip_render_3d: u32,
     #[cfg(feature = "profile_heavy")]
     pub skip_prepare_3d: u32,
     #[cfg(feature = "profile_heavy")]
@@ -795,6 +796,7 @@ impl<B: GraphicsBackend> App<B> {
                 .unwrap_or(0),
             #[cfg(feature = "profile_heavy")]
             skip_prepare_2d: draw_timing.as_ref().map(|t| t.skip_prepare_2d).unwrap_or(0),
+            skip_render_3d: draw_timing.as_ref().map(|t| t.skip_render_3d).unwrap_or(0),
             #[cfg(feature = "profile_heavy")]
             skip_prepare_3d: draw_timing.as_ref().map(|t| t.skip_prepare_3d).unwrap_or(0),
             #[cfg(feature = "profile_heavy")]
