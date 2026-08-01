@@ -15,7 +15,8 @@ particle_sim_default = "gpu"
 pixel_snapping = true
 
 [runtime]
-frame_rate_cap = "uncapped"
+# Cap to monitor refresh: uncapped pegs the GPU on frames that never display.
+frame_rate_cap = "refresh_rate"
 target_fixed_update = 60
 
 [physics]

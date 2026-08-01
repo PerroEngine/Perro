@@ -39,7 +39,9 @@ particle_sim_default = "gpu"
 pixel_snapping = true
 
 [runtime]
-frame_rate_cap = "uncapped"
+# Cap to monitor refresh (144 on the dev box): uncapped rendered 1000+ fps
+# that never display and pegged the GPU. Set "uncapped" only for fps benchmarking.
+frame_rate_cap = "refresh_rate"
 target_fixed_update = 60
 
 [physics]
