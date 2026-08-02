@@ -52,13 +52,20 @@ pub(super) fn clip_rect_scaled(
     [min_x, min_y, max_x - min_x, max_y - min_y]
 }
 
+/// `scale` is the project's ONE supersample factor
+/// (`perro_structs::supersample_scale`), never a local constant: the runtime
+/// sizes sub-view targets from the same number, and their equality is what
+/// keeps a nested target 1:1 with its footprint here instead of stacking a 2nd
+/// supersample on top.
 pub(super) fn supersampled_size(
     viewport: [u32; 2],
+    scale: u32,
     max_dimension: u32,
     max_pixels: u64,
 ) -> [u32; 2] {
-    let width = viewport[0].max(1).saturating_mul(UI_SUPERSAMPLE_SCALE);
-    let height = viewport[1].max(1).saturating_mul(UI_SUPERSAMPLE_SCALE);
+    let scale = scale.max(1);
+    let width = viewport[0].max(1).saturating_mul(scale);
+    let height = viewport[1].max(1).saturating_mul(scale);
     let (width, height) = crate::gpu::capped_render_size(width, height, max_dimension);
     let pixels = width as u64 * height as u64;
     if pixels <= max_pixels {

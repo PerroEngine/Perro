@@ -258,6 +258,16 @@ Effects:
 - linear smooths scale but may blur pixel art
 - anisotropic helps floors/walls at angle
 
+`texture_filter` also picks the UI supersample factor:
+
+- filtering modes raster UI at 2x and minify for edge AA
+- `"nearest"` rasters UI at 1x
+
+A point sampler gains no AA from a 2x source, so `"nearest"` would pay 4x UI
+raster cost for aliasing instead of smoothing. Auto-resolution `UiSubView`
+targets read the same factor, so both stay matched and a sub view still lands
+1:1 in the UI target.
+
 Current limit:
 
 - global only

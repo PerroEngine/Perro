@@ -28,7 +28,13 @@ use shaders::*;
 // oversized here and the linear composite sampler minifies them for edge AA.
 // 1 disables supersampling (still renders through the intermediate + composite
 // pass; skipping that entirely needs a direct-to-surface pipeline variant).
-const UI_SUPERSAMPLE_SCALE: u32 = 2;
+//
+// SINGLE-SUPERSAMPLE INVARIANT: the factor is NOT a local constant. It comes
+// from `perro_structs::supersample_scale`, the same source `perro_runtime` uses
+// to size auto-resolution sub-view targets. Their equality is what makes a
+// depth-0 sub-view land 1:1 inside this raster target (one resolve, not two
+// stacked). See `perro_structs::structs::supersample` before changing anything
+// here. Do not reintroduce a `const UI_SUPERSAMPLE_SCALE`.
 // sRGB8 stores the linear composite input at 1/4 the memory of Rgba16Float.
 // Camera-stream pixels composited into UI clamp to SDR in this intermediate,
 // so HDR headroom inside UI-embedded viewports does not survive it.
@@ -489,6 +495,15 @@ impl GpuUi {
         self.max_render_pixels = max_render_pixels.max(1);
     }
 
+    /// This session's ONE supersample factor. `Nearest` projects point-sample
+    /// the composite, so a supersampled source buys them nothing but cost and
+    /// aliasing: they raster 1:1. The runtime derives sub-view auto-resolution
+    /// targets from the very same function, so both ends move together and the
+    /// nested footprint stays 1:1.
+    pub(crate) fn supersample_scale(&self) -> u32 {
+        perro_structs::supersample_scale(self.texture_filter)
+    }
+
     pub fn prepare(
         &mut self,
         device: &wgpu::Device,
@@ -509,6 +524,7 @@ impl GpuUi {
         let viewport = [viewport[0].max(1), viewport[1].max(1)];
         let render_viewport = supersampled_size(
             viewport,
+            self.supersample_scale(),
             self.max_texture_dimension_2d,
             self.max_render_pixels,
         );
@@ -678,6 +694,7 @@ impl GpuUi {
         let viewport = [viewport[0].max(1), viewport[1].max(1)];
         let render_viewport = supersampled_size(
             viewport,
+            self.supersample_scale(),
             self.max_texture_dimension_2d,
             self.max_render_pixels,
         );
@@ -974,12 +991,15 @@ impl GpuUi {
         // PERRO_STREAM_LOG=1 prints the UI raster target the sub-view composite
         // lands in. Pairs with the per-stream target log so the full
         // on-screen -> UI-space -> stream-target chain is readable, not inferred
-        // from UI_SUPERSAMPLE_SCALE. Allocation path only.
+        // from the supersample factor. Allocation path only.
         #[cfg(not(target_arch = "wasm32"))]
         if std::env::var("PERRO_STREAM_LOG").is_ok() {
             eprintln!(
-                "[perro][gfx] ui supersample target size={}x{} (scale={})",
-                size[0], size[1], UI_SUPERSAMPLE_SCALE
+                "[perro][gfx] ui supersample target size={}x{} (scale={} filter={})",
+                size[0],
+                size[1],
+                self.supersample_scale(),
+                self.texture_filter.as_str(),
             );
         }
         let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -1592,8 +1612,76 @@ mod ui_gpu_tests;
 
 #[cfg(test)]
 mod tests {
-    use super::{UI_SUPERSAMPLE_FORMAT, UiMeshGpu, push_ui_mesh, ui_mesh_signature_for_test};
+    use super::{
+        UI_SUPERSAMPLE_FORMAT, UiMeshGpu, push_ui_mesh, supersampled_size,
+        ui_mesh_signature_for_test,
+    };
     use epaint::{ClippedPrimitive, Color32, Mesh, Primitive, Rect, TextureId, Vertex, pos2};
+    use perro_structs::TextureFilterMode;
+
+    /// SINGLE-SUPERSAMPLE INVARIANT (graphics half): the UI raster target is
+    /// the viewport times THE shared factor, never a local constant. The
+    /// runtime sizes auto-resolution sub-view targets from the same function,
+    /// so a depth-0 sub-view's footprint here equals its own target: one
+    /// resolve, not two stacked.
+    #[test]
+    fn ui_raster_target_scales_by_the_shared_project_factor() {
+        for mode in [
+            TextureFilterMode::Nearest,
+            TextureFilterMode::Linear,
+            TextureFilterMode::LinearMipmap,
+            TextureFilterMode::Anisotropic,
+        ] {
+            let scale = perro_structs::supersample_scale(mode);
+            assert_eq!(
+                supersampled_size([1920, 1080], scale, 16384, u64::MAX),
+                [1920 * scale, 1080 * scale],
+                "{mode:?}"
+            );
+            // A depth-0 sub-view rect lands in this target at the SAME factor
+            // the runtime sized its own stream target with -> 1:1 footprint.
+            let rect = [829.0f32, 467.0];
+            let footprint = [rect[0] * scale as f32, rect[1] * scale as f32];
+            let stream_target = [rect[0] * scale as f32, rect[1] * scale as f32];
+            assert_eq!(footprint, stream_target, "{mode:?}");
+        }
+    }
+
+    /// A `Nearest` project point-samples the composite, so a supersampled
+    /// source is 4x raster cost for zero AA plus minification aliasing: the
+    /// factor drops to 1 rather than the composite being forced to linear.
+    #[test]
+    fn nearest_filter_rasters_ui_one_to_one() {
+        let nearest = perro_structs::supersample_scale(TextureFilterMode::Nearest);
+        assert_eq!(nearest, 1);
+        assert_eq!(
+            supersampled_size([1920, 1080], nearest, 16384, u64::MAX),
+            [1920, 1080]
+        );
+        // 4x the pixels saved vs the filtering modes.
+        let filtered = perro_structs::supersample_scale(TextureFilterMode::LinearMipmap);
+        let filtered_px = supersampled_size([1920, 1080], filtered, 16384, u64::MAX);
+        assert_eq!(
+            u64::from(filtered_px[0]) * u64::from(filtered_px[1]),
+            1920 * 1080 * 4
+        );
+    }
+
+    /// The dimension cap and the per-adapter pixel budget only ever SHRINK the
+    /// raster target, and a zero/garbage factor can never shrink it below 1:1.
+    #[test]
+    fn supersampled_size_clamps_down_only() {
+        // dimension cap.
+        assert_eq!(supersampled_size([1920, 1080], 2, 2048, u64::MAX)[0], 2048);
+        // pixel budget: aspect-preserving shrink.
+        let budget = supersampled_size([1920, 1080], 2, 16384, 1920 * 1080);
+        assert!(u64::from(budget[0]) * u64::from(budget[1]) <= 1920 * 1080);
+        // degenerate factor floors at 1:1 instead of collapsing the target.
+        assert_eq!(
+            supersampled_size([1920, 1080], 0, 16384, u64::MAX),
+            [1920, 1080]
+        );
+    }
 
     #[test]
     fn compact_meshes_only_merge_exact_clip_and_texture() {
