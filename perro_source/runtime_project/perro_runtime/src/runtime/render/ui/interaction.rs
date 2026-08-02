@@ -1,5 +1,11 @@
 use super::*;
 
+/// `PERRO_STREAM_LOG=1` diagnostic gate, read once. The sub-view log site sits
+/// on a per-frame rebuild path, so it must not re-read the environment.
+#[cfg(not(target_arch = "wasm32"))]
+static STREAM_LOG_ENABLED: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var_os("PERRO_STREAM_LOG").is_some());
+
 impl Runtime {
     pub(super) fn rebuild_visible_interactive_ui_cache(
         &mut self,
@@ -660,6 +666,22 @@ impl Runtime {
                     let sub_view = perro_nodes::SubView::from(viewport.as_ref());
                     if let Some(state) = self.sub_view_state(node, &sub_view, Some(rect_state.size))
                     {
+                        // PERRO_STREAM_LOG=1: the UI-layout rect a depth-0 sub
+                        // view actually occupies, in the units auto-resolution
+                        // consumes. This rebuild path runs per frame for a live
+                        // stream, so the env read is resolved once, not per
+                        // frame.
+                        #[cfg(not(target_arch = "wasm32"))]
+                        if *STREAM_LOG_ENABLED {
+                            eprintln!(
+                                "[perro][runtime] sub view node={} ui_rect={}x{} -> target={}x{}",
+                                node.as_u64(),
+                                rect_state.size[0],
+                                rect_state.size[1],
+                                state.resolution[0],
+                                state.resolution[1],
+                            );
+                        }
                         camera_stream_texture = Some(state.output_texture);
                         camera_stream_resolution = Some(state.resolution);
                         self.ui_stream_render_info.insert(

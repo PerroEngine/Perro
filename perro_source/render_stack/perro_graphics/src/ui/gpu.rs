@@ -971,6 +971,17 @@ impl GpuUi {
         {
             return false;
         }
+        // PERRO_STREAM_LOG=1 prints the UI raster target the sub-view composite
+        // lands in. Pairs with the per-stream target log so the full
+        // on-screen -> UI-space -> stream-target chain is readable, not inferred
+        // from UI_SUPERSAMPLE_SCALE. Allocation path only.
+        #[cfg(not(target_arch = "wasm32"))]
+        if std::env::var("PERRO_STREAM_LOG").is_ok() {
+            eprintln!(
+                "[perro][gfx] ui supersample target size={}x{} (scale={})",
+                size[0], size[1], UI_SUPERSAMPLE_SCALE
+            );
+        }
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("perro_ui_supersample_texture"),
             size: wgpu::Extent3d {
