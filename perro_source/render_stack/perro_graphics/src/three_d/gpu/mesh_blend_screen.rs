@@ -826,9 +826,7 @@ impl Gpu3D {
         }
         let (scissor, copy_rect) = match self.mesh_blend_seam_region {
             // Skip handled above; Full copies and scissors the whole target.
-            SeamRegion::Skip | SeamRegion::Full => {
-                ((0, 0, width, height), (0, 0, width, height))
-            }
+            SeamRegion::Skip | SeamRegion::Full => ((0, 0, width, height), (0, 0, width, height)),
             SeamRegion::Rect(x, y, w, h) => (
                 (x, y, w, h),
                 grow_rect(x, y, w, h, SEAM_TAP_REACH_PX, width, height),

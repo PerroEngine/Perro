@@ -66,9 +66,7 @@ fn prepare_fast_path_eligible(force_full_rebuild: bool, eligible: bool) -> bool 
 /// loop and are not owned by any draw.
 fn animation_bounds_valid(bounds: &[u32], draw_count: usize, staged_len: usize) -> bool {
     bounds.len() == draw_count + 1
-        && bounds
-            .last()
-            .is_some_and(|end| *end as usize <= staged_len)
+        && bounds.last().is_some_and(|end| *end as usize <= staged_len)
         && bounds.windows(2).all(|pair| pair[0] <= pair[1])
 }
 
@@ -451,12 +449,15 @@ impl Gpu3D {
         // Patching needs the per-draw boundaries the last full rebuild recorded
         // to still describe the standing staging vectors.
         let stable_animation_ranges = !animation_changed
-            || (animation_bounds_valid(&self.last_draw_skeleton_bounds, draws.len(), self.staged_skeletons.len())
-                && animation_bounds_valid(
-                    &self.last_draw_blend_meta_bounds,
-                    draws.len(),
-                    self.staged_blend_shape_instance_meta.len(),
-                ));
+            || (animation_bounds_valid(
+                &self.last_draw_skeleton_bounds,
+                draws.len(),
+                self.staged_skeletons.len(),
+            ) && animation_bounds_valid(
+                &self.last_draw_blend_meta_bounds,
+                draws.len(),
+                self.staged_blend_shape_instance_meta.len(),
+            ));
         let transform_only_changed = !draws_unchanged
             && transform_only_semantic
             && stable_instance_ranges
@@ -479,6 +480,7 @@ impl Gpu3D {
         }
         self.last_aspect = (width.max(1) as f32) / (height.max(1) as f32);
         self.last_proj_y_scale = projection_y_scale_from_projection(camera.projection);
+        self.lod_ratio_scale = lod_ratio_scale(height, self.last_proj_y_scale);
 
         if draws_unchanged && !scene_changed {
             let frustum_cull_active = self.should_run_frustum_cull();
@@ -587,7 +589,8 @@ impl Gpu3D {
             for span in self.merged_instance_spans_scratch.iter() {
                 let byte_start =
                     span.start as u64 * std::mem::size_of::<TransformInstanceGpu>() as u64;
-                let slice = &self.staged_instance_transforms[span.start as usize..span.end as usize];
+                let slice =
+                    &self.staged_instance_transforms[span.start as usize..span.end as usize];
                 patched_bytes += std::mem::size_of_val(slice);
                 queue.write_buffer(
                     &self.instance_transform_buffer,
@@ -682,8 +685,8 @@ impl Gpu3D {
                 for span in self.merged_instance_spans_scratch.iter() {
                     let byte_start =
                         span.start as u64 * std::mem::size_of::<MultiMeshDrawParamGpu>() as u64;
-                    let slice = &self.staged_multimesh_draw_params
-                        [span.start as usize..span.end as usize];
+                    let slice =
+                        &self.staged_multimesh_draw_params[span.start as usize..span.end as usize];
                     patched_bytes += std::mem::size_of_val(slice);
                     queue.write_buffer(
                         &self.multimesh_draw_params_buffer,
@@ -696,8 +699,9 @@ impl Gpu3D {
                 // GPU buffer now equals the staged vec again; keep the
                 // skip-identical hash in sync so the next full restage can
                 // still gate its upload.
-                self.last_uploaded_multimesh_draw_params_hash =
-                    Some(super::pod_slice_len_hash(&self.staged_multimesh_draw_params));
+                self.last_uploaded_multimesh_draw_params_hash = Some(super::pod_slice_len_hash(
+                    &self.staged_multimesh_draw_params,
+                ));
             }
             // Transforms shifted: overlap tests may change, so refresh receiver
             // lists unless no blend-relevant batch actually moved this frame.
@@ -1084,15 +1088,19 @@ impl Gpu3D {
                     .unwrap_or(&default_mesh),
                 Draw3DKind::CameraStreamQuad { .. } => quad_mesh.as_ref().unwrap_or(&default_mesh),
                 Draw3DKind::DebugPointCube => &default_mesh,
-                Draw3DKind::DebugEdgeCylinder => {
-                    cylinder_mesh.as_ref().unwrap_or(&default_mesh)
-                }
+                Draw3DKind::DebugEdgeCylinder => cylinder_mesh.as_ref().unwrap_or(&default_mesh),
             };
             let lod_model = draw
                 .instance_mats
                 .first()
                 .or_else(|| draw.dense_multimesh.as_ref().map(|dense| &dense.node_model));
-            let active_lod = select_mesh_lod(mesh_asset, lod_model, camera.position, draw.lod);
+            let active_lod = select_mesh_lod(
+                mesh_asset,
+                lod_model,
+                camera.position,
+                draw.lod,
+                self.lod_ratio_scale,
+            );
             surface_entries.clear();
             match draw.kind {
                 Draw3DKind::DebugPointCube => {
@@ -1218,6 +1226,7 @@ impl Gpu3D {
                         lod_world_position(draw, dense),
                         camera.position,
                         draw.lod,
+                        self.lod_ratio_scale,
                     ) as u32,
                 });
                 // A mesh with no blend-shape targets makes every per-instance
@@ -1971,6 +1980,7 @@ impl Gpu3D {
         if !multimesh_reuse {
             self.multimesh_staging_cache_valid = true;
             self.multimesh_staging_cache_camera = camera.position;
+            self.multimesh_staging_cache_lod_scale = self.lod_ratio_scale;
         }
         // Drop pose-pack cache entries for pose Arcs not present this build so the
         // cache (and the source Arcs it pins) does not grow unbounded.
@@ -2843,7 +2853,11 @@ impl Gpu3D {
         {
             return false;
         }
-        let camera_moved = camera_position != self.multimesh_staging_cache_camera;
+        // The LOD scale is the other band input. It moves only on a target
+        // resize or an FOV change, but when it does every band can flip without
+        // the camera having moved a millimetre.
+        let camera_moved = camera_position != self.multimesh_staging_cache_camera
+            || self.lod_ratio_scale != self.multimesh_staging_cache_lod_scale;
         let mut cached = self.multimesh_staging_cache.iter();
         for (draw_index, draw) in draws.iter().enumerate() {
             let Some(dense) = draw.dense_multimesh.as_ref() else {
@@ -2868,6 +2882,7 @@ impl Gpu3D {
                     lod_world_position(draw, dense),
                     camera_position,
                     draw.lod,
+                    self.lod_ratio_scale,
                 ) != band.index as usize
             {
                 return false;

@@ -862,6 +862,7 @@ impl<B: GraphicsBackend> App<B> {
     }
 }
 
+pub use perro_structs::structs::boot_log;
 pub mod entry;
 pub(crate) mod frame_pacing;
 pub mod input;

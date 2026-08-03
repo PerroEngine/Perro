@@ -25,13 +25,31 @@ pub(super) fn shadow_layer_cull(
 }
 
 #[inline]
-pub(super) fn sphere_in_frustum(center: Vec3, radius: f32, planes: &[Vec4; 6]) -> bool {
+pub(in crate::three_d::gpu) fn sphere_in_frustum(
+    center: Vec3,
+    radius: f32,
+    planes: &[Vec4; 6],
+) -> bool {
     for plane in planes {
         if plane.truncate().dot(center) + plane.w < -radius {
             return false;
         }
     }
     true
+}
+
+/// Skip decision for one shadow layer's depth pass.
+///
+/// `cull_empty`: nothing survives this layer's cull, so the pass would write
+/// only its depth clear. `layer_already_empty`: the last pass on this layer was
+/// also empty, so the depth ALREADY holds exactly that clear.
+///
+/// Both must hold. A layer that last drew a caster still holds that caster's
+/// depth and must be cleared once before it can be skipped, and a layer with
+/// live casters obviously has to draw them.
+#[inline]
+pub(super) fn empty_shadow_layer_skips(cull_empty: bool, layer_already_empty: bool) -> bool {
+    cull_empty && layer_already_empty
 }
 
 impl Gpu3D {
@@ -52,6 +70,50 @@ impl Gpu3D {
             }
         }
         self.shadow_cull_scratch = scratch;
+    }
+
+    /// True while no staged multimesh batch can cast into a shadow layer. Hoist
+    /// once per frame: it is the same answer for all 32 layers.
+    pub(super) fn multimesh_shadow_casters_present(&self) -> bool {
+        self.multimesh_batches
+            .iter()
+            .any(|batch| batch.casts_shadows && !batch.mesh_blend)
+    }
+
+    /// Empty-layer skip. Runs the layer's CPU cull, then reports whether the
+    /// pass can be left out of the encoder entirely.
+    ///
+    /// A layer whose cull is empty renders nothing but its depth clear. If the
+    /// last pass on that layer was also empty, the depth is ALREADY that clear,
+    /// so encoding another clear-only pass writes the same bytes. This is the
+    /// case `shadow_casters_dirty` cannot see: one caster moving anywhere in the
+    /// scene dirties every layer, including the point-light faces that never had
+    /// a caster in front of them. A scene with 4 shadowed point lights encodes 24
+    /// faces per view, and every camera stream repeats the set.
+    ///
+    /// Returns true when the caller must skip the pass. The cull result stays in
+    /// `shadow_cull_scratch` for the caller that does draw.
+    pub(super) fn shadow_layer_skips_as_empty(
+        &mut self,
+        camera_index: usize,
+        multimesh_casters: bool,
+    ) -> bool {
+        self.compute_shadow_cull(camera_index);
+        let empty = self.shadow_cull_scratch.is_empty() && !multimesh_casters;
+        let skip = empty_shadow_layer_skips(
+            empty,
+            self.shadow_layer_empty
+                .get(camera_index)
+                .copied()
+                .unwrap_or(false),
+        );
+        if skip {
+            self.pass_counters.shadow_empty_layer_skips += 1;
+        } else if let Some(slot) = self.shadow_layer_empty.get_mut(camera_index) {
+            // The pass about to run leaves the layer in this state.
+            *slot = empty;
+        }
+        skip
     }
 
     // Compact this shadow layer's multimesh instances before its depth pass.
@@ -448,4 +510,31 @@ pub(super) fn batch_world_sphere(
     // Multi-instance batches merge every instance's world sphere; batches with
     // no usable bound (non-finite / sentinel radius) return None and survive.
     batch_merged_world_sphere(batch, transforms)
+}
+
+#[cfg(test)]
+mod empty_layer_tests {
+    use super::empty_shadow_layer_skips;
+
+    /// The win: 4 shadowed point lights = 24 faces per view, and one caster
+    /// moving anywhere dirties all of them. Faces that never see a caster hold
+    /// nothing but their clear, so they can stay out of the encoder.
+    #[test]
+    fn empty_layer_that_is_already_clear_skips() {
+        assert!(empty_shadow_layer_skips(true, true));
+    }
+
+    /// A layer that last drew a caster still holds that caster's depth. It must
+    /// be cleared once before it may be skipped, or the shadow would stick.
+    #[test]
+    fn first_empty_frame_still_clears() {
+        assert!(!empty_shadow_layer_skips(true, false));
+    }
+
+    /// Live casters always draw, whatever the layer held before.
+    #[test]
+    fn non_empty_cull_never_skips() {
+        assert!(!empty_shadow_layer_skips(false, true));
+        assert!(!empty_shadow_layer_skips(false, false));
+    }
 }

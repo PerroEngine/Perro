@@ -193,9 +193,7 @@ fn fill_blend_shape_deltas(
         for vertex_index in 0..vertex_count {
             let vertex = shape.vertices.get(vertex_index).copied();
             scratch.push(BlendShapeDeltaGpu {
-                position_delta: vertex
-                    .map(|v| v.position_delta)
-                    .unwrap_or([0.0; 3]),
+                position_delta: vertex.map(|v| v.position_delta).unwrap_or([0.0; 3]),
                 packed_normal_delta: vertex
                     .map(|v| pack_blend_normal_delta(v.normal_delta))
                     .unwrap_or(0),
@@ -855,11 +853,8 @@ impl SharedMeshArena {
         let indices: Vec<u32> = mesh.indices.iter().map(|idx| idx + base_vertex).collect();
 
         if skinned {
-            let vertices: Vec<SkinnedMeshVertex> = mesh
-                .vertices
-                .iter()
-                .map(pack_skinned_mesh_vertex)
-                .collect();
+            let vertices: Vec<SkinnedMeshVertex> =
+                mesh.vertices.iter().map(pack_skinned_mesh_vertex).collect();
             queue.write_buffer(
                 &self.vertex_buffer,
                 base_vertex as u64 * SKINNED_VERTEX_STRIDE as u64,
@@ -1477,9 +1472,8 @@ impl SharedMeshArena {
         let vertex_usage = wgpu::BufferUsages::VERTEX
             | wgpu::BufferUsages::COPY_DST
             | wgpu::BufferUsages::COPY_SRC;
-        let index_usage = wgpu::BufferUsages::INDEX
-            | wgpu::BufferUsages::COPY_DST
-            | wgpu::BufferUsages::COPY_SRC;
+        let index_usage =
+            wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC;
         let storage_usage = wgpu::BufferUsages::STORAGE
             | wgpu::BufferUsages::COPY_DST
             | wgpu::BufferUsages::COPY_SRC;

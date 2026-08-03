@@ -1,16 +1,18 @@
 use super::{
-    GC_INTERVAL_FRAMES, MAX_RUNTIME_TEXTURE_RGBA_BYTES, PerroGraphics, ShaderVariantMode,
-    checked_runtime_texture_rgba_len,
+    DIRTY_2D, DIRTY_CAMERA_2D, DIRTY_CAMERA_3D, GC_INTERVAL_FRAMES, MAX_RUNTIME_TEXTURE_RGBA_BYTES,
+    PerroGraphics, ShaderVariantMode, checked_runtime_texture_rgba_len,
+    clear_unchanged_camera_dirty_bits, command_dirty_bits,
 };
 use crate::backend::GraphicsBackend;
 use crate::three_d::renderer::Draw3DKind;
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
-    Camera3DState, CameraProjectionState, CameraStream3DState, CameraStreamLighting3DState,
-    CameraStreamSourceState, CameraStreamState, Command2D, Command3D, CustomMaterial3D,
-    LODOptions3D, Material3D, MeshSurfaceBinding3D, PostProcessingCommand, Rect2DCommand,
-    RenderBridge, RenderCommand, ResourceCommand, Sprite2DCommand, VisualAccessibilityCommand,
-    Water2DState, Water3DState, WaterIdleModeState, WaterLinkState, WaterShapeState,
+    Camera2DState, Camera3DState, CameraProjectionState, CameraStream3DState,
+    CameraStreamLighting3DState, CameraStreamSourceState, CameraStreamState, Command2D, Command3D,
+    CustomMaterial3D, LODOptions3D, Material3D, MeshSurfaceBinding3D, PostProcessingCommand,
+    Rect2DCommand, RenderBridge, RenderCommand, ResourceCommand, Sprite2DCommand,
+    VisualAccessibilityCommand, Water2DState, Water3DState, WaterIdleModeState, WaterLinkState,
+    WaterShapeState,
 };
 use perro_structs::{BitMask, Color, ColorBlindFilter, PostProcessEffect, PostProcessSet};
 use std::sync::Arc;
@@ -30,6 +32,37 @@ fn rect_command() -> Rect2DCommand {
         color: Color::WHITE,
         z_index: 0,
     }
+}
+
+#[test]
+fn camera_commands_only_dirty_changed_camera_lanes() {
+    let camera_2d = Camera2DState::default();
+    let camera_3d = Camera3DState::default();
+    assert_eq!(
+        command_dirty_bits(&RenderCommand::TwoD(Command2D::SetCamera {
+            camera: camera_2d.clone(),
+        })),
+        DIRTY_CAMERA_2D
+    );
+    assert_eq!(
+        command_dirty_bits(&RenderCommand::ThreeD(Box::new(Command3D::SetCamera {
+            camera: camera_3d.clone(),
+        }))),
+        DIRTY_CAMERA_3D
+    );
+
+    let all = DIRTY_2D | DIRTY_CAMERA_2D | DIRTY_CAMERA_3D;
+    assert_eq!(
+        clear_unchanged_camera_dirty_bits(all, &camera_2d, &camera_2d, &camera_3d, &camera_3d,),
+        DIRTY_2D
+    );
+
+    let mut moved_2d = camera_2d.clone();
+    moved_2d.position[0] = 1.0;
+    assert_eq!(
+        clear_unchanged_camera_dirty_bits(all, &camera_2d, &moved_2d, &camera_3d, &camera_3d,),
+        DIRTY_2D | DIRTY_CAMERA_2D
+    );
 }
 
 #[test]

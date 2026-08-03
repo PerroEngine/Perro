@@ -32,6 +32,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             app,
             title: title.to_owned(),
             window: None,
+            window_visible: false,
             fixed_timestep: normalized_fixed_timestep,
             fixed_accumulator: 0.0,
             pacer: FramePacer::new(frame_rate_cap, vsync_enabled),
@@ -49,6 +50,9 @@ impl<B: GraphicsBackend> RunnerState<B> {
             #[cfg(any(feature = "profile_heavy", feature = "mem_profile"))]
             mem_profile_csv: MemProfileCsvWriter::from_env(),
             timing_warmup_frames_left: TIMING_WARMUP_FRAMES,
+            boot_log_load_ready: false,
+            window_focused: true,
+            window_occluded: false,
             batch_start: now,
             batch: BatchCoreStats::default(),
             #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
@@ -76,6 +80,61 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 .ok()
                 .and_then(|raw| raw.trim().parse::<u64>().ok())
                 .filter(|frames| *frames > 0),
+        }
+    }
+
+    pub(super) fn present_reached_swapchain(timing: &crate::PresentTiming) -> bool {
+        // Custom backends using the trait's default timed path cannot report
+        // swapchain state. Keep their old show behavior; PerroGraphics reports
+        // the exact present result.
+        timing.draw.map(|draw| draw.presented).unwrap_or(true)
+    }
+
+    /// Re-derive the background pacing override from window state.
+    ///
+    /// Minimized/occluded is stricter than merely unfocused: nothing of ours is
+    /// composited, so only game logic needs to tick.
+    pub(super) fn sync_background_pacing(&mut self) {
+        let minimized = self
+            .window
+            .as_ref()
+            .and_then(|window| window.is_minimized())
+            .unwrap_or(false);
+        let fps = if minimized || self.window_occluded {
+            Some(super::HIDDEN_FRAME_RATE_CAP_FPS)
+        } else if !self.window_focused {
+            Some(super::UNFOCUSED_FRAME_RATE_CAP_FPS)
+        } else {
+            None
+        };
+        if self.pacer.set_background_cap(fps) {
+            crate::boot_log::mark(&format!("background pacing -> {fps:?} fps"));
+        }
+    }
+
+    pub(super) fn show_window_after_present(&mut self, presented: bool) {
+        if self.window_visible || !presented {
+            return;
+        }
+        let Some(window) = self.window.as_ref().cloned() else {
+            return;
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            window.set_visible(true);
+            window.focus_window();
+            // Post-create adjustments can land after surface setup.
+            let shown_size = window.inner_size();
+            self.app.resize_surface(shown_size.width, shown_size.height);
+        }
+        self.window_visible = true;
+        if self.startup_splash.active {
+            let now = Instant::now();
+            self.startup_splash.shown_at = now;
+            self.startup_splash.ready_streak = 0;
+            self.startup_splash.fade_started_at = None;
+            self.startup_splash.first_frame_inflight.clear();
+            self.startup_splash.first_frame_captured = false;
         }
     }
 

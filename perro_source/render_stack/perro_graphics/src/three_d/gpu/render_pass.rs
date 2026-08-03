@@ -186,6 +186,7 @@ impl Gpu3D {
             encoder.write_timestamp(slots.query_set, slots.begin);
         }
         if self.shadow_pass_enabled && self.has_shadow_casters {
+            let multimesh_casters = self.multimesh_shadow_casters_present();
             if self.ray_shadow_enabled {
                 for cascade in 0..MAX_SHADOW_RAY_CASCADES.min(self.shadow_layer_views.len()) {
                     // Cached-valid layer: depth retained, skip the pass entirely.
@@ -197,7 +198,12 @@ impl Gpu3D {
                     {
                         continue;
                     }
-                    self.compute_shadow_cull(cascade);
+                    if self.shadow_layer_skips_as_empty(cascade, multimesh_casters) {
+                        if let Some(valid) = self.shadow_layer_valid.get_mut(cascade) {
+                            *valid = true;
+                        }
+                        continue;
+                    }
                     self.encode_multimesh_shadow_cull(encoder, cascade);
                     self.pass_counters.render_passes += 1;
                     let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -231,7 +237,12 @@ impl Gpu3D {
                 if self.shadow_layer_valid.get(flat).copied().unwrap_or(false) {
                     continue;
                 }
-                self.compute_shadow_cull(flat);
+                if self.shadow_layer_skips_as_empty(flat, multimesh_casters) {
+                    if let Some(valid) = self.shadow_layer_valid.get_mut(flat) {
+                        *valid = true;
+                    }
+                    continue;
+                }
                 self.encode_multimesh_shadow_cull(encoder, flat);
                 self.pass_counters.render_passes += 1;
                 let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -267,7 +278,12 @@ impl Gpu3D {
                 if self.shadow_layer_valid.get(flat).copied().unwrap_or(false) {
                     continue;
                 }
-                self.compute_shadow_cull(flat);
+                if self.shadow_layer_skips_as_empty(flat, multimesh_casters) {
+                    if let Some(valid) = self.shadow_layer_valid.get_mut(flat) {
+                        *valid = true;
+                    }
+                    continue;
+                }
                 self.encode_multimesh_shadow_cull(encoder, flat);
                 self.pass_counters.render_passes += 1;
                 let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -787,8 +803,8 @@ impl Gpu3D {
                     let batch = &self.draw_batches[i];
                     // One mul-add per batch, not per draw: the batch list is
                     // already walked here, so no extra iteration is added.
-                    triangles += u64::from(batch.mesh.index_count / 3)
-                        * u64::from(batch.instance_count);
+                    triangles +=
+                        u64::from(batch.mesh.index_count / 3) * u64::from(batch.instance_count);
                     let state_change = current_state_key != Some(batch.state_key);
                     let texture_change = current_texture_key != batch.material_texture_key;
                     // Any state/texture switch or query batch ends the current run.
@@ -1094,7 +1110,8 @@ impl Gpu3D {
                 target_batch.packed_lod,
             );
             if current_state != Some(state) {
-                let (camera_bg, vertex_buf, pipeline) = if target_batch.path == RenderPath3D::Rigid {
+                let (camera_bg, vertex_buf, pipeline) = if target_batch.path == RenderPath3D::Rigid
+                {
                     let p = if target_batch.double_sided {
                         if target_batch.packed_lod {
                             &self.pipelines.depth_prepass_rigid_packed_lod().double_sided
@@ -1286,7 +1303,10 @@ impl Gpu3D {
     // blend-relevant batch sphere moved since the last build, and recompute
     // spheres only for batches overlapping a dirty span. Conservative: any
     // structural change or any doubt falls through to a full rebuild.
-    pub(super) fn rebuild_mesh_blend_receivers_gated(&mut self, dirty_spans: Option<&[Range<u32>]>) {
+    pub(super) fn rebuild_mesh_blend_receivers_gated(
+        &mut self,
+        dirty_spans: Option<&[Range<u32>]>,
+    ) {
         // No sources => no receivers; keep everything cleared.
         if self.mesh_blend_batch_indices.is_empty() {
             self.mesh_blend_source_receivers.clear();
@@ -1595,7 +1615,7 @@ fn seam_region_from_bounds(bounds: [f32; 4], width: u32, height: u32) -> SeamReg
 mod mesh_blend;
 use mesh_blend::*;
 #[path = "render_pass/shadows.rs"]
-mod shadows;
+pub(super) mod shadows;
 use shadows::*;
 
 #[cfg(test)]
@@ -1755,7 +1775,9 @@ mod tests {
     #[test]
     fn blend_depth_resident_matches_only_an_identical_receiver_list() {
         // Three sources: 0 and 1 share a receiver set, 2 has its own.
-        let receivers = [2usize, 5, 7, /* src 1 */ 2, 5, 7, /* src 2 */ 2, 9];
+        let receivers = [
+            2usize, 5, 7, /* src 1 */ 2, 5, 7, /* src 2 */ 2, 9,
+        ];
         let global = [2usize, 5, 7];
         let sets = [0..3usize, 3..6, 6..8];
         let matches = |resident: &BlendDepthResident, set: usize| {

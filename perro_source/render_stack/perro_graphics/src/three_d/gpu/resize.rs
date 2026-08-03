@@ -110,6 +110,26 @@ impl Gpu3D {
         self.mesh_blend_seam_bind_group = None;
         self.mesh_blend_scene_copy = None;
         self.depth_size = (width, height);
+        // Stream instances scale their atlases with the target, so a stream that
+        // changed resolution needs them rebuilt at the new size. Release drops
+        // them to the 0-layer placeholder; the next shadow frame grows them back
+        // at the sizes set here.
+        if self.shadow_scale_to_target {
+            let (ray, spot, point) =
+                shadow_map_sizes_for_target(default_shadow_map_sizes(), height);
+            if (ray, spot, point)
+                != (
+                    self.shadow_map_size,
+                    self.shadow_spot_map_size,
+                    self.shadow_point_map_size,
+                )
+            {
+                self.shadow_map_size = ray;
+                self.shadow_spot_map_size = spot;
+                self.shadow_point_map_size = point;
+                self.release_shadow_atlases(device);
+            }
+        }
         // Bind group pointers (mesh_blend_depth_view) changed; force a shadow
         // re-render so the cache does not keep stale layers.
         self.invalidate_shadow_layers();

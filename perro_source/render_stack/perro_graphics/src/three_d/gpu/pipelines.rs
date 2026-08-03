@@ -935,7 +935,8 @@ impl Gpu3D {
         let live = |entry: &TrackedPipelines| {
             tick.wrapping_sub(entry.last_used_tick) <= PIPELINE_EVICT_GC_TICKS
         };
-        self.builtin_variant_pipelines.retain(|_, entry| live(entry));
+        self.builtin_variant_pipelines
+            .retain(|_, entry| live(entry));
         self.custom_pipelines.retain(|_, entry| live(entry));
         self.custom_pipelines_rigid.retain(|_, entry| live(entry));
         self.custom_pipelines_multimesh

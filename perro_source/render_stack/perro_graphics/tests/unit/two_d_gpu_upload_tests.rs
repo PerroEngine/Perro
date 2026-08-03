@@ -120,29 +120,28 @@ fn camera_pan_with_unchanged_visible_set_skips_sprite_upload() {
         dirty_ranges: Vec::new(),
         draw_count: 0,
     };
-    let run_prepare = |gpu: &mut Gpu2D,
-                           shared_textures: &mut SharedTextureStore,
-                           camera: Camera2DUniform| {
-        gpu.prepare(
-            &device,
-            &queue,
-            Prepare2D {
-                resources: &resources,
-                shared_textures,
-                camera,
-                rects: &[],
-                upload: &upload,
-                sprites: &sprites,
-                sprites_revision: 1,
-                force_sprite_prepare: false,
-                point_lights: &[],
-                point_lights_revision: 1,
-                shadow_casters: &[],
-                shadow_casters_revision: 1,
-                static_texture_lookup: None,
-            },
-        );
-    };
+    let run_prepare =
+        |gpu: &mut Gpu2D, shared_textures: &mut SharedTextureStore, camera: Camera2DUniform| {
+            gpu.prepare(
+                &device,
+                &queue,
+                Prepare2D {
+                    resources: &resources,
+                    shared_textures,
+                    camera,
+                    rects: &[],
+                    upload: &upload,
+                    sprites: &sprites,
+                    sprites_revision: 1,
+                    force_sprite_prepare: false,
+                    point_lights: &[],
+                    point_lights_revision: 1,
+                    shadow_casters: &[],
+                    shadow_casters_revision: 1,
+                    static_texture_lookup: None,
+                },
+            );
+        };
 
     run_prepare(&mut gpu, &mut shared_textures, camera_at(0.0, 0.0));
     let after_first = gpu.sprite_instance_upload_count();

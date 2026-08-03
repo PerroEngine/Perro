@@ -96,6 +96,10 @@ pub(crate) struct FramePacer {
     refresh_hz: Option<f32>,
     next_deadline: Option<Instant>,
     wake_overshoot_ewma: Duration,
+    /// Override while the window is not in front of the user. Overrides the
+    /// project cap AND the vsync path: nobody is looking, so there is no reason
+    /// to keep feeding the GPU at refresh rate.
+    background_cap_fps: Option<f32>,
 }
 
 impl FramePacer {
@@ -106,7 +110,26 @@ impl FramePacer {
             refresh_hz: None,
             next_deadline: None,
             wake_overshoot_ewma: WAKE_OVERSHOOT_SEED,
+            background_cap_fps: None,
         }
+    }
+
+    /// Set (or clear) the background pacing override. Returns true when it
+    /// changed, so callers can re-anchor the deadline exactly once.
+    pub(crate) fn set_background_cap(&mut self, fps: Option<f32>) -> bool {
+        let fps = fps.filter(|fps| fps.is_finite() && *fps > 0.0);
+        if fps == self.background_cap_fps {
+            return false;
+        }
+        self.background_cap_fps = fps;
+        self.next_deadline = None;
+        true
+    }
+
+    #[cfg(test)]
+    #[inline]
+    pub(crate) fn background_cap(&self) -> Option<f32> {
+        self.background_cap_fps
     }
 
     #[inline]
@@ -174,6 +197,12 @@ impl FramePacer {
     /// is needed. With vsync on, the present block already paces at refresh,
     /// so a cap at or above refresh would only beat against it - skip it.
     fn pace_interval(&self, splash: bool) -> Option<Duration> {
+        // Backgrounded wins over everything, including the vsync bypass below:
+        // its interval is far longer than refresh, so the present block can no
+        // longer be the thing that paces us.
+        if let Some(fps) = self.background_cap_fps {
+            return Some(frame_interval_from_fps(fps));
+        }
         let refresh = self.refresh_interval();
         let interval = if splash {
             // Splash never needs more than refresh rate; honor a slower cap.
@@ -252,6 +281,46 @@ impl FramePacer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A backgrounded window must pace slower than the project cap AND slower
+    /// than vsync. The vsync path returns None (present blocks instead), so a
+    /// background override that went through it would do nothing at all.
+    #[test]
+    fn background_cap_overrides_vsync_and_project_cap() {
+        let mut pacer = FramePacer::new(RuntimeFrameRateCap::Fps(144.0), true);
+        pacer.refresh_hz = Some(144.0);
+        // vsync + cap at refresh: no CPU pacing, the present block does it.
+        assert_eq!(pacer.pace_interval(false), None);
+
+        assert!(pacer.set_background_cap(Some(15.0)));
+        let interval = pacer.pace_interval(false).expect("background paces");
+        assert_eq!(interval, frame_interval_from_fps(15.0));
+        assert!(interval > frame_interval_from_fps(144.0));
+    }
+
+    /// Clearing restores normal pacing, and repeat sets are no-ops so the
+    /// deadline is not re-anchored every frame.
+    #[test]
+    fn background_cap_clears_and_dedupes() {
+        let mut pacer = FramePacer::new(RuntimeFrameRateCap::Fps(60.0), false);
+        pacer.refresh_hz = Some(144.0);
+        assert!(pacer.set_background_cap(Some(15.0)));
+        assert!(!pacer.set_background_cap(Some(15.0)));
+        assert!(pacer.set_background_cap(None));
+        assert_eq!(
+            pacer.pace_interval(false),
+            Some(frame_interval_from_fps(60.0))
+        );
+    }
+
+    /// Garbage never disables pacing by accident.
+    #[test]
+    fn background_cap_rejects_nonsense() {
+        let mut pacer = FramePacer::new(RuntimeFrameRateCap::Unlimited, false);
+        assert!(!pacer.set_background_cap(Some(0.0)));
+        assert!(!pacer.set_background_cap(Some(f32::NAN)));
+        assert_eq!(pacer.background_cap(), None);
+    }
 
     #[test]
     fn normalize_clamps_and_rejects_bad_fps() {

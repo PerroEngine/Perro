@@ -66,6 +66,7 @@ fn new_gpu_3d(device: &wgpu::Device, queue: &wgpu::Queue, arena: &SharedMeshAren
             texture_filter: TextureFilterMode::default(),
             shader_variant_mode: crate::ShaderVariantMode::Generic,
             shadow_pcf_high: false,
+            shadow_scale_to_target: false,
         },
         pipelines,
         arena,
@@ -184,7 +185,8 @@ fn dead_mesh_ranges_trigger_arena_compaction_from_the_gc_tick() {
     assert_eq!(compacted.mesh_arena_live_vertices, 2 * builtin_vertices);
     assert!(!compacted.mesh_compact_requested);
     assert!(arena.custom_mesh_ranges.is_empty());
-    eprintln!("mesh arena vertices: {} -> {} (live {} -> {}), bytes {} -> {}",
+    eprintln!(
+        "mesh arena vertices: {} -> {} (live {} -> {}), bytes {} -> {}",
         stranded.mesh_arena_vertices,
         compacted.mesh_arena_vertices,
         stranded.mesh_arena_live_vertices,
@@ -437,7 +439,10 @@ fn rigid_only_meshes_stay_out_of_the_skinned_arena() {
         },
     );
     let both = arena.memory_report();
-    assert_eq!(both.rigid_arena_vertices, builtin_vertices + rigid_custom + 1_024);
+    assert_eq!(
+        both.rigid_arena_vertices,
+        builtin_vertices + rigid_custom + 1_024
+    );
     assert_eq!(
         both.skinned_arena_vertices,
         builtin_vertices + skinned_custom + 1_024

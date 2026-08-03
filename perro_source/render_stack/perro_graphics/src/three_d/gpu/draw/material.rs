@@ -929,8 +929,7 @@ pub(in super::super) fn apply_overrides(
             // Take the params out instead of cloning: on the `Cow::Owned`
             // path this moves the existing Vec (no copy); on the borrowed
             // path `into_owned` performs the one unavoidable allocation.
-            let mut params =
-                std::mem::replace(&mut custom.params, Cow::Borrowed(&[])).into_owned();
+            let mut params = std::mem::replace(&mut custom.params, Cow::Borrowed(&[])).into_owned();
             for ovr in overrides {
                 params.push(perro_render_bridge::CustomMaterialParam3D {
                     name: Some(ovr.name.clone()),

@@ -22,10 +22,11 @@ use perro_graphics_assets::{
 };
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
-    CameraStreamCommand, CameraStreamSourceState, CameraStreamState, Command2D, Command3D,
-    Decal3DState, DisplayCommand, HdrMode, Light2DState, Material3D, PointParticles3DState,
-    PostProcessingCommand, RenderBridge, RenderCommand, RenderEvent, ResourceCommand,
-    ShadowCaster2DState, Sprite2DCommand, VisualAccessibilityCommand, Water2DState, Water3DState,
+    Camera2DState, Camera3DState, CameraStreamCommand, CameraStreamSourceState, CameraStreamState,
+    Command2D, Command3D, Decal3DState, DisplayCommand, HdrMode, Light2DState, Material3D,
+    PointParticles3DState, PostProcessingCommand, RenderBridge, RenderCommand, RenderEvent,
+    ResourceCommand, ShadowCaster2DState, Sprite2DCommand, VisualAccessibilityCommand,
+    Water2DState, Water3DState,
 };
 use perro_structs::TextureFilterMode;
 use perro_structs::{PostProcessSet, VisualAccessibilitySettings};
@@ -196,6 +197,8 @@ pub struct GraphicsProfileSnapshot {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DrawFrameTiming {
+    /// True only when this draw reaches swapchain present.
+    pub presented: bool,
     pub process_commands: Duration,
     pub prepare_cpu: Duration,
     pub gpu_prepare_2d: Duration,
@@ -275,6 +278,9 @@ pub struct DrawFrameTiming {
     pub shadow_multimesh_batch_draws: u32,
     pub shadow_multimesh_instance_draws: u64,
     pub shadow_multimesh_culled_layers: u32,
+    /// Shadow depth layers skipped because the layer already held only its
+    /// clear and this frame's cull is still empty.
+    pub shadow_empty_layer_skips: u32,
     /// Camera streams / sub-views present in the frame state this frame.
     pub stream_count: u32,
     /// Streams that actually encoded passes; the rest hit the per-stream idle
@@ -363,13 +369,8 @@ fn draw_instance_count(draw: &Draw3DInstance) -> u32 {
 #[inline]
 fn command_dirty_bits(command: &RenderCommand) -> u32 {
     match command {
-        RenderCommand::TwoD(cmd_2d) => {
-            let mut bits = DIRTY_2D;
-            if matches!(cmd_2d, Command2D::SetCamera { .. }) {
-                bits |= DIRTY_CAMERA_2D;
-            }
-            bits
-        }
+        RenderCommand::TwoD(Command2D::SetCamera { .. }) => DIRTY_CAMERA_2D,
+        RenderCommand::TwoD(_) => DIRTY_2D,
         RenderCommand::ThreeD(cmd_3d) => match &**cmd_3d {
             Command3D::UpsertCameraStream { .. }
             | Command3D::Draw { .. }
@@ -396,6 +397,23 @@ fn command_dirty_bits(command: &RenderCommand) -> u32 {
         RenderCommand::VisualAccessibility(_) => DIRTY_ACCESSIBILITY,
         RenderCommand::Display(_) => 0,
     }
+}
+
+#[inline]
+fn clear_unchanged_camera_dirty_bits(
+    mut bits: u32,
+    camera_2d_before: &Camera2DState,
+    camera_2d_after: &Camera2DState,
+    camera_3d_before: &Camera3DState,
+    camera_3d_after: &Camera3DState,
+) -> u32 {
+    if camera_2d_before == camera_2d_after {
+        bits &= !DIRTY_CAMERA_2D;
+    }
+    if camera_3d_before == camera_3d_after {
+        bits &= !DIRTY_CAMERA_3D;
+    }
+    bits
 }
 
 fn summarize_command_chunk(commands: &[RenderCommand]) -> CommandSummary {

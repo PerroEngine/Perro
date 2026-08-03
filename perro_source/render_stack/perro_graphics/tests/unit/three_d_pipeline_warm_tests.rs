@@ -74,6 +74,7 @@ fn new_gpu_3d(device: &wgpu::Device, queue: &wgpu::Queue, arena: &SharedMeshAren
             // variant pipelines - the combo explosion this file measures.
             shader_variant_mode: crate::ShaderVariantMode::Auto,
             shadow_pcf_high: false,
+            shadow_scale_to_target: false,
         },
         pipelines,
         arena,
@@ -155,11 +156,8 @@ fn pipeline_warm_cost_splits_between_module_and_pipeline_creation() {
     let features = MaterialShaderFeatures::new(true, true, true, false, false, true, 0, false);
 
     let module_start = Instant::now();
-    let shader = create_standard_shader_module_rigid_variant(
-        &device,
-        BuiltinShaderKind::Standard,
-        features,
-    );
+    let shader =
+        create_standard_shader_module_rigid_variant(&device, BuiltinShaderKind::Standard, features);
     let module = module_start.elapsed();
 
     let first_start = Instant::now();
@@ -246,7 +244,10 @@ fn budgeted_warm_never_exceeds_its_budget_and_reaches_the_same_state() {
         frames += 1;
         assert!(frames < 64, "budgeted drain must terminate");
     }
-    assert!(frames > 1, "a 12-combo scene must spread over several frames");
+    assert!(
+        frames > 1,
+        "a 12-combo scene must spread over several frames"
+    );
     assert_eq!(
         budgeted.builtin_variant_pipeline_count(),
         full_count,

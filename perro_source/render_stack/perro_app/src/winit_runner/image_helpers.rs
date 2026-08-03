@@ -109,13 +109,22 @@ fn preload_project_startup_splash(
 ) -> Option<PreloadedStartupSplash> {
     let splash_source = project.config.startup_splash.trim();
     if !splash_source.is_empty() {
-        let bytes =
-            load_project_image_bytes(project, splash_source, project.config.startup_splash_hash)?;
-        return Some(preloaded_startup_splash_from_bytes(
-            splash_source.to_string(),
-            project.config.startup_splash_hash,
-            &bytes,
-        ));
+        // Fall THROUGH on a load failure, never out. `?` here returned None for
+        // the whole function, so a project that configured a splash whose bytes
+        // failed to load got no splash at all -- skipping the icon and builtin
+        // fallbacks that exist for exactly this case. With no splash the runner
+        // takes the else branch in `resumed`: boot scene loads synchronously
+        // before the first present, and the startup pipeline compiles land on
+        // the first visible frames with nothing covering them.
+        if let Some(bytes) =
+            load_project_image_bytes(project, splash_source, project.config.startup_splash_hash)
+        {
+            return Some(preloaded_startup_splash_from_bytes(
+                splash_source.to_string(),
+                project.config.startup_splash_hash,
+                &bytes,
+            ));
+        }
     }
 
     if let Some(icon) = icon {

@@ -593,10 +593,7 @@ impl PipelineRegistry {
         &self.sky_layout
     }
 
-    fn pair(
-        &self,
-        build: impl Fn(Option<wgpu::Face>) -> wgpu::RenderPipeline,
-    ) -> PipelinePair {
+    fn pair(&self, build: impl Fn(Option<wgpu::Face>) -> wgpu::RenderPipeline) -> PipelinePair {
         PipelinePair {
             culled: build(Some(wgpu::Face::Back)),
             double_sided: build(None),

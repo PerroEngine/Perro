@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod bit_mask;
+pub mod boot_log;
 pub mod collision_policy;
 pub mod color;
 pub mod const_param;

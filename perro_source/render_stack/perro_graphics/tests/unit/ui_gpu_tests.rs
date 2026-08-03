@@ -60,7 +60,11 @@ fn test_vertex(x: f32, y: f32) -> Vertex {
 }
 
 fn quad(x: f32) -> Arc<ClippedPrimitive> {
-    let mut mesh = Mesh::with_texture(TextureId::default());
+    quad_with_texture(x, TextureId::default())
+}
+
+fn quad_with_texture(x: f32, texture: TextureId) -> Arc<ClippedPrimitive> {
+    let mut mesh = Mesh::with_texture(texture);
     mesh.vertices = vec![
         test_vertex(x, 0.0),
         test_vertex(x + 8.0, 0.0),
@@ -71,6 +75,24 @@ fn quad(x: f32) -> Arc<ClippedPrimitive> {
         clip_rect: Rect::from_min_max(pos2(0.0, 0.0), pos2(64.0, 64.0)),
         primitive: Primitive::Mesh(mesh),
     })
+}
+
+fn external_view(device: &wgpu::Device) -> wgpu::TextureView {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("perro_ui_test_external"),
+        size: wgpu::Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: OUTPUT_FORMAT,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    texture.create_view(&wgpu::TextureViewDescriptor::default())
 }
 
 fn cycle(
@@ -130,6 +152,31 @@ fn unchanged_ui_skips_the_supersample_raster() {
 }
 
 #[test]
+fn idle_external_camera_target_skips_raster_until_written() {
+    pollster::block_on(async {
+        let Some((device, queue)) = test_device().await else {
+            eprintln!("skip ui external target retention test: no wgpu adapter");
+            return;
+        };
+        let mut ui = GpuUi::new(&device, OUTPUT_FORMAT, TextureFilterMode::Linear);
+        let view = output_view(&device);
+        let texture = perro_ids::TextureID::from_u64(91);
+        ui.upsert_external_image_texture(&device, texture, external_view(&device), [8, 8]);
+        let primitives = [quad_with_texture(0.0, TextureId::User(texture.as_u64()))];
+
+        cycle(&mut ui, &device, &queue, &view, &primitives, 1);
+        assert_eq!(ui.ui_supersample_redraws(), 1);
+
+        cycle(&mut ui, &device, &queue, &view, &primitives, 2);
+        assert_eq!(ui.ui_supersample_redraws(), 1);
+
+        ui.note_live_texture_write(texture);
+        cycle(&mut ui, &device, &queue, &view, &primitives, 3);
+        assert_eq!(ui.ui_supersample_redraws(), 2);
+    });
+}
+
+#[test]
 fn changed_ui_redraws_the_supersample_raster() {
     pollster::block_on(async {
         let Some((device, queue)) = test_device().await else {
@@ -166,9 +213,8 @@ fn shrink_tick_decays_buffers_and_releases_the_target() {
         };
         let mut ui = GpuUi::new(&device, OUTPUT_FORMAT, TextureFilterMode::Linear);
         let view = output_view(&device);
-        let heavy: Vec<Arc<ClippedPrimitive>> = (0..400)
-            .map(|index| quad((index % 40) as f32))
-            .collect();
+        let heavy: Vec<Arc<ClippedPrimitive>> =
+            (0..400).map(|index| quad((index % 40) as f32)).collect();
 
         cycle(&mut ui, &device, &queue, &view, &heavy, 1);
         let [vertex_bytes, index_bytes] = ui.mesh_buffer_capacity_bytes();

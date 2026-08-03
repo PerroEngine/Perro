@@ -48,7 +48,8 @@ impl Gpu3D {
             point_shadow_layers_allocated: self.point_shadow_layers_allocated,
             point_shadow_layers_used: self
                 .point_shadow_count
-                .saturating_mul(POINT_SHADOW_FACE_COUNT) as u32,
+                .saturating_mul(POINT_SHADOW_FACE_COUNT)
+                as u32,
             decal_layers_allocated: self.decal_texture_layers,
             decal_layers_live: self.decal_layer_by_texture.len() as u32,
         }

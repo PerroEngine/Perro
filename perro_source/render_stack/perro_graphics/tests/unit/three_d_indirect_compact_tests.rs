@@ -253,13 +253,19 @@ fn new_gpu_3d(device: &wgpu::Device, queue: &wgpu::Queue, count_enabled: bool) -
             texture_filter: TextureFilterMode::default(),
             shader_variant_mode: crate::ShaderVariantMode::Generic,
             shadow_pcf_high: false,
+            shadow_scale_to_target: false,
         },
         pipelines,
         &mesh_arena,
     )
 }
 
-fn read_buffer(device: &wgpu::Device, queue: &wgpu::Queue, src: &wgpu::Buffer, len: u64) -> Vec<u8> {
+fn read_buffer(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    src: &wgpu::Buffer,
+    len: u64,
+) -> Vec<u8> {
     let staging = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("perro_indirect_compact_test_readback"),
         size: len,
@@ -830,7 +836,11 @@ fn count_draw_submits_only_surviving_commands() {
             .expect("mapped target range")
             .to_vec();
         staging.unmap();
-        assert_eq!(&pixels[0..4], &[255u8, 0, 0, 255], "count draw produced no raster");
+        assert_eq!(
+            &pixels[0..4],
+            &[255u8, 0, 0, 255],
+            "count draw produced no raster"
+        );
     });
 }
 

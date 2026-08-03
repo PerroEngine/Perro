@@ -94,8 +94,8 @@ impl Gpu3D {
             label: Some("perro_blend_shape_weights"),
             size: (new_capacity * std::mem::size_of::<f32>()) as u64,
             usage: wgpu::BufferUsages::STORAGE
-                    | wgpu::BufferUsages::COPY_DST
-                    | wgpu::BufferUsages::COPY_SRC,
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         self.blend_shape_weight_capacity = new_capacity;
@@ -119,8 +119,8 @@ impl Gpu3D {
             label: Some("perro_blend_shape_instance_meta"),
             size: (new_capacity * std::mem::size_of::<BlendShapeInstanceMetaGpu>()) as u64,
             usage: wgpu::BufferUsages::STORAGE
-                    | wgpu::BufferUsages::COPY_DST
-                    | wgpu::BufferUsages::COPY_SRC,
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         self.blend_shape_instance_meta_capacity = new_capacity;
@@ -1298,16 +1298,16 @@ impl Gpu3D {
             label: Some("perro_frustum_cull_static"),
             size: (new_capacity * std::mem::size_of::<FrustumCullStaticGpu>()) as u64,
             usage: wgpu::BufferUsages::STORAGE
-                    | wgpu::BufferUsages::COPY_DST
-                    | wgpu::BufferUsages::COPY_SRC,
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         self.frustum_cull_dynamic_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_frustum_cull_dynamic"),
             size: (new_capacity * std::mem::size_of::<FrustumCullDynamicGpu>()) as u64,
             usage: wgpu::BufferUsages::STORAGE
-                    | wgpu::BufferUsages::COPY_DST
-                    | wgpu::BufferUsages::COPY_SRC,
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         self.indirect_buffer = device.create_buffer(&wgpu::BufferDescriptor {

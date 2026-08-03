@@ -9,11 +9,12 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.apply_frame_control_flow(event_loop, now);
             return;
         }
-        // Deferred boot load runs here, first frame aft window+splash show
-        // (no-op once loaded). Runs b4 any update/fixed_update this frame, so
-        // boot-scene ready callbacks fire this same (splash-covered) frame -
-        // always b4 the first gameplay frame presents.
-        self.app.runtime.load_boot_scene_if_pending();
+        // Deferred boot load waits for the splash texture's first visible
+        // present. Runs b4 update/fixed_update, so boot-scene ready callbacks
+        // fire in this same splash-covered frame.
+        if boot_load_may_start(self.startup_splash.active, self.window_visible) {
+            self.app.runtime.load_boot_scene_if_pending();
+        }
         self.frame_index = self.frame_index.saturating_add(1);
         let frame_index = self.frame_index;
         // Unattended capture stop. Exits through the normal path so the timing
@@ -191,13 +192,19 @@ impl<B: GraphicsBackend> RunnerState<B> {
         #[cfg(feature = "profile_heavy")]
         let present_timing = self.app.present_timed();
         #[cfg(not(feature = "profile_heavy"))]
-        let present_timing = if should_sample_timing {
+        let present_timing = if should_sample_timing || !self.window_visible {
             Some(self.app.present_timed())
         } else {
             self.app.present();
             None
         };
         self.apply_surface_resync_request();
+        #[cfg(feature = "profile_heavy")]
+        self.show_window_after_present(Self::present_reached_swapchain(&present_timing));
+        #[cfg(not(feature = "profile_heavy"))]
+        if let Some(timing) = present_timing.as_ref() {
+            self.show_window_after_present(Self::present_reached_swapchain(timing));
+        }
         self.apply_cursor_icon_request();
         #[cfg(feature = "profile_heavy")]
         let work_duration = work_start.elapsed();

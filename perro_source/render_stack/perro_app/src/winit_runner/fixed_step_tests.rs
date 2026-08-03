@@ -70,3 +70,66 @@ fn fit_aspect_uses_monitor_fraction_box_without_distorting() {
     let fitted = super::fit_aspect(PhysicalSize::new(1080, 1920), 1440, 810);
     assert_eq!(fitted, PhysicalSize::new(455, 810));
 }
+
+/// The opening window is a standard rung of the canvas, not "whatever fraction
+/// of this monitor happens to fit". A 2560x1440 display (0.75 -> 1920x1080)
+/// and a 3840x2160 one (0.75 -> 2880x1620) both open at 1920x1080; the old
+/// aspect-fit gave the 4K display 2880x1620, a size nothing is authored for.
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn standard_window_never_exceeds_the_canvas() {
+    let canvas = PhysicalSize::new(1920, 1080);
+    for (max_w, max_h) in [(1920, 1080), (2880, 1620), (5760, 3240)] {
+        assert_eq!(
+            super::standard_window_size(canvas, max_w, max_h),
+            PhysicalSize::new(1920, 1080),
+            "budget {max_w}x{max_h}"
+        );
+    }
+}
+
+/// Too small for 1080p steps down the ladder to the next familiar size rather
+/// than inventing one.
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn standard_window_steps_down_the_ladder() {
+    let canvas = PhysicalSize::new(1920, 1080);
+    assert_eq!(
+        super::standard_window_size(canvas, 1900, 1000),
+        PhysicalSize::new(1600, 900)
+    );
+    assert_eq!(
+        super::standard_window_size(canvas, 1500, 800),
+        PhysicalSize::new(1280, 720)
+    );
+    assert_eq!(
+        super::standard_window_size(canvas, 1000, 600),
+        PhysicalSize::new(960, 540)
+    );
+}
+
+/// Portrait canvases walk the same rungs on their own long axis.
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn standard_window_handles_portrait_canvas() {
+    let canvas = PhysicalSize::new(1080, 1920);
+    assert_eq!(
+        super::standard_window_size(canvas, 1440, 2160),
+        PhysicalSize::new(1080, 1920)
+    );
+    assert_eq!(
+        super::standard_window_size(canvas, 1000, 1700),
+        PhysicalSize::new(900, 1600)
+    );
+}
+
+/// A display too small for even the last rung still gets a correctly shaped
+/// window instead of one that overflows the screen.
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn standard_window_falls_back_to_aspect_fit_when_nothing_fits() {
+    let fitted = super::standard_window_size(PhysicalSize::new(1920, 1080), 500, 200);
+    assert!(fitted.width <= 500 && fitted.height <= 200);
+    let ratio = fitted.width as f32 / fitted.height as f32;
+    assert!((ratio - 16.0 / 9.0).abs() < 0.05, "{fitted:?}");
+}

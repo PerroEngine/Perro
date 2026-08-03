@@ -10,8 +10,10 @@ use web_time::Instant;
 
 pub(super) const STARTUP_SPLASH_FADE_DURATION: Duration = Duration::from_millis(320);
 pub(super) const STARTUP_SPLASH_HOLD_DURATION: Duration = Duration::from_millis(2000);
-// Cap on the load/warm-gated hold: a pathological compile or load must not
-// pin the splash forever; past this the fade starts regardless.
+// Terminal bound on the whole splash. Past this the fade starts regardless of
+// every other gate: a pathological compile, a boot scene that never reports
+// loaded, or a render request that never completes must not pin the splash
+// forever. A partly-warm first frame beats a window that never opens.
 pub(super) const STARTUP_SPLASH_HARD_TIMEOUT: Duration = Duration::from_millis(10_000);
 pub(super) const STARTUP_SPLASH_BG_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 pub(super) const STARTUP_SPLASH_MAX_WIDTH_FRAC: f32 = 0.44;
@@ -24,6 +26,37 @@ pub(super) const STARTUP_SPLASH_IMAGE_NODE: NodeID =
     NodeID::from_u64(string_to_u64("__startup_splash_image__"));
 pub(super) const STARTUP_SPLASH_BG_Z: i32 = 950;
 pub(super) const STARTUP_SPLASH_IMAGE_Z: i32 = 951;
+
+#[inline]
+pub(super) fn next_ready_streak(current: u32, presented: bool, assets_ready: bool) -> u32 {
+    if presented && assets_ready {
+        current.saturating_add(1)
+    } else {
+        0
+    }
+}
+
+#[inline]
+pub(super) fn boot_load_may_start(splash_active: bool, window_visible: bool) -> bool {
+    !splash_active || window_visible
+}
+
+/// Should the splash start fading this frame?
+///
+/// Two independent ways out, and the second must not be an extra AND-term:
+/// the normal path (branding hold done AND everything loaded), OR the hard
+/// timeout on its own. Folding the timeout into `load_ready` only relaxed the
+/// pipeline-warm term, so a boot scene that never reported loaded -- or a
+/// `ready_streak` reset every frame by one never-completing render request --
+/// pinned the splash with no way out.
+#[inline]
+pub(super) fn splash_fade_should_start(
+    shown_for: Duration,
+    load_ready: bool,
+    hard_timeout_hit: bool,
+) -> bool {
+    (shown_for >= STARTUP_SPLASH_HOLD_DURATION && load_ready) || hard_timeout_hit
+}
 
 pub(super) struct StartupSplashState {
     pub(super) active: bool,
@@ -38,6 +71,71 @@ pub(super) struct StartupSplashState {
     pub(super) fade_started_at: Option<Instant>,
     pub(super) first_frame_inflight: Vec<RenderRequestID>,
     pub(super) first_frame_captured: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::next_ready_streak;
+
+    #[test]
+    fn ready_streak_needs_two_presented_asset_ready_frames() {
+        let first = next_ready_streak(0, true, true);
+        let second = next_ready_streak(first, true, true);
+        assert_eq!(first, 1);
+        assert_eq!(second, 2);
+    }
+
+    #[test]
+    fn failed_present_resets_ready_streak() {
+        assert_eq!(next_ready_streak(1, false, true), 0);
+        assert_eq!(next_ready_streak(1, true, false), 0);
+    }
+
+    /// The regression this guards: the timeout was ANDed into `load_ready`
+    /// instead of ORed with it, so a stuck gate hung the splash past 60s with
+    /// no escape. Past the hard timeout the fade starts whatever else is false.
+    #[test]
+    fn hard_timeout_starts_the_fade_even_when_nothing_is_ready() {
+        assert!(super::splash_fade_should_start(
+            super::STARTUP_SPLASH_HARD_TIMEOUT,
+            false,
+            true
+        ));
+        assert!(super::splash_fade_should_start(
+            super::STARTUP_SPLASH_HARD_TIMEOUT * 6,
+            false,
+            true
+        ));
+    }
+
+    /// The normal path still needs BOTH the branding hold and a ready load, so
+    /// a fast boot cannot cut the splash short.
+    #[test]
+    fn normal_exit_needs_hold_and_load_ready() {
+        use std::time::Duration;
+        assert!(!super::splash_fade_should_start(
+            Duration::from_millis(100),
+            true,
+            false
+        ));
+        assert!(!super::splash_fade_should_start(
+            super::STARTUP_SPLASH_HOLD_DURATION,
+            false,
+            false
+        ));
+        assert!(super::splash_fade_should_start(
+            super::STARTUP_SPLASH_HOLD_DURATION,
+            true,
+            false
+        ));
+    }
+
+    #[test]
+    fn boot_load_waits_for_visible_splash() {
+        assert!(!super::boot_load_may_start(true, false));
+        assert!(super::boot_load_may_start(true, true));
+        assert!(super::boot_load_may_start(false, false));
+    }
 }
 
 impl StartupSplashState {

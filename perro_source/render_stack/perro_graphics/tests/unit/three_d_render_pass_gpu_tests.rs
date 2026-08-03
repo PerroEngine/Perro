@@ -70,6 +70,7 @@ fn new_gpu_3d(device: &wgpu::Device, queue: &wgpu::Queue) -> Gpu3D {
             texture_filter: TextureFilterMode::default(),
             shader_variant_mode: crate::ShaderVariantMode::Generic,
             shadow_pcf_high: false,
+            shadow_scale_to_target: false,
         },
         pipelines,
         &mesh_arena,
@@ -117,7 +118,11 @@ fn write_flat_white_sky(queue: &wgpu::Queue, gpu: &Gpu3D) {
     queue.write_buffer(&gpu.sky_buffer, 0, bytemuck::bytes_of(&sky));
 }
 
-fn read_first_pixel(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture) -> [u8; 4] {
+fn read_first_pixel(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+) -> [u8; 4] {
     let staging = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("perro_render_pass_test_readback"),
         size: u64::from(BYTES_PER_ROW) * u64::from(TARGET_SIZE),
@@ -184,7 +189,16 @@ fn sky_draws_inside_the_mesh_pass_and_costs_no_extra_pass() {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("perro_render_pass_test_sky_encoder"),
         });
-        gpu.render_pass(&queue, &mut encoder, &view, clear, false, &camera, true, None);
+        gpu.render_pass(
+            &queue,
+            &mut encoder,
+            &view,
+            clear,
+            false,
+            &camera,
+            true,
+            None,
+        );
         let with_sky = gpu.pass_counters;
         queue.submit([encoder.finish()]);
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
@@ -197,12 +211,24 @@ fn sky_draws_inside_the_mesh_pass_and_costs_no_extra_pass() {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("perro_render_pass_test_no_sky_encoder"),
         });
-        gpu.render_pass(&queue, &mut encoder, &view, clear, false, &camera, false, None);
+        gpu.render_pass(
+            &queue,
+            &mut encoder,
+            &view,
+            clear,
+            false,
+            &camera,
+            false,
+            None,
+        );
         let without_sky = gpu.pass_counters;
         queue.submit([encoder.finish()]);
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
 
-        assert_eq!(with_sky.sky_draws, 1, "sky drawn once, inside the mesh pass");
+        assert_eq!(
+            with_sky.sky_draws, 1,
+            "sky drawn once, inside the mesh pass"
+        );
         assert_eq!(without_sky.sky_draws, 0);
         assert_eq!(
             with_sky.render_passes, without_sky.render_passes,
@@ -215,7 +241,16 @@ fn sky_draws_inside_the_mesh_pass_and_costs_no_extra_pass() {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("perro_render_pass_test_sky_pixel_encoder"),
         });
-        gpu.render_pass(&queue, &mut encoder, &view, clear, false, &camera, true, None);
+        gpu.render_pass(
+            &queue,
+            &mut encoder,
+            &view,
+            clear,
+            false,
+            &camera,
+            true,
+            None,
+        );
         queue.submit([encoder.finish()]);
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
         assert_eq!(
@@ -446,7 +481,10 @@ fn seam_region_restricts_to_the_source_footprint_at_screen_resolution() {
         prime_seam_scene(&mut gpu, -20.0);
         gpu.update_mesh_blend_seam_region(&camera);
         let SeamRegion::Rect(x, y, w, h) = gpu.mesh_blend_seam_region else {
-            panic!("expected a restricted rect, got {:?}", gpu.mesh_blend_seam_region);
+            panic!(
+                "expected a restricted rect, got {:?}",
+                gpu.mesh_blend_seam_region
+            );
         };
         assert!(x + w <= 1920 && y + h <= 1080, "rect escapes the viewport");
         let covered = u64::from(w) * u64::from(h);
@@ -518,7 +556,16 @@ fn mesh_blend_sources_sharing_a_receiver_set_share_one_depth_pass() {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("perro_render_pass_test_blend_depth_encoder"),
         });
-        gpu.render_pass(&queue, &mut encoder, &view, clear, false, &camera, false, None);
+        gpu.render_pass(
+            &queue,
+            &mut encoder,
+            &view,
+            clear,
+            false,
+            &camera,
+            false,
+            None,
+        );
         let counters = gpu.pass_counters;
         queue.submit([encoder.finish()]);
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
@@ -537,7 +584,16 @@ fn mesh_blend_sources_sharing_a_receiver_set_share_one_depth_pass() {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("perro_render_pass_test_blend_depth_seed_encoder"),
         });
-        gpu.render_pass(&queue, &mut encoder, &view, clear, false, &camera, false, None);
+        gpu.render_pass(
+            &queue,
+            &mut encoder,
+            &view,
+            clear,
+            false,
+            &camera,
+            false,
+            None,
+        );
         let counters = gpu.pass_counters;
         queue.submit([encoder.finish()]);
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
@@ -912,7 +968,10 @@ fn seam_bounds_grow_by_the_tap_reach_and_clamp_to_the_target() {
 
     // Bounds off the left/top edge clamp instead of wrapping.
     let region = seam_region_from_bounds([-500.0, -500.0, 10.0, 10.0], 640, 480);
-    assert_eq!(region, SeamRegion::Rect(0, 0, 10 + reach as u32, 10 + reach as u32));
+    assert_eq!(
+        region,
+        SeamRegion::Rect(0, 0, 10 + reach as u32, 10 + reach as u32)
+    );
 
     // Covering the whole target collapses to Full (no scissor, plain copy).
     assert_eq!(

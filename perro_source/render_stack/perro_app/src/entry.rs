@@ -231,9 +231,7 @@ fn graphics_from_project_config(
     PerroGraphics::new()
         .with_vsync(config.vsync)
         .with_hdr_mode(config.hdr)
-        .with_anti_alias(graphics_anti_alias(effective_anti_alias(
-            config.anti_alias,
-        )))
+        .with_anti_alias(graphics_anti_alias(effective_anti_alias(config.anti_alias)))
         .with_msaa_2d(effective_msaa(config.msaa_2d))
         .with_ssao(graphics_ssao(config.ssao))
         .with_shadow_quality(graphics_shadow_quality(config.shadow_quality))
@@ -401,11 +399,13 @@ pub fn run_dev_project_from_path(
     project_root: &Path,
     default_name: &str,
 ) -> Result<AppExitResult, RunProjectError> {
+    crate::boot_log::start();
     eprintln!(
         "perro dev runner: load project {}",
         project_root.to_string_lossy()
     );
     let project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)?;
+    crate::boot_log::mark("project_parsed");
     clear_steam_fossilize_application_filter(project.config.steam.enabled);
     let _ = perro_web::init_router();
     let preload = spawn_preload_project_images(project.clone());
@@ -415,8 +415,12 @@ pub fn run_dev_project_from_path(
     eprintln!("perro dev runner: init runtime");
     // Windowed dev run: defer boot load like the release path; window+splash
     // come up first, runner loads on the first frame.
-    let runtime =
-        Runtime::from_project_with_script_registry_deferred_boot(project, ProviderMode::Dynamic, None);
+    let runtime = Runtime::from_project_with_script_registry_deferred_boot(
+        project,
+        ProviderMode::Dynamic,
+        None,
+    );
+    crate::boot_log::mark("runtime_built");
     let app = App::new(runtime, graphics);
     let fixed = app
         .runtime
@@ -425,6 +429,7 @@ pub fn run_dev_project_from_path(
     let preloaded_images = preload
         .join()
         .unwrap_or_else(|_| preload_project_images(app.runtime.project()));
+    crate::boot_log::mark("images_preloaded");
     eprintln!("perro dev runner: enter event loop");
     WinitRunner::new()
         .run_with_timestep_and_preload(app, &window_title, fixed, Some(preloaded_images))
@@ -614,6 +619,7 @@ pub struct StaticEmbeddedAssetsConfig {
 pub fn run_static_embedded_project(
     input: StaticEmbeddedProject<'_>,
 ) -> Result<AppExitResult, RunProjectError> {
+    crate::boot_log::start();
     clear_steam_fossilize_application_filter(input.steam.enabled);
     let _ = perro_web::init_router();
     let mut static_config = perro_runtime::StaticProjectConfig::new(
@@ -680,6 +686,7 @@ pub fn run_static_embedded_project(
         .with_static_icon_lookup(input.assets.texture_lookup)
         .with_perro_assets_bytes(input.assets.perro_assets);
 
+    crate::boot_log::mark("project_built");
     #[cfg(not(target_arch = "wasm32"))]
     let preload = spawn_preload_project_images(project.clone());
     let window_title = project.config.name.clone();
@@ -703,6 +710,7 @@ pub fn run_static_embedded_project(
         ProviderMode::Static,
         input.assets.static_script_registry,
     );
+    crate::boot_log::mark("runtime_built");
     let app = App::new(runtime, graphics);
     let fixed = app
         .runtime
@@ -856,6 +864,7 @@ pub fn run_static_embedded_project_android(
         ProviderMode::Static,
         input.assets.static_script_registry,
     );
+    crate::boot_log::mark("runtime_built");
     let app = App::new(runtime, graphics);
     let fixed = app
         .runtime

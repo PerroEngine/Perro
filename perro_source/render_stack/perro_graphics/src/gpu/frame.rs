@@ -48,7 +48,6 @@ impl Gpu {
             late_overlay_point_lights_2d_revision,
             late_overlay_shadow_casters_2d,
             late_overlay_shadow_casters_2d_revision,
-            redraw_requested,
             frame_time_seconds,
             frame_delta_seconds,
             frame_dirty_bits,
@@ -84,8 +83,7 @@ impl Gpu {
         let needs_2d_prepare = has(DIRTY_2D)
             || has(DIRTY_CAMERA_2D)
             || rect_upload_dirty
-            || (has(DIRTY_RESOURCES) && has_2d_content)
-            || (redraw_requested && has_2d_content);
+            || (has(DIRTY_RESOURCES) && has_2d_content);
 
         // A decal whose texture is still decoding must be retried each frame
         // until it resolves; otherwise it stays hidden until the next dirty
@@ -277,6 +275,7 @@ impl Gpu {
                         texture_filter: self.texture_filter,
                         shader_variant_mode: self.shader_variant_mode,
                         shadow_pcf_high: self.shadow_pcf_high,
+                        shadow_scale_to_target: false,
                     },
                     self.pipeline_registries.get_or_create(
                         &self.device,
@@ -369,6 +368,7 @@ impl Gpu {
                         texture_filter: self.texture_filter,
                         shader_variant_mode: self.shader_variant_mode,
                         shadow_pcf_high: self.shadow_pcf_high,
+                        shadow_scale_to_target: false,
                     },
                     self.pipeline_registries.get_or_create(
                         &self.device,
@@ -934,6 +934,7 @@ impl Gpu {
                                         texture_filter: self.texture_filter,
                                         shader_variant_mode: self.shader_variant_mode,
                                         shadow_pcf_high: self.shadow_pcf_high,
+                                        shadow_scale_to_target: true,
                                     },
                                     self.pipeline_registries.get_or_create(
                                         &self.device,
@@ -1011,6 +1012,7 @@ impl Gpu {
                                     texture_filter: self.texture_filter,
                                     shader_variant_mode: self.shader_variant_mode,
                                     shadow_pcf_high: self.shadow_pcf_high,
+                                    shadow_scale_to_target: true,
                                 },
                                 self.pipeline_registries.get_or_create(
                                     &self.device,
@@ -1371,6 +1373,13 @@ impl Gpu {
             }
         }
         timing.gpu_stream_encode = stream_loop_start.elapsed();
+        // Stable target view, new pixels. Idle streams skip this list and keep
+        // the retained UI raster reusable.
+        if let Some(ui) = self.ui.as_mut() {
+            for &texture in &rendered_stream_textures {
+                ui.note_live_texture_write(texture);
+            }
+        }
         // Per-stream processors idle-release like the main post. Their chains
         // sit behind the stream idle skip and several early-outs, so tick every
         // live entry once per frame instead of at each skip site; ping targets
@@ -1451,9 +1460,10 @@ impl Gpu {
                 );
                 self.main_scene_sampled_key = Some(sampled_key);
             }
-            fast_path_signals.streams_rendered = rendered_stream_textures
-                .iter()
-                .any(|texture| self.main_scene_sampled_texture_slots.contains(&texture.index()));
+            fast_path_signals.streams_rendered = rendered_stream_textures.iter().any(|texture| {
+                self.main_scene_sampled_texture_slots
+                    .contains(&texture.index())
+            });
         }
         let scene_fast_path = scene_fast_path_allowed(&fast_path_signals);
         // Cleared BEFORE the encode: a frame that renders the scene but then
@@ -1938,9 +1948,7 @@ impl Gpu {
         // `render_pass` resets them at entry, so a fast-path frame still holds
         // the last encoded frame's numbers. Report zero there instead of a
         // stale repeat -- `skip_render_3d` already flags the frame.
-        if !scene_fast_path
-            && let Some(three_d) = self.three_d.as_ref()
-        {
+        if !scene_fast_path && let Some(three_d) = self.three_d.as_ref() {
             timing.draw_triangles_3d = three_d.triangle_count();
             let counters = three_d.pass_counters();
             timing.scene_render_passes = counters.render_passes;
@@ -1956,6 +1964,7 @@ impl Gpu {
             timing.shadow_multimesh_batch_draws = counters.shadow_multimesh_batch_draws;
             timing.shadow_multimesh_instance_draws = counters.shadow_multimesh_instance_draws;
             timing.shadow_multimesh_culled_layers = counters.shadow_multimesh_culled_layers;
+            timing.shadow_empty_layer_skips = counters.shadow_empty_layer_skips;
         }
         let present_start = Instant::now();
         if let Some(frame) = frame {

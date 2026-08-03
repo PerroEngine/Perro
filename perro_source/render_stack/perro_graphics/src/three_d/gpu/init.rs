@@ -260,6 +260,7 @@ impl Gpu3D {
             texture_filter,
             shader_variant_mode,
             shadow_pcf_high,
+            shadow_scale_to_target,
         } = config;
         let (gpu_occlusion_enabled, cpu_occlusion_enabled) = occlusion_flags(occlusion_culling);
         // Shared mesh arena handles. Two of them (blend-shape deltas, packed-LOD
@@ -274,7 +275,11 @@ impl Gpu3D {
         let packed_lod_param_buffer = mesh_arena_handles.packed_lod_param_buffer.clone();
         let blend_shape_delta_buffer = mesh_arena_handles.blend_shape_delta_buffer.clone();
         let (shadow_map_size, shadow_spot_map_size, shadow_point_map_size) =
-            default_shadow_map_sizes();
+            if shadow_scale_to_target {
+                shadow_map_sizes_for_target(default_shadow_map_sizes(), height)
+            } else {
+                default_shadow_map_sizes()
+            };
         let shadow_caster_debug_view = std::env::var_os("PERRO_DEBUG_SHADOW_CASTERS").is_some()
             || std::env::var_os("PERRO_SHADOW_DEBUG_CASTERS").is_some()
             || std::env::var_os("PERRO_SHADOW_DEBUG_CASCADES").is_some();
@@ -1590,6 +1595,7 @@ impl Gpu3D {
             multimesh_staging_cache: Vec::new(),
             multimesh_staging_cache_valid: false,
             multimesh_staging_cache_camera: [0.0; 3],
+            multimesh_staging_cache_lod_scale: 1.0,
             multimesh_staging_reuse_count: 0,
             multimesh_cull_pipeline,
             multimesh_cull_finalize_pipeline,
@@ -1614,6 +1620,7 @@ impl Gpu3D {
             shadow_map_size,
             shadow_spot_map_size,
             shadow_point_map_size,
+            shadow_scale_to_target,
             last_uploaded_multimesh_instances_hash: None,
             last_uploaded_multimesh_draw_params_hash: None,
             last_uploaded_multimesh_cull_batches: Vec::new(),
@@ -1717,6 +1724,7 @@ impl Gpu3D {
             shadow_camera_frustums: vec![[Vec4::ZERO; 6]; SHADOW_CAMERA_COUNT],
             last_shadow: None,
             shadow_layer_valid: Vec::new(),
+            shadow_layer_empty: Vec::new(),
             shadow_cascade_defer_age: [0; MAX_SHADOW_RAY_CASCADES],
             shadow_cascade_defer_count: 0,
             shadow_cascade_light_dir: [[0.0; 3]; MAX_SHADOW_RAY_CASCADES],
@@ -1790,6 +1798,10 @@ impl Gpu3D {
             debug_frustum_visible_est: 0,
             last_aspect: (width.max(1) as f32) / (height.max(1) as f32),
             last_proj_y_scale: projection_y_scale_from_projection(CameraProjectionState::default()),
+            lod_ratio_scale: lod_ratio_scale(
+                height,
+                projection_y_scale_from_projection(CameraProjectionState::default()),
+            ),
             sample_count,
             occlusion_mode: occlusion_culling,
             meshlets_enabled,

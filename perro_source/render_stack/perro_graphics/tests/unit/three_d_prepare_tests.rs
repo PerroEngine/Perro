@@ -66,6 +66,7 @@ fn new_gpu_3d(device: &wgpu::Device, queue: &wgpu::Queue, arena: &SharedMeshAren
             texture_filter: TextureFilterMode::default(),
             shader_variant_mode: crate::ShaderVariantMode::Generic,
             shadow_pcf_high: false,
+            shadow_scale_to_target: false,
         },
         pipelines,
         arena,
@@ -510,9 +511,8 @@ fn multimesh_custom_param_staging_reuse_matches_full_repack_and_is_cheaper() {
         let mut draws: Vec<Draw3DInstance> = (0..DENSE_DRAWS)
             .map(|i| dense_draw_with_surfaces(i, mesh, dense_surfaces.clone()))
             .collect();
-        draws.extend(
-            (0..REGULAR_DRAWS).map(|i| regular_draw(i, mesh, regular_short, Color::WHITE)),
-        );
+        draws
+            .extend((0..REGULAR_DRAWS).map(|i| regular_draw(i, mesh, regular_short, Color::WHITE)));
 
         harness.prepare(&draws, true);
         assert!(
@@ -695,14 +695,18 @@ fn upload_harness(
             texture_filter: TextureFilterMode::default(),
             shader_variant_mode: crate::ShaderVariantMode::Generic,
             shadow_pcf_high: false,
+            shadow_scale_to_target: false,
         },
         pipelines,
         &mesh_arena,
     );
     let mut resources = ResourceStore::new();
     let mesh = resources.create_mesh("__upload_gate_test_mesh__", true);
-    let material =
-        resources.create_material(Material3D::default(), Some("__upload_gate_test_mat__"), true);
+    let material = resources.create_material(
+        Material3D::default(),
+        Some("__upload_gate_test_mat__"),
+        true,
+    );
     (
         Harness {
             device,
@@ -1137,7 +1141,10 @@ fn skeleton_only_change_skips_the_frustum_cull_uploads() {
              cull_inputs_skipped={cull_bytes})",
             cold.write_buffer_bytes, animated.write_buffer_bytes,
         );
-        assert!(cull_active, "scene did not reach the GPU frustum-cull threshold");
+        assert!(
+            cull_active,
+            "scene did not reach the GPU frustum-cull threshold"
+        );
         assert!(cull_bytes > 0 && indirect_bytes > 0);
         assert_eq!(
             harness.gpu.last_prepare_step_timing.full_rebuilds, 0,

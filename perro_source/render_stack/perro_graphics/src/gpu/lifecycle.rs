@@ -157,7 +157,9 @@ impl Gpu {
     }
 
     pub async fn new_async(window: Arc<Window>, cfg: GpuConfig) -> Result<Self, String> {
+        perro_structs::structs::boot_log::mark("gpu: enter");
         let instance = wgpu::Instance::default();
+        perro_structs::structs::boot_log::mark("gpu: wgpu instance");
         let surface = instance
             .create_surface(window.clone())
             .map_err(|err| format!("surface create fail: {err}"))?;
@@ -171,6 +173,7 @@ impl Gpu {
             })
             .await
             .map_err(|err| format!("GPU adapter request fail: {err}"))?;
+        perro_structs::structs::boot_log::mark("gpu: adapter");
         let adapter_info = adapter.get_info();
         let low_memory_adapter = matches!(
             adapter_info.device_type,
@@ -309,6 +312,7 @@ impl Gpu {
             "[perro][gfx] vsync=({}) present_mode=({present_mode:?}) max_frame_latency=({max_frame_latency}) present_caps=({:?})",
             cfg.vsync_enabled, caps.present_modes
         );
+        perro_structs::structs::boot_log::mark("gpu: device + surface config");
         surface.configure(&device, &config);
 
         let mut max_supported_sample_count =
@@ -328,7 +332,9 @@ impl Gpu {
             sample_count,
         );
         let post = PostProcessor::new(&device, &queue, render_format, render_width, render_height);
+        perro_structs::structs::boot_log::mark("gpu: post processor");
         let mut present = PresentProcessor::new(&device, surface_view_format);
+        perro_structs::structs::boot_log::mark("gpu: present processor");
         present.set_output_size(width, height);
         present.set_fxaa_active(cfg.fxaa && sample_count == 1);
         present.set_smaa_active(cfg.smaa && sample_count == 1);
@@ -339,6 +345,7 @@ impl Gpu {
         // Built once here (the builtin mesh prefix is uploaded exactly once for
         // the whole process); every Gpu3D mirrors its handles.
         let mesh_arena = SharedMeshArena::new(&device, cfg.meshlets_enabled, cfg.dev_meshlets);
+        perro_structs::structs::boot_log::mark("gpu: tonemap + timer + mesh arena");
 
         Ok(Self {
             window_handle: window,

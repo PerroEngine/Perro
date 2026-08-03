@@ -47,9 +47,9 @@ mod startup_splash;
 
 use startup_splash::{
     STARTUP_SPLASH_BG_COLOR, STARTUP_SPLASH_BG_NODE, STARTUP_SPLASH_BG_Z,
-    STARTUP_SPLASH_HARD_TIMEOUT, STARTUP_SPLASH_HOLD_DURATION, STARTUP_SPLASH_IMAGE_NODE,
-    STARTUP_SPLASH_IMAGE_Z, STARTUP_SPLASH_MAX_HEIGHT_FRAC, STARTUP_SPLASH_MAX_WIDTH_FRAC,
-    STARTUP_SPLASH_TEXTURE_REQUEST, StartupSplashState,
+    STARTUP_SPLASH_HARD_TIMEOUT, STARTUP_SPLASH_IMAGE_NODE, STARTUP_SPLASH_IMAGE_Z,
+    STARTUP_SPLASH_MAX_HEIGHT_FRAC, STARTUP_SPLASH_MAX_WIDTH_FRAC, STARTUP_SPLASH_TEXTURE_REQUEST,
+    StartupSplashState, boot_load_may_start, next_ready_streak, splash_fade_should_start,
 };
 
 use crate::frame_pacing::{FramePacer, project_frame_rate_cap};
@@ -66,6 +66,27 @@ const TIMING_WARMUP_FRAMES: u32 = 8;
 const FPS_WINDOW_SECONDS: f32 = 0.5;
 #[cfg(not(target_arch = "wasm32"))]
 const INITIAL_WINDOW_MONITOR_FRACTION: f32 = 0.75;
+/// Frame rate while the window is not focused. Nobody is watching, so the only
+/// job is to stay responsive enough to notice regaining focus; the GPU should
+/// be idle. An fps cap alone never covered this -- a backgrounded game kept
+/// rendering at the project cap (or at refresh under vsync) forever.
+const UNFOCUSED_FRAME_RATE_CAP_FPS: f32 = 15.0;
+/// Frame rate while minimized or fully occluded. Nothing is composited at all
+/// here, so this only keeps the event loop and game logic ticking.
+const HIDDEN_FRAME_RATE_CAP_FPS: f32 = 5.0;
+/// Standard opening sizes, as the SHORT axis of the project's canvas, largest
+/// first. `virtual_canvas_from_aspect_ratio` pins the canvas's SHORT axis at
+/// 1080 (16:9 -> 1920x1080, 9:16 -> 1080x1920), so a 16:9 project walks
+/// 1920x1080 -> 1600x900 -> 1280x720 -> ... and a 9:16 one walks
+/// 1080x1920 -> 900x1600 -> ..., both landing on familiar numbers.
+///
+/// Picking a rung instead of "monitor * fraction, aspect-fitted" is what keeps
+/// the opening size predictable: the old path scaled the canvas by whatever
+/// fraction of the monitor happened to fit, so a 2560x1440 display opened at
+/// 1920x1080 but a 3840x2160 one opened at 2880x1620 -- a size no one authors
+/// against, and more pixels of render work for no visible gain.
+#[cfg(not(target_arch = "wasm32"))]
+const INITIAL_WINDOW_SHORT_AXIS_LADDER: [u32; 7] = [1080, 900, 720, 600, 540, 480, 360];
 
 pub(crate) fn map_cursor_icon(icon: perro_ui::CursorIcon) -> WinitCursorIcon {
     match icon {
@@ -214,6 +235,7 @@ const TIMING_CSV_HEADER: &str = concat!(
     "mesh_blend_source_depth_passes,mesh_blend_source_depth_reuses,water_depth_copies,",
     "water_depth_clears,shadow_layer_renders,shadow_multimesh_batch_draws,",
     "shadow_multimesh_instance_draws,shadow_multimesh_culled_layers,",
+    "shadow_empty_layer_skips,",
     "stream_count,stream_renders,gpu_stream_encode_us,stream_pixels,",
     "stream_draw_calls_3d,stream_draw_batches_3d,stream_draw_triangles_3d,",
     "stream_render_passes,stream_shadow_layer_renders",
@@ -291,7 +313,7 @@ impl TimingCsvWriter {
         );
         let _ = write!(
             out,
-            ",{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            ",{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
             draw.draw_calls_2d,
             draw.draw_calls_3d,
             draw.sprite_batches_2d,
@@ -327,6 +349,7 @@ impl TimingCsvWriter {
             draw.shadow_multimesh_batch_draws,
             draw.shadow_multimesh_instance_draws,
             draw.shadow_multimesh_culled_layers,
+            draw.shadow_empty_layer_skips,
         );
         let _ = writeln!(
             out,
@@ -854,6 +877,7 @@ struct RunnerState<B: GraphicsBackend> {
     app: App<B>,
     title: String,
     window: Option<Arc<Window>>,
+    window_visible: bool,
     last_frame_start: Instant,
     last_frame_end: Instant,
     run_start: Instant,
@@ -877,6 +901,11 @@ struct RunnerState<B: GraphicsBackend> {
     #[cfg(any(feature = "profile_heavy", feature = "mem_profile"))]
     mem_profile_csv: Option<MemProfileCsvWriter>,
     timing_warmup_frames_left: u32,
+    // PERRO_BOOT_LOG: one-shot latch so the load-ready mark prints once.
+    boot_log_load_ready: bool,
+    // Background pacing inputs (see `sync_background_pacing`).
+    window_focused: bool,
+    window_occluded: bool,
     kbm_input: crate::input::KbmInput,
     gamepad_input: crate::input::GamepadInput,
     joycon_input: crate::input::JoyConInput,
@@ -926,43 +955,45 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler<RunnerUserEvent>
             #[cfg(target_arch = "wasm32")]
             sync_web_window_size(window.as_ref());
             window.set_ime_allowed(true);
+            crate::boot_log::mark("window_created");
             self.app.attach_window(window.clone());
+            self.window = Some(window.clone());
             let initial_size = window.inner_size();
+            crate::boot_log::mark(&format!(
+                "window actual {}x{} (scale_factor {:.3})",
+                initial_size.width,
+                initial_size.height,
+                window.scale_factor(),
+            ));
             self.app
                 .resize_surface(initial_size.width, initial_size.height);
+            crate::boot_log::mark("gpu_surface_ready");
             // Web GPU init async; kp prior show point.
             #[cfg(target_arch = "wasm32")]
-            window.set_visible(true);
-            if self.startup_splash.active {
-                // Deferred boot: splash present + window show come first, the
-                // multi-second boot-scene load runs on the first startup frame
-                // (step_frame) w/ the splash already on screen. Raised warm
-                // budget while the splash hides compile cost.
+            {
+                window.set_visible(true);
+                self.window_visible = true;
+            }
+            let initial_present = if self.startup_splash.active {
+                // Pump hidden frames until splash texture reaches a real
+                // swapchain present. Boot load starts only aft that visible
+                // splash, so sync scene work cannot expose a black window.
                 self.app.graphics.set_startup_warm_boost(true);
                 let splash_overlay = self.startup_splash_overlay_commands(1.0);
-                let _ = self.app.present_with_overlay_timed_no_ui(splash_overlay);
+                self.app.present_with_overlay_timed_no_ui(splash_overlay)
             } else {
                 // No splash to show: load b4 first present so the first
                 // visible frame is the scene, not a black flash (same UX as
                 // the old sync ctor path).
                 self.app.runtime.load_boot_scene_if_pending();
-                self.app.present();
-            }
-            // Show native win only aft first GPU present -> no blank white flash.
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                window.set_visible(true);
-                window.focus_window();
-                // Post-create adjustments (DPI move, work-area clamp,
-                // PERRO_WINDOW_MODE=borderless) can land after the pre-present
-                // size sample; without this the surface stays undersized until
-                // an unrelated Resized event.
-                let shown_size = window.inner_size();
-                if shown_size != initial_size {
-                    self.app.resize_surface(shown_size.width, shown_size.height);
-                }
-            }
-            self.window = Some(window);
+                self.app.present_timed()
+            };
+            crate::boot_log::mark("first_present");
+            let splash_ready =
+                !self.startup_splash.active || self.startup_splash.texture_id.is_some();
+            self.show_window_after_present(
+                Self::present_reached_swapchain(&initial_present) && splash_ready,
+            );
             self.set_mouse_mode(MouseMode::Visible);
             self.sync_refresh_rate();
             eprintln!(
@@ -973,13 +1004,6 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler<RunnerUserEvent>
             self.last_frame_start = now;
             self.last_frame_end = now;
             self.run_start = now;
-            if self.startup_splash.active {
-                self.startup_splash.shown_at = now;
-                self.startup_splash.ready_streak = 0;
-                self.startup_splash.fade_started_at = None;
-                self.startup_splash.first_frame_inflight.clear();
-                self.startup_splash.first_frame_captured = false;
-            }
             self.fixed_accumulator = 0.0;
             self.pacer.reset_deadline();
             self.frame_index = 0;
@@ -1114,14 +1138,22 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler<RunnerUserEvent>
                     .handle_window_event(&mut self.app, &ime_event);
             }
             WindowEvent::Focused(true) => {
+                self.window_focused = true;
+                self.sync_background_pacing();
                 if self.startup_splash.blocks_input() {
                     return;
                 }
                 self.apply_mouse_mode_request();
             }
             WindowEvent::Focused(false) => {
+                self.window_focused = false;
+                self.sync_background_pacing();
                 self.clear_keyboard_mouse_focus_state();
                 self.set_mouse_mode(MouseMode::Visible);
+            }
+            WindowEvent::Occluded(occluded) => {
+                self.window_occluded = occluded;
+                self.sync_background_pacing();
             }
             WindowEvent::ScaleFactorChanged { .. } => {
                 self.sync_refresh_rate();
@@ -1263,8 +1295,18 @@ fn window_attributes(
             ((monitor.size().width as f32) * INITIAL_WINDOW_MONITOR_FRACTION).floor() as u32;
         let max_height =
             ((monitor.size().height as f32) * INITIAL_WINDOW_MONITOR_FRACTION).floor() as u32;
-        let fitted = fit_aspect(desired, max_width.max(1), max_height.max(1));
+        let fitted = standard_window_size(desired, max_width.max(1), max_height.max(1));
         let centered = center_position(&monitor, fitted);
+        crate::boot_log::mark(&format!(
+            "window request {}x{} (canvas {}x{}, monitor {}x{}, scale_factor {:.3})",
+            fitted.width,
+            fitted.height,
+            desired.width,
+            desired.height,
+            monitor.size().width,
+            monitor.size().height,
+            monitor.scale_factor(),
+        ));
 
         attrs = attrs.with_inner_size(Size::Physical(fitted));
         attrs.with_position(Position::Physical(centered))
@@ -1328,6 +1370,39 @@ fn pick_monitor(_event_loop: &ActiveEventLoop) -> Option<MonitorHandle> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+/// Largest standard rung of the project's canvas that fits the budget.
+///
+/// Never scales the canvas UP: the canvas is the authored resolution, and a
+/// bigger monitor should mean the same image scaled, not more pixels rendered.
+/// Quality/resolution can be decoupled later behind a setting; until then the
+/// canvas rung IS the window.
+///
+/// Falls back to a plain aspect fit when even the smallest rung is too big, so
+/// a tiny display still gets a correctly-shaped window.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn standard_window_size(
+    canvas: PhysicalSize<u32>,
+    max_width: u32,
+    max_height: u32,
+) -> PhysicalSize<u32> {
+    let canvas_w = canvas.width.max(1);
+    let canvas_h = canvas.height.max(1);
+    let short_axis = canvas_w.min(canvas_h);
+    for rung in INITIAL_WINDOW_SHORT_AXIS_LADDER {
+        if rung > short_axis {
+            // Never open larger than the authored canvas.
+            continue;
+        }
+        let scale = rung as f64 / short_axis as f64;
+        let width = ((canvas_w as f64 * scale).round() as u32).max(1);
+        let height = ((canvas_h as f64 * scale).round() as u32).max(1);
+        if width <= max_width && height <= max_height {
+            return PhysicalSize::new(width, height);
+        }
+    }
+    fit_aspect(canvas, max_width, max_height)
+}
+
 pub(crate) fn fit_aspect(
     desired: PhysicalSize<u32>,
     max_width: u32,

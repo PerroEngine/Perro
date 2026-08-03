@@ -101,8 +101,7 @@ fn repeat_prepare_uploads_static_compute_config_once() {
     if !gpu_compute_particles_enabled() {
         return;
     }
-    let mut gpu =
-        GpuPointParticles3D::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
+    let mut gpu = GpuPointParticles3D::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
 
     let prepare = |gpu: &mut GpuPointParticles3D, time: f32| {
         let emitters = [(NodeID::from_parts(4, 0), compute_emitter(time))];

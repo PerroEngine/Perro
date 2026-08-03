@@ -81,6 +81,7 @@ pub(super) fn select_mesh_lod_index(
     world_pos: [f32; 3],
     camera_pos: [f32; 3],
     control: LODOptions3D,
+    ratio_scale: f32,
 ) -> usize {
     if lod_count <= 1 {
         return 0;
@@ -90,7 +91,11 @@ pub(super) fn select_mesh_lod_index(
     let dz = world_pos[2] - camera_pos[2];
     let dist = (dx * dx + dy * dy + dz * dz).sqrt();
     let radius = bounds_radius.max(0.001);
-    let ratio = dist / radius;
+    // `ratio_scale` converts distance/radius into the reference view's terms:
+    // the same mesh at the same distance projects onto fewer pixels in a short
+    // target or a wide FOV, so it steps down a LOD sooner. See
+    // `Gpu3D::lod_ratio_scale`. 1.0 reproduces the pre-scaling behaviour.
+    let ratio = (dist / radius) * ratio_scale.max(1.0);
     let last = lod_count.saturating_sub(1);
     let baked_index = LOD_DISTANCE_RADIUS_SCALES
         .iter()
@@ -112,6 +117,7 @@ pub(super) fn select_mesh_lod<'a>(
     model: Option<&[[f32; 4]; 4]>,
     camera_pos: [f32; 3],
     control: LODOptions3D,
+    ratio_scale: f32,
 ) -> MeshLodView<'a> {
     if mesh.lods.len() <= 1 {
         return MeshLodView {
@@ -135,6 +141,7 @@ pub(super) fn select_mesh_lod<'a>(
         [model[3][0], model[3][1], model[3][2]],
         camera_pos,
         control,
+        ratio_scale,
     );
     let lod = &mesh.lods[baked_index];
     MeshLodView {
@@ -232,6 +239,7 @@ mod tests {
             Some(&model),
             [0.0, 0.0, 0.0],
             LODOptions3D::default(),
+            1.0,
         );
         assert_eq!(default.full.index_start, 50);
 
@@ -243,6 +251,7 @@ mod tests {
                 min_lod: LODOptions3D::MEDIUM_LOW,
                 max_lod: LODOptions3D::MAX,
             },
+            1.0,
         );
         assert_eq!(clamped.full.index_start, 30);
     }
@@ -265,28 +274,38 @@ mod tests {
             },
         ];
         for control in controls {
-            for step in 0..400u32 {
-                let distance = step as f32 * 0.75;
-                let model = glam::Mat4::from_translation(glam::Vec3::new(distance, 0.0, 0.0))
-                    .to_cols_array_2d();
-                let camera = [0.0, 0.0, 0.0];
-                let view = select_mesh_lod(&mesh, Some(&model), camera, control);
-                let index = select_mesh_lod_index(
-                    mesh.lods.len(),
-                    mesh.bounds_radius,
-                    [distance, 0.0, 0.0],
-                    camera,
-                    control,
-                );
-                assert_eq!(
-                    view.full.index_start, mesh.lods[index].full.index_start,
-                    "band {index} disagrees with the selected LOD at {distance}"
-                );
+            for scale in [1.0f32, 1.7, 4.2] {
+                for step in 0..400u32 {
+                    let distance = step as f32 * 0.75;
+                    let model = glam::Mat4::from_translation(glam::Vec3::new(distance, 0.0, 0.0))
+                        .to_cols_array_2d();
+                    let camera = [0.0, 0.0, 0.0];
+                    let view = select_mesh_lod(&mesh, Some(&model), camera, control, scale);
+                    let index = select_mesh_lod_index(
+                        mesh.lods.len(),
+                        mesh.bounds_radius,
+                        [distance, 0.0, 0.0],
+                        camera,
+                        control,
+                        scale,
+                    );
+                    assert_eq!(
+                        view.full.index_start, mesh.lods[index].full.index_start,
+                        "band {index} disagrees with the selected LOD at {distance}"
+                    );
+                }
             }
         }
         // A single-LOD mesh has no band at all, whatever the camera does.
         assert_eq!(
-            select_mesh_lod_index(1, 1.0, [0.0; 3], [900.0, 0.0, 0.0], LODOptions3D::default()),
+            select_mesh_lod_index(
+                1,
+                1.0,
+                [0.0; 3],
+                [900.0, 0.0, 0.0],
+                LODOptions3D::default(),
+                1.0
+            ),
             0
         );
     }

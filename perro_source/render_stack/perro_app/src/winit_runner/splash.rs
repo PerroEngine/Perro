@@ -1,5 +1,19 @@
 use super::*;
 
+/// Window pixels -> 2D world units for the splash overlay.
+///
+/// `two_d::renderer::ndc_scale` aspect-fits the virtual canvas into the window
+/// (`fit = min(win_w / virt_w, win_h / virt_h)`), so one world unit covers `fit`
+/// window pixels. The splash quads are authored against the window, so they have
+/// to divide that back out; sizing them in raw window pixels only filled the
+/// window when `fit` happened to be 1.
+pub(super) fn splash_world_size(window: (f32, f32), virtual_size: (f32, f32)) -> (f32, f32) {
+    let fit = (window.0 / virtual_size.0.max(1.0))
+        .min(window.1 / virtual_size.1.max(1.0))
+        .max(1.0e-6);
+    (window.0 / fit, window.1 / fit)
+}
+
 impl<B: GraphicsBackend> RunnerState<B> {
     pub(super) fn startup_splash_overlay_commands(&mut self, alpha: f32) -> Vec<RenderCommand> {
         let alpha = alpha.clamp(0.0, 1.0);
@@ -19,13 +33,13 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 | perro_runtime::RuntimeRenderResult::Material(_) => {}
             }
         }
-        let fallback_width = self
+        let virtual_width = self
             .app
             .runtime
             .project()
             .map(|project| project.config.virtual_width.max(1))
             .unwrap_or(1920) as f32;
-        let fallback_height = self
+        let virtual_height = self
             .app
             .runtime
             .project()
@@ -36,7 +50,11 @@ impl<B: GraphicsBackend> RunnerState<B> {
             .as_ref()
             .map(|window| window.inner_size())
             .map(|size| (size.width.max(1) as f32, size.height.max(1) as f32))
-            .unwrap_or((fallback_width, fallback_height));
+            .unwrap_or((virtual_width, virtual_height));
+        let (world_width, world_height) = splash_world_size(
+            (window_width, window_height),
+            (virtual_width, virtual_height),
+        );
 
         let mut commands = Vec::with_capacity(3);
         commands.push(RenderCommand::TwoD(Command2D::SetCamera {
@@ -46,7 +64,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             node: STARTUP_SPLASH_BG_NODE,
             rect: Rect2DCommand {
                 center: [0.0, 0.0],
-                size: [window_width, window_height],
+                size: [world_width, world_height],
                 color: [
                     STARTUP_SPLASH_BG_COLOR[0],
                     STARTUP_SPLASH_BG_COLOR[1],
@@ -84,8 +102,8 @@ impl<B: GraphicsBackend> RunnerState<B> {
             .startup_splash
             .texture_size
             .unwrap_or((image_w, image_h));
-        let max_w = window_width * STARTUP_SPLASH_MAX_WIDTH_FRAC;
-        let max_h = window_height * STARTUP_SPLASH_MAX_HEIGHT_FRAC;
+        let max_w = world_width * STARTUP_SPLASH_MAX_WIDTH_FRAC;
+        let max_h = world_height * STARTUP_SPLASH_MAX_HEIGHT_FRAC;
         let scale = (max_w / image_w as f32)
             .min(max_h / image_h as f32)
             .max(0.001);
@@ -106,6 +124,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
     }
 
     pub(super) fn end_startup_splash(&mut self) {
+        crate::boot_log::mark("splash_end");
         // Back to the steady-state warm budget; visible frames run now.
         self.app.graphics.set_startup_warm_boost(false);
         self.app.graphics.submit_late_overlay_many([
@@ -271,13 +290,26 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let splash_overlay = self.startup_splash_overlay_commands(alpha);
         #[cfg(feature = "profile_heavy")]
         let present_timing = self.app.present_with_overlay_timed_no_ui(splash_overlay);
+        // ALWAYS the timed present while the splash is up. The untimed path
+        // returns no `PresentTiming`, and `frame_presented` reads `None` as "did
+        // not present" -- which feeds `next_ready_streak`, which resets the
+        // streak to 0. Frames only sample on a stride, so once the window went
+        // visible almost every splash frame took the untimed branch and zeroed
+        // the streak: `ready_streak >= 2` became unreachable and the splash sat
+        // until the hard timeout, then cut into the scene mid-intro.
+        //
+        // This is a handful of frames on a covered screen; knowing whether they
+        // reached the swapchain is the whole exit condition.
         #[cfg(not(feature = "profile_heavy"))]
-        let present_timing = if should_sample_timing {
-            Some(self.app.present_with_overlay_timed_no_ui(splash_overlay))
-        } else {
-            self.app.present_with_overlay_no_ui(splash_overlay);
-            None
-        };
+        let present_timing = Some(self.app.present_with_overlay_timed_no_ui(splash_overlay));
+        #[cfg(feature = "profile_heavy")]
+        let frame_presented = Self::present_reached_swapchain(&present_timing);
+        #[cfg(not(feature = "profile_heavy"))]
+        let frame_presented = present_timing
+            .as_ref()
+            .is_some_and(Self::present_reached_swapchain);
+        self.apply_surface_resync_request();
+        self.show_window_after_present(frame_presented && self.startup_splash.texture_id.is_some());
         self.apply_cursor_icon_request();
         let mut inflight_now = Vec::<RenderRequestID>::new();
         self.app
@@ -482,14 +514,68 @@ impl<B: GraphicsBackend> RunnerState<B> {
 
         let shown_for = frame_start.saturating_duration_since(self.startup_splash.shown_at);
         let hard_timeout_hit = shown_for >= STARTUP_SPLASH_HARD_TIMEOUT;
-        // Exit = min branding hold done AND boot scene loaded AND warm queue
-        // drained, OR the hard timeout (pathological compile must not pin the
-        // splash forever). Boot done early => the plain min hold, unchanged.
-        let load_ready =
-            self.app.runtime.boot_scene_loaded() && self.app.graphics.pipeline_warm_idle();
+        let first_frame_assets_ready = self.startup_splash.first_frame_captured
+            && self
+                .startup_splash
+                .first_frame_inflight
+                .iter()
+                .all(|request| !self.app.runtime.is_render_request_inflight(*request));
+        self.startup_splash.ready_streak = next_ready_streak(
+            self.startup_splash.ready_streak,
+            frame_presented,
+            first_frame_assets_ready,
+        );
+        // Exit = min branding hold done AND boot scene loaded AND 2 ready
+        // presents. First ready pass may only apply asset completion events
+        // after draw; second pass proves those assets land. Timeout may skip
+        // extra pipeline warming, but never the first ready scene frame.
+        let load_ready = self.app.runtime.boot_scene_loaded()
+            && self.startup_splash.ready_streak >= 2
+            && (self.app.graphics.pipeline_warm_idle() || hard_timeout_hit);
+        if load_ready && !self.boot_log_load_ready {
+            self.boot_log_load_ready = true;
+            crate::boot_log::mark("load_ready (scene + pipelines warm)");
+        }
+        // PERRO_BOOT_LOG: a splash that will not exit is otherwise silent --
+        // every gate below can stall independently and none of them log. Report
+        // which one is still false, once a second, while the splash is up.
+        crate::boot_log::stall("splash", shown_for, || {
+            format!(
+                "boot_scene_loaded={} ready_streak={} first_frame_captured={}                      inflight={} pipeline_warm_idle={} hard_timeout_hit={}",
+                self.app.runtime.boot_scene_loaded(),
+                self.startup_splash.ready_streak,
+                self.startup_splash.first_frame_captured,
+                self.startup_splash
+                    .first_frame_inflight
+                    .iter()
+                    .filter(|request| self.app.runtime.is_render_request_inflight(**request))
+                    .count(),
+                self.app.graphics.pipeline_warm_idle(),
+                hard_timeout_hit,
+            )
+        });
+        // The hard timeout must be TERMINAL, not one more AND-term. It only
+        // relaxed `pipeline_warm_idle`, so `boot_scene_loaded` or a
+        // `ready_streak` that keeps resetting pinned the splash forever -- the
+        // exact thing this constant exists to bound. `next_ready_streak` zeroes
+        // the streak on any frame that does not present with assets settled, so
+        // one never-completing render request is enough to hang boot.
         if self.startup_splash.fade_started_at.is_none()
-            && ((shown_for >= STARTUP_SPLASH_HOLD_DURATION && load_ready) || hard_timeout_hit)
+            && splash_fade_should_start(shown_for, load_ready, hard_timeout_hit)
         {
+            if !load_ready {
+                eprintln!(
+                    "[perro][runtime] startup splash hard timeout after {:?};                      continuing to the scene (boot_scene_loaded={} ready_streak={}                      pending_assets={})",
+                    STARTUP_SPLASH_HARD_TIMEOUT,
+                    self.app.runtime.boot_scene_loaded(),
+                    self.startup_splash.ready_streak,
+                    self.startup_splash
+                        .first_frame_inflight
+                        .iter()
+                        .filter(|request| self.app.runtime.is_render_request_inflight(**request))
+                        .count(),
+                );
+            }
             self.startup_splash.fade_started_at = Some(frame_start);
         }
         if self.startup_splash.should_finish(frame_start) {
@@ -497,5 +583,46 @@ impl<B: GraphicsBackend> RunnerState<B> {
         }
 
         self.app.begin_input_frame();
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::splash_world_size;
+
+    /// The bug: quads sized in window pixels only covered the window when the
+    /// aspect-fit scale was exactly 1. A 1280x720 window on the default 16:9
+    /// virtual canvas fits at 0.667, so a 1280-world-unit background painted
+    /// 853 window pixels and left a ~17% border on each axis.
+    #[test]
+    fn world_size_covers_the_window_at_every_fit() {
+        for window in [
+            (1920.0, 1080.0),
+            (1280.0, 720.0),
+            (2560.0, 1440.0),
+            (1728.0, 1080.0),
+            (1920.0, 1200.0),
+            (800.0, 1400.0),
+        ] {
+            let virtual_size = (1920.0, 1080.0);
+            let (world_w, world_h) = splash_world_size(window, virtual_size);
+            let fit = (window.0 / virtual_size.0).min(window.1 / virtual_size.1);
+            assert!(
+                (world_w * fit - window.0).abs() <= 0.01,
+                "{window:?} width {world_w} * {fit}"
+            );
+            assert!(
+                (world_h * fit - window.1).abs() <= 0.01,
+                "{window:?} height {world_h} * {fit}"
+            );
+        }
+    }
+
+    /// A window that matches the virtual canvas keeps the old 1:1 sizing.
+    #[test]
+    fn matching_window_is_identity() {
+        assert_eq!(
+            splash_world_size((1920.0, 1080.0), (1920.0, 1080.0)),
+            (1920.0, 1080.0)
+        );
     }
 }

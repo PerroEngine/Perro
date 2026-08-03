@@ -12,8 +12,7 @@ use super::{
         create_depth_prepass_shader_module_skinned, create_frustum_cull_shader_module,
         create_hiz_depth_copy_shader_module, create_hiz_downsample_shader_module,
         create_hiz_downsample_spd_shader_module, create_hiz_occlusion_cull_shader_module,
-        create_indirect_compact_shader_module,
-        create_mesh_blend_mask_shader_module_rigid,
+        create_indirect_compact_shader_module, create_mesh_blend_mask_shader_module_rigid,
         create_mesh_blend_mask_shader_module_rigid_packed_lod,
         create_mesh_blend_mask_shader_module_skinned, create_mesh_blend_screen_shader_module,
         create_mesh_shader_module_rigid, create_mesh_shader_module_rigid_packed_lod,
@@ -263,10 +262,10 @@ pub(crate) use pipeline_registry::{PipelineRegistry, PipelineRegistryCache};
 // Shared mesh arena: one arena set for the main view + every camera stream.
 pub(crate) use buffers::SharedMeshArena;
 use decals::{create_decal_buffer, create_decal_texture_array};
+use draw::*;
 use init::{
     create_indirect_compact_buffer, create_indirect_count_buffer, create_indirect_run_buffer,
 };
-use draw::*;
 use sky::*;
 use targets::*;
 
@@ -359,6 +358,42 @@ pub(super) fn default_shadow_map_sizes() -> (u32, u32, u32) {
         SHADOW_SPOT_MAP_SIZE_DEFAULT.load(Ordering::Relaxed),
         SHADOW_POINT_MAP_SIZE_DEFAULT.load(Ordering::Relaxed),
     )
+}
+
+/// Target height the compiled atlas sizes are tuned for. A camera stream that
+/// renders into a shorter target resolves fewer shadow texels per screen pixel
+/// at the same atlas size, so the atlas can shrink with it.
+const SHADOW_TARGET_REFERENCE_HEIGHT: u32 = 1080;
+/// Atlas floor. Below this the texel snapping the cascade fit relies on gets
+/// coarse enough to swim, and the pass is no longer the cost that matters.
+const SHADOW_TARGET_MIN_SIZE: u32 = 128;
+
+/// Atlas sizes for a render target of `height`, scaled off the reference.
+///
+/// Only ever SHRINKS: a target at or above the reference keeps `base` exactly,
+/// so the main view is unaffected whatever the window size. Sizes round down to
+/// a power of two, which keeps the cascade texel-snap math on whole texels.
+///
+/// This is the fix for the sub-view shadow blowup: a 256x144 sub-view rendering
+/// 4 point lights pays 24 faces x 1024^2 = 25M shadow depth pixels to shade
+/// 37k scene pixels (683x its own footprint). The atlas is per-`Gpu3D` and
+/// every camera stream owns one, so the waste multiplies per stream.
+pub(super) fn shadow_map_sizes_for_target(base: (u32, u32, u32), height: u32) -> (u32, u32, u32) {
+    let height = height.max(1);
+    if height >= SHADOW_TARGET_REFERENCE_HEIGHT {
+        return base;
+    }
+    let scale = |size: u32| -> u32 {
+        let wanted = (u64::from(size) * u64::from(height)
+            / u64::from(SHADOW_TARGET_REFERENCE_HEIGHT)) as u32;
+        let floored = if wanted == 0 {
+            SHADOW_TARGET_MIN_SIZE
+        } else {
+            1u32 << wanted.ilog2()
+        };
+        floored.clamp(SHADOW_TARGET_MIN_SIZE.min(size), size)
+    };
+    (scale(base.0), scale(base.1), scale(base.2))
 }
 const MAX_SHADOW_RAY_LIGHTS: usize = 1;
 const MAX_SHADOW_RAY_CASCADES: usize = 4;
@@ -874,6 +909,16 @@ struct ShadowUniform {
     point_light_slots: [[f32; 4]; MAX_POINT_LIGHTS.div_ceil(4)],
 }
 
+/// CPU size of the `Shadow3D` uniform, for the WGSL layout-parity test.
+///
+/// The shader declares its array lengths by hand, so the two sides can only be
+/// kept honest by comparing sizes; see
+/// `three_d::shaders::tests::shadow_uniform_layout_matches_shader_struct`.
+#[cfg(test)]
+pub(crate) fn shadow_uniform_size() -> usize {
+    std::mem::size_of::<ShadowUniform>()
+}
+
 /// Usage trackers for the periodic GC-tick buffer shrink (crate::gpu_shrink):
 /// one per grow-only buffer family that participates in shrinking.
 #[derive(Default)]
@@ -1159,6 +1204,8 @@ pub struct Gpu3D {
     // Camera the staged rows were packed at, kept as the cheap skip for the
     // per-draw LOD-band recompute: same camera => same band, no math.
     multimesh_staging_cache_camera: [f32; 3],
+    // The other band input: LOD scale the staged rows were packed at.
+    multimesh_staging_cache_lod_scale: f32,
     // Telemetry: full rebuilds that skipped the multimesh repack.
     multimesh_staging_reuse_count: u64,
     // GPU per-instance frustum cull for multimesh (item 1). Reuses the rigid
@@ -1193,10 +1240,13 @@ pub struct Gpu3D {
     multimesh_cull_batch_capacity: usize,
     // 9-tap PCF kernel (ray_params.w); default 4-tap.
     shadow_pcf_high: bool,
-    // Per-instance shadow atlas resolutions (lowered on constrained adapters).
+    // Per-instance shadow atlas resolutions (lowered on constrained adapters,
+    // and again per render target when `shadow_scale_to_target` is set).
     shadow_map_size: u32,
     shadow_spot_map_size: u32,
     shadow_point_map_size: u32,
+    // Camera-stream / sub-view instance: atlases follow the target height.
+    shadow_scale_to_target: bool,
     // True while the cull compute ran this frame (drives indirect draw path).
     multimesh_cull_active: bool,
     last_multimesh_cull_params: Option<MultiMeshCullParamsGpu>,
@@ -1408,6 +1458,12 @@ pub struct Gpu3D {
     // Per shadow layer (flat cascade/spot/point-face index) cache validity. A
     // valid layer retains prior depth contents and skips its render pass.
     shadow_layer_valid: Vec<bool>,
+    // Per shadow layer: the last pass that ran on it drew ZERO casters, so its
+    // depth holds nothing but the clear. Such a layer can skip its pass again
+    // while its cull stays empty even though `shadow_casters_dirty` is set --
+    // a caster that moved somewhere else cannot change an all-far depth map.
+    // Cleared wherever the atlas contents stop being trustworthy.
+    shadow_layer_empty: Vec<bool>,
     // Round-robin cascade budget state (see `schedule_cascade_renders`).
     // `shadow_cascade_defer_age[i]` counts consecutive frames cascade i asked
     // for a re-render and did not get one -- the age-based promotion that stops
@@ -1548,6 +1604,9 @@ pub struct Gpu3D {
     debug_frustum_visible_est: u32,
     last_aspect: f32,
     last_proj_y_scale: f32,
+    // Distance/radius multiplier the LOD bands are picked with, from the render
+    // target height and the projection (see `lod_ratio_scale`).
+    lod_ratio_scale: f32,
     sample_count: u32,
     occlusion_mode: OcclusionCullingMode,
     meshlets_enabled: bool,
@@ -1678,6 +1737,11 @@ pub struct Gpu3DConfig {
     pub shader_variant_mode: crate::ShaderVariantMode,
     /// 9-tap PCF (graphics.shadow_quality = "high"); default is 4-tap.
     pub shadow_pcf_high: bool,
+    /// Shrink the shadow atlases with the render target (see
+    /// [`shadow_map_sizes_for_target`]). Set for camera-stream / sub-view
+    /// instances, whose targets are a fraction of the main view; the main view
+    /// keeps the configured sizes.
+    pub shadow_scale_to_target: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -1749,6 +1813,9 @@ pub(crate) struct PassCounters {
     // Shadow layers whose multimesh casters went through the per-layer GPU
     // instance cull (indirect draws) instead of the identity full-batch draw.
     pub(crate) shadow_multimesh_culled_layers: u32,
+    // Shadow layers left out of the encoder entirely because their cull was
+    // empty and their depth already held nothing but the clear.
+    pub(crate) shadow_empty_layer_skips: u32,
 }
 
 // Encoder-level GPU timestamp slots bracketing the shadow depth block. Both
@@ -1990,6 +2057,35 @@ struct OcclusionState {
 
 const CULL_FLAG_DISABLE_HIZ_OCCLUSION: u32 = 1u32;
 const LOD_DISTANCE_RADIUS_SCALES: [f32; 5] = [36.0, 54.0, 72.0, 108.0, 144.0];
+/// Target height `LOD_DISTANCE_RADIUS_SCALES` is tuned against.
+const LOD_REFERENCE_HEIGHT: f32 = 1080.0;
+/// Projection y-scale (`1 / tan(fov_y / 2)`) the same thresholds assume: a 60
+/// degree vertical FOV, the engine's default camera.
+const LOD_REFERENCE_PROJ_Y_SCALE: f32 = 1.732_050_8;
+
+/// Distance/radius multiplier that puts this render target on the reference
+/// view's LOD terms.
+///
+/// `LOD_DISTANCE_RADIUS_SCALES` are thresholds on `distance / bounds_radius`,
+/// which is a pure world-space quantity: a mesh 40 radii away picks the same LOD
+/// in a 4K main view and in a 256x144 minimap, even though it covers ~70x fewer
+/// pixels in the minimap. Screen coverage is what LOD is actually for, and it
+/// scales with `height * proj_y_scale` -- so dividing that out of the reference
+/// recovers a screen-space threshold without retuning the table.
+///
+/// Clamped to `>= 1.0`: this only ever picks a COARSER LOD than today. A 4K
+/// window keeps the exact bands it has now instead of quietly asking for more
+/// vertex work than the 1080p tuning ever intended.
+fn lod_ratio_scale(height: u32, proj_y_scale: f32) -> f32 {
+    let proj_y_scale = if proj_y_scale.is_finite() && proj_y_scale > 1.0e-4 {
+        proj_y_scale
+    } else {
+        LOD_REFERENCE_PROJ_Y_SCALE
+    };
+    let reference = LOD_REFERENCE_HEIGHT * LOD_REFERENCE_PROJ_Y_SCALE;
+    let target = (height.max(1) as f32) * proj_y_scale;
+    (reference / target).max(1.0)
+}
 const FRUSTUM_CULL_MIN_BATCHES: usize = 96;
 const FRUSTUM_CULL_MIN_INSTANCES: usize = 1024;
 const FRUSTUM_CULL_HIGH_VISIBLE_RATIO: f32 = 0.9;
@@ -2024,10 +2120,11 @@ mod tests {
         BLEND_NORMAL_DELTA_SCALES, BlendShapeDeltaGpu, DrawBatch, DrawBatchPush,
         MATERIAL_TEXTURE_NONE, MaterialInstanceGpu, MaterialPipelineKind, MaterialTextureKey,
         MultiMeshDrawParamGpu, MultiMeshInstanceGpu, PackedLodParamGpu, PackedRigidLodVertex,
-        RenderBatchKind, RenderPath3D, RigidInstanceMetaGpu, RigidMeshVertex,
+        RenderBatchKind, RenderPath3D, RigidInstanceMetaGpu, RigidMeshVertex, SHADOW_MAP_SIZE,
+        SHADOW_POINT_MAP_SIZE, SHADOW_SPOT_MAP_SIZE, SHADOW_TARGET_MIN_SIZE,
         SkinnedInstanceMetaGpu, SkinnedMeshVertex, camera, compare_draw_batch_keys,
-        draw_batch_state_key, pack_blend_normal_delta, push_draw_batch, render_state_key,
-        unpack_blend_normal_delta,
+        draw_batch_state_key, lod_ratio_scale, pack_blend_normal_delta, push_draw_batch,
+        render_state_key, shadow_map_sizes_for_target, unpack_blend_normal_delta,
     };
     use glam::{Mat4, Quat, Vec3, Vec4};
     use perro_asset_formats::pmesh::{
@@ -2038,6 +2135,91 @@ mod tests {
     use perro_graphics_assets::{MeshRange, decode_pmesh, decode_ptex};
     use perro_render_bridge::{Camera3DState, CameraProjectionState};
     use perro_structs::BitMask;
+
+    /// The reference view is untouched, and a bigger window never asks for MORE
+    /// vertex work than the 1080p tuning intended.
+    #[test]
+    fn lod_scale_is_one_at_and_above_the_reference_view() {
+        let reference = super::LOD_REFERENCE_PROJ_Y_SCALE;
+        assert!((lod_ratio_scale(1080, reference) - 1.0).abs() < 1.0e-5);
+        for height in [1440, 2160, 4320] {
+            assert_eq!(lod_ratio_scale(height, reference), 1.0, "height {height}");
+        }
+    }
+
+    /// The sub-view case: a 256x144 stream covers ~7.5x fewer pixels per world
+    /// unit than the reference, so a mesh steps down its LOD bands 7.5x sooner.
+    #[test]
+    fn lod_scale_grows_as_the_target_shrinks() {
+        let reference = super::LOD_REFERENCE_PROJ_Y_SCALE;
+        assert!((lod_ratio_scale(540, reference) - 2.0).abs() < 1.0e-4);
+        assert!((lod_ratio_scale(288, reference) - 3.75).abs() < 1.0e-4);
+        assert!((lod_ratio_scale(144, reference) - 7.5).abs() < 1.0e-4);
+    }
+
+    /// A wider FOV projects everything smaller, so it also steps down sooner --
+    /// and a narrow FOV must not step UP past the reference (clamped at 1.0).
+    #[test]
+    fn lod_scale_follows_fov_and_never_drops_below_one() {
+        let reference = super::LOD_REFERENCE_PROJ_Y_SCALE;
+        // 90 degree vertical FOV: proj_y_scale 1.0.
+        assert!(lod_ratio_scale(1080, 1.0) > 1.7);
+        // Telephoto: would ask for finer LODs; clamped instead.
+        assert_eq!(lod_ratio_scale(1080, reference * 4.0), 1.0);
+        // Degenerate projections fall back to the reference.
+        assert!((lod_ratio_scale(1080, 0.0) - 1.0).abs() < 1.0e-5);
+        assert!((lod_ratio_scale(1080, f32::NAN) - 1.0).abs() < 1.0e-5);
+    }
+
+    const BASE_SHADOW_SIZES: (u32, u32, u32) =
+        (SHADOW_MAP_SIZE, SHADOW_SPOT_MAP_SIZE, SHADOW_POINT_MAP_SIZE);
+
+    /// A target at or above the reference height is untouched, so the main view
+    /// keeps its configured atlases whatever the window size.
+    #[test]
+    fn shadow_target_scale_never_grows_an_atlas() {
+        for height in [1080, 1440, 2160, 4320] {
+            assert_eq!(
+                shadow_map_sizes_for_target(BASE_SHADOW_SIZES, height),
+                BASE_SHADOW_SIZES,
+                "height {height}"
+            );
+        }
+    }
+
+    /// The sub-view blowup this exists for: 4 point lights in a 256x144 stream
+    /// cost 24 faces x 1024^2 = 25M shadow depth pixels to shade 37k scene
+    /// pixels. Scaling the atlas with the target cuts that by ~64x.
+    #[test]
+    fn shadow_target_scale_shrinks_with_the_stream_target() {
+        let (ray, spot, point) = shadow_map_sizes_for_target(BASE_SHADOW_SIZES, 540);
+        assert_eq!((ray, spot, point), (1024, 1024, 512));
+        let (ray, spot, point) = shadow_map_sizes_for_target(BASE_SHADOW_SIZES, 288);
+        assert_eq!((ray, spot, point), (512, 512, 256));
+        let (ray, spot, point) = shadow_map_sizes_for_target(BASE_SHADOW_SIZES, 144);
+        assert_eq!((ray, spot, point), (256, 256, 128));
+    }
+
+    /// Monotonic, power-of-two, floored, and never above the base: the cascade
+    /// texel snap needs whole texels and the fit slack must not swim.
+    #[test]
+    fn shadow_target_scale_is_bounded_and_pow2() {
+        let mut previous = (0, 0, 0);
+        for height in (1..=1200).step_by(7) {
+            let sizes = shadow_map_sizes_for_target(BASE_SHADOW_SIZES, height);
+            for (size, base) in [
+                (sizes.0, BASE_SHADOW_SIZES.0),
+                (sizes.1, BASE_SHADOW_SIZES.1),
+                (sizes.2, BASE_SHADOW_SIZES.2),
+            ] {
+                assert!(size <= base, "height {height}: {size} > {base}");
+                assert!(size >= SHADOW_TARGET_MIN_SIZE.min(base), "height {height}");
+                assert!(size.is_power_of_two(), "height {height}: {size}");
+            }
+            assert!(sizes.0 >= previous.0 && sizes.1 >= previous.1 && sizes.2 >= previous.2);
+            previous = sizes;
+        }
+    }
 
     fn assert_approx(actual: f32, expected: f32) {
         assert!(

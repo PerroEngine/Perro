@@ -142,13 +142,16 @@ impl PerroGraphics {
             || self.renderer_3d.has_retained_non_draw_state()
             || self.particles_3d.retained_point_particle_count() > 0;
         if !has_pending && !has_retained_scene && !has_pending_pipeline_warms {
+            let mut presented = false;
             if self.redraw_requested
                 && let Some(gpu) = &mut self.gpu
             {
-                self.redraw_requested = !gpu.render_idle_clear();
+                presented = gpu.render_idle_clear();
+                self.redraw_requested = !presented;
             }
             self.frame.scratch_late_overlay_commands = late_overlay_pending;
             return Some(DrawFrameTiming {
+                presented,
                 total: total_start.elapsed(),
                 idle_clear: true,
                 ..DrawFrameTiming::default()
@@ -167,9 +170,11 @@ impl PerroGraphics {
         std::mem::swap(&mut pending, &mut self.frame.pending_commands);
         let pending_command_count = pending.len();
         let command_summary = summarize_commands(&pending);
-        let frame_dirty_bits = command_summary.dirty_bits;
+        let mut frame_dirty_bits = command_summary.dirty_bits;
         let process_start = Instant::now();
         self.reserve_command_buckets(&command_summary);
+        let camera_2d_before = self.renderer_2d.camera();
+        let camera_3d_before = self.renderer_3d.camera();
         let mut camera_commands = std::mem::take(&mut self.frame.scratch_camera_commands);
         camera_commands.clear();
         let mut write = 0usize;
@@ -196,6 +201,13 @@ impl PerroGraphics {
         self.frame.scratch_camera_commands = camera_commands;
         self.process_late_overlay_commands(late_overlay_pending.drain(..));
         self.frame.scratch_late_overlay_commands = late_overlay_pending;
+        frame_dirty_bits = clear_unchanged_camera_dirty_bits(
+            frame_dirty_bits,
+            &camera_2d_before,
+            &self.renderer_2d.camera(),
+            &camera_3d_before,
+            &self.renderer_3d.camera(),
+        );
         let process_commands = process_start.elapsed();
         let prepare_start = Instant::now();
         let (
@@ -675,7 +687,6 @@ impl PerroGraphics {
                 ui_textures_delta: ui_paint.textures_delta,
                 ui_texture_size: ui_paint.texture_size,
                 ui_revision: ui_paint.revision,
-                redraw_requested: self.redraw_requested,
                 frame_time_seconds: self.frame_time_seconds,
                 frame_delta_seconds: self.frame_delta_seconds,
                 frame_dirty_bits,
@@ -716,6 +727,7 @@ impl PerroGraphics {
         }
         self.animated_stream_nodes_scratch = animated_streams;
         let timing = DrawFrameTiming {
+            presented: gpu_timing.presented,
             process_commands,
             prepare_cpu,
             gpu_prepare_2d: gpu_timing.prepare_2d,
@@ -744,10 +756,8 @@ impl PerroGraphics {
             sprite_bind_group_switches_2d: gpu_timing.sprite_bind_group_switches_2d,
             draw_batches_3d: gpu_timing.draw_batches_3d,
             pipeline_compiles_3d: pipeline_compiles,
-            pipeline_warms_pending_3d: self
-                .pending_pipeline_warms
-                .len()
-                .min(u32::MAX as usize) as u32,
+            pipeline_warms_pending_3d: self.pending_pipeline_warms.len().min(u32::MAX as usize)
+                as u32,
             pipeline_switches_3d: gpu_timing.pipeline_switches_3d,
             texture_bind_group_switches_3d: gpu_timing.texture_bind_group_switches_3d,
             draw_instances_3d: self.retained_draw_instances_cache,
@@ -777,6 +787,7 @@ impl PerroGraphics {
             shadow_multimesh_batch_draws: gpu_timing.shadow_multimesh_batch_draws,
             shadow_multimesh_instance_draws: gpu_timing.shadow_multimesh_instance_draws,
             shadow_multimesh_culled_layers: gpu_timing.shadow_multimesh_culled_layers,
+            shadow_empty_layer_skips: gpu_timing.shadow_empty_layer_skips,
             stream_count: gpu_timing.stream_count,
             stream_renders: gpu_timing.stream_renders,
             gpu_stream_encode: gpu_timing.gpu_stream_encode,

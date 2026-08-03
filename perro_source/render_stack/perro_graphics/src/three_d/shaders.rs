@@ -1725,8 +1725,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     #[test]
     fn multimesh_cull_draw_param_layout_matches_render_shader() {
         fn draw_param_layout(wgsl: &str, label: &str) -> (Vec<(String, u32)>, u32) {
-            let module = naga::front::wgsl::parse_str(wgsl)
-                .unwrap_or_else(|err| panic!("{label}: {err}"));
+            let module =
+                naga::front::wgsl::parse_str(wgsl).unwrap_or_else(|err| panic!("{label}: {err}"));
             for (_, ty) in module.types.iter() {
                 if ty.name.as_deref() == Some("MultiMeshDrawParam")
                     && let naga::TypeInner::Struct { members, span } = &ty.inner
@@ -1765,6 +1765,41 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         );
     }
 
+    /// `Shadow3D` (group 2, binding 0) is sized on the CPU by
+    /// `MAX_SHADOW_{RAY_CASCADES,SPOT_LIGHTS,POINT_LIGHTS}` and in WGSL by hand-
+    /// written array lengths. Nothing tied the two together, so editing a Rust
+    /// light-count constant silently shrank `ShadowUniform` while the shader kept
+    /// its own lengths -- and the only symptom was a `create_render_pipeline`
+    /// validation panic on `perro_mesh_pipeline_rigid`:
+    ///
+    /// ```text
+    /// Shader global ResourceBinding { group: 2, binding: 0 } is not available
+    /// Buffer structure size 2304 ... greater than the given `min_binding_size`, which is 1104
+    /// ```
+    ///
+    /// 1104 is the layout for `MAX_SHADOW_POINT_LIGHTS = 1`. Pin the WGSL span so
+    /// the next edit to either side fails here instead of at pipeline creation.
+    #[test]
+    fn shadow_uniform_layout_matches_shader_struct() {
+        let wgsl = sanitize_reserved_meta_identifier(regular::prelude_wgsl());
+        let module = naga::front::wgsl::parse_str(&wgsl).expect("prelude parses");
+        let span = module
+            .types
+            .iter()
+            .find_map(|(_, ty)| match (&ty.name, &ty.inner) {
+                (Some(name), naga::TypeInner::Struct { span, .. }) if name == "Shadow3D" => {
+                    Some(*span)
+                }
+                _ => None,
+            })
+            .expect("Shadow3D struct in prelude");
+        assert_eq!(
+            span as usize,
+            crate::three_d::gpu::shadow_uniform_size(),
+            "Shadow3D (wgsl) and ShadowUniform (cpu) disagree; a light-count              constant moved on one side only"
+        );
+    }
+
     // BlendShapeDelta is copied into every shader that reads morph targets and
     // is byte-mirrored by BlendShapeDeltaGpu (three_d/gpu.rs, 16 bytes). A
     // stride drift in any copy makes every target past the first read the
@@ -1772,8 +1807,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     #[test]
     fn blend_shape_delta_layout_matches_cpu_stride() {
         fn delta_layout(wgsl: &str, label: &str) -> (Vec<(String, u32)>, u32) {
-            let module = naga::front::wgsl::parse_str(wgsl)
-                .unwrap_or_else(|err| panic!("{label}: {err}"));
+            let module =
+                naga::front::wgsl::parse_str(wgsl).unwrap_or_else(|err| panic!("{label}: {err}"));
             for (_, ty) in module.types.iter() {
                 if ty.name.as_deref() == Some("BlendShapeDelta")
                     && let naga::TypeInner::Struct { members, span } = &ty.inner
