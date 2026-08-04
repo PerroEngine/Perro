@@ -1220,6 +1220,8 @@ fn project_root() -> std::path::PathBuf {
               anti_alias: perro_runtime::AntiAlias::Fxaa,
               ssao: perro_runtime::SsaoQuality::Low,
               shadow_quality: perro_runtime::ShadowQuality::Low,
+              render_scale: 1.0,
+              power_preference: perro_runtime::PowerPreference::HighPerformance,
               meshlets: false,
               dev_meshlets: false,
               release_meshlets: true,

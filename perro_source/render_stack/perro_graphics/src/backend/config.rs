@@ -59,6 +59,8 @@ impl PerroGraphics {
             occlusion_culling: OcclusionCullingMode::Gpu,
             ssao: SsaoQuality::Medium,
             shadow_quality: ShadowQuality::Medium,
+            render_scale: 1.0,
+            power_preference: PowerPreference::HighPerformance,
             texture_filter: TextureFilterMode::LinearMipmap,
             hdr_mode: HdrMode::Auto,
             shader_variant_mode: ShaderVariantMode::Auto,
@@ -156,6 +158,24 @@ impl PerroGraphics {
 
     pub fn with_shadow_quality(mut self, quality: ShadowQuality) -> Self {
         self.shadow_quality = quality;
+        self
+    }
+
+    /// Project `graphics.render_scale`: scene renders at `scale` x the window
+    /// resolution + upscales on present. Clamps to 0.25..=1.0; non-finite =>
+    /// 1.0 (native).
+    pub fn with_render_scale(mut self, scale: f32) -> Self {
+        self.render_scale = if scale.is_finite() {
+            scale.clamp(0.25, 1.0)
+        } else {
+            1.0
+        };
+        self
+    }
+
+    /// Project `graphics.power_preference`: which adapter to ask wgpu for.
+    pub fn with_power_preference(mut self, preference: PowerPreference) -> Self {
+        self.power_preference = preference;
         self
     }
 

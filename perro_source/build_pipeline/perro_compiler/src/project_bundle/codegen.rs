@@ -37,6 +37,17 @@ pub(super) fn emit_shadow_quality_expr(quality: perro_project::ShadowQuality) ->
     }
 }
 
+pub(super) fn emit_power_preference_expr(
+    preference: perro_project::PowerPreference,
+) -> &'static str {
+    match preference {
+        perro_project::PowerPreference::HighPerformance => {
+            "perro_runtime::PowerPreference::HighPerformance"
+        }
+        perro_project::PowerPreference::LowPower => "perro_runtime::PowerPreference::LowPower",
+    }
+}
+
 pub(super) fn emit_hdr_expr(mode: perro_structs::HdrMode) -> &'static str {
     match mode {
         perro_structs::HdrMode::Off => "perro_structs::HdrMode::Off",

@@ -1473,6 +1473,12 @@ pub struct Gpu3D {
     // stops moving.
     shadow_cascade_defer_age: [u32; MAX_SHADOW_RAY_CASCADES],
     shadow_cascade_defer_count: u32,
+    // Moving local lights use cached shadow depth for at most one 30 Hz
+    // refresh interval. Point lights schedule as one six-face unit so a cube
+    // never mixes faces from different light poses.
+    shadow_spot_defer_age: [u32; MAX_SHADOW_SPOT_LIGHTS],
+    shadow_point_defer_age: [u32; MAX_SHADOW_POINT_LIGHTS],
+    shadow_local_defer_count: u32,
     // Normalized ray-light direction each cascade's *cached* depth was fitted
     // for. A deferred cascade is only self-consistent while the light direction
     // it was rendered from still holds: the budget assumes camera motion (window
@@ -1802,6 +1808,9 @@ pub(crate) struct PassCounters {
     // Shadow depth layers actually re-rendered this frame (cached-valid layers
     // are skipped and do not count).
     pub(crate) shadow_layer_renders: u32,
+    // Regular-mesh shadow draw API calls after contiguous batches coalesce
+    // into multi-draw runs. Sum across every rendered shadow layer.
+    pub(crate) shadow_regular_batch_draws: u32,
     // Multimesh caster instances submitted across every shadow layer this
     // frame. Direct-draw layers count the whole surviving batch; per-layer
     // GPU-culled layers count the indirect cap, so the CPU-visible number is

@@ -159,6 +159,7 @@ impl Gpu3D {
     #[inline]
     pub(super) fn note_shadow_draw_stats(&mut self, stats: ShadowDrawStats) {
         self.pass_counters.shadow_layer_renders += 1;
+        self.pass_counters.shadow_regular_batch_draws += stats.regular_batch_draws;
         self.pass_counters.shadow_multimesh_batch_draws += stats.multimesh_batches;
         self.pass_counters.shadow_multimesh_instance_draws += stats.multimesh_instances;
         if stats.multimesh_culled {
@@ -186,6 +187,7 @@ pub(super) fn draw_shadow_batches<'a>(
         return ShadowDrawStats::default();
     };
     let mut current_state: Option<(RenderPath3D, bool, bool)> = None;
+    let mut regular_draws = 0u32;
     shadow_pass.set_vertex_buffer(1, gpu.instance_transform_buffer.slice(..));
     // shadow_cull_scratch was filled by compute_shadow_cull for this layer.
     for &batch_index in &gpu.shadow_cull_scratch {
@@ -247,14 +249,18 @@ pub(super) fn draw_shadow_batches<'a>(
         let end = start + batch.mesh.index_count;
         let instances = batch.instance_start..batch.instance_start + batch.instance_count;
         shadow_pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
+        regular_draws = regular_draws.saturating_add(1);
     }
-    draw_multimesh_shadow_casters(gpu, shadow_pass, camera_index)
+    let mut stats = draw_multimesh_shadow_casters(gpu, shadow_pass, camera_index);
+    stats.regular_batch_draws = regular_draws;
+    stats
 }
 
 /// Per-layer submission tally, folded into `PassCounters` by the caller once
 /// the borrow of `self` the render pass holds is released.
 #[derive(Clone, Copy, Debug, Default)]
 pub(super) struct ShadowDrawStats {
+    pub(super) regular_batch_draws: u32,
     pub(super) multimesh_batches: u32,
     pub(super) multimesh_instances: u64,
     pub(super) multimesh_culled: bool,

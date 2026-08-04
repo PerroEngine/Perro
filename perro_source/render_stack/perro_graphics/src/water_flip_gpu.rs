@@ -95,40 +95,43 @@ fn create_flip_render_pipeline(
     } else {
         "fs_splash"
     };
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("perro_water_flip_render"),
-        layout: Some(&render_layout),
-        vertex: wgpu::VertexState {
-            module: &render_shader,
-            entry_point: Some("vs_splash"),
-            buffers: &[],
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
+    crate::pipeline_cache::create_render_pipeline(
+        device,
+        wgpu::RenderPipelineDescriptor {
+            label: Some("perro_water_flip_render"),
+            layout: Some(&render_layout),
+            vertex: wgpu::VertexState {
+                module: &render_shader,
+                entry_point: Some("vs_splash"),
+                buffers: &[],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &render_shader,
+                entry_point: Some(splash_entry),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: color_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: crate::scene_depth_format(sample_count.max(1)),
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: sample_count.max(1),
+                ..Default::default()
+            },
+            multiview_mask: None,
+            cache: None,
         },
-        fragment: Some(wgpu::FragmentState {
-            module: &render_shader,
-            entry_point: Some(splash_entry),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: color_format,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-        }),
-        primitive: wgpu::PrimitiveState::default(),
-        depth_stencil: Some(wgpu::DepthStencilState {
-            format: crate::scene_depth_format(sample_count.max(1)),
-            depth_write_enabled: Some(false),
-            depth_compare: Some(wgpu::CompareFunction::LessEqual),
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
-        }),
-        multisample: wgpu::MultisampleState {
-            count: sample_count.max(1),
-            ..Default::default()
-        },
-        multiview_mask: None,
-        cache: None,
-    })
+    )
 }
 
 impl GpuWaterFlip {
@@ -169,14 +172,17 @@ impl GpuWaterFlip {
             immediate_size: 0,
         });
         let pipeline = |entry: &'static str| {
-            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some(entry),
-                layout: Some(&compute_layout),
-                module: &shader,
-                entry_point: Some(entry),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                cache: None,
-            })
+            crate::pipeline_cache::create_compute_pipeline(
+                device,
+                wgpu::ComputePipelineDescriptor {
+                    label: Some(entry),
+                    layout: Some(&compute_layout),
+                    module: &shader,
+                    entry_point: Some(entry),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    cache: None,
+                },
+            )
         };
         let clear = pipeline("cs_clear_grid");
         let p2g = pipeline("cs_p2g");

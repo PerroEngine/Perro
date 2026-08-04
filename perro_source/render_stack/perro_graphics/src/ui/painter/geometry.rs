@@ -118,6 +118,99 @@ pub(super) fn rounded_rect_points(
     out
 }
 
+/// Inner/outer rings around a rounded-rect edge for one output-pixel AA.
+/// The UI target is fixed at 1x; half the ramp lands on each side of the
+/// authored boundary. Custom `Shape::Mesh` inputs bypass epaint feathering,
+/// so textured images and gradient panels use this explicitly.
+pub(super) fn rounded_rect_feather_rings(
+    rect: Rect,
+    radii: ResolvedCornerRadii,
+) -> Vec<(epaint::Pos2, epaint::Pos2)> {
+    let mut points = rounded_rect_points(rect, radii, rounded_rect_segments(rect, radii));
+    points.dedup_by(|a, b| (*a - *b).length_sq() <= 1.0e-8);
+    if points.len() > 1 && (points[0] - points[points.len() - 1]).length_sq() <= 1.0e-8 {
+        points.pop();
+    }
+    if points.len() < 3 {
+        return Vec::new();
+    }
+    let edge_normal = |a: epaint::Pos2, b: epaint::Pos2| {
+        let edge = b - a;
+        let len = edge.length();
+        if len > 1.0e-6 {
+            vec2(edge.y / len, -edge.x / len)
+        } else {
+            vec2(0.0, 0.0)
+        }
+    };
+    let half = 0.5;
+    let count = points.len();
+    points
+        .iter()
+        .enumerate()
+        .map(|(idx, &point)| {
+            let prev = points[(idx + count - 1) % count];
+            let next = points[(idx + 1) % count];
+            let prev_normal = edge_normal(prev, point);
+            let next_normal = edge_normal(point, next);
+            let sum = prev_normal + next_normal;
+            let sum_len = sum.length();
+            let outward = if sum_len > 1.0e-6 {
+                sum / sum_len
+            } else {
+                let radial = point - rect.center();
+                let radial_len = radial.length();
+                if radial_len > 1.0e-6 {
+                    radial / radial_len
+                } else {
+                    vec2(0.0, -1.0)
+                }
+            };
+            // Preserve a half-pixel perpendicular offset at corners. Cap the
+            // miter for degenerate/tiny geometry.
+            let denom = outward.dot(next_normal).abs().max(0.25);
+            let offset = outward * (half / denom).min(half * 2.0);
+            (point - offset, point + offset)
+        })
+        .collect()
+}
+
+pub(super) fn add_feathered_rounded_rect(
+    mesh: &mut Mesh,
+    rect: Rect,
+    radii: ResolvedCornerRadii,
+    mut vertex: impl FnMut(epaint::Pos2, bool) -> Vertex,
+) {
+    let rings = rounded_rect_feather_rings(rect, radii);
+    if rings.len() < 3 {
+        return;
+    }
+    let base = mesh.vertices.len() as u32;
+    mesh.vertices.push(vertex(rect.center(), true));
+    for &(inner, _) in &rings {
+        mesh.vertices.push(vertex(inner, true));
+    }
+    for &(_, outer) in &rings {
+        mesh.vertices.push(vertex(outer, false));
+    }
+    let count = rings.len() as u32;
+    let inner = base + 1;
+    let outer = inner + count;
+    for idx in 0..count {
+        let next = (idx + 1) % count;
+        mesh.indices
+            .extend_from_slice(&[base, inner + idx, inner + next]);
+        mesh.indices.extend_from_slice(&[
+            inner + idx,
+            outer + idx,
+            outer + next,
+            inner + idx,
+            outer + next,
+            inner + next,
+        ]);
+    }
+}
+
 pub(super) fn push_corner_points(
     out: &mut Vec<epaint::Pos2>,
     center: epaint::Pos2,
@@ -147,32 +240,15 @@ pub(super) fn add_rounded_rect_gradient(
     radii: ResolvedCornerRadii,
     gradient: UiLinearGradientState,
 ) {
-    let points = rounded_rect_points(rect, radii, rounded_rect_segments(rect, radii));
-    if points.len() < 3 {
-        return;
-    }
-    let base = mesh.vertices.len() as u32;
-    let center = rect.center();
-    mesh.vertices.push(Vertex {
-        pos: center,
+    add_feathered_rounded_rect(mesh, rect, radii, |pos, opaque| Vertex {
+        pos,
         uv: pos2(0.0, 0.0),
-        color: gradient_color(gradient, rect, center),
+        color: if opaque {
+            gradient_color(gradient, rect, pos)
+        } else {
+            Color32::TRANSPARENT
+        },
     });
-    for pos in points {
-        mesh.vertices.push(Vertex {
-            pos,
-            uv: pos2(0.0, 0.0),
-            color: gradient_color(gradient, rect, pos),
-        });
-    }
-    let point_count = mesh.vertices.len() as u32 - base - 1;
-    for idx in 0..point_count {
-        mesh.indices.extend_from_slice(&[
-            base,
-            base + idx + 1,
-            base + ((idx + 1) % point_count) + 1,
-        ]);
-    }
 }
 
 pub(super) fn gradient_color(

@@ -502,30 +502,11 @@ pub(super) fn add_rounded_rect_with_uv(
         return;
     }
 
-    let base = mesh.vertices.len() as u32;
-    let center = rect.center();
-    mesh.vertices.push(Vertex {
-        pos: center,
-        uv: rect_uv(rect, uv, center),
-        color,
+    add_feathered_rounded_rect(mesh, rect, radii, |pos, opaque| Vertex {
+        pos,
+        uv: rect_uv(rect, uv, pos),
+        color: if opaque { color } else { Color32::TRANSPARENT },
     });
-
-    for pos in rounded_rect_points(rect, radii, rounded_rect_segments(rect, radii)) {
-        mesh.vertices.push(Vertex {
-            pos,
-            uv: rect_uv(rect, uv, pos),
-            color,
-        });
-    }
-
-    let point_count = mesh.vertices.len() as u32 - base - 1;
-    for idx in 0..point_count {
-        mesh.indices.extend_from_slice(&[
-            base,
-            base + idx + 1,
-            base + ((idx + 1) % point_count) + 1,
-        ]);
-    }
 }
 
 pub(super) fn rect_uv(rect: Rect, uv: Rect, pos: epaint::Pos2) -> epaint::Pos2 {

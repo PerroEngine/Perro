@@ -553,6 +553,11 @@ impl Renderer2D {
     }
 
     #[inline]
+    pub fn retained_point_particle_count(&self) -> usize {
+        self.retained_point_particles.len()
+    }
+
+    #[inline]
     pub fn retained_waters_revision(&self) -> u64 {
         self.retained_waters_revision
     }

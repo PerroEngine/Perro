@@ -246,6 +246,41 @@ hdr = "on"
     assert!(parsed.localization.is_none());
 }
 
+#[test]
+fn parse_project_toml_reads_render_scale_and_power_preference() {
+    let parsed = parse_project_toml(&anti_alias_toml(
+        "render_scale = 0.75\npower_preference = \"low_power\"",
+    ))
+    .expect("render cfg");
+    assert_eq!(parsed.render_scale, 0.75);
+    assert_eq!(parsed.power_preference, PowerPreference::LowPower);
+
+    let low = parse_project_toml(&anti_alias_toml("render_scale = 0.1")).expect("low clamp");
+    assert_eq!(low.render_scale, MIN_RENDER_SCALE);
+    let high = parse_project_toml(&anti_alias_toml("render_scale = 2")).expect("high clamp");
+    assert_eq!(high.render_scale, MAX_RENDER_SCALE);
+}
+
+#[test]
+fn parse_project_toml_rejects_bad_render_scale_and_power_preference() {
+    let err = parse_project_toml(&anti_alias_toml("render_scale = \"half\""))
+        .expect_err("reject render scale type");
+    assert!(err.to_string().contains("graphics.render_scale"));
+    let err = parse_project_toml(&anti_alias_toml("power_preference = \"fastest\""))
+        .expect_err("reject power preference");
+    assert!(err.to_string().contains("graphics.power_preference"));
+}
+
+#[test]
+fn static_project_config_keeps_render_scale_and_power_preference() {
+    let cfg = StaticProjectConfig::new("Game", 1, 2, 3, 1920, 1080)
+        .with_render_scale(0.5)
+        .with_power_preference(PowerPreference::LowPower)
+        .to_runtime();
+    assert_eq!(cfg.render_scale, 0.5);
+    assert_eq!(cfg.power_preference, PowerPreference::LowPower);
+}
+
 fn anti_alias_toml(graphics_lines: &str) -> String {
     format!(
         r#"

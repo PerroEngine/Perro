@@ -29,6 +29,8 @@ impl GraphicsBackend for PerroGraphics {
                     hdr_mode: self.hdr_mode,
                     shader_variant_mode: self.shader_variant_mode,
                     shadow_quality: self.shadow_quality,
+                    render_scale: self.render_scale,
+                    power_preference: self.power_preference,
                 };
                 wasm_bindgen_futures::spawn_local(async move {
                     let gpu = Gpu::new_async(window, cfg)
@@ -59,6 +61,8 @@ impl GraphicsBackend for PerroGraphics {
                     hdr_mode: self.hdr_mode,
                     shader_variant_mode: self.shader_variant_mode,
                     shadow_quality: self.shadow_quality,
+                    render_scale: self.render_scale,
+                    power_preference: self.power_preference,
                 };
                 let mut gpu =
                     Gpu::new(window, cfg).unwrap_or_else(|err| panic!("GPU init fail: {err}"));

@@ -155,6 +155,11 @@ impl ApplicationHandler for App {
 }
 
 fn main() {
+    if env::var_os("PERRO_GPU_TIMESTAMPS").is_none() {
+        // Bench setup runs before worker threads; keep release-profile GPU
+        // timestamps while production release builds leave them off.
+        unsafe { env::set_var("PERRO_GPU_TIMESTAMPS", "1") };
+    }
     let event_loop = EventLoop::new().expect("event loop");
     let mut app = App {
         window: None,

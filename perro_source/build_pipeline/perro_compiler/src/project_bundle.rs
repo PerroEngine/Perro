@@ -390,14 +390,12 @@ fn export_project_binary(
     let output_dir = project_root
         .join(".output")
         .join(native_output_folder_name(&output_bin_name, native_target));
-    fs::create_dir_all(&output_dir)?;
-    let copied_bin = output_dir.join(target_binary_name(&package_bin_name, native_target));
+    reset_output_dir(&output_dir)?;
     let output_bin = output_dir.join(target_binary_name(
         &native_output_artifact_name(&output_bin_name, version, native_target),
         native_target,
     ));
-    fs::copy(&built_bin, &copied_bin)?;
-    rename_exported_binary(&copied_bin, &output_bin)?;
+    copy_file_overwriting(&built_bin, &output_bin)?;
     if steam_enabled {
         let _ = copy_steam_runtime_library(&artifact_dir, &output_dir, native_target)?;
     }
@@ -423,7 +421,7 @@ fn export_universal_macos_binary(
         "{}-macos-universal",
         package_name_slug(&output_bin_name)
     ));
-    fs::create_dir_all(&output_dir)?;
+    reset_output_dir(&output_dir)?;
     let arm_bin = exported_native_binary_path(
         project_root,
         &output_bin_name,
@@ -451,12 +449,41 @@ fn export_universal_macos_binary(
                     "Steam enabled but macOS Steam runtime is missing".to_string(),
                 )
             })?;
-        fs::copy(steam_lib, output_dir.join("libsteam_api.dylib"))?;
+        copy_file_overwriting(&steam_lib, &output_dir.join("libsteam_api.dylib"))?;
     }
     println!(
         "exported universal macOS project binary: {}",
         output_bin.display()
     );
+    Ok(())
+}
+
+fn reset_output_dir(path: &Path) -> Result<(), CompilerError> {
+    if path.exists() {
+        fs::remove_dir_all(path)?;
+    }
+    fs::create_dir_all(path)?;
+    Ok(())
+}
+
+fn copy_file_overwriting(source: &Path, target: &Path) -> Result<(), CompilerError> {
+    if target.exists() {
+        fs::remove_file(target)?;
+    }
+    let expected = fs::metadata(source)?.len();
+    let copied = fs::copy(source, target)?;
+    let actual = fs::metadata(target)?.len();
+    if copied != expected || actual != expected {
+        return Err(CompilerError::SceneParse(format!(
+            "incomplete output copy: {} -> {} (expected {expected} bytes, copied {copied}, found {actual})",
+            source.display(),
+            target.display()
+        )));
+    }
+    fs::OpenOptions::new()
+        .write(true)
+        .open(target)?
+        .set_modified(std::time::SystemTime::now())?;
     Ok(())
 }
 
@@ -619,7 +646,7 @@ fn copy_steam_runtime_library(
         ))
     })?;
     let target = output_dir.join(library_name);
-    fs::copy(&source, &target)?;
+    copy_file_overwriting(&source, &target)?;
     Ok(Some(target))
 }
 

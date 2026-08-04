@@ -275,6 +275,7 @@ pub struct DrawFrameTiming {
     /// Shadow depth layers re-rendered this frame; cached-valid layers are
     /// skipped and do not count.
     pub shadow_layer_renders: u32,
+    pub shadow_regular_batch_draws: u32,
     pub shadow_multimesh_batch_draws: u32,
     pub shadow_multimesh_instance_draws: u64,
     pub shadow_multimesh_culled_layers: u32,
@@ -515,6 +516,15 @@ pub enum ShadowQuality {
     High,
 }
 
+/// GPU adapter pick handed to `request_adapter`. `HighPerformance` (default)
+/// prefers a high-throughput adapter; `LowPower` prefers an efficient adapter.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PowerPreference {
+    #[default]
+    HighPerformance,
+    LowPower,
+}
+
 /// Engine anti-aliasing mode. `Fxaa` runs a post pass on the tonemapped
 /// output; `Smaa` runs the higher-quality SMAA 1x three-pass chain there
 /// instead; `Taa` is temporal AA v1 (camera-reprojection history resolve +
@@ -621,6 +631,9 @@ pub struct PerroGraphics {
     occlusion_culling: OcclusionCullingMode,
     ssao: SsaoQuality,
     shadow_quality: ShadowQuality,
+    // graphics.render_scale: scene render res / window res (0.25..=1.0).
+    render_scale: f32,
+    power_preference: PowerPreference,
     texture_filter: TextureFilterMode,
     hdr_mode: HdrMode,
     shader_variant_mode: ShaderVariantMode,

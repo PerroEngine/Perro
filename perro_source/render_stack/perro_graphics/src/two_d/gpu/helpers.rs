@@ -230,81 +230,84 @@ pub(super) fn create_rect_pipeline(
         immediate_size: 0,
     });
 
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("perro_rect_pipeline"),
-        layout: Some(&pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: shader,
-            entry_point: Some("vs_main"),
-            buffers: &[
-                Some(wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<QuadVertex>() as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[wgpu::VertexAttribute {
-                        offset: 0,
-                        shader_location: 0,
-                        format: wgpu::VertexFormat::Float32x2,
-                    }],
-                }),
-                Some(wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<RectInstanceGpu>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[
-                        wgpu::VertexAttribute {
+    crate::pipeline_cache::create_render_pipeline(
+        device,
+        wgpu::RenderPipelineDescriptor {
+            label: Some("perro_rect_pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: shader,
+                entry_point: Some("vs_main"),
+                buffers: &[
+                    Some(wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<QuadVertex>() as u64,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &[wgpu::VertexAttribute {
                             offset: 0,
-                            shader_location: 1,
+                            shader_location: 0,
                             format: wgpu::VertexFormat::Float32x2,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 8,
-                            shader_location: 2,
-                            format: wgpu::VertexFormat::Float32x2,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 16,
-                            shader_location: 3,
-                            format: wgpu::VertexFormat::Unorm8x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 20,
-                            shader_location: 4,
-                            format: wgpu::VertexFormat::Sint32,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 24,
-                            shader_location: 5,
-                            format: wgpu::VertexFormat::Uint32,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 28,
-                            shader_location: 6,
-                            format: wgpu::VertexFormat::Float32,
-                        },
-                    ],
-                }),
-            ],
-            compilation_options: Default::default(),
+                        }],
+                    }),
+                    Some(wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<RectInstanceGpu>() as u64,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &[
+                            wgpu::VertexAttribute {
+                                offset: 0,
+                                shader_location: 1,
+                                format: wgpu::VertexFormat::Float32x2,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 8,
+                                shader_location: 2,
+                                format: wgpu::VertexFormat::Float32x2,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 16,
+                                shader_location: 3,
+                                format: wgpu::VertexFormat::Unorm8x4,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 20,
+                                shader_location: 4,
+                                format: wgpu::VertexFormat::Sint32,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 24,
+                                shader_location: 5,
+                                format: wgpu::VertexFormat::Uint32,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 28,
+                                shader_location: 6,
+                                format: wgpu::VertexFormat::Float32,
+                            },
+                        ],
+                    }),
+                ],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: sample_count.max(1),
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview_mask: None,
+            cache: None,
         },
-        fragment: Some(wgpu::FragmentState {
-            module: shader,
-            entry_point: Some("fs_main"),
-            targets: &[Some(wgpu::ColorTargetState {
-                format,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-            compilation_options: Default::default(),
-        }),
-        primitive: wgpu::PrimitiveState::default(),
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState {
-            count: sample_count.max(1),
-            mask: !0,
-            alpha_to_coverage_enabled: false,
-        },
-        multiview_mask: None,
-        cache: None,
-    })
+    )
 }
 
 pub(super) fn create_sprite_pipeline(
@@ -321,98 +324,101 @@ pub(super) fn create_sprite_pipeline(
         immediate_size: 0,
     });
 
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("perro_sprite_pipeline"),
-        layout: Some(&pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: shader,
-            entry_point: Some("vs_main"),
-            buffers: &[
-                Some(wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<SpriteVertex>() as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            offset: 0,
-                            shader_location: 0,
-                            format: wgpu::VertexFormat::Float32x2,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 8,
-                            shader_location: 1,
-                            format: wgpu::VertexFormat::Float32x2,
-                        },
-                    ],
-                }),
-                Some(wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<SpriteInstanceGpu>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            offset: 0,
-                            shader_location: 2,
-                            format: wgpu::VertexFormat::Float32x2,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 8,
-                            shader_location: 3,
-                            format: wgpu::VertexFormat::Float32x2,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 16,
-                            shader_location: 4,
-                            format: wgpu::VertexFormat::Float32x2,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 24,
-                            shader_location: 5,
-                            format: wgpu::VertexFormat::Float32x2,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 32,
-                            shader_location: 6,
-                            format: wgpu::VertexFormat::Float32x2,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 40,
-                            shader_location: 7,
-                            format: wgpu::VertexFormat::Float32x2,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 48,
-                            shader_location: 8,
-                            format: wgpu::VertexFormat::Sint32,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 52,
-                            shader_location: 9,
-                            format: wgpu::VertexFormat::Unorm8x4,
-                        },
-                    ],
-                }),
-            ],
-            compilation_options: Default::default(),
+    crate::pipeline_cache::create_render_pipeline(
+        device,
+        wgpu::RenderPipelineDescriptor {
+            label: Some("perro_sprite_pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: shader,
+                entry_point: Some("vs_main"),
+                buffers: &[
+                    Some(wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<SpriteVertex>() as u64,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &[
+                            wgpu::VertexAttribute {
+                                offset: 0,
+                                shader_location: 0,
+                                format: wgpu::VertexFormat::Float32x2,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 8,
+                                shader_location: 1,
+                                format: wgpu::VertexFormat::Float32x2,
+                            },
+                        ],
+                    }),
+                    Some(wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<SpriteInstanceGpu>() as u64,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &[
+                            wgpu::VertexAttribute {
+                                offset: 0,
+                                shader_location: 2,
+                                format: wgpu::VertexFormat::Float32x2,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 8,
+                                shader_location: 3,
+                                format: wgpu::VertexFormat::Float32x2,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 16,
+                                shader_location: 4,
+                                format: wgpu::VertexFormat::Float32x2,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 24,
+                                shader_location: 5,
+                                format: wgpu::VertexFormat::Float32x2,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 32,
+                                shader_location: 6,
+                                format: wgpu::VertexFormat::Float32x2,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 40,
+                                shader_location: 7,
+                                format: wgpu::VertexFormat::Float32x2,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 48,
+                                shader_location: 8,
+                                format: wgpu::VertexFormat::Sint32,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 52,
+                                shader_location: 9,
+                                format: wgpu::VertexFormat::Unorm8x4,
+                            },
+                        ],
+                    }),
+                ],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: sample_count.max(1),
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview_mask: None,
+            cache: None,
         },
-        fragment: Some(wgpu::FragmentState {
-            module: shader,
-            entry_point: Some("fs_main"),
-            targets: &[Some(wgpu::ColorTargetState {
-                format,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-            compilation_options: Default::default(),
-        }),
-        primitive: wgpu::PrimitiveState::default(),
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState {
-            count: sample_count.max(1),
-            mask: !0,
-            alpha_to_coverage_enabled: false,
-        },
-        multiview_mask: None,
-        cache: None,
-    })
+    )
 }
 
 pub(super) fn create_point_light_pipeline(
@@ -429,124 +435,127 @@ pub(super) fn create_point_light_pipeline(
         immediate_size: 0,
     });
 
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("perro_point_light_2d_pipeline"),
-        layout: Some(&pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: shader,
-            entry_point: Some("vs_main"),
-            buffers: &[
-                Some(wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<QuadVertex>() as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[wgpu::VertexAttribute {
-                        offset: 0,
-                        shader_location: 0,
-                        format: wgpu::VertexFormat::Float32x2,
-                    }],
-                }),
-                Some(wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<Light2DGpu>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[
-                        wgpu::VertexAttribute {
+    crate::pipeline_cache::create_render_pipeline(
+        device,
+        wgpu::RenderPipelineDescriptor {
+            label: Some("perro_point_light_2d_pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: shader,
+                entry_point: Some("vs_main"),
+                buffers: &[
+                    Some(wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<QuadVertex>() as u64,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &[wgpu::VertexAttribute {
                             offset: 0,
-                            shader_location: 1,
+                            shader_location: 0,
                             format: wgpu::VertexFormat::Float32x2,
+                        }],
+                    }),
+                    Some(wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<Light2DGpu>() as u64,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &[
+                            wgpu::VertexAttribute {
+                                offset: 0,
+                                shader_location: 1,
+                                format: wgpu::VertexFormat::Float32x2,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 8,
+                                shader_location: 2,
+                                format: wgpu::VertexFormat::Float32,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 12,
+                                shader_location: 3,
+                                format: wgpu::VertexFormat::Sint32,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 16,
+                                shader_location: 4,
+                                format: wgpu::VertexFormat::Float32x3,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 28,
+                                shader_location: 5,
+                                format: wgpu::VertexFormat::Float32,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 32,
+                                shader_location: 6,
+                                format: wgpu::VertexFormat::Float32x2,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 40,
+                                shader_location: 7,
+                                format: wgpu::VertexFormat::Float32,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 44,
+                                shader_location: 8,
+                                format: wgpu::VertexFormat::Float32,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 48,
+                                shader_location: 9,
+                                format: wgpu::VertexFormat::Uint32,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 52,
+                                shader_location: 10,
+                                format: wgpu::VertexFormat::Uint32,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 56,
+                                shader_location: 11,
+                                format: wgpu::VertexFormat::Float32,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 60,
+                                shader_location: 12,
+                                format: wgpu::VertexFormat::Uint32,
+                            },
+                        ],
+                    }),
+                ],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState {
+                        color: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::One,
+                            operation: wgpu::BlendOperation::Add,
                         },
-                        wgpu::VertexAttribute {
-                            offset: 8,
-                            shader_location: 2,
-                            format: wgpu::VertexFormat::Float32,
+                        alpha: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::Zero,
+                            dst_factor: wgpu::BlendFactor::One,
+                            operation: wgpu::BlendOperation::Add,
                         },
-                        wgpu::VertexAttribute {
-                            offset: 12,
-                            shader_location: 3,
-                            format: wgpu::VertexFormat::Sint32,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 16,
-                            shader_location: 4,
-                            format: wgpu::VertexFormat::Float32x3,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 28,
-                            shader_location: 5,
-                            format: wgpu::VertexFormat::Float32,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 32,
-                            shader_location: 6,
-                            format: wgpu::VertexFormat::Float32x2,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 40,
-                            shader_location: 7,
-                            format: wgpu::VertexFormat::Float32,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 44,
-                            shader_location: 8,
-                            format: wgpu::VertexFormat::Float32,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 48,
-                            shader_location: 9,
-                            format: wgpu::VertexFormat::Uint32,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 52,
-                            shader_location: 10,
-                            format: wgpu::VertexFormat::Uint32,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 56,
-                            shader_location: 11,
-                            format: wgpu::VertexFormat::Float32,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 60,
-                            shader_location: 12,
-                            format: wgpu::VertexFormat::Uint32,
-                        },
-                    ],
-                }),
-            ],
-            compilation_options: Default::default(),
+                    }),
+                    write_mask: wgpu::ColorWrites::RED
+                        | wgpu::ColorWrites::GREEN
+                        | wgpu::ColorWrites::BLUE,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: sample_count.max(1),
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview_mask: None,
+            cache: None,
         },
-        fragment: Some(wgpu::FragmentState {
-            module: shader,
-            entry_point: Some("fs_main"),
-            targets: &[Some(wgpu::ColorTargetState {
-                format,
-                blend: Some(wgpu::BlendState {
-                    color: wgpu::BlendComponent {
-                        src_factor: wgpu::BlendFactor::One,
-                        dst_factor: wgpu::BlendFactor::One,
-                        operation: wgpu::BlendOperation::Add,
-                    },
-                    alpha: wgpu::BlendComponent {
-                        src_factor: wgpu::BlendFactor::Zero,
-                        dst_factor: wgpu::BlendFactor::One,
-                        operation: wgpu::BlendOperation::Add,
-                    },
-                }),
-                write_mask: wgpu::ColorWrites::RED
-                    | wgpu::ColorWrites::GREEN
-                    | wgpu::ColorWrites::BLUE,
-            })],
-            compilation_options: Default::default(),
-        }),
-        primitive: wgpu::PrimitiveState::default(),
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState {
-            count: sample_count.max(1),
-            mask: !0,
-            alpha_to_coverage_enabled: false,
-        },
-        multiview_mask: None,
-        cache: None,
-    })
+    )
 }
 
 #[inline]

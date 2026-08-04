@@ -110,6 +110,9 @@ fn post_process(uv: vec2<f32>, color: vec4<f32>, depth: f32) -> vec4<f32> {
         let threshold = post.params0.y;
         return bloom_bright_sample(uv, threshold);
     }
+    if post.effect_type == 18u {
+        return bloom_bright_blur_sample(uv, post.params0.y, post.params0.z);
+    }
     if post.effect_type == 9u {
         let amount = post.params0.x;
         return saturate_apply(color, amount);

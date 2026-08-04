@@ -235,6 +235,8 @@ fn graphics_from_project_config(
         .with_msaa_2d(effective_msaa(config.msaa_2d))
         .with_ssao(graphics_ssao(config.ssao))
         .with_shadow_quality(graphics_shadow_quality(config.shadow_quality))
+        .with_render_scale(config.render_scale)
+        .with_power_preference(graphics_power_preference(config.power_preference))
         .with_meshlets_enabled(config.meshlets)
         .with_dev_meshlets(!release_mode && config.dev_meshlets)
         .with_meshlet_debug_view(config.meshlet_debug_view)
@@ -304,6 +306,17 @@ fn graphics_shadow_quality(quality: perro_runtime::ShadowQuality) -> perro_graph
         perro_runtime::ShadowQuality::Low => perro_graphics::ShadowQuality::Low,
         perro_runtime::ShadowQuality::Medium => perro_graphics::ShadowQuality::Medium,
         perro_runtime::ShadowQuality::High => perro_graphics::ShadowQuality::High,
+    }
+}
+
+fn graphics_power_preference(
+    preference: perro_runtime::PowerPreference,
+) -> perro_graphics::PowerPreference {
+    match preference {
+        perro_runtime::PowerPreference::HighPerformance => {
+            perro_graphics::PowerPreference::HighPerformance
+        }
+        perro_runtime::PowerPreference::LowPower => perro_graphics::PowerPreference::LowPower,
     }
 }
 
@@ -559,6 +572,9 @@ pub struct StaticEmbeddedGraphicsConfig {
     pub anti_alias: perro_runtime::AntiAlias,
     pub ssao: perro_runtime::SsaoQuality,
     pub shadow_quality: perro_runtime::ShadowQuality,
+    /// Scene render res / window res (0.25..=1.0); 1.0 = native.
+    pub render_scale: f32,
+    pub power_preference: perro_runtime::PowerPreference,
     pub meshlets: bool,
     pub dev_meshlets: bool,
     pub release_meshlets: bool,
@@ -641,6 +657,8 @@ pub fn run_static_embedded_project(
     .with_anti_alias(input.graphics.anti_alias)
     .with_ssao(input.graphics.ssao)
     .with_shadow_quality(input.graphics.shadow_quality)
+    .with_render_scale(input.graphics.render_scale)
+    .with_power_preference(input.graphics.power_preference)
     .with_meshlets(input.graphics.meshlets)
     .with_dev_meshlets(input.graphics.dev_meshlets)
     .with_release_meshlets(input.graphics.release_meshlets)
@@ -808,6 +826,8 @@ pub fn run_static_embedded_project_android(
     .with_anti_alias(input.graphics.anti_alias)
     .with_ssao(input.graphics.ssao)
     .with_shadow_quality(input.graphics.shadow_quality)
+    .with_render_scale(input.graphics.render_scale)
+    .with_power_preference(input.graphics.power_preference)
     .with_meshlets(input.graphics.meshlets)
     .with_dev_meshlets(input.graphics.dev_meshlets)
     .with_release_meshlets(input.graphics.release_meshlets)

@@ -89,6 +89,11 @@ pub(super) fn ray_light_dir_changed(previous: [f32; 3], current: [f32; 3]) -> bo
 /// this many frames running.
 const CASCADE_MAX_DEFER_FRAMES: u32 = 3;
 
+// Keep moving local-light shadows fresh at 30 Hz while lighting itself stays
+// full-rate. At 60 Hz this updates half of four point lights each frame; at
+// 144 Hz it updates one. Worst pose age stays below one 30 Hz interval.
+const LOCAL_SHADOW_REFRESH_HZ: f32 = 30.0;
+
 // Test-only override for `CASCADE_RENDER_BUDGET`, so the repro can measure the
 // same camera walk with the budget on and off.
 #[cfg(test)]
@@ -619,10 +624,10 @@ impl Gpu3D {
         ));
         if !shadows_disabled
             && !self.shadow_casters_dirty
-            // A cascade left pending by the round-robin budget must still be
-            // served after the camera stops moving; taking the memo here would
-            // freeze it stale forever.
+            // Pending temporal work must still run after its input stops;
+            // taking the memo here would freeze stale cached depth forever.
             && self.shadow_cascade_defer_count == 0
+            && self.shadow_local_defer_count == 0
             && self.last_shadow_input_key == input_key
             && self.last_shadow_input_camera.as_ref() == Some(camera)
             // Shadow-specific compare, not the general `content_eq`: an
@@ -657,6 +662,9 @@ impl Gpu3D {
             self.shadow_layer_shrink.point.note_used(0);
             self.shadow_cascade_defer_age = [0; MAX_SHADOW_RAY_CASCADES];
             self.shadow_cascade_defer_count = 0;
+            self.shadow_spot_defer_age = [0; MAX_SHADOW_SPOT_LIGHTS];
+            self.shadow_point_defer_age = [0; MAX_SHADOW_POINT_LIGHTS];
+            self.shadow_local_defer_count = 0;
             self.shadow_cascade_light_dir = [[0.0; 3]; MAX_SHADOW_RAY_CASCADES];
             return;
         }
@@ -744,7 +752,8 @@ impl Gpu3D {
         };
         // Falling back to the previous window needs a previous uniform to
         // restore the cascade's matrix + texel from.
-        let can_defer = self.last_shadow.is_some();
+        let previous_shadow = self.last_shadow;
+        let can_defer = previous_shadow.is_some();
         let ray_light_dir = setup.ray_light_dir;
         let mut cascade_wants = [false; MAX_SHADOW_RAY_CASCADES];
         let mut cascade_forced = [false; MAX_SHADOW_RAY_CASCADES];
@@ -771,6 +780,67 @@ impl Gpu3D {
         self.shadow_cascade_defer_count = (0..cascade_layers)
             .filter(|&index| cascade_wants[index] && !cascade_granted[index])
             .count() as u32;
+
+        let spot_base = MAX_SHADOW_RAY_LIGHTS * MAX_SHADOW_RAY_CASCADES;
+        let point_base = spot_base + MAX_SHADOW_SPOT_LIGHTS;
+        let mut spot_wants = [false; MAX_SHADOW_SPOT_LIGHTS];
+        let mut spot_forced = [false; MAX_SHADOW_SPOT_LIGHTS];
+        for slot in 0..setup.spot_count {
+            let layer = spot_base + slot;
+            let scene_changed = self.last_shadow_scenes.get(layer).copied().flatten()
+                != setup.scenes.get(layer).copied();
+            let was_valid = self.shadow_layer_valid.get(layer).copied().unwrap_or(false);
+            let same_light = previous_shadow.is_some_and(|previous| {
+                previous.spot_params[slot][0] > 0.5
+                    && previous.spot_params[slot][1] == setup.uniform.spot_params[slot][1]
+            });
+            spot_wants[slot] = shadow_layer_needs_render(casters_dirty, scene_changed, was_valid);
+            // Local lights own isolated maps, so a moving caster may lag with
+            // the light as one self-consistent cached image. Unlike cascades,
+            // no neighbouring layer shows a newer pose at a seam.
+            spot_forced[slot] = !was_valid || !can_defer || !same_light;
+        }
+        let spot_granted = schedule_local_shadow_renders(
+            spot_wants,
+            spot_forced,
+            &mut self.shadow_spot_defer_age,
+            local_shadow_update_budget(setup.spot_count, lighting.frame_delta_seconds),
+        );
+
+        let mut point_wants = [false; MAX_SHADOW_POINT_LIGHTS];
+        let mut point_forced = [false; MAX_SHADOW_POINT_LIGHTS];
+        for slot in 0..setup.point_count {
+            let first_layer = point_base + slot * POINT_SHADOW_FACE_COUNT;
+            let layers = first_layer..first_layer + POINT_SHADOW_FACE_COUNT;
+            let scene_changed = layers.clone().any(|layer| {
+                self.last_shadow_scenes.get(layer).copied().flatten()
+                    != setup.scenes.get(layer).copied()
+            });
+            let all_valid = layers
+                .clone()
+                .all(|layer| self.shadow_layer_valid.get(layer).copied().unwrap_or(false));
+            let same_light = previous_shadow.is_some_and(|previous| {
+                previous.point_params[slot][0] > 0.5
+                    && previous.point_params[slot][1] == setup.uniform.point_params[slot][1]
+            });
+            point_wants[slot] = shadow_layer_needs_render(casters_dirty, scene_changed, all_valid);
+            point_forced[slot] = !all_valid || !can_defer || !same_light;
+        }
+        let point_granted = schedule_local_shadow_renders(
+            point_wants,
+            point_forced,
+            &mut self.shadow_point_defer_age,
+            local_shadow_update_budget(setup.point_count, lighting.frame_delta_seconds),
+        );
+        self.shadow_local_defer_count = (0..setup.spot_count)
+            .filter(|&slot| spot_wants[slot] && !spot_granted[slot])
+            .count()
+            .saturating_add(
+                (0..setup.point_count)
+                    .filter(|&slot| point_wants[slot] && !point_granted[slot])
+                    .count(),
+            ) as u32;
+
         let scenes = std::mem::take(&mut setup.scenes);
         for (index, scene) in scenes.iter().copied().enumerate() {
             if index < cascade_layers && cascade_wants[index] && !cascade_granted[index] {
@@ -779,11 +849,38 @@ impl Gpu3D {
                 // cull planes all stay put, so receivers keep sampling a map
                 // that matches them. Only the outer rim of the window (where
                 // the camera has since advanced past the fit slack) reads lit.
-                if let Some(previous) = self.last_shadow {
+                if let Some(previous) = previous_shadow {
                     setup.uniform.ray_light_view_proj[index] = previous.ray_light_view_proj[index];
                     setup.uniform.ray_texel[index] = previous.ray_texel[index];
                 }
                 continue;
+            }
+            if index >= spot_base && index < spot_base + setup.spot_count {
+                let slot = index - spot_base;
+                if spot_wants[slot] && !spot_granted[slot] {
+                    if let Some(previous) = previous_shadow {
+                        setup.uniform.spot_light_view_proj[slot] =
+                            previous.spot_light_view_proj[slot];
+                        setup.uniform.spot_params[slot] = previous.spot_params[slot];
+                    }
+                    continue;
+                }
+            }
+            if index >= point_base
+                && index < point_base + setup.point_count * POINT_SHADOW_FACE_COUNT
+            {
+                let local_index = index - point_base;
+                let slot = local_index / POINT_SHADOW_FACE_COUNT;
+                let face = local_index % POINT_SHADOW_FACE_COUNT;
+                if point_wants[slot] && !point_granted[slot] {
+                    if let Some(previous) = previous_shadow {
+                        setup.uniform.point_light_view_proj
+                            [slot * POINT_SHADOW_FACE_COUNT + face] =
+                            previous.point_light_view_proj[slot * POINT_SHADOW_FACE_COUNT + face];
+                        setup.uniform.point_params[slot] = previous.point_params[slot];
+                    }
+                    continue;
+                }
             }
             if index < cascade_layers {
                 // Not deferred: this layer either re-renders now or its window
@@ -876,11 +973,8 @@ pub(super) fn cascade_render_flags(
 /// keep their cached depth AND the matrix it was drawn with, so each deferred
 /// cascade stays internally consistent (old window, old contents).
 ///
-/// Spot/point layers are deliberately not budgeted: they are event-driven
-/// (light or caster change), never camera-driven, so they do not contend frame
-/// after frame the way cascades do. The one case that invalidates many at once
-/// -- a scene load / atlas recreate -- leaves them holding garbage depth, which
-/// is exactly the case a budget must not defer anyway.
+/// Spot/point layers use their own whole-light scheduler below. Their work and
+/// consistency rules differ: one point-light grant covers all six cube faces.
 pub(super) fn schedule_cascade_renders(
     wants: [bool; MAX_SHADOW_RAY_CASCADES],
     forced: [bool; MAX_SHADOW_RAY_CASCADES],
@@ -915,6 +1009,64 @@ pub(super) fn schedule_cascade_renders(
     for index in 0..MAX_SHADOW_RAY_CASCADES {
         if wants[index] && !granted[index] {
             ages[index] += 1;
+        } else {
+            ages[index] = 0;
+        }
+    }
+    granted
+}
+
+/// Local-shadow updates per frame for a target refresh of 30 Hz.
+///
+/// Low frame rates update every light. High frame rates spread moving lights
+/// across frames while bounding each slot's age to one refresh interval.
+#[inline]
+pub(super) fn local_shadow_update_budget(count: usize, frame_delta_seconds: f32) -> usize {
+    if count == 0 {
+        return 0;
+    }
+    static BUDGET_DISABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *BUDGET_DISABLED
+        .get_or_init(|| std::env::var_os("PERRO_DISABLE_LOCAL_SHADOW_BUDGET").is_some())
+    {
+        return count;
+    }
+    if !frame_delta_seconds.is_finite() || frame_delta_seconds <= 0.0 {
+        return count;
+    }
+    ((count as f32 * frame_delta_seconds * LOCAL_SHADOW_REFRESH_HZ).ceil() as usize).clamp(1, count)
+}
+
+/// Oldest-first temporal scheduler for spot lights or whole point lights.
+/// Forced slots bypass the budget; point-light callers treat all six faces as
+/// one slot so no cube map mixes poses.
+pub(super) fn schedule_local_shadow_renders<const N: usize>(
+    wants: [bool; N],
+    forced: [bool; N],
+    ages: &mut [u32; N],
+    budget: usize,
+) -> [bool; N] {
+    let mut granted = [false; N];
+    let mut used = 0usize;
+    for index in 0..N {
+        if wants[index] && forced[index] {
+            granted[index] = true;
+            used += 1;
+        }
+    }
+    while used < budget {
+        let Some(next) = (0..N)
+            .filter(|&index| wants[index] && !granted[index])
+            .max_by_key(|&index| (ages[index], std::cmp::Reverse(index)))
+        else {
+            break;
+        };
+        granted[next] = true;
+        used += 1;
+    }
+    for index in 0..N {
+        if wants[index] && !granted[index] {
+            ages[index] = ages[index].saturating_add(1);
         } else {
             ages[index] = 0;
         }
@@ -2700,7 +2852,8 @@ mod shadow_memo_tests;
 mod local_light_budget_tests {
     use super::{
         MAX_SHADOW_POINT_LIGHTS, MAX_SHADOW_SPOT_LIGHTS, local_shadow_light_budget,
-        local_shadow_light_score, take_best_shadow_lights,
+        local_shadow_light_score, local_shadow_update_budget, schedule_local_shadow_renders,
+        take_best_shadow_lights,
     };
     use glam::Vec3;
 
@@ -2762,6 +2915,45 @@ mod local_light_budget_tests {
         assert_eq!(
             take_best_shadow_lights(vec![(2, 1.0)], 0),
             Vec::<usize>::new()
+        );
+    }
+
+    #[test]
+    fn update_budget_holds_thirty_hz_at_common_frame_rates() {
+        assert_eq!(local_shadow_update_budget(0, 1.0 / 144.0), 0);
+        assert_eq!(local_shadow_update_budget(4, 1.0 / 144.0), 1);
+        assert_eq!(local_shadow_update_budget(4, 1.0 / 60.0), 2);
+        assert_eq!(local_shadow_update_budget(4, 1.0 / 30.0), 4);
+        assert_eq!(local_shadow_update_budget(4, 1.0 / 15.0), 4);
+        assert_eq!(local_shadow_update_budget(4, 0.0), 4);
+    }
+
+    #[test]
+    fn update_scheduler_rotates_without_starvation() {
+        let mut ages = [0; 4];
+        let mut grants = [0u32; 4];
+        for _ in 0..8 {
+            let frame = schedule_local_shadow_renders([true; 4], [false; 4], &mut ages, 1);
+            assert_eq!(frame.iter().filter(|granted| **granted).count(), 1);
+            for (count, granted) in grants.iter_mut().zip(frame) {
+                *count += u32::from(granted);
+            }
+        }
+        assert_eq!(grants, [2; 4]);
+        assert!(ages.into_iter().max().unwrap_or(0) <= 3);
+    }
+
+    #[test]
+    fn forced_update_bypasses_zero_budget() {
+        let mut ages = [0; 4];
+        assert_eq!(
+            schedule_local_shadow_renders(
+                [true, true, false, false],
+                [false, true, false, false],
+                &mut ages,
+                0,
+            ),
+            [false, true, false, false]
         );
     }
 }

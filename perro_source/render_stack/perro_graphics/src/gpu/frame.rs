@@ -326,9 +326,12 @@ impl Gpu {
                         camera_2d_position,
                         camera_3d_position: camera_3d.position,
                         camera_3d_frustum_planes: water_extract_frustum_planes(water_view_proj),
+                        camera_3d_lod_scale: water_camera_lod_scale(&camera_3d, self.render_height),
                         sky_color,
                         time_seconds: frame_time_seconds,
                         delta_seconds: frame_delta_seconds,
+                        scene_geometry_present: !draws_3d.is_empty()
+                            || !point_particles_3d.is_empty(),
                     },
                 );
                 self.last_prepare_water_2d_revision = waters_2d_revision;
@@ -970,9 +973,11 @@ impl Gpu {
                                 camera_2d_position: camera_position,
                                 camera_3d_position: [0.0, 0.0, 0.0],
                                 camera_3d_frustum_planes: [[0.0; 4]; 6],
+                                camera_3d_lod_scale: [0.0; 2],
                                 sky_color: [0.0, 0.0, 0.0],
                                 time_seconds: frame_time_seconds,
                                 delta_seconds: frame_delta_seconds,
+                                scene_geometry_present: false,
                             },
                         );
                         water.encode(&mut encoder);
@@ -1155,11 +1160,14 @@ impl Gpu {
                                 camera_3d_frustum_planes: water_extract_frustum_planes(
                                     water_view_proj,
                                 ),
+                                camera_3d_lod_scale: water_camera_lod_scale(camera, height),
                                 sky_color: sky_clear_color(&stream_lighting)
                                     .map(|color| [color.r as f32, color.g as f32, color.b as f32])
                                     .unwrap_or([0.0, 0.0, 0.0]),
                                 time_seconds: frame_time_seconds,
                                 delta_seconds: frame_delta_seconds,
+                                scene_geometry_present: !stream.draws_3d.is_empty()
+                                    || !stream.point_particles_3d.is_empty(),
                             },
                         );
                         water.encode(&mut encoder);
@@ -1292,9 +1300,11 @@ impl Gpu {
                                     camera_2d_position: camera_position,
                                     camera_3d_position: [0.0, 0.0, 0.0],
                                     camera_3d_frustum_planes: [[0.0; 4]; 6],
+                                    camera_3d_lod_scale: [0.0; 2],
                                     sky_color: [0.0, 0.0, 0.0],
                                     time_seconds: frame_time_seconds,
                                     delta_seconds: frame_delta_seconds,
+                                    scene_geometry_present: false,
                                 },
                             );
                             water.encode(&mut encoder);
@@ -1775,6 +1785,34 @@ impl Gpu {
             None
         };
 
+        // ---- idle-frame skip. Everything below (acquire, encode, submit,
+        // present) reproduces the image already on screen when these hold, so
+        // the cheapest correct frame is no frame at all. See
+        // `idle_frame_skip_allowed`.
+        let ui_viewport = [self.config.width.max(1), self.config.height.max(1)];
+        let ui_idle = ui_textures_delta.is_empty()
+            && !ui_primitives.is_empty()
+            && self
+                .ui
+                .as_ref()
+                .is_some_and(|ui| ui.composite_is_idle(ui_viewport, ui_revision));
+        let idle_signals = IdleFrameSignals {
+            scene_fast_path,
+            ui_idle,
+            late_overlay_empty: late_overlay_upload_2d.draw_count == 0
+                && late_overlay_sprites_2d.is_empty()
+                && late_overlay_point_lights_2d.is_empty()
+                && late_overlay_rects_2d.is_empty(),
+            presented_once: self.presented_once,
+            within_force_interval: self
+                .last_present
+                .is_some_and(|at| at.elapsed() < IDLE_FORCE_PRESENT_INTERVAL),
+        };
+        if idle_frame_skip_allowed(&idle_signals) {
+            timing.idle_frame_skips = 1;
+            timing.total = total_start.elapsed();
+            return timing;
+        }
         if !direct_present && !msaa_direct_present {
             let acquire_start = Instant::now();
             let acquire_surface_start = Instant::now();
@@ -1926,6 +1964,10 @@ impl Gpu {
         timing.submit_main = submit_start.elapsed();
         // The scene chain (or the retained texture it already produced) is now
         // on the queue: the retained image describes this key from here on.
+        // Anchors the idle-skip safety valve. Set on the SUBMIT path only, so a
+        // frame that failed to acquire never counts as presented.
+        self.last_present = Some(Instant::now());
+        self.presented_once = true;
         self.retained_scene_valid = true;
         self.retained_scene_key = retained_scene_key;
         timing.draw_calls_2d = self
@@ -1961,6 +2003,7 @@ impl Gpu {
             timing.water_depth_copies = counters.water_depth_copies;
             timing.water_depth_clears = counters.water_depth_clears;
             timing.shadow_layer_renders = counters.shadow_layer_renders;
+            timing.shadow_regular_batch_draws = counters.shadow_regular_batch_draws;
             timing.shadow_multimesh_batch_draws = counters.shadow_multimesh_batch_draws;
             timing.shadow_multimesh_instance_draws = counters.shadow_multimesh_instance_draws;
             timing.shadow_multimesh_culled_layers = counters.shadow_multimesh_culled_layers;

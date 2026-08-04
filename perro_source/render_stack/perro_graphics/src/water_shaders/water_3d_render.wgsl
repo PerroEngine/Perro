@@ -40,6 +40,11 @@ struct Params {
 // Gpu3D::water_depth_attachment). Clear on the MSAA path, where the pass still
 // attaches the real scene depth and the hardware test does it.
 const WATER_RENDER_FLAG_SCENE_DEPTH_REJECT: u32 = 1u;
+const WATER_RENDER_FLAG_SCENE_GEOMETRY: u32 = 2u;
+
+fn water_scene_geometry_present() -> bool {
+    return (params.render_flags & WATER_RENDER_FLAG_SCENE_GEOMETRY) != 0u;
+}
 
 struct RayLightGpu {
     direction: vec4<f32>,
@@ -402,7 +407,8 @@ fn water_scene_color_coord(coord: vec2<i32>) -> vec2<i32> {
 // prepass depth at the same pixel, LessEqual, no epsilon. Screen-space coords
 // in this shader already live in full-res depth-texture pixel space.
 fn water_scene_depth_rejects(frag_pos: vec4<f32>) -> bool {
-    if (params.render_flags & WATER_RENDER_FLAG_SCENE_DEPTH_REJECT) == 0u {
+    if !water_scene_geometry_present()
+        || (params.render_flags & WATER_RENDER_FLAG_SCENE_DEPTH_REJECT) == 0u {
         return false;
     }
     let dims = vec2<i32>(textureDimensions(scene_depth_tex));
@@ -431,7 +437,7 @@ fn water_ssr(world_pos: vec3<f32>, normal: vec3<f32>, view_dir: vec3<f32>, rough
     result.color = vec3<f32>(0.0);
     result.confidence = 0.0;
     // Rough or barely reflective water hides SSR detail. Skip its depth march.
-    if roughness >= 0.96 || reflection_weight <= 0.012 {
+    if !water_scene_geometry_present() || roughness >= 0.96 || reflection_weight <= 0.012 {
         return result;
     }
     let dims_u = textureDimensions(scene_depth_tex);
@@ -439,15 +445,16 @@ fn water_ssr(world_pos: vec3<f32>, normal: vec3<f32>, view_dir: vec3<f32>, rough
     let ray_dir = normalize(reflect(-view_dir, normal));
     var ray_pos = world_pos + normal * 0.06 + ray_dir * 0.10;
     var travel = 0.10;
-    // Smooth reflections keep the full search. Rough reflections use a shorter
-    // ray because their confidence and final contribution are already low.
-    let step_limit = u32(round(mix(24.0, 10.0, clamp(roughness, 0.0, 0.96))));
+    // Cover the old ~18m search span with fewer, wider probes. Hit thickness
+    // scales with stride below, so this cuts depth fetches without shortening
+    // reflections or punching gaps between samples.
+    let step_limit = u32(round(mix(16.0, 7.0, clamp(roughness, 0.0, 0.96))));
 
-    for (var step = 0u; step < 24u; step = step + 1u) {
+    for (var step = 0u; step < 16u; step = step + 1u) {
         if step >= step_limit {
             break;
         }
-        let stride = 0.12 + f32(step) * 0.055;
+        let stride = 0.18 + f32(step) * 0.12;
         ray_pos += ray_dir * stride;
         travel += stride;
         let clip = scene.view_proj * vec4<f32>(ray_pos, 1.0);
@@ -587,6 +594,22 @@ fn water_depth_thickness(in: Water3DVertexOut, w: Water, refraction_offset: vec2
     let dims_u = textureDimensions(scene_depth_tex);
     let dims = vec2<i32>(i32(dims_u.x), i32(dims_u.y));
     let base_coord = clamp(vec2<i32>(floor(in.clip_pos.xy)), vec2<i32>(0), dims - vec2<i32>(1));
+    if !water_scene_geometry_present() {
+        let thickness = w.size_depth_time.z;
+        let thickness_refraction = clamp(
+            0.35 + smoothstep(0.08, max(thickness * 0.45, 0.5), thickness) * 0.65,
+            0.0,
+            1.0,
+        );
+        let offset = vec2<i32>(round(refraction_offset * clamp(w.visual2.y * 26.0 * thickness_refraction, 0.0, 48.0)));
+        var info: WaterDepthInfo;
+        info.thickness = thickness;
+        info.bed_world = in.world_pos - vec3<f32>(0.0, thickness, 0.0);
+        info.hit = 0.0;
+        info.scene_depth = 1.0;
+        info.scene_coord = clamp(base_coord + offset, vec2<i32>(0), dims - vec2<i32>(1));
+        return info;
+    }
     let base_depth = textureLoad(scene_depth_tex, base_coord, 0);
     let view_water = distance(in.world_pos, scene.camera_pos.xyz);
     var base_thickness = w.size_depth_time.z;
@@ -643,6 +666,9 @@ fn water_diffused_transmission(center: vec2<i32>, thickness: f32, scene_depth: f
     let dims = vec2<i32>(i32(dims_u.x), i32(dims_u.y));
     let c = clamp(center, vec2<i32>(0), dims - vec2<i32>(1));
     let center_rgb = textureLoad(scene_color_tex, water_scene_color_coord(c), 0).rgb;
+    if !water_scene_geometry_present() {
+        return center_rgb;
+    }
     let scatter = clamp(strength, 0.0, 2.0)
         * (0.18 + 0.82 * (1.0 - exp(-max(thickness, 0.0) * 0.32)));
     if scatter <= 0.015 {

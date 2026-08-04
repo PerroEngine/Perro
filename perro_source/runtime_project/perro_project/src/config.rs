@@ -103,6 +103,37 @@ impl OcclusionCulling {
     }
 }
 
+/// GPU adapter selection hint. `HighPerformance` (default) prefers throughput;
+/// `LowPower` prefers efficiency. Platform/driver availability still wins.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PowerPreference {
+    #[default]
+    HighPerformance,
+    LowPower,
+}
+
+impl PowerPreference {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::HighPerformance => "high_performance",
+            Self::LowPower => "low_power",
+        }
+    }
+}
+
+/// `graphics.render_scale` bounds. Below 0.25 the image falls apart; above
+/// 1.0 costs more than the surface can show (supersample = separate feature).
+pub const MIN_RENDER_SCALE: f32 = 0.25;
+pub const MAX_RENDER_SCALE: f32 = 1.0;
+
+/// Clamp to [MIN_RENDER_SCALE, MAX_RENDER_SCALE]; non-finite => 1.0.
+pub fn clamp_render_scale(scale: f32) -> f32 {
+    if !scale.is_finite() {
+        return MAX_RENDER_SCALE;
+    }
+    scale.clamp(MIN_RENDER_SCALE, MAX_RENDER_SCALE)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParticleSimDefault {
     Cpu,
@@ -291,6 +322,9 @@ pub struct StaticProjectConfig {
     pub anti_alias: AntiAlias,
     pub ssao: SsaoQuality,
     pub shadow_quality: ShadowQuality,
+    /// Scene render resolution / window resolution. 1.0 = native.
+    pub render_scale: f32,
+    pub power_preference: PowerPreference,
     pub meshlets: bool,
     pub dev_meshlets: bool,
     pub release_meshlets: bool,
@@ -350,6 +384,8 @@ impl StaticProjectConfig {
             anti_alias: AntiAlias::Fxaa,
             ssao: SsaoQuality::Low,
             shadow_quality: ShadowQuality::Low,
+            render_scale: MAX_RENDER_SCALE,
+            power_preference: PowerPreference::HighPerformance,
             meshlets: false,
             dev_meshlets: false,
             release_meshlets: true,
@@ -424,6 +460,17 @@ impl StaticProjectConfig {
 
     pub const fn with_shadow_quality(mut self, quality: ShadowQuality) -> Self {
         self.shadow_quality = quality;
+        self
+    }
+
+    /// Scene render resolution / window resolution; clamps to 0.25..=1.0.
+    pub fn with_render_scale(mut self, scale: f32) -> Self {
+        self.render_scale = clamp_render_scale(scale);
+        self
+    }
+
+    pub const fn with_power_preference(mut self, preference: PowerPreference) -> Self {
+        self.power_preference = preference;
         self
     }
 
@@ -552,6 +599,8 @@ impl StaticProjectConfig {
             anti_alias: self.anti_alias,
             ssao: self.ssao,
             shadow_quality: self.shadow_quality,
+            render_scale: self.render_scale,
+            power_preference: self.power_preference,
             meshlets: self.meshlets,
             dev_meshlets: self.dev_meshlets,
             release_meshlets: self.release_meshlets,
@@ -623,6 +672,9 @@ pub struct ProjectConfig {
     pub anti_alias: AntiAlias,
     pub ssao: SsaoQuality,
     pub shadow_quality: ShadowQuality,
+    /// Scene render resolution / window resolution. 1.0 = native.
+    pub render_scale: f32,
+    pub power_preference: PowerPreference,
     pub meshlets: bool,
     pub dev_meshlets: bool,
     pub release_meshlets: bool,
@@ -742,6 +794,8 @@ impl ProjectConfig {
             anti_alias: AntiAlias::Fxaa,
             ssao: SsaoQuality::Low,
             shadow_quality: ShadowQuality::Low,
+            render_scale: MAX_RENDER_SCALE,
+            power_preference: PowerPreference::HighPerformance,
             meshlets: false,
             dev_meshlets: false,
             release_meshlets: true,

@@ -32,6 +32,16 @@ const UI_HARFBUZZ_ATLAS_SIZE: usize = 4096;
 const UI_HARFBUZZ_ATLAS_INITIAL_HEIGHT: usize = 32;
 const UI_HARFBUZZ_TEXTURE_ID: TextureId = TextureId::Managed(1);
 const UI_SYSTEM_FONT_PREFIX: &str = "perro-system";
+
+fn ui_tessellation_options() -> TessellationOptions {
+    // Font layout stays at 3 px/point, but the retained UI target is 1x.
+    // epaint converts this physical-pixel width back to points by dividing by
+    // `UI_RASTER_SCALE`, so 3 here yields one logical/output-pixel AA ramp.
+    TessellationOptions {
+        feathering_size_in_pixels: UI_RASTER_SCALE,
+        ..Default::default()
+    }
+}
 const UI_CYRILLIC_FONT_FAMILY: &str = "perro-cyrillic";
 const UI_ARABIC_FONT_FAMILY: &str = "perro-arabic";
 const UI_HEBREW_FONT_FAMILY: &str = "perro-hebrew";
@@ -546,7 +556,7 @@ impl EpaintUiPainter {
         }
         let mut tessellator = Tessellator::new(
             UI_RASTER_SCALE,
-            TessellationOptions::default(),
+            ui_tessellation_options(),
             self.fonts.font_image_size(),
             self.fonts.texture_atlas().prepared_discs(),
         );
@@ -900,6 +910,73 @@ mod tests {
         };
         let rect = Rect::from_center_size(pos2(0.0, 0.0), vec2(100.0, 50.0));
         assert_eq!(resolve_corner_radii(&panel, rect).tl, 25.0);
+    }
+
+    #[test]
+    fn one_x_tessellation_keeps_one_pixel_feather() {
+        let options = ui_tessellation_options();
+        assert!(options.feathering);
+        assert_eq!(options.feathering_size_in_pixels / UI_RASTER_SCALE, 1.0);
+    }
+
+    #[test]
+    fn rounded_image_mesh_adds_transparent_feather_ring() {
+        let rect = Rect::from_min_size(pos2(10.0, 20.0), vec2(80.0, 40.0));
+        let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+        let radii = resolve_rect_corner_radii(
+            rect,
+            UiCornerRadiiState {
+                tl: 0.5,
+                tr: 0.5,
+                br: 0.5,
+                bl: 0.5,
+            },
+        );
+        let mut mesh = Mesh::with_texture(TextureId::User(7));
+        add_rounded_rect_with_uv(&mut mesh, rect, uv, radii, Color32::WHITE);
+
+        assert!(mesh.vertices.iter().any(|vertex| vertex.color.a() == 0));
+        assert!(mesh.vertices.iter().any(|vertex| vertex.color.a() == 255));
+        assert!(mesh.vertices.iter().any(|vertex| {
+            vertex.pos.x < rect.left()
+                || vertex.pos.x > rect.right()
+                || vertex.pos.y < rect.top()
+                || vertex.pos.y > rect.bottom()
+        }));
+        assert!(
+            mesh.vertices
+                .iter()
+                .all(|vertex| (0.0..=1.0).contains(&vertex.uv.x)
+                    && (0.0..=1.0).contains(&vertex.uv.y))
+        );
+    }
+
+    #[test]
+    fn gradient_mesh_adds_transparent_feather_ring() {
+        let rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(100.0, 50.0));
+        let radii = resolve_rect_corner_radii(
+            rect,
+            UiCornerRadiiState {
+                tl: 0.4,
+                tr: 0.4,
+                br: 0.4,
+                bl: 0.4,
+            },
+        );
+        let mut mesh = Mesh::default();
+        add_rounded_rect_gradient(
+            &mut mesh,
+            rect,
+            radii,
+            UiLinearGradientState {
+                start_color: perro_structs::Color::WHITE,
+                end_color: perro_structs::Color::BLACK,
+                vector: [1.0, 0.0],
+            },
+        );
+
+        assert!(mesh.vertices.iter().any(|vertex| vertex.color.a() == 0));
+        assert!(mesh.vertices.iter().any(|vertex| vertex.color.a() == 255));
     }
 
     #[test]

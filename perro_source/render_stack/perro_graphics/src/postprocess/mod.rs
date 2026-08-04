@@ -38,6 +38,14 @@ const SUBPASS_UNIFORM_SLOTS: usize = 4;
 const EFFECT_MERGED: u32 = 15;
 const EFFECT_CHROMA_KEY: u32 = 16;
 const EFFECT_PIXEL_ART: u32 = 17;
+// Internal bloom first pass: threshold + horizontal blur while downsampling.
+const EFFECT_BLOOM_BRIGHT_BLUR: u32 = 18;
+
+#[inline]
+fn bloom_pass_fusion_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var_os("PERRO_DISABLE_BLOOM_PASS_FUSION").is_none())
+}
 
 // Frames without any effect chain before promoted ping targets and lazily
 // allocated scratch targets (blur/bloom) release back to 1x1/None.
@@ -376,8 +384,11 @@ pub struct PostProcessor {
     lut_3d_textures: PostLruCache<CachedPostTexture>,
     bgl: wgpu::BindGroupLayout,
     pipeline_layout: wgpu::PipelineLayout,
-    builtin_shader: wgpu::ShaderModule,
-    builtin_pipeline: wgpu::RenderPipeline,
+    // Built only when an effect chain is first requested. Most projects use
+    // present FXAA/TAA but no PostProcessor effect, so boot must not pay this
+    // driver compile.
+    builtin_shader: Option<wgpu::ShaderModule>,
+    builtin_pipeline: Option<wgpu::RenderPipeline>,
     // Lazily built variant of builtin_pipeline baked for
     // LDR_INTERMEDIATE_FORMAT targets (pipelines are format-baked).
     builtin_pipeline_ldr: Option<wgpu::RenderPipeline>,
@@ -590,9 +601,6 @@ impl PostProcessor {
             bind_group_layouts: &[Some(&bgl)],
             immediate_size: 0,
         });
-        let shader = create_builtin_shader_module(device);
-        let builtin_pipeline = create_pipeline(device, &pipeline_layout, &shader, format);
-
         Self {
             format,
             intermediate_format: format,
@@ -618,8 +626,8 @@ impl PostProcessor {
             lut_3d_textures: PostLruCache::new(),
             bgl,
             pipeline_layout,
-            builtin_shader: shader,
-            builtin_pipeline,
+            builtin_shader: None,
+            builtin_pipeline: None,
             builtin_pipeline_ldr: None,
             custom_pipelines: PostLruCache::new(),
             post_bind_groups: HashMap::new(),
@@ -712,11 +720,9 @@ impl PostProcessor {
     /// them; they rebuild on the next pass that needs one. Ping-input entries
     /// carry external key 0 and match on the depth key instead.
     fn note_view_keys(&mut self, keys: PostViewKeys) {
-        let Some(retired) = rotate_view_key_slot(
-            &mut self.view_key_slots,
-            &mut self.view_key_slot_next,
-            keys,
-        ) else {
+        let Some(retired) =
+            rotate_view_key_slot(&mut self.view_key_slots, &mut self.view_key_slot_next, keys)
+        else {
             return;
         };
         self.post_bind_groups.retain(|key, _| {
@@ -795,14 +801,39 @@ impl PostProcessor {
     /// the variant baked for `intermediate_format`; final-output passes keep
     /// the scene-format pipeline. Call `ensure_ldr_pipeline` first when the
     /// intermediate format is demoted.
+    fn builtin_pipeline(&self) -> &wgpu::RenderPipeline {
+        self.builtin_pipeline
+            .as_ref()
+            .expect("post builtin pipeline must be warmed before encode")
+    }
+
     fn builtin_pipeline_for_target(&self, intermediate_target: bool) -> &wgpu::RenderPipeline {
         if intermediate_target && self.intermediate_format != self.format {
             self.builtin_pipeline_ldr
                 .as_ref()
-                .unwrap_or(&self.builtin_pipeline)
+                .unwrap_or_else(|| self.builtin_pipeline())
         } else {
-            &self.builtin_pipeline
+            self.builtin_pipeline()
         }
+    }
+
+    #[inline]
+    pub(crate) fn builtin_pipeline_pending(&self) -> bool {
+        self.builtin_pipeline.is_none()
+    }
+
+    /// Warm the one common post pipeline. Call from the existing frame-budget
+    /// warm path once an effect is retained, before the same frame encodes it.
+    pub(crate) fn warm_builtin_pipeline(&mut self, device: &wgpu::Device) -> bool {
+        if self.builtin_pipeline.is_some() {
+            return false;
+        }
+        let shader = create_builtin_shader_module(device);
+        let pipeline = create_pipeline(device, &self.pipeline_layout, &shader, self.format);
+        self.builtin_shader = Some(shader);
+        self.builtin_pipeline = Some(pipeline);
+        perro_structs::structs::boot_log::mark("gpu: post pipeline warm");
+        true
     }
 
     fn ensure_ldr_pipeline(&mut self, device: &wgpu::Device) {
@@ -812,7 +843,9 @@ impl PostProcessor {
         self.builtin_pipeline_ldr = Some(create_pipeline(
             device,
             &self.pipeline_layout,
-            &self.builtin_shader,
+            self.builtin_shader
+                .as_ref()
+                .expect("post builtin shader must be warmed before LDR variant"),
             self.intermediate_format,
         ));
     }
@@ -899,6 +932,7 @@ impl PostProcessor {
         self.idle_frames = 0;
         self.chain_ran_this_frame = true;
         self.note_view_keys(view_keys);
+        self.warm_builtin_pipeline(device);
         let chain_needs_hdr = *hdr_output || effects.iter().any(effect_needs_hdr_intermediates);
         self.update_intermediate_format(device, chain_needs_hdr);
         self.ensure_ldr_pipeline(device);
@@ -1171,7 +1205,7 @@ impl PostProcessor {
                 PostProcessEffect::Custom { shader_path, .. } => self
                     .custom_pipelines
                     .peek(post_shader_key(shader_path.as_ref()))
-                    .unwrap_or(&self.builtin_pipeline),
+                    .unwrap_or_else(|| self.builtin_pipeline()),
                 _ => self.builtin_pipeline_for_target(!last),
             };
 
@@ -1338,7 +1372,7 @@ impl PostProcessor {
             occlusion_query_set: None,
             multiview_mask: None,
         });
-        pass.set_pipeline(&self.builtin_pipeline);
+        pass.set_pipeline(self.builtin_pipeline());
         pass.set_bind_group(0, &bind_group, &[dynamic_offset]);
         pass.draw(0..3, 0..1);
     }
@@ -1395,8 +1429,8 @@ impl PostProcessor {
         );
     }
 
-    /// Downsampled bloom: bright-pass into half-res A, separable blur A<->B at
-    /// half res, then composite the upsampled bloom over the full-res scene.
+    /// Downsampled bloom: fused bright + horizontal blur into half-res B,
+    /// vertical blur into A, then full-res composite. Three passes total.
     #[allow(clippy::too_many_arguments)]
     fn run_bloom_effect(
         &mut self,
@@ -1422,43 +1456,64 @@ impl PostProcessor {
             (self.height / divisor).max(1),
         ];
         let default_lut = self.default_lut_2d_view.clone();
-        // Bright-pass + downsample: full-res input -> half-res A.
-        self.record_sub_pass(
-            device,
-            queue,
-            encoder,
-            ctx,
-            subpass_base,
-            EFFECT_BLOOM_BRIGHT,
-            [0.0, threshold, 0.0, 0.0],
-            half,
-            input_view,
-            &default_lut,
-            depth_view,
-            &view_a,
-        );
-        // Blur horizontal: A -> B (half res).
-        self.record_sub_pass(
-            device,
-            queue,
-            encoder,
-            ctx,
-            subpass_base + 1,
-            EFFECT_BLUR,
-            [radius.max(0.0), 0.0, 0.0, 0.0],
-            half,
-            &view_a,
-            &default_lut,
-            depth_view,
-            &view_b,
-        );
+        let composite_slot = if bloom_pass_fusion_enabled() {
+            // Full-res input -> half-res B: threshold + horizontal blur in one
+            // shader, so bloom needs three passes instead of four.
+            self.record_sub_pass(
+                device,
+                queue,
+                encoder,
+                ctx,
+                subpass_base,
+                EFFECT_BLOOM_BRIGHT_BLUR,
+                [0.0, threshold, radius.max(0.0), 0.0],
+                half,
+                input_view,
+                &default_lut,
+                depth_view,
+                &view_b,
+            );
+            subpass_base + 2
+        } else {
+            // Bright-pass + downsample: full-res input -> half-res A.
+            self.record_sub_pass(
+                device,
+                queue,
+                encoder,
+                ctx,
+                subpass_base,
+                EFFECT_BLOOM_BRIGHT,
+                [0.0, threshold, 0.0, 0.0],
+                half,
+                input_view,
+                &default_lut,
+                depth_view,
+                &view_a,
+            );
+            // Blur horizontal: A -> B (half res).
+            self.record_sub_pass(
+                device,
+                queue,
+                encoder,
+                ctx,
+                subpass_base + 1,
+                EFFECT_BLUR,
+                [radius.max(0.0), 0.0, 0.0, 0.0],
+                half,
+                &view_a,
+                &default_lut,
+                depth_view,
+                &view_b,
+            );
+            subpass_base + 3
+        };
         // Blur vertical: B -> A (half res).
         self.record_sub_pass(
             device,
             queue,
             encoder,
             ctx,
-            subpass_base + 2,
+            composite_slot - 1,
             EFFECT_BLUR,
             [radius.max(0.0), 1.0, 0.0, 0.0],
             half,
@@ -1473,7 +1528,7 @@ impl PostProcessor {
             queue,
             encoder,
             ctx,
-            subpass_base + 3,
+            composite_slot,
             EFFECT_BLOOM,
             [strength, 0.0, 0.0, 0.0],
             full,

@@ -10,6 +10,7 @@ workspace = true
 perro_runtime.workspace = true
 perro_input_api.workspace = true
 perro_scripting.workspace = true
+perro_structs.workspace = true
 perro_steamworks = { workspace = true, optional = true, features = ["steamworks-runtime"] }
 ctrlc = "3.4"
 

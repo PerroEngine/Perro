@@ -252,9 +252,14 @@ pub struct StaticEmbeddedInputMapConfig<'a> {
 }
 pub struct StaticEmbeddedGraphicsConfig {
     pub vsync: bool,
+    pub hdr: perro_structs::HdrMode,
     pub msaa: bool,
+    pub msaa_2d: bool,
     pub anti_alias: perro_runtime::AntiAlias,
     pub ssao: perro_runtime::SsaoQuality,
+    pub shadow_quality: perro_runtime::ShadowQuality,
+    pub render_scale: f32,
+    pub power_preference: perro_runtime::PowerPreference,
     pub meshlets: bool,
     pub dev_meshlets: bool,
     pub release_meshlets: bool,
@@ -262,6 +267,7 @@ pub struct StaticEmbeddedGraphicsConfig {
     pub occlusion_culling: OcclusionCulling,
     pub particle_sim_default: ParticleSimDefault,
     pub ui_pixel_snapping: bool,
+    pub default_font: &'static str,
 }
 pub struct StaticEmbeddedRuntimeConfig {
     pub target_fixed_update: Option<f32>,

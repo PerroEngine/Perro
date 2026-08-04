@@ -14,6 +14,7 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
@@ -55,6 +56,7 @@ struct TimingSum {
     present: Duration,
     gpu_main: Duration,
     gpu_water: Duration,
+    gpu_shadow: Duration,
     wait_idle: Duration,
     draw_calls_2d: u64,
     draw_calls_3d: u64,
@@ -65,11 +67,16 @@ struct TimingSum {
     // trend toward skip_render_3d == frames and scene_passes == 0.
     skip_render_3d: u64,
     scene_passes: u64,
+    shadow_layers: u64,
+    shadow_draw_calls: u64,
     frames: u64,
     total_samples: Vec<Duration>,
     prepare_cpu_samples: Vec<Duration>,
     encode_samples: Vec<Duration>,
     gpu_main_samples: Vec<Duration>,
+    acquire_samples: Vec<Duration>,
+    submit_samples: Vec<Duration>,
+    present_samples: Vec<Duration>,
     pipeline_switch_samples: Vec<u32>,
 }
 
@@ -79,6 +86,9 @@ impl TimingSum {
         self.prepare_cpu_samples.push(timing.prepare_cpu);
         self.encode_samples.push(timing.gpu_encode_main);
         self.gpu_main_samples.push(timing.gpu_timestamp_main);
+        self.acquire_samples.push(timing.gpu_acquire);
+        self.submit_samples.push(timing.gpu_submit_main);
+        self.present_samples.push(timing.gpu_present);
         self.pipeline_switch_samples
             .push(timing.pipeline_switches_3d);
         self.total += timing.total;
@@ -93,12 +103,15 @@ impl TimingSum {
         self.present += timing.gpu_present;
         self.gpu_main += timing.gpu_timestamp_main;
         self.gpu_water += timing.gpu_timestamp_water;
+        self.gpu_shadow += timing.gpu_timestamp_shadow;
         self.draw_calls_2d += u64::from(timing.draw_calls_2d);
         self.draw_calls_3d += u64::from(timing.draw_calls_3d);
         self.draw_instances_3d += u64::from(timing.draw_instances_3d);
-        self.presented += u64::from(!timing.idle_clear);
+        self.presented += u64::from(timing.presented);
         self.skip_render_3d += u64::from(timing.skip_render_3d);
         self.scene_passes += u64::from(timing.scene_passes_encoded);
+        self.shadow_layers += u64::from(timing.shadow_layer_renders);
+        self.shadow_draw_calls += u64::from(timing.shadow_regular_batch_draws);
         self.frames += 1;
     }
 
@@ -136,11 +149,12 @@ impl TimingSum {
     fn print(&self, name: &str) {
         let frames = self.frames.max(1);
         println!(
-            "{name:32} total={:>6}us wait={:>6}us gpuq={:>6}us water={:>5}us cpu_prep={:>5}us gpu2d={:>5}us gpu3d={:>5}us acquire={:>5}us encode={:>5}us submit={:>5}us post={:>5}us present={:>5}us dc2d={:>3} dc3d={:>3} inst3d={:>7} skip3d={:>3}/{:<3} scene_pass={:>3} gpuq_med={:>8.1}us gpuq_p95={:>8.1}us cpu_med={:>7.1}us cpu_p95={:>7.1}us enc_med={:>7.1}us enc_p95={:>7.1}us pipe_med={:>3} pipe_p95={:>3}",
+            "{name:32} total={:>6}us wait={:>6}us gpuq={:>6}us water={:>5}us shadow={:>5}us cpu_prep={:>5}us gpu2d={:>5}us gpu3d={:>5}us acquire={:>5}us encode={:>5}us submit={:>5}us post={:>5}us present={:>5}us dc2d={:>3} dc3d={:>3} inst3d={:>7} skip3d={:>3}/{:<3} scene_pass={:>3} shadow_layers={:>3} shadow_dc={:>4} gpuq_med={:>8.1}us gpuq_p95={:>8.1}us acq_med={:>7.1}us sub_med={:>7.1}us prs_med={:>7.1}us cpu_med={:>7.1}us cpu_p95={:>7.1}us enc_med={:>7.1}us enc_p95={:>7.1}us pipe_med={:>3} pipe_p95={:>3}",
             Self::avg_us(self.total, frames),
             Self::avg_us(self.wait_idle, frames),
             Self::avg_us(self.gpu_main, frames),
             Self::avg_us(self.gpu_water, frames),
+            Self::avg_us(self.gpu_shadow, frames),
             Self::avg_us(self.prepare_cpu, frames),
             Self::avg_us(self.gpu_prepare_2d, frames),
             Self::avg_us(self.gpu_prepare_3d, frames),
@@ -155,8 +169,13 @@ impl TimingSum {
             self.skip_render_3d,
             frames,
             self.scene_passes / frames,
+            self.shadow_layers / frames,
+            self.shadow_draw_calls / frames,
             Self::percentile_us(&self.gpu_main_samples, 0.5),
             Self::percentile_us(&self.gpu_main_samples, 0.95),
+            Self::percentile_us(&self.acquire_samples, 0.5),
+            Self::percentile_us(&self.submit_samples, 0.5),
+            Self::percentile_us(&self.present_samples, 0.5),
             Self::percentile_us(&self.prepare_cpu_samples, 0.5),
             Self::percentile_us(&self.prepare_cpu_samples, 0.95),
             Self::percentile_us(&self.encode_samples, 0.5),
@@ -182,39 +201,53 @@ impl TimingSum {
         if write_header {
             writeln!(
                 file,
-                "case,frames,total_us,wait_us,gpu_main_us,gpu_water_us,cpu_prepare_us,gpu_2d_us,gpu_3d_us,encode_us,submit_us,present_us,draw_calls_2d,draw_calls_3d,instances_3d,skip_render_3d_frames,scene_passes_per_frame,gpu_main_median_us,gpu_main_p95_us,cpu_prepare_median_us,cpu_prepare_p95_us,encode_median_us,encode_p95_us,pipeline_switches_median,pipeline_switches_p95"
+                "case,frames,total_us,wait_us,gpu_main_us,gpu_water_us,gpu_shadow_us,cpu_prepare_us,gpu_2d_us,gpu_3d_us,acquire_us,encode_us,submit_us,present_us,draw_calls_2d,draw_calls_3d,instances_3d,skip_render_3d_frames,scene_passes_per_frame,shadow_layers_per_frame,shadow_draw_calls_per_frame,gpu_main_median_us,gpu_main_p95_us,acquire_median_us,acquire_p95_us,submit_median_us,submit_p95_us,present_median_us,present_p95_us,cpu_prepare_median_us,cpu_prepare_p95_us,encode_median_us,encode_p95_us,pipeline_switches_median,pipeline_switches_p95"
             )
             .expect("write gpu bench csv header");
         }
         let frames = self.frames.max(1);
-        writeln!(
-            file,
-            "{name},{frames},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{},{}",
-            Self::avg_us(self.total, frames),
-            Self::avg_us(self.wait_idle, frames),
-            Self::avg_us(self.gpu_main, frames),
-            Self::avg_us(self.gpu_water, frames),
-            Self::avg_us(self.prepare_cpu, frames),
-            Self::avg_us(self.gpu_prepare_2d, frames),
-            Self::avg_us(self.gpu_prepare_3d, frames),
-            Self::avg_us(self.encode, frames),
-            Self::avg_us(self.submit, frames),
-            Self::avg_us(self.present, frames),
-            self.draw_calls_2d / frames,
-            self.draw_calls_3d / frames,
-            self.draw_instances_3d / frames,
-            self.skip_render_3d,
-            self.scene_passes / frames,
-            Self::percentile_us(&self.gpu_main_samples, 0.5),
-            Self::percentile_us(&self.gpu_main_samples, 0.95),
-            Self::percentile_us(&self.prepare_cpu_samples, 0.5),
-            Self::percentile_us(&self.prepare_cpu_samples, 0.95),
-            Self::percentile_us(&self.encode_samples, 0.5),
-            Self::percentile_us(&self.encode_samples, 0.95),
-            Self::percentile_u32(&self.pipeline_switch_samples, 0.5),
-            Self::percentile_u32(&self.pipeline_switch_samples, 0.95),
-        )
-        .expect("write gpu bench csv row");
+        let row = [
+            name.to_string(),
+            frames.to_string(),
+            Self::avg_us(self.total, frames).to_string(),
+            Self::avg_us(self.wait_idle, frames).to_string(),
+            Self::avg_us(self.gpu_main, frames).to_string(),
+            Self::avg_us(self.gpu_water, frames).to_string(),
+            Self::avg_us(self.gpu_shadow, frames).to_string(),
+            Self::avg_us(self.prepare_cpu, frames).to_string(),
+            Self::avg_us(self.gpu_prepare_2d, frames).to_string(),
+            Self::avg_us(self.gpu_prepare_3d, frames).to_string(),
+            Self::avg_us(self.acquire, frames).to_string(),
+            Self::avg_us(self.encode, frames).to_string(),
+            Self::avg_us(self.submit, frames).to_string(),
+            Self::avg_us(self.present, frames).to_string(),
+            (self.draw_calls_2d / frames).to_string(),
+            (self.draw_calls_3d / frames).to_string(),
+            (self.draw_instances_3d / frames).to_string(),
+            self.skip_render_3d.to_string(),
+            (self.scene_passes / frames).to_string(),
+            (self.shadow_layers / frames).to_string(),
+            (self.shadow_draw_calls / frames).to_string(),
+            format!("{:.3}", Self::percentile_us(&self.gpu_main_samples, 0.5)),
+            format!("{:.3}", Self::percentile_us(&self.gpu_main_samples, 0.95)),
+            format!("{:.3}", Self::percentile_us(&self.acquire_samples, 0.5)),
+            format!("{:.3}", Self::percentile_us(&self.acquire_samples, 0.95)),
+            format!("{:.3}", Self::percentile_us(&self.submit_samples, 0.5)),
+            format!("{:.3}", Self::percentile_us(&self.submit_samples, 0.95)),
+            format!("{:.3}", Self::percentile_us(&self.present_samples, 0.5)),
+            format!("{:.3}", Self::percentile_us(&self.present_samples, 0.95)),
+            format!("{:.3}", Self::percentile_us(&self.prepare_cpu_samples, 0.5)),
+            format!(
+                "{:.3}",
+                Self::percentile_us(&self.prepare_cpu_samples, 0.95)
+            ),
+            format!("{:.3}", Self::percentile_us(&self.encode_samples, 0.5)),
+            format!("{:.3}", Self::percentile_us(&self.encode_samples, 0.95)),
+            Self::percentile_u32(&self.pipeline_switch_samples, 0.5).to_string(),
+            Self::percentile_u32(&self.pipeline_switch_samples, 0.95).to_string(),
+        ]
+        .join(",");
+        writeln!(file, "{row}").expect("write gpu bench csv row");
     }
 }
 
@@ -382,12 +415,22 @@ impl ApplicationHandler for GpuBenchApp {
 }
 
 fn main() {
+    if env::var_os("PERRO_GPU_TIMESTAMPS").is_none() {
+        // Bench setup runs before worker threads; keep release-profile GPU
+        // timestamps while production release builds leave them off.
+        unsafe { env::set_var("PERRO_GPU_TIMESTAMPS", "1") };
+    }
     let event_loop = EventLoop::new().expect("event loop");
     let mut app = GpuBenchApp {
         window: None,
         cases: vec![
             BenchCase {
-                name: "empty",
+                name: "empty_idle",
+                setup: setup_empty,
+                redraw: redraw_idle_2d,
+            },
+            BenchCase {
+                name: "empty_present",
                 setup: setup_empty,
                 redraw: redraw_2d,
             },
@@ -449,6 +492,11 @@ fn main() {
             BenchCase {
                 name: "water_sim_64_128_i2",
                 setup: |w| setup_water_sim(w, 64, 128, 2),
+                redraw: redraw_3d,
+            },
+            BenchCase {
+                name: "water_sim_64_128_r2_i2",
+                setup: |w| setup_water_sim_render(w, 64, 128, 2, 2),
                 redraw: redraw_3d,
             },
             BenchCase {
@@ -551,6 +599,16 @@ fn main() {
                 name: "lights_spot_8",
                 setup: |w| setup_lit_meshes(w, 10_000, 0, 8),
                 redraw: redraw_3d,
+            },
+            BenchCase {
+                name: "moving_shadow_lights",
+                setup: setup_moving_shadow_lights,
+                redraw: redraw_moving_shadow_lights,
+            },
+            BenchCase {
+                name: "shadow_batches_256",
+                setup: |w| setup_shadow_batches(w, 256),
+                redraw: redraw_one_shadow_light,
             },
             BenchCase {
                 name: "overdraw_mesh_stack_2k",
@@ -766,6 +824,21 @@ fn setup_water_sim(
     graphics
 }
 
+fn setup_water_sim_render(
+    window: &Arc<Window>,
+    count: u32,
+    simulation_resolution: u32,
+    render_resolution: u32,
+    impacts: u32,
+) -> PerroGraphics {
+    let mut graphics = base_graphics(window);
+    graphics.submit_many((0..count).map(|i| {
+        water_sim_command_with_render(i, simulation_resolution, render_resolution, impacts)
+    }));
+    let _ = graphics.draw_frame_timed();
+    graphics
+}
+
 fn setup_meshes(window: &Arc<Window>, count: u32) -> PerroGraphics {
     let mut graphics = base_graphics(window);
     let (mesh, material) = create_mesh_material(&mut graphics);
@@ -822,6 +895,68 @@ fn setup_lit_meshes(
     graphics.submit_many((0..spot_count).map(spot_light_3d_command));
     graphics.submit_many((0..mesh_count).map(|i| draw_command(i, mesh, material)));
     let _ = graphics.draw_frame_timed();
+    graphics
+}
+
+fn setup_moving_shadow_lights(window: &Arc<Window>) -> PerroGraphics {
+    let mut graphics = base_graphics(window);
+    let (mesh, material) = create_mesh_material(&mut graphics);
+    graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::SetRayLight {
+        node: NodeID::from_parts(50_000, 0),
+        light: RayLight3DState {
+            direction: [-0.45, -0.85, -0.28],
+            color: [1.0, 0.95, 0.9],
+            intensity: 0.6,
+            cast_shadows: true,
+            shadow_strength: 0.82,
+            shadow_depth_bias: 0.00018,
+            shadow_normal_bias: 0.045,
+        },
+    })));
+    graphics.submit_many((0..4).map(|i| moving_point_light_command(i, 0.0)));
+    graphics.submit_many((0..2).map(|i| moving_spot_light_command(i, 0.0)));
+    graphics.submit_many((0..19).map(|i| draw_command(i, mesh, material)));
+    let _ = graphics.draw_frame_timed();
+    graphics.wait_idle();
+    graphics
+}
+
+fn setup_shadow_batches(window: &Arc<Window>, count: u32) -> PerroGraphics {
+    let mut graphics = base_graphics(window);
+    let (first_mesh, material) = create_mesh_material(&mut graphics);
+    let mesh_data = tiny_mesh();
+    graphics.submit_many((1..count).map(|i| {
+        RenderCommand::Resource(Box::new(ResourceCommand::CreateRuntimeMesh {
+            request: RenderRequestID::new(10_000 + u64::from(i)),
+            id: MeshID::nil(),
+            source: format!("__bench_shadow_mesh_{i}__"),
+            reserved: true,
+            mesh: mesh_data.clone(),
+        }))
+    }));
+    let _ = graphics.draw_frame_timed();
+    let mut events = Vec::new();
+    graphics.drain_events(&mut events);
+    let mut meshes = vec![MeshID::nil(); count as usize];
+    meshes[0] = first_mesh;
+    for event in events {
+        if let RenderEvent::MeshCreated { request, id, .. } = event {
+            let index = request.0.saturating_sub(10_000) as usize;
+            if index < meshes.len() {
+                meshes[index] = id;
+            }
+        }
+    }
+    assert!(meshes.iter().all(|mesh| *mesh != MeshID::nil()));
+    graphics.submit(moving_spot_light_command(0, 0.0));
+    graphics.submit_many(
+        meshes
+            .into_iter()
+            .enumerate()
+            .map(|(i, mesh)| draw_shadow_batch_command(i as u32, mesh, material)),
+    );
+    let _ = graphics.draw_frame_timed();
+    graphics.wait_idle();
     graphics
 }
 
@@ -897,16 +1032,38 @@ fn setup_blend_stack_scene(
     let _ = graphics.draw_frame_timed();
 }
 
-fn redraw_2d(graphics: &mut PerroGraphics) {
+static REDRAW_TICK: AtomicU32 = AtomicU32::new(0);
+
+fn redraw_idle_2d(graphics: &mut PerroGraphics) {
     graphics.submit(RenderCommand::TwoD(Command2D::SetCamera {
         camera: Camera2DState::default(),
     }));
 }
 
+fn redraw_2d(graphics: &mut PerroGraphics) {
+    let mut camera = Camera2DState::default();
+    camera.position[0] = (REDRAW_TICK.fetch_add(1, Ordering::Relaxed) & 1) as f32 * 1.0e-6;
+    graphics.submit(RenderCommand::TwoD(Command2D::SetCamera { camera }));
+}
+
 fn redraw_3d(graphics: &mut PerroGraphics) {
+    let mut camera = Camera3DState::default();
+    camera.position[0] = (REDRAW_TICK.fetch_add(1, Ordering::Relaxed) & 1) as f32 * 1.0e-6;
     graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::SetCamera {
-        camera: Camera3DState::default(),
+        camera,
     })));
+}
+
+fn redraw_moving_shadow_lights(graphics: &mut PerroGraphics) {
+    let tick = REDRAW_TICK.fetch_add(1, Ordering::Relaxed) as f32;
+    let phase = tick * (1.0 / 144.0);
+    graphics.submit_many((0..4).map(|i| moving_point_light_command(i, phase)));
+    graphics.submit_many((0..2).map(|i| moving_spot_light_command(i, phase)));
+}
+
+fn redraw_one_shadow_light(graphics: &mut PerroGraphics) {
+    let tick = REDRAW_TICK.fetch_add(1, Ordering::Relaxed) as f32;
+    graphics.submit(moving_spot_light_command(0, tick * (1.0 / 144.0)));
 }
 
 fn rect_command(i: u32) -> RenderCommand {
@@ -1021,6 +1178,15 @@ fn water_command_with_idle(
 }
 
 fn water_sim_command(i: u32, resolution: u32, impacts: u32) -> RenderCommand {
+    water_sim_command_with_render(i, resolution, resolution, impacts)
+}
+
+fn water_sim_command_with_render(
+    i: u32,
+    resolution: u32,
+    render_resolution: u32,
+    impacts: u32,
+) -> RenderCommand {
     let [x, y] = grid2(i, 48.0);
     RenderCommand::ThreeD(Box::new(Command3D::UpsertWater {
         node: NodeID::from_parts(600_000 + i, 0),
@@ -1037,7 +1203,7 @@ fn water_sim_command(i: u32, resolution: u32, impacts: u32) -> RenderCommand {
             size: [44.0, 44.0],
             shape: WaterShapeState::Rect,
             resolution: [resolution, resolution],
-            render_resolution: [resolution, resolution],
+            render_resolution: [render_resolution, render_resolution],
             depth: 4.0,
             flow: [0.12, 0.03],
             wind: [1.0, 0.2],
@@ -1099,6 +1265,29 @@ fn water_sim_command(i: u32, resolution: u32, impacts: u32) -> RenderCommand {
 
 fn draw_command(i: u32, mesh: MeshID, material: MaterialID) -> RenderCommand {
     draw_shader_command(i, mesh, material, true)
+}
+
+fn draw_shadow_batch_command(i: u32, mesh: MeshID, material: MaterialID) -> RenderCommand {
+    let x = (i % 16) as f32 * 0.5 - 3.75;
+    let z = (i / 16) as f32 * 0.5 - 3.75;
+    RenderCommand::ThreeD(Box::new(Command3D::Draw {
+        mesh,
+        surfaces: surface(material),
+        node: NodeID::from_parts(120_000 + i, 0),
+        model: [
+            [0.25, 0.0, 0.0, x],
+            [0.0, 0.25, 0.0, 0.0],
+            [0.0, 0.0, 0.25, z],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+        skeleton: None,
+        blend_shape_weights: Arc::from([]),
+        meshlet_override: None,
+        lod: LODOptions3D::default(),
+        blend: MeshBlendOptions3D::default(),
+        cast_shadows: true,
+        receive_shadows: true,
+    }))
 }
 
 fn draw_shader_command(
@@ -1217,6 +1406,47 @@ fn spot_light_3d_command(i: u32) -> RenderCommand {
             inner_angle_radians: 0.45,
             outer_angle_radians: 0.9,
             cast_shadows: false,
+            shadow_strength: 0.82,
+            shadow_depth_bias: 0.00018,
+            shadow_normal_bias: 0.045,
+        },
+    }))
+}
+
+fn moving_point_light_command(i: u32, phase: f32) -> RenderCommand {
+    let angle = phase * 0.78 + i as f32 * 1.47;
+    RenderCommand::ThreeD(Box::new(Command3D::SetPointLight {
+        node: NodeID::from_parts(90_000 + i, 0),
+        light: PointLight3DState {
+            position: [
+                angle.cos() * 5.0,
+                2.5 + angle.sin() * 0.5,
+                angle.sin() * 5.0,
+            ],
+            color: [1.0, 0.8, 0.55],
+            intensity: 12.0,
+            range: 12.0,
+            cast_shadows: true,
+            shadow_strength: 0.82,
+            shadow_depth_bias: 0.00018,
+            shadow_normal_bias: 0.045,
+        },
+    }))
+}
+
+fn moving_spot_light_command(i: u32, phase: f32) -> RenderCommand {
+    let angle = phase * 0.62 + i as f32 * 2.3;
+    RenderCommand::ThreeD(Box::new(Command3D::SetSpotLight {
+        node: NodeID::from_parts(91_000 + i, 0),
+        light: SpotLight3DState {
+            position: [angle.cos() * 4.0, 6.0, angle.sin() * 4.0],
+            direction: [-angle.cos() * 0.5, -1.0, -angle.sin() * 0.5],
+            color: [0.7, 0.85, 1.0],
+            intensity: 18.0,
+            range: 14.0,
+            inner_angle_radians: 0.45,
+            outer_angle_radians: 0.9,
+            cast_shadows: true,
             shadow_strength: 0.82,
             shadow_depth_bias: 0.00018,
             shadow_normal_bias: 0.045,

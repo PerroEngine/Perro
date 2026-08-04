@@ -54,6 +54,73 @@ impl Gpu {
             .map_or(0, |three_d| three_d.pipeline_compiles())
     }
 
+    /// Per-frame write-back tick for the persistent pipeline cache. Every
+    /// Drive async GPU callbacks even when no frame needs submit/present.
+    #[inline]
+    pub fn poll_idle_maintenance(&mut self) {
+        self.poll_camera_image_saves();
+    }
+
+    pub fn post_pipelines_pending(
+        &self,
+        main_requested: bool,
+        streams: &[(perro_ids::NodeID, std::sync::Arc<CameraStreamState>)],
+    ) -> bool {
+        (main_requested && self.post.builtin_pipeline_pending())
+            || streams.iter().any(|(node, stream)| {
+                PostProcessor::has_effects(stream.post_processing.as_ref())
+                    && self
+                        .camera_stream_post
+                        .get(node)
+                        .is_none_or(|post| post.builtin_pipeline_pending())
+            })
+    }
+
+    /// Warm main + stream post pipelines under the same count/time budget as
+    /// material families. Missing stream processors are cheap until this call
+    /// explicitly compiles their common pipeline.
+    pub fn warm_post_pipelines(
+        &mut self,
+        main_requested: bool,
+        streams: &[(perro_ids::NodeID, std::sync::Arc<CameraStreamState>)],
+        max_compiles: usize,
+        time_budget: Option<std::time::Duration>,
+    ) -> usize {
+        if max_compiles == 0 {
+            return 0;
+        }
+        let started = std::time::Instant::now();
+        let mut compiled = 0usize;
+        if main_requested && self.post.warm_builtin_pipeline(&self.device) {
+            compiled += 1;
+        }
+        for (node, stream) in streams {
+            if compiled >= max_compiles
+                || time_budget.is_some_and(|budget| started.elapsed() >= budget)
+            {
+                break;
+            }
+            if !PostProcessor::has_effects(stream.post_processing.as_ref()) {
+                continue;
+            }
+            let width = stream.resolution[0].max(1);
+            let height = stream.resolution[1].max(1);
+            let post = self.camera_stream_post.entry(*node).or_insert_with(|| {
+                Box::new(PostProcessor::new(
+                    &self.device,
+                    &self.queue,
+                    self.render_format,
+                    width,
+                    height,
+                ))
+            });
+            if post.warm_builtin_pipeline(&self.device) {
+                compiled += 1;
+            }
+        }
+        compiled
+    }
+
     /// True while the main 3D world still has base pipeline families to build
     /// (rigid + its depth/shadow, the multimesh trio, sky). False w/o a 3D
     /// world: a 2D-only session never builds them, so it must not pin the
@@ -186,6 +253,11 @@ impl Gpu {
         // scene may sample, with no dirty bit and no revision bump. The
         // retained scene can no longer be trusted to match.
         self.invalidate_retained_scene();
+        // Shared-texture fast path below returns b4 per-consumer callbacks.
+        // Dirty retained UI pixels here so every successful upload path sees it.
+        if let Some(ui) = self.ui.as_mut() {
+            ui.note_live_texture_write(texture);
+        }
         let queue = &self.queue;
         // Shared fast path: resident stream uploads are single shared textures,
         // so one base-level write refreshes every consumer's bind group at

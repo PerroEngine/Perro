@@ -1,6 +1,7 @@
 mod backend;
 mod gpu;
 mod gpu_shrink;
+mod pipeline_cache;
 mod postprocess;
 mod resources;
 mod shared_textures;
@@ -12,8 +13,8 @@ mod visual_accessibility;
 
 pub use backend::{
     AntiAliasMode, DrawFrameTiming, GraphicsBackend, OcclusionCullingMode, PerroGraphics,
-    ShaderVariantMode, ShadowQuality, SsaoQuality, StaticFontLookup, StaticMeshLookup,
-    StaticShaderLookup, StaticTextureLookup,
+    PowerPreference, ShaderVariantMode, ShadowQuality, SsaoQuality, StaticFontLookup,
+    StaticMeshLookup, StaticShaderLookup, StaticTextureLookup,
 };
 pub use resources::{ResourceGcDrops, ResourceStore};
 

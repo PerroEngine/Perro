@@ -3,7 +3,9 @@ use super::*;
 impl RenderBridge for PerroGraphics {
     fn submit(&mut self, command: RenderCommand) {
         self.frame.queue(command);
-        self.redraw_requested = true;
+        // Pending commands already bypass the idle gate. Their post-apply
+        // dirty bits decide whether pixels changed; marking redraw here made
+        // byte-identical camera extraction force acquire/present forever.
     }
 
     fn submit_many<I>(&mut self, commands: I)
@@ -11,7 +13,7 @@ impl RenderBridge for PerroGraphics {
         I: IntoIterator<Item = RenderCommand>,
     {
         self.frame.pending_commands.extend(commands);
-        self.redraw_requested = true;
+        // See `submit`: pending state itself wakes the draw path.
     }
 
     fn drain_events(&mut self, out: &mut Vec<RenderEvent>) {

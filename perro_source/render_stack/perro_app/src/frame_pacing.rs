@@ -193,27 +193,24 @@ impl FramePacer {
         }
     }
 
-    /// Interval the CPU deadline should enforce, or None when no CPU pacing
-    /// is needed. With vsync on, the present block already paces at refresh,
-    /// so a cap at or above refresh would only beat against it - skip it.
+    /// Interval the CPU deadline should enforce, or None when uncapped and
+    /// vsync is off. Vsync remains the presentation guarantee, but it is not
+    /// a reliable CPU throttle on every compositor/driver path: FIFO present
+    /// can return far ahead of refresh and let the renderer fill the queue.
+    /// Keep a CPU deadline at the slower of the project cap and refresh so
+    /// invisible frames cannot consume the GPU.
     fn pace_interval(&self, splash: bool) -> Option<Duration> {
-        // Backgrounded wins over everything, including the vsync bypass below:
-        // its interval is far longer than refresh, so the present block can no
-        // longer be the thing that paces us.
+        // Backgrounded wins over both the project cap and display rate.
         if let Some(fps) = self.background_cap_fps {
             return Some(frame_interval_from_fps(fps));
         }
         let refresh = self.refresh_interval();
-        let interval = if splash {
-            // Splash never needs more than refresh rate; honor a slower cap.
-            Some(self.cap_interval().map_or(refresh, |cap| cap.max(refresh)))
-        } else {
-            self.cap_interval()
-        }?;
-        if self.vsync && interval <= refresh {
-            return None;
+        if splash || self.vsync {
+            // Neither splash nor a vsynced frame needs to run above refresh;
+            // honor a slower project cap in both cases.
+            return Some(self.cap_interval().map_or(refresh, |cap| cap.max(refresh)));
         }
-        Some(interval)
+        self.cap_interval()
     }
 
     #[inline]
@@ -289,8 +286,11 @@ mod tests {
     fn background_cap_overrides_vsync_and_project_cap() {
         let mut pacer = FramePacer::new(RuntimeFrameRateCap::Fps(144.0), true);
         pacer.refresh_hz = Some(144.0);
-        // vsync + cap at refresh: no CPU pacing, the present block does it.
-        assert_eq!(pacer.pace_interval(false), None);
+        // Vsync still gets a CPU deadline in case present does not block.
+        assert_eq!(
+            pacer.pace_interval(false),
+            Some(frame_interval_from_fps(144.0))
+        );
 
         assert!(pacer.set_background_cap(Some(15.0)));
         let interval = pacer.pace_interval(false).expect("background paces");
@@ -346,16 +346,30 @@ mod tests {
     }
 
     #[test]
-    fn vsync_skips_cpu_pacing_at_or_above_refresh() {
+    fn vsync_cpu_paces_at_or_below_refresh() {
         let mut pacer = FramePacer::new(RuntimeFrameRateCap::RefreshRate, true);
         pacer.refresh_hz = Some(60.0);
-        assert!(pacer.pace_interval(false).is_none());
-        // Cap below refresh still needs the CPU deadline.
+        assert_eq!(
+            pacer.pace_interval(false),
+            Some(frame_interval_from_fps(60.0))
+        );
+        // Slower project cap wins.
         assert!(pacer.set_cap(RuntimeFrameRateCap::Fps(30.0)));
-        assert!(pacer.pace_interval(false).is_some());
-        // Cap above refresh: present block is the slower pacer; skip.
+        assert_eq!(
+            pacer.pace_interval(false),
+            Some(frame_interval_from_fps(30.0))
+        );
+        // Faster project cap still stops at display rate.
         assert!(pacer.set_cap(RuntimeFrameRateCap::Fps(240.0)));
-        assert!(pacer.pace_interval(false).is_none());
+        assert_eq!(
+            pacer.pace_interval(false),
+            Some(frame_interval_from_fps(60.0))
+        );
+        assert!(pacer.set_cap(RuntimeFrameRateCap::Unlimited));
+        assert_eq!(
+            pacer.pace_interval(false),
+            Some(frame_interval_from_fps(60.0))
+        );
     }
 
     #[test]

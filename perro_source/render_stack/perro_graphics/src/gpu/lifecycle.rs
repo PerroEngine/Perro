@@ -167,7 +167,12 @@ impl Gpu {
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 apply_limit_buckets: false,
-                power_preference: wgpu::PowerPreference::HighPerformance,
+                power_preference: match cfg.power_preference {
+                    crate::PowerPreference::HighPerformance => {
+                        wgpu::PowerPreference::HighPerformance
+                    }
+                    crate::PowerPreference::LowPower => wgpu::PowerPreference::LowPower,
+                },
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
             })
@@ -218,7 +223,7 @@ impl Gpu {
             required_features |= wgpu::Features::INDIRECT_FIRST_INSTANCE;
         }
         #[cfg(not(target_arch = "wasm32"))]
-        let enable_timestamp_queries = true;
+        let enable_timestamp_queries = gpu_timestamp_queries_requested();
         #[cfg(target_arch = "wasm32")]
         let enable_timestamp_queries = false;
         let timestamp_features =
@@ -233,6 +238,9 @@ impl Gpu {
         if adapter_features.contains(wgpu::Features::MULTI_DRAW_INDIRECT_COUNT) {
             required_features |= wgpu::Features::MULTI_DRAW_INDIRECT_COUNT;
         }
+        // Optional: let the driver reuse machine code it already generated on a
+        // prior launch (blob on disk). wgpu implement it on Vulkan only, so on
+        // DX12/Metal/GL/wasm this stay off + every pipeline build is unchanged.
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
@@ -249,6 +257,8 @@ impl Gpu {
             })
             .await
             .map_err(|err| format!("GPU device request fail: {err}"))?;
+        // B4 any pipeline build: post/present/2d/ui all compile below, and a
+        // cache installed later would miss them.
         let indirect_first_instance_enabled =
             required_features.contains(wgpu::Features::INDIRECT_FIRST_INSTANCE);
         // multi_draw_indexed_indirect (non-count) needs only INDIRECT_EXECUTION,
@@ -282,9 +292,17 @@ impl Gpu {
         let size = window.inner_size();
         let width = size.width.max(1);
         let height = size.height.max(1);
+        // Author render scale first, hardware caps second: the caps only ever
+        // shrink further, so a scaled scene never grows back past a budget.
+        let render_scale = if cfg.render_scale.is_finite() {
+            cfg.render_scale.clamp(MIN_RENDER_SCALE, MAX_RENDER_SCALE)
+        } else {
+            MAX_RENDER_SCALE
+        };
+        let (scaled_width, scaled_height) = scaled_render_size(width, height, render_scale);
         let (render_width, render_height) = capped_render_size_with_pixel_limit(
-            width,
-            height,
+            scaled_width,
+            scaled_height,
             device.limits().max_texture_dimension_2d,
             max_render_pixels,
         );
@@ -314,6 +332,7 @@ impl Gpu {
         );
         perro_structs::structs::boot_log::mark("gpu: device + surface config");
         surface.configure(&device, &config);
+        perro_structs::structs::boot_log::mark("gpu: surface.configure");
 
         let mut max_supported_sample_count =
             max_supported_msaa_sample_count(&adapter, render_format);
@@ -324,6 +343,7 @@ impl Gpu {
             normalize_sample_count(cfg.smoothing_samples),
             max_supported_sample_count,
         );
+        perro_structs::structs::boot_log::mark("gpu: msaa caps query");
         let msaa_color = create_msaa_color_target(
             &device,
             render_format,
@@ -331,6 +351,7 @@ impl Gpu {
             render_height,
             sample_count,
         );
+        perro_structs::structs::boot_log::mark("gpu: msaa target");
         let post = PostProcessor::new(&device, &queue, render_format, render_width, render_height);
         perro_structs::structs::boot_log::mark("gpu: post processor");
         let mut present = PresentProcessor::new(&device, surface_view_format);
@@ -359,6 +380,7 @@ impl Gpu {
             hdr_status: selection.status,
             render_width,
             render_height,
+            render_scale,
             max_render_pixels,
             render_format,
             sample_count,
@@ -427,6 +449,8 @@ impl Gpu {
             multi_draw_indirect_enabled,
             multi_draw_indirect_count_enabled,
             gpu_timer,
+            last_present: None,
+            presented_once: false,
             virtual_size_2d: [1920.0, 1080.0],
         })
     }
@@ -467,9 +491,11 @@ impl Gpu {
         if width == 0 || height == 0 {
             return;
         }
+        // Same order as new_async: author render scale, then hardware caps.
+        let (scaled_width, scaled_height) = scaled_render_size(width, height, self.render_scale);
         let (render_width, render_height) = capped_render_size_with_pixel_limit(
-            width,
-            height,
+            scaled_width,
+            scaled_height,
             self.device.limits().max_texture_dimension_2d,
             self.max_render_pixels,
         );
@@ -603,5 +629,48 @@ impl Gpu {
             self.render_height,
             sample_count,
         );
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn gpu_timestamp_queries_requested() -> bool {
+    let explicit = std::env::var("PERRO_GPU_TIMESTAMPS").ok();
+    let profiling = std::env::var_os("PERRO_TIMING_CSV").is_some()
+        || std::env::var_os("PERRO_PROFILE_CSV").is_some()
+        || std::env::var_os("PERRO_GPU_BENCH").is_some();
+    gpu_timestamp_query_policy(explicit.as_deref(), cfg!(debug_assertions), profiling)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn gpu_timestamp_query_policy(explicit: Option<&str>, debug: bool, profiling: bool) -> bool {
+    explicit.map_or(debug || profiling, |value| {
+        !matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "0" | "off" | "false" | "no"
+        )
+    })
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod timestamp_query_tests {
+    use super::gpu_timestamp_query_policy;
+
+    #[test]
+    fn release_default_skips_timestamp_readback() {
+        assert!(!gpu_timestamp_query_policy(None, false, false));
+    }
+
+    #[test]
+    fn debug_and_profile_keep_timestamps() {
+        assert!(gpu_timestamp_query_policy(None, true, false));
+        assert!(gpu_timestamp_query_policy(None, false, true));
+    }
+
+    #[test]
+    fn explicit_timestamp_setting_wins() {
+        assert!(gpu_timestamp_query_policy(Some("1"), false, false));
+        assert!(gpu_timestamp_query_policy(Some("yes"), false, false));
+        assert!(!gpu_timestamp_query_policy(Some("0"), true, true));
+        assert!(!gpu_timestamp_query_policy(Some("OFF"), true, true));
     }
 }

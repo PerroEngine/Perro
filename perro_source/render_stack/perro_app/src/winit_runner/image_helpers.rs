@@ -6,7 +6,7 @@ use perro_asset_formats::ptex::{MAGIC as PTEX_MAGIC, VERSION as PTEX_VERSION};
 use perro_graphics_assets::decode_image_rgba as decode_source_image_rgba;
 #[cfg(not(target_arch = "wasm32"))]
 use perro_graphics_assets::{
-    decode_image_logical_size as decode_source_image_logical_size,
+    decode_image_logical_size as decode_source_image_logical_size, decode_image_rgba_arc,
     decode_image_rgba_max_size as decode_source_image_rgba_max_size,
     decode_image_size as decode_source_image_size,
 };
@@ -14,6 +14,7 @@ use perro_graphics_assets::{
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::Arc,
     thread::{self, JoinHandle},
 };
 #[cfg(not(target_arch = "wasm32"))]
@@ -35,6 +36,7 @@ pub(crate) struct PreloadedStartupSplash {
     pub source_hash: Option<u64>,
     pub image_size: Option<(u32, u32)>,
     pub texture_size: Option<(u32, u32)>,
+    pub rgba: Option<Arc<[u8]>>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -154,11 +156,16 @@ fn preloaded_startup_splash_from_bytes(
     source_hash: Option<u64>,
     bytes: &[u8],
 ) -> PreloadedStartupSplash {
+    let decoded = decode_image_rgba_arc(bytes);
     PreloadedStartupSplash {
         source,
         source_hash,
         image_size: decode_image_logical_size(bytes),
-        texture_size: decode_image_size(bytes),
+        texture_size: decoded
+            .as_ref()
+            .map(|(_, width, height)| (*width, *height))
+            .or_else(|| decode_image_size(bytes)),
+        rgba: decoded.map(|(rgba, _, _)| rgba),
     }
 }
 
@@ -260,7 +267,10 @@ fn resolve_project_asset_path(
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_image_logical_size, decode_image_rgba, decode_image_size};
+    use super::{
+        decode_image_logical_size, decode_image_rgba, decode_image_size,
+        preloaded_startup_splash_from_bytes,
+    };
 
     #[test]
     fn decode_image_rgba_supports_ptex_v1_rgb() {
@@ -304,5 +314,15 @@ mod tests {
         assert_eq!(rgba.len(), 6 * 4 * 4);
         assert_eq!(decode_image_size(svg), Some((6, 4)));
         assert_eq!(decode_image_logical_size(svg), Some((3, 2)));
+    }
+
+    #[test]
+    fn preloaded_startup_splash_keeps_decoded_rgba() {
+        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="3" height="2"><rect width="3" height="2" fill="red"/></svg>"#;
+        let splash = preloaded_startup_splash_from_bytes("test.svg".to_string(), None, svg);
+
+        assert_eq!(splash.image_size, Some((3, 2)));
+        assert_eq!(splash.texture_size, Some((6, 4)));
+        assert_eq!(splash.rgba.as_deref().map(<[u8]>::len), Some(6 * 4 * 4));
     }
 }

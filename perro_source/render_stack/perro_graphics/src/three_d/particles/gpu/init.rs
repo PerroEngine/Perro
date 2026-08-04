@@ -43,76 +43,80 @@ impl GpuPointParticles3D {
             bind_group_layouts: &[Some(&camera_bgl)],
             immediate_size: 0,
         });
-        let cpu_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("perro_particles3d_pipeline"),
-            layout: Some(&cpu_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<PointParticleGpu>() as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            offset: 0,
-                            shader_location: 0,
-                            format: wgpu::VertexFormat::Float32x3,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 12,
-                            shader_location: 2,
-                            format: wgpu::VertexFormat::Unorm8x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 16,
-                            shader_location: 1,
-                            format: wgpu::VertexFormat::Float16x2,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 20,
-                            shader_location: 3,
-                            format: wgpu::VertexFormat::Float16x4,
-                        },
-                    ],
-                })],
-                compilation_options: Default::default(),
+        let cpu_pipeline = crate::pipeline_cache::create_render_pipeline(
+            device,
+            wgpu::RenderPipelineDescriptor {
+                label: Some("perro_particles3d_pipeline"),
+                layout: Some(&cpu_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[Some(wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<PointParticleGpu>() as u64,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &[
+                            wgpu::VertexAttribute {
+                                offset: 0,
+                                shader_location: 0,
+                                format: wgpu::VertexFormat::Float32x3,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 12,
+                                shader_location: 2,
+                                format: wgpu::VertexFormat::Unorm8x4,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 16,
+                                shader_location: 1,
+                                format: wgpu::VertexFormat::Float16x2,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 20,
+                                shader_location: 3,
+                                format: wgpu::VertexFormat::Float16x4,
+                            },
+                        ],
+                    })],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: color_format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::PointList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: None,
+                    unclipped_depth: false,
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    conservative: false,
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: crate::scene_depth_format(sample_count),
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState {
+                    count: sample_count,
+                    mask: !0,
+                    alpha_to_coverage_enabled: false,
+                },
+                multiview_mask: None,
+                cache: None,
             },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: color_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::PointList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                unclipped_depth: false,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                conservative: false,
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: crate::scene_depth_format(sample_count),
-                depth_write_enabled: Some(false),
-                depth_compare: Some(wgpu::CompareFunction::LessEqual),
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: sample_count,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview_mask: None,
-            cache: None,
-        });
-        let cpu_billboard_pipeline =
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        );
+        let cpu_billboard_pipeline = crate::pipeline_cache::create_render_pipeline(
+            device,
+            wgpu::RenderPipelineDescriptor {
                 label: Some("perro_particles3d_billboard_pipeline"),
                 layout: Some(&cpu_layout),
                 vertex: wgpu::VertexState {
@@ -179,7 +183,8 @@ impl GpuPointParticles3D {
                 },
                 multiview_mask: None,
                 cache: None,
-            });
+            },
+        );
         let hybrid_emitters_bgl =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("perro_particles3d_hybrid_emitters_bgl"),
@@ -247,51 +252,55 @@ impl GpuPointParticles3D {
             bind_group_layouts: &[Some(&camera_bgl), Some(&hybrid_emitters_bgl)],
             immediate_size: 0,
         });
-        let hybrid_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("perro_particles3d_hybrid_pipeline"),
-            layout: Some(&hybrid_layout),
-            vertex: wgpu::VertexState {
-                module: &hybrid_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: Default::default(),
+        let hybrid_pipeline = crate::pipeline_cache::create_render_pipeline(
+            device,
+            wgpu::RenderPipelineDescriptor {
+                label: Some("perro_particles3d_hybrid_pipeline"),
+                layout: Some(&hybrid_layout),
+                vertex: wgpu::VertexState {
+                    module: &hybrid_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &hybrid_shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: color_format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::PointList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: None,
+                    unclipped_depth: false,
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    conservative: false,
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: crate::scene_depth_format(sample_count),
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState {
+                    count: sample_count,
+                    mask: !0,
+                    alpha_to_coverage_enabled: false,
+                },
+                multiview_mask: None,
+                cache: None,
             },
-            fragment: Some(wgpu::FragmentState {
-                module: &hybrid_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: color_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::PointList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                unclipped_depth: false,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                conservative: false,
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: crate::scene_depth_format(sample_count),
-                depth_write_enabled: Some(false),
-                depth_compare: Some(wgpu::CompareFunction::LessEqual),
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: sample_count,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview_mask: None,
-            cache: None,
-        });
-        let hybrid_billboard_pipeline =
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        );
+        let hybrid_billboard_pipeline = crate::pipeline_cache::create_render_pipeline(
+            device,
+            wgpu::RenderPipelineDescriptor {
                 label: Some("perro_particles3d_hybrid_billboard_pipeline"),
                 layout: Some(&hybrid_layout),
                 vertex: wgpu::VertexState {
@@ -333,7 +342,8 @@ impl GpuPointParticles3D {
                 },
                 multiview_mask: None,
                 cache: None,
-            });
+            },
+        );
 
         let compute_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_particles3d_compute_bgl"),
@@ -445,14 +455,17 @@ impl GpuPointParticles3D {
             bind_group_layouts: &[Some(&camera_bgl), Some(&compute_bgl)],
             immediate_size: 0,
         });
-        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("perro_particles3d_compute_pipeline"),
-            layout: Some(&compute_layout),
-            module: &compute_shader,
-            entry_point: Some("cs_main"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let compute_pipeline = crate::pipeline_cache::create_compute_pipeline(
+            device,
+            wgpu::ComputePipelineDescriptor {
+                label: Some("perro_particles3d_compute_pipeline"),
+                layout: Some(&compute_layout),
+                module: &compute_shader,
+                entry_point: Some("cs_main"),
+                compilation_options: Default::default(),
+                cache: None,
+            },
+        );
         let compute_render_shader = create_point_particles_compute_render_shader_module(device);
         let compute_render_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -460,8 +473,9 @@ impl GpuPointParticles3D {
                 bind_group_layouts: &[Some(&camera_bgl), Some(&compute_render_bgl)],
                 immediate_size: 0,
             });
-        let compute_render_pipeline =
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let compute_render_pipeline = crate::pipeline_cache::create_render_pipeline(
+            device,
+            wgpu::RenderPipelineDescriptor {
                 label: Some("perro_particles3d_compute_render_pipeline"),
                 layout: Some(&compute_render_layout),
                 vertex: wgpu::VertexState {
@@ -503,9 +517,11 @@ impl GpuPointParticles3D {
                 },
                 multiview_mask: None,
                 cache: None,
-            });
-        let compute_render_billboard_pipeline =
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            },
+        );
+        let compute_render_billboard_pipeline = crate::pipeline_cache::create_render_pipeline(
+            device,
+            wgpu::RenderPipelineDescriptor {
                 label: Some("perro_particles3d_compute_render_billboard_pipeline"),
                 layout: Some(&compute_render_layout),
                 vertex: wgpu::VertexState {
@@ -547,7 +563,8 @@ impl GpuPointParticles3D {
                 },
                 multiview_mask: None,
                 cache: None,
-            });
+            },
+        );
         let particle_capacity = 1024usize;
         let particle_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_particles3d_points"),

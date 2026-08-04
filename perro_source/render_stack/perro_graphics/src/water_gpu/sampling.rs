@@ -130,7 +130,11 @@ pub(super) fn water_lod_2d(water: &Water2DState, camera: [f32; 2]) -> WaterLodDe
     )
 }
 
-pub(super) fn water_lod_3d(water: &Water3DState, camera: [f32; 3]) -> WaterLodDecision {
+pub(super) fn water_lod_3d(
+    water: &Water3DState,
+    camera: [f32; 3],
+    projection_scale: [f32; 2],
+) -> WaterLodDecision {
     let pos = water.model[3];
     let radius = water_lod_shape_radius(water.shape, water.size);
     let lod = water_lod_from_distance(
@@ -146,16 +150,60 @@ pub(super) fn water_lod_3d(water: &Water3DState, camera: [f32; 3]) -> WaterLodDe
         WATER_3D_MAX_RENDER_RESOLUTION,
         WATER_3D_RENDER_LOD_STRENGTH,
     );
+    let render =
+        water_projected_render_resolution(water, camera, projection_scale, lod.grid.render);
     WaterLodDecision {
         grid: WaterGridResolution {
             sim: [
                 water.resolution[0].clamp(1, 256),
                 water.resolution[1].clamp(1, 256),
             ],
-            render: lod.grid.render,
+            render,
         },
         ripple_blend: lod.ripple_blend,
     }
+}
+
+// Keep at most one surface quad per ~2 projected pixels. Distance-only LOD
+// kept far 3D water above half authored resolution even when each quad became
+// sub-pixel; this cap preserves near silhouettes and removes invisible vertex
+// + fragment work. Eight-segment buckets limit camera-motion churn.
+pub(super) fn water_projected_render_resolution(
+    water: &Water3DState,
+    camera: [f32; 3],
+    projection_scale: [f32; 2],
+    current: [u32; 2],
+) -> [u32; 2] {
+    if current[0] == 0 || current[1] == 0 {
+        return [0, 0];
+    }
+    let focal_px = projection_scale[0].max(0.0);
+    let ortho_px_per_world = projection_scale[1].max(0.0);
+    if focal_px <= 0.0 && ortho_px_per_world <= 0.0 {
+        return current;
+    }
+    let center = water.model[3];
+    let dx = center[0] - camera[0];
+    let dy = center[1] - camera[1];
+    let dz = center[2] - camera[2];
+    let distance = (dx * dx + dy * dy + dz * dz).sqrt().max(1.0e-3);
+    let scale_x = Vec3::new(water.model[0][0], water.model[0][1], water.model[0][2])
+        .length()
+        .max(1.0e-6);
+    let scale_z = Vec3::new(water.model[2][0], water.model[2][1], water.model[2][2])
+        .length()
+        .max(1.0e-6);
+    let world_axes = [water.size[0].abs() * scale_x, water.size[1].abs() * scale_z];
+    std::array::from_fn(|axis| {
+        let projected_px = if ortho_px_per_world > 0.0 {
+            world_axes[axis] * ortho_px_per_world
+        } else {
+            world_axes[axis] * focal_px / distance
+        };
+        let segments = ((projected_px * 0.5).ceil() as u32).max(16);
+        let bucketed_vertices = segments.div_ceil(8).saturating_mul(8).saturating_add(1);
+        current[axis].min(bucketed_vertices.max(2))
+    })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

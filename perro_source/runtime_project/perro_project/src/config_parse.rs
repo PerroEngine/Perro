@@ -23,6 +23,8 @@ anti_alias = "fxaa"              # off | fxaa (default) | smaa | taa | msaa2 | m
 msaa_2d = false                  # MSAA for sessions that never use the 3D pipeline
 ssao = "low"                     # off | low (default) | medium | high | ultra
 shadow_quality = "low"           # low (4-tap PCF, half-size maps, default) | medium (4-tap, full-size) | high (9-tap)
+render_scale = 1.0               # 0.25..=1.0 scene render res / window res; 0.75 => -44% pixels
+power_preference = "high_performance" # high_performance (default) | low_power (prefer integrated GPU)
 occlusion_culling = "gpu"        # cpu | gpu | off
 particle_sim_default = "gpu"     # cpu | hybrid | gpu
 texture_filter = "linear_mipmap" # nearest | linear | linear_mipmap | anisotropic
@@ -217,6 +219,12 @@ pub fn parse_project_toml_with_demo(
     let anti_alias = parse_anti_alias(graphics_table)?;
     let ssao = parse_ssao_with_default(graphics_table, "ssao", SsaoQuality::Low)?;
     let shadow_quality = parse_shadow_quality_with_default(graphics_table, ShadowQuality::Low)?;
+    let render_scale = parse_render_scale_with_default(graphics_table, MAX_RENDER_SCALE)?;
+    let power_preference = parse_power_preference_with_default(
+        graphics_table,
+        "power_preference",
+        PowerPreference::HighPerformance,
+    )?;
     let meshlets = parse_bool_with_default(graphics_table, "meshlets", false)?;
     let dev_meshlets = parse_bool_with_default(graphics_table, "dev_meshlets", false)?;
     let release_meshlets = parse_bool_with_default(graphics_table, "release_meshlets", true)?;
@@ -267,6 +275,8 @@ pub fn parse_project_toml_with_demo(
         anti_alias,
         ssao,
         shadow_quality,
+        render_scale,
+        power_preference,
         meshlets,
         dev_meshlets,
         release_meshlets,
@@ -1128,6 +1138,56 @@ fn parse_shadow_quality_with_default(
         _ => Err(ProjectError::InvalidField(
             "graphics.shadow_quality",
             "must be one of: low, medium, high".to_string(),
+        )),
+    }
+}
+
+/// `graphics.render_scale`. Scene renders at scale x window res, then upscales
+/// on present -> quadratic pixel saving (0.75 => -44% pixels). Out-of-range
+/// finite numbers clamp instead of failing; non-numbers are an error.
+fn parse_render_scale_with_default(
+    table: &toml::map::Map<String, Value>,
+    default: f32,
+) -> Result<f32, ProjectError> {
+    let Some(value) = table.get("render_scale") else {
+        return Ok(default);
+    };
+    let scale = match value {
+        Value::Float(scale) => *scale as f32,
+        Value::Integer(scale) => *scale as f32,
+        _ => {
+            return Err(ProjectError::InvalidField(
+                "graphics.render_scale",
+                "must be a number".to_string(),
+            ));
+        }
+    };
+    if !scale.is_finite() {
+        return Err(ProjectError::InvalidField(
+            "graphics.render_scale",
+            "must be a finite number in 0.25..=1.0".to_string(),
+        ));
+    }
+    Ok(clamp_render_scale(scale))
+}
+
+fn parse_power_preference_with_default(
+    table: &toml::map::Map<String, Value>,
+    key: &'static str,
+    default: PowerPreference,
+) -> Result<PowerPreference, ProjectError> {
+    let Some(value) = table.get(key) else {
+        return Ok(default);
+    };
+    let value = value.as_str().ok_or_else(|| {
+        ProjectError::InvalidField("graphics.power_preference", "must be a string".to_string())
+    })?;
+    match value {
+        "high_performance" => Ok(PowerPreference::HighPerformance),
+        "low_power" => Ok(PowerPreference::LowPower),
+        _ => Err(ProjectError::InvalidField(
+            "graphics.power_preference",
+            "must be one of: high_performance, low_power".to_string(),
         )),
     }
 }

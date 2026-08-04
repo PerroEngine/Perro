@@ -128,6 +128,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.app.resize_surface(shown_size.width, shown_size.height);
         }
         self.window_visible = true;
+        crate::boot_log::mark("window_visible");
         if self.startup_splash.active {
             let now = Instant::now();
             self.startup_splash.shown_at = now;

@@ -28,9 +28,8 @@ use perro_render_bridge::{
     Camera3DState, CameraProjectionState, CameraStreamDraw3DState, CameraStreamLighting3DState,
     CameraStreamSourceState, CameraStreamState, Decal3DState, HdrColorSpace, HdrFallback, HdrMode,
     HdrStatus, LODOptions3D, Light2DState, MATERIAL_TEXTURE_NONE, MeshBlendOptions3D,
-    PointParticles3DState,
-    ShadowCaster2DState, Sprite2DCommand, Water2DState, Water3DState, WaterBodySampleState,
-    WaterSampleState, WaterShapeState,
+    PointParticles3DState, ShadowCaster2DState, Sprite2DCommand, Water2DState, Water3DState,
+    WaterBodySampleState, WaterSampleState, WaterShapeState,
 };
 use perro_structs::VisualAccessibilitySettings;
 use perro_structs::{PostProcessEffect, TextureFilterMode};
@@ -198,6 +197,27 @@ fn water_camera_view_proj(camera: &Camera3DState, width: u32, height: u32) -> Ma
     };
     let world = Mat4::from_rotation_translation(rot, pos);
     proj * world.inverse()
+}
+
+// [perspective focal pixels, orthographic pixels/world-unit]. One lane stays
+// zero, so water LOD can cap tessellation by projected size without carrying
+// the full camera projection enum into the water module.
+fn water_camera_lod_scale(camera: &Camera3DState, height: u32) -> [f32; 2] {
+    let h = height.max(1) as f32;
+    match camera.projection {
+        CameraProjectionState::Perspective { fov_y_degrees, .. } => {
+            let half_fov =
+                (fov_y_degrees.to_radians() * 0.5).clamp(5.0f32.to_radians(), 60.0f32.to_radians());
+            [h * 0.5 / half_fov.tan().max(1.0e-6), 0.0]
+        }
+        CameraProjectionState::Orthographic { size, .. } => [0.0, h / size.abs().max(1.0e-3)],
+        CameraProjectionState::Frustum {
+            bottom, top, near, ..
+        } => [
+            h * near.abs().max(1.0e-3) / (top - bottom).abs().max(1.0e-3),
+            0.0,
+        ],
+    }
 }
 
 fn fill_camera_stream_draws_3d(draws: &[CameraStreamDraw3DState], out: &mut Vec<Draw3DInstance>) {
@@ -731,6 +751,8 @@ pub struct Gpu {
     hdr_status: HdrStatus,
     render_width: u32,
     render_height: u32,
+    // Author-set scene/surface ratio; resize re-applies it b4 the caps.
+    render_scale: f32,
     max_render_pixels: u64,
     render_format: wgpu::TextureFormat,
     sample_count: u32,
@@ -844,6 +866,11 @@ pub struct Gpu {
     /// `Features::MULTI_DRAW_INDIRECT_COUNT` was available and requested.
     multi_draw_indirect_count_enabled: bool,
     gpu_timer: Option<GpuTimestampTimer>,
+    // Idle-frame skip state. `last_present` anchors the safety valve; a frame
+    // is only ever skipped after at least one real present has reached the
+    // swapchain, so the first visible frame can never be the skipped one.
+    last_present: Option<Instant>,
+    presented_once: bool,
     // Project virtual canvas for 2D aspect-fit scaling; camera-stream / sub
     // view 2D passes use the same world-to-pixel rule as the main view.
     virtual_size_2d: [f32; 2],
@@ -874,6 +901,11 @@ pub struct GpuConfig {
     pub hdr_mode: HdrMode,
     pub shader_variant_mode: crate::ShaderVariantMode,
     pub shadow_quality: crate::ShadowQuality,
+    /// `graphics.render_scale`: scene render res / surface res (0.25..=1.0).
+    /// Applied b4 the dimension + pixel-budget caps.
+    pub render_scale: f32,
+    /// `graphics.power_preference`: adapter pick handed to `request_adapter`.
+    pub power_preference: crate::PowerPreference,
 }
 
 // Views built once w/ the textures: `ensure_camera_stream_target` rebuilds the
@@ -1006,7 +1038,6 @@ pub struct RenderFrame<'a> {
     pub ui_textures_delta: &'a TexturesDelta,
     pub ui_texture_size: [u32; 2],
     pub ui_revision: u64,
-    pub redraw_requested: bool,
     pub frame_time_seconds: f32,
     pub frame_delta_seconds: f32,
     pub frame_dirty_bits: u32,
@@ -1164,6 +1195,43 @@ fn collect_main_scene_sampled_texture_slots(
 /// scene texture already holds a pixel-identical image. Present/tonemap, post,
 /// UI and the late overlay always still run: the swapchain image is new every
 /// frame.
+/// Hard ceiling between presents while idle. The gate below is conservative,
+/// but a latched gate would freeze the window with no way out -- the same shape
+/// as the splash `ready_streak` hang. Past this the frame is drawn regardless
+/// of every other signal, so the worst case is a stale image for one interval,
+/// never forever.
+pub(crate) const IDLE_FORCE_PRESENT_INTERVAL: Duration = Duration::from_millis(250);
+
+/// Inputs to the idle-frame skip, all of which must hold to skip.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct IdleFrameSignals {
+    /// The scene chain already proved it reproduces the retained image.
+    pub scene_fast_path: bool,
+    /// UI composites identical pixels (see `GpuUi::composite_is_idle`).
+    pub ui_idle: bool,
+    /// Nothing queued in the late overlay (splash, debug draws).
+    pub late_overlay_empty: bool,
+    /// A real frame reached the swapchain at least once.
+    pub presented_once: bool,
+    /// Time since that last present is inside the safety valve.
+    pub within_force_interval: bool,
+}
+
+/// Skip the whole frame -- no acquire, no encode, no submit, no present.
+///
+/// The compositor keeps showing the last presented image, so producing the
+/// identical image again is pure cost: ~883us of CPU (acquire 512, finish 133,
+/// submit 70, present 168) and ~133us of GPU on a static Demo3D menu. Skipping
+/// also lets the GPU idle long enough to drop power state, which an fps cap
+/// alone never achieves.
+pub(crate) fn idle_frame_skip_allowed(signals: &IdleFrameSignals) -> bool {
+    signals.scene_fast_path
+        && signals.ui_idle
+        && signals.late_overlay_empty
+        && signals.presented_once
+        && signals.within_force_interval
+}
+
 pub(crate) fn scene_fast_path_allowed(signals: &SceneFastPathSignals) -> bool {
     signals.retained_scene_valid
         && signals.retained_key_matches
@@ -1190,6 +1258,8 @@ fn next_nonzero_generation(current: u64) -> u64 {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RenderGpuTiming {
+    /// 1 when the whole frame was skipped as idle (no acquire/encode/present).
+    pub idle_frame_skips: u32,
     pub prepare_2d: Duration,
     pub prepare_3d: Duration,
     pub prepare_particles_3d: Duration,
@@ -1245,9 +1315,11 @@ pub struct RenderGpuTiming {
     pub water_depth_copies: u32,
     pub water_depth_clears: u32,
     pub shadow_layer_renders: u32,
+    pub shadow_regular_batch_draws: u32,
     pub shadow_multimesh_batch_draws: u32,
     pub shadow_multimesh_instance_draws: u64,
     pub shadow_multimesh_culled_layers: u32,
+    pub shadow_empty_layer_skips: u32,
     /// Camera-stream / sub-view work this frame. Kept out of the main-view
     /// fields above so a stream never inflates main-scene numbers.
     pub stream_count: u32,
@@ -1483,5 +1555,95 @@ mod camera_stream_revision_tests {
         assert_eq!(nodes.len(), 1_000);
         assert_eq!(two_d.len(), 10);
         assert_eq!(three_d.len(), 5);
+    }
+}
+
+#[cfg(test)]
+mod idle_frame_tests {
+    use super::{IdleFrameSignals, idle_frame_skip_allowed};
+
+    fn all_idle() -> IdleFrameSignals {
+        IdleFrameSignals {
+            scene_fast_path: true,
+            ui_idle: true,
+            late_overlay_empty: true,
+            presented_once: true,
+            within_force_interval: true,
+        }
+    }
+
+    #[test]
+    fn fully_idle_frame_skips() {
+        assert!(idle_frame_skip_allowed(&all_idle()));
+    }
+
+    /// Every signal is load-bearing: dropping any ONE must draw the frame.
+    /// A false skip leaves a stale image on screen, so this is the safety net.
+    #[test]
+    fn every_signal_is_required() {
+        for (name, signals) in [
+            (
+                "scene_fast_path",
+                IdleFrameSignals {
+                    scene_fast_path: false,
+                    ..all_idle()
+                },
+            ),
+            (
+                "ui_idle",
+                IdleFrameSignals {
+                    ui_idle: false,
+                    ..all_idle()
+                },
+            ),
+            (
+                "late_overlay_empty",
+                IdleFrameSignals {
+                    late_overlay_empty: false,
+                    ..all_idle()
+                },
+            ),
+            (
+                "presented_once",
+                IdleFrameSignals {
+                    presented_once: false,
+                    ..all_idle()
+                },
+            ),
+            (
+                "within_force_interval",
+                IdleFrameSignals {
+                    within_force_interval: false,
+                    ..all_idle()
+                },
+            ),
+        ] {
+            assert!(
+                !idle_frame_skip_allowed(&signals),
+                "{name} must force a draw"
+            );
+        }
+    }
+
+    /// The first frame can never be the skipped one: nothing has reached the
+    /// swapchain yet, so there is no image to keep showing.
+    #[test]
+    fn never_skips_before_the_first_present() {
+        let signals = IdleFrameSignals {
+            presented_once: false,
+            ..all_idle()
+        };
+        assert!(!idle_frame_skip_allowed(&signals));
+    }
+
+    /// Past the valve the frame draws whatever else says, so a latched gate
+    /// costs one stale interval, never a frozen window.
+    #[test]
+    fn force_interval_breaks_a_latched_gate() {
+        let signals = IdleFrameSignals {
+            within_force_interval: false,
+            ..all_idle()
+        };
+        assert!(!idle_frame_skip_allowed(&signals));
     }
 }

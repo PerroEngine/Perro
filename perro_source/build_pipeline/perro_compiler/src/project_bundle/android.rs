@@ -27,67 +27,10 @@ pub(super) fn export_project_android_bundle(
     }
 
     let output_dir = project_root.join(".output").join("android");
-    fs::create_dir_all(&output_dir)?;
+    reset_output_dir(&output_dir)?;
     let output_apk = output_dir.join(format!("{output_name}.apk"));
-    fs::copy(built_apk, &output_apk)?;
+    copy_file_overwriting(built_apk, &output_apk)?;
     println!("exported android apk: {}", output_apk.display());
-    Ok(())
-}
-
-pub(super) fn rename_exported_binary(source: &Path, dest: &Path) -> Result<(), CompilerError> {
-    if source == dest {
-        return Ok(());
-    }
-
-    let source_str = source.to_string_lossy();
-    let dest_str = dest.to_string_lossy();
-    let case_only_rename =
-        cfg!(target_os = "windows") && source_str.eq_ignore_ascii_case(&dest_str);
-
-    if case_only_rename {
-        return rename_exported_binary_via_temp(source, dest);
-    }
-
-    if dest.exists() {
-        fs::remove_file(dest)?;
-    }
-
-    match fs::rename(source, dest) {
-        Ok(()) => Ok(()),
-        Err(err) => Err(CompilerError::Io(err)),
-    }
-}
-
-pub(super) fn rename_exported_binary_via_temp(
-    source: &Path,
-    dest: &Path,
-) -> Result<(), CompilerError> {
-    let Some(parent) = source.parent() else {
-        return Err(CompilerError::SceneParse(format!(
-            "failed to rename export: source has no parent: {}",
-            source.display()
-        )));
-    };
-    let ext = source.extension().and_then(|e| e.to_str()).unwrap_or("");
-    let mut tmp = parent.join(if ext.is_empty() {
-        "__perro_export_tmp__".to_string()
-    } else {
-        format!("__perro_export_tmp__.{ext}")
-    });
-    let mut idx = 0usize;
-    while tmp.exists() {
-        idx += 1;
-        tmp = parent.join(if ext.is_empty() {
-            format!("__perro_export_tmp__{idx}")
-        } else {
-            format!("__perro_export_tmp__{idx}.{ext}")
-        });
-    }
-    fs::rename(source, &tmp)?;
-    if dest.exists() {
-        fs::remove_file(dest)?;
-    }
-    fs::rename(tmp, dest)?;
     Ok(())
 }
 
@@ -316,6 +259,8 @@ perro_app::entry::{native_entry}(perro_app::entry::StaticEmbeddedProject {{\n\
         anti_alias: {anti_alias},\n\
         ssao: {ssao},\n\
         shadow_quality: {shadow_quality},\n\
+        render_scale: {render_scale},\n\
+        power_preference: {power_preference},\n\
         meshlets: {meshlets},\n\
         dev_meshlets: {dev_meshlets},\n\
         release_meshlets: {release_meshlets},\n\
@@ -365,6 +310,8 @@ perro_app::entry::{native_entry}(perro_app::entry::StaticEmbeddedProject {{\n\
         anti_alias = emit_anti_alias_expr(cfg.anti_alias),
         ssao = emit_ssao_expr(cfg.ssao),
         shadow_quality = emit_shadow_quality_expr(cfg.shadow_quality),
+        render_scale = emit_f32(cfg.render_scale),
+        power_preference = emit_power_preference_expr(cfg.power_preference),
         meshlets = cfg.meshlets,
         dev_meshlets = cfg.dev_meshlets,
         release_meshlets = cfg.release_meshlets,
@@ -427,6 +374,8 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
         anti_alias: {anti_alias},\n\
         ssao: {ssao},\n\
         shadow_quality: {shadow_quality},\n\
+        render_scale: {render_scale},\n\
+        power_preference: {power_preference},\n\
         meshlets: {meshlets},\n\
         dev_meshlets: {dev_meshlets},\n\
         release_meshlets: {release_meshlets},\n\
@@ -475,6 +424,8 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
         anti_alias = emit_anti_alias_expr(cfg.anti_alias),
         ssao = emit_ssao_expr(cfg.ssao),
         shadow_quality = emit_shadow_quality_expr(cfg.shadow_quality),
+        render_scale = emit_f32(cfg.render_scale),
+        power_preference = emit_power_preference_expr(cfg.power_preference),
         meshlets = cfg.meshlets,
         dev_meshlets = cfg.dev_meshlets,
         release_meshlets = cfg.release_meshlets,
@@ -528,6 +479,8 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
         anti_alias: {anti_alias},\n\
         ssao: {ssao},\n\
         shadow_quality: {shadow_quality},\n\
+        render_scale: {render_scale},\n\
+        power_preference: {power_preference},\n\
         meshlets: {meshlets},\n\
         dev_meshlets: {dev_meshlets},\n\
         release_meshlets: {release_meshlets},\n\
@@ -577,6 +530,8 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
         anti_alias = emit_anti_alias_expr(cfg.anti_alias),
         ssao = emit_ssao_expr(cfg.ssao),
         shadow_quality = emit_shadow_quality_expr(cfg.shadow_quality),
+        render_scale = emit_f32(cfg.render_scale),
+        power_preference = emit_power_preference_expr(cfg.power_preference),
         meshlets = cfg.meshlets,
         dev_meshlets = cfg.dev_meshlets,
         release_meshlets = cfg.release_meshlets,

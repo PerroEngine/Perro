@@ -223,10 +223,13 @@ mod locking_paths {
         let target = root.join("target");
         let exact = target.join("release/apk/main.apk");
         let unrelated = target.join("other/release/newer.apk");
+        let stale = root.join(".output/android/stale.apk");
         std::fs::create_dir_all(exact.parent().expect("exact parent")).expect("exact dir");
         std::fs::create_dir_all(unrelated.parent().expect("other parent")).expect("other dir");
+        std::fs::create_dir_all(stale.parent().expect("stale parent")).expect("stale dir");
         std::fs::write(&exact, b"current project").expect("exact apk");
         std::fs::write(&unrelated, b"other project").expect("other apk");
+        std::fs::write(&stale, b"stale project").expect("stale apk");
 
         let selected = android_apk_artifact_path(&root, &target, true).expect("artifact path");
         assert_eq!(selected, exact);
@@ -235,9 +238,25 @@ mod locking_paths {
             std::fs::read(root.join(".output/android/Android Pick.apk")).expect("exported apk"),
             b"current project"
         );
+        assert!(!stale.exists(), "stale output must be removed");
 
         std::fs::remove_file(&exact).expect("remove exact apk");
         assert!(export_project_android_bundle(&root, &selected, false).is_err());
+        std::fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
+    fn output_copy_replaces_existing_file() {
+        let root = unique_temp_path("output_copy_replace");
+        std::fs::create_dir_all(&root).expect("fixture dir");
+        let source = root.join("target.exe");
+        let output = root.join("output.exe");
+        std::fs::write(&source, b"new target bytes").expect("source");
+        std::fs::write(&output, b"stale output").expect("stale output");
+
+        copy_file_overwriting(&source, &output).expect("replace output");
+
+        assert_eq!(std::fs::read(&output).expect("output"), b"new target bytes");
         std::fs::remove_dir_all(root).expect("remove fixture");
     }
 

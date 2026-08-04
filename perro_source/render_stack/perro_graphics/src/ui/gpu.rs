@@ -149,19 +149,18 @@ pub struct GpuUi {
     prepared_viewport: [u32; 2],
     // Retained supersample raster. The target keeps the previous frame's UI
     // pixels, so a frame whose UI did not change re-encodes only the cheap
-    // full-screen composite instead of re-rasterizing up to 4x swapchain
-    // pixels. `supersample_dirty` is the catch-all invalidation flag for
+    // full-screen composite instead of re-rasterizing the UI target.
+    // `supersample_dirty` is the catch-all invalidation flag for
     // content that mutates under a stable mesh signature (texture deltas,
     // texture eviction, stream writes); `rasterized_*` pin the state the
     // retained pixels were produced from.
     supersample_dirty: bool,
     rasterized_signature: Option<UiMeshSignature>,
     rasterized_render_viewport: [u32; 2],
-    // Prepared meshes that sample per-frame-mutable inputs can never be
-    // retained: scene depth changes whenever the 3D pass runs, and webcam /
-    // camera-stream textures are rewritten in place under the same texture id.
+    // Prepared meshes that sample scene depth cannot be retained: the depth
+    // buffer changes whenever the 3D pass runs under the same view id.
     prepared_uses_depth_test: bool,
-    prepared_uses_live_texture: bool,
+    prepared_live_texture_ids: AHashSet<TextureID>,
     // Ids bound to externally owned views (camera-stream outputs): the view
     // stays put while its pixels are re-rendered every frame.
     external_image_texture_ids: AHashSet<TextureID>,
@@ -334,115 +333,121 @@ impl GpuUi {
                 bind_group_layouts: &[Some(&composite_bind_group_layout)],
                 immediate_size: 0,
             });
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("perro_ui_pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<UiVertexGpu>() as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Float32x2,
-                            offset: 0,
-                            shader_location: 0,
-                        },
-                        wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Float32x2,
-                            offset: 8,
-                            shader_location: 1,
-                        },
-                        wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Float32x2,
-                            offset: 16,
-                            shader_location: 2,
-                        },
-                        wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Unorm8x4,
-                            offset: 24,
-                            shader_location: 3,
-                        },
-                    ],
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main_linear_framebuffer"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: UI_SUPERSAMPLE_FORMAT,
-                    blend: Some(wgpu::BlendState {
-                        color: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::One,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                        alpha: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::One,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                    }),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                cull_mode: None,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
-        let composite_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("perro_ui_composite_pipeline"),
-            layout: Some(&composite_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &composite_shader,
-                entry_point: Some("vs_composite"),
-                buffers: &[],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &composite_shader,
-                entry_point: Some(if output_format.is_srgb() {
-                    "fs_composite_linear_framebuffer"
-                } else {
-                    "fs_composite_gamma_framebuffer"
+        let pipeline = crate::pipeline_cache::create_render_pipeline(
+            device,
+            wgpu::RenderPipelineDescriptor {
+                label: Some("perro_ui_pipeline"),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[Some(wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<UiVertexGpu>() as u64,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &[
+                            wgpu::VertexAttribute {
+                                format: wgpu::VertexFormat::Float32x2,
+                                offset: 0,
+                                shader_location: 0,
+                            },
+                            wgpu::VertexAttribute {
+                                format: wgpu::VertexFormat::Float32x2,
+                                offset: 8,
+                                shader_location: 1,
+                            },
+                            wgpu::VertexAttribute {
+                                format: wgpu::VertexFormat::Float32x2,
+                                offset: 16,
+                                shader_location: 2,
+                            },
+                            wgpu::VertexAttribute {
+                                format: wgpu::VertexFormat::Unorm8x4,
+                                offset: 24,
+                                shader_location: 3,
+                            },
+                        ],
+                    })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main_linear_framebuffer"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: UI_SUPERSAMPLE_FORMAT,
+                        blend: Some(wgpu::BlendState {
+                            color: wgpu::BlendComponent {
+                                src_factor: wgpu::BlendFactor::One,
+                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                                operation: wgpu::BlendOperation::Add,
+                            },
+                            alpha: wgpu::BlendComponent {
+                                src_factor: wgpu::BlendFactor::One,
+                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                                operation: wgpu::BlendOperation::Add,
+                            },
+                        }),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
                 }),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: output_format,
-                    blend: Some(wgpu::BlendState {
-                        color: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::One,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                        alpha: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::One,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                    }),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                cull_mode: None,
-                ..Default::default()
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview_mask: None,
+                cache: None,
             },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
+        );
+        let composite_pipeline = crate::pipeline_cache::create_render_pipeline(
+            device,
+            wgpu::RenderPipelineDescriptor {
+                label: Some("perro_ui_composite_pipeline"),
+                layout: Some(&composite_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &composite_shader,
+                    entry_point: Some("vs_composite"),
+                    buffers: &[],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &composite_shader,
+                    entry_point: Some(if output_format.is_srgb() {
+                        "fs_composite_linear_framebuffer"
+                    } else {
+                        "fs_composite_gamma_framebuffer"
+                    }),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: output_format,
+                        blend: Some(wgpu::BlendState {
+                            color: wgpu::BlendComponent {
+                                src_factor: wgpu::BlendFactor::One,
+                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                                operation: wgpu::BlendOperation::Add,
+                            },
+                            alpha: wgpu::BlendComponent {
+                                src_factor: wgpu::BlendFactor::One,
+                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                                operation: wgpu::BlendOperation::Add,
+                            },
+                        }),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview_mask: None,
+                cache: None,
+            },
+        );
         Self {
             pipeline,
             composite_pipeline,
@@ -478,7 +483,7 @@ impl GpuUi {
             rasterized_signature: None,
             rasterized_render_viewport: [0, 0],
             prepared_uses_depth_test: false,
-            prepared_uses_live_texture: false,
+            prepared_live_texture_ids: AHashSet::new(),
             external_image_texture_ids: AHashSet::new(),
             shrink_vertices: ShrinkTracker::default(),
             shrink_indices: ShrinkTracker::default(),
@@ -594,7 +599,7 @@ impl GpuUi {
         self.indices.reserve(mesh_totals.index_count);
         self.perf_counters = UiPerfCounters::default();
         let mut uses_depth_test = false;
-        let mut uses_live_texture = false;
+        self.prepared_live_texture_ids.clear();
         for (primitive_index, primitive) in primitives.iter().enumerate() {
             let Primitive::Mesh(mesh) = &primitive.primitive else {
                 continue;
@@ -619,6 +624,14 @@ impl GpuUi {
             if clip_rect[2] == 0 || clip_rect[3] == 0 {
                 continue;
             }
+            if let TextureId::User(raw) = mesh.texture_id {
+                let texture = TextureID::from_u64(raw);
+                if self.stream_texture_ids.contains(&texture)
+                    || self.external_image_texture_ids.contains(&texture)
+                {
+                    self.prepared_live_texture_ids.insert(texture);
+                }
+            }
             let vertex_offset = self.vertices.len().min(u32::MAX as usize) as u32;
             let index_start = self.indices.len().min(u32::MAX as usize) as u32;
             self.indices.extend(
@@ -631,7 +644,6 @@ impl GpuUi {
                 .and_then(Option::as_deref)
                 .filter(|depths| depths.len() == mesh.vertices.len());
             uses_depth_test |= depths.is_some();
-            uses_live_texture |= self.is_live_texture(mesh.texture_id);
             self.vertices
                 .extend(
                     mesh.vertices
@@ -660,19 +672,8 @@ impl GpuUi {
         self.upload_mesh_buffers(device, queue);
         self.prepared_mesh_signature = Some(mesh_signature);
         self.prepared_uses_depth_test = uses_depth_test;
-        self.prepared_uses_live_texture = uses_live_texture;
         self.prepared_revision = revision;
         self.prepared_viewport = viewport;
-    }
-
-    /// True when the mesh samples a texture whose pixels are rewritten under a
-    /// stable id: webcam/video streams and camera-stream (subviewport) outputs.
-    fn is_live_texture(&self, texture_id: TextureId) -> bool {
-        let TextureId::User(raw) = texture_id else {
-            return false;
-        };
-        let key = TextureID::from_u64(raw);
-        self.stream_texture_ids.contains(&key) || self.external_image_texture_ids.contains(&key)
     }
 
     pub fn render_pass(
@@ -727,18 +728,18 @@ impl GpuUi {
         //   - the render viewport / supersample size changed,
         //   - a texture delta, eviction, external rebind or stream write
         //     landed (`supersample_dirty`),
-        //   - the prepared UI samples per-frame-mutable inputs: scene depth
-        //     (depth-tested Label3D-style meshes; the depth buffer is rewritten
-        //     every 3D frame at an unchanged view generation) or a
-        //     webcam/camera-stream texture rewritten under a stable id.
+        //   - the prepared UI samples scene depth (depth-tested Label3D-style
+        //     meshes; the depth buffer is rewritten every 3D frame at an
+        //     unchanged view generation).
+        // Stream writes and rendered external camera targets set dirty at
+        // their write sites; idle camera targets keep stable pixels.
         // Otherwise only the full-screen composite is encoded.
         let needs_raster = target_created
             || self.supersample_dirty
             || self.prepared_mesh_signature.is_none()
             || self.rasterized_signature != self.prepared_mesh_signature
             || self.rasterized_render_viewport != render_viewport
-            || self.prepared_uses_depth_test
-            || self.prepared_uses_live_texture;
+            || self.prepared_uses_depth_test;
         if needs_raster {
             self.ui_supersample_redraws = self.ui_supersample_redraws.wrapping_add(1);
             self.rasterized_signature = self.prepared_mesh_signature;
@@ -833,7 +834,7 @@ impl GpuUi {
         self.signature_pins.clear();
         self.prepared_revision = u64::MAX;
         self.prepared_uses_depth_test = false;
-        self.prepared_uses_live_texture = false;
+        self.prepared_live_texture_ids.clear();
         self.supersample_dirty = true;
         // The buffers keep their high-water capacity; tell the GC the live
         // content is now empty so it can decay them.
@@ -1496,6 +1497,35 @@ impl GpuUi {
         self.prepared_revision = u64::MAX;
         self.supersample_dirty = true;
     }
+
+    /// True when this UI would composite byte-identical pixels to last frame.
+    ///
+    /// Read BEFORE `prepare`, so it must judge from retained state alone:
+    /// same primitive revision + same viewport means `prepare` would early-out,
+    /// and a matching rasterized signature w/ no dirty flag means the retained
+    /// raster is still the one on screen. Live stream/camera writes raise
+    /// `supersample_dirty` at their write sites, so they are covered here.
+    ///
+    /// Depth-tested UI is excluded outright: it samples the scene depth buffer,
+    /// which the 3D pass rewrites under an unchanged view generation.
+    pub(crate) fn composite_is_idle(&self, viewport: [u32; 2], revision: u64) -> bool {
+        !self.supersample_dirty
+            && !self.prepared_uses_depth_test
+            && self.prepared_revision == revision
+            && self.prepared_viewport == viewport
+            && self.prepared_mesh_signature.is_some()
+            && self.rasterized_signature == self.prepared_mesh_signature
+    }
+
+    /// Mark new pixels in a stable stream or external camera-target view.
+    pub fn note_live_texture_write(&mut self, texture: TextureID) {
+        if self.prepared_live_texture_ids.contains(&texture)
+            || (self.stream_texture_ids.contains(&texture)
+                && self.image_textures.contains_key(&texture))
+        {
+            self.supersample_dirty = true;
+        }
+    }
 }
 
 /// wgpu buffer sizes must be a multiple of `COPY_BUFFER_ALIGNMENT`.
@@ -1647,24 +1677,24 @@ mod tests {
         }
     }
 
-    /// A `Nearest` project point-samples the composite, so a supersampled
-    /// source is 4x raster cost for zero AA plus minification aliasing: the
-    /// factor drops to 1 rather than the composite being forced to linear.
+    /// Texture filtering changes sampling only; every mode keeps the UI target
+    /// at output resolution.
     #[test]
-    fn nearest_filter_rasters_ui_one_to_one() {
-        let nearest = perro_structs::supersample_scale(TextureFilterMode::Nearest);
-        assert_eq!(nearest, 1);
-        assert_eq!(
-            supersampled_size([1920, 1080], nearest, 16384, u64::MAX),
-            [1920, 1080]
-        );
-        // 4x the pixels saved vs the filtering modes.
-        let filtered = perro_structs::supersample_scale(TextureFilterMode::LinearMipmap);
-        let filtered_px = supersampled_size([1920, 1080], filtered, 16384, u64::MAX);
-        assert_eq!(
-            u64::from(filtered_px[0]) * u64::from(filtered_px[1]),
-            1920 * 1080 * 4
-        );
+    fn every_filter_mode_rasters_ui_one_to_one() {
+        for mode in [
+            TextureFilterMode::Nearest,
+            TextureFilterMode::Linear,
+            TextureFilterMode::LinearMipmap,
+            TextureFilterMode::Anisotropic,
+        ] {
+            let scale = perro_structs::supersample_scale(mode);
+            assert_eq!(scale, 1, "{mode:?}");
+            assert_eq!(
+                supersampled_size([1920, 1080], scale, 16384, u64::MAX),
+                [1920, 1080],
+                "{mode:?}"
+            );
+        }
     }
 
     /// The dimension cap and the per-adapter pixel budget only ever SHRINK the

@@ -176,6 +176,32 @@ pub(super) fn choose_surface_selection(
 
 pub(super) const MAX_FRAME_RENDER_PIXELS: u64 = 16_777_216;
 
+/// `graphics.render_scale` bounds. Below 0.25 the upscale falls apart; above
+/// 1.0 costs more than the surface can show.
+pub(crate) const MIN_RENDER_SCALE: f32 = 0.25;
+pub(crate) const MAX_RENDER_SCALE: f32 = 1.0;
+
+/// Author-set render scale applied BEFORE the dimension + pixel-budget caps:
+/// scene renders at `scale` x surface res, present upscales. Quadratic pixel
+/// saving (0.75 => -44% pixels). Non-finite / out-of-range clamps to
+/// [MIN_RENDER_SCALE, MAX_RENDER_SCALE]; result never drops below 1px.
+pub(crate) fn scaled_render_size(width: u32, height: u32, scale: f32) -> (u32, u32) {
+    let width = width.max(1);
+    let height = height.max(1);
+    let scale = if scale.is_finite() {
+        scale.clamp(MIN_RENDER_SCALE, MAX_RENDER_SCALE)
+    } else {
+        MAX_RENDER_SCALE
+    };
+    if scale >= MAX_RENDER_SCALE {
+        return (width, height);
+    }
+    (
+        ((width as f32 * scale).round() as u32).max(1),
+        ((height as f32 * scale).round() as u32).max(1),
+    )
+}
+
 pub(crate) fn capped_render_size(width: u32, height: u32, max_dimension: u32) -> (u32, u32) {
     capped_render_size_with_pixel_limit(width, height, max_dimension, MAX_FRAME_RENDER_PIXELS)
 }
@@ -343,14 +369,17 @@ fn create_auto_exposure(
             immediate_size: 0,
         });
         let make_pipeline = |label: &str, entry_point: &str| {
-            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some(label),
-                layout: Some(&exposure_layout),
-                module: &exposure_shader,
-                entry_point: Some(entry_point),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                cache: None,
-            })
+            crate::pipeline_cache::create_compute_pipeline(
+                device,
+                wgpu::ComputePipelineDescriptor {
+                    label: Some(label),
+                    layout: Some(&exposure_layout),
+                    module: &exposure_shader,
+                    entry_point: Some(entry_point),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    cache: None,
+                },
+            )
         };
         (
             Some(exposure_bgl),
@@ -786,31 +815,34 @@ impl PresentProcessor {
             bind_group_layouts: &[Some(&bgl)],
             immediate_size: 0,
         });
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("perro_present_pipeline"),
-            layout: Some(&layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
+        let pipeline = crate::pipeline_cache::create_render_pipeline(
+            device,
+            wgpu::RenderPipelineDescriptor {
+                label: Some("perro_present_pipeline"),
+                layout: Some(&layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: output_format,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                }),
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview_mask: None,
+                cache: None,
             },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: output_format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
+        );
         let (exposure_bgl, exposure_pipeline, exposure_resolve_pipeline) =
             create_auto_exposure(device);
         Self {
@@ -923,31 +955,34 @@ impl PresentProcessor {
                     bind_group_layouts: &[Some(&bgl)],
                     immediate_size: 0,
                 });
-                let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some("perro_fxaa_pipeline"),
-                    layout: Some(&layout),
-                    vertex: wgpu::VertexState {
-                        module: &shader,
-                        entry_point: Some("vs_main"),
-                        buffers: &[],
-                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                let pipeline = crate::pipeline_cache::create_render_pipeline(
+                    &device,
+                    wgpu::RenderPipelineDescriptor {
+                        label: Some("perro_fxaa_pipeline"),
+                        layout: Some(&layout),
+                        vertex: wgpu::VertexState {
+                            module: &shader,
+                            entry_point: Some("vs_main"),
+                            buffers: &[],
+                            compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        },
+                        fragment: Some(wgpu::FragmentState {
+                            module: &shader,
+                            entry_point: Some("fs_main"),
+                            targets: &[Some(wgpu::ColorTargetState {
+                                format: self.output_format,
+                                blend: Some(wgpu::BlendState::REPLACE),
+                                write_mask: wgpu::ColorWrites::ALL,
+                            })],
+                            compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        }),
+                        primitive: wgpu::PrimitiveState::default(),
+                        depth_stencil: None,
+                        multisample: wgpu::MultisampleState::default(),
+                        multiview_mask: None,
+                        cache: None,
                     },
-                    fragment: Some(wgpu::FragmentState {
-                        module: &shader,
-                        entry_point: Some("fs_main"),
-                        targets: &[Some(wgpu::ColorTargetState {
-                            format: self.output_format,
-                            blend: Some(wgpu::BlendState::REPLACE),
-                            write_mask: wgpu::ColorWrites::ALL,
-                        })],
-                        compilation_options: wgpu::PipelineCompilationOptions::default(),
-                    }),
-                    primitive: wgpu::PrimitiveState::default(),
-                    depth_stencil: None,
-                    multisample: wgpu::MultisampleState::default(),
-                    multiview_mask: None,
-                    cache: None,
-                });
+                );
                 (pipeline, bgl)
             }
         };
@@ -1616,31 +1651,34 @@ fn create_smaa_pipeline(
         bind_group_layouts: &[Some(bgl)],
         immediate_size: 0,
     });
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some(label),
-        layout: Some(&layout),
-        vertex: wgpu::VertexState {
-            module: &shader,
-            entry_point: Some("vs_main"),
-            buffers: &[],
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
+    crate::pipeline_cache::create_render_pipeline(
+        device,
+        wgpu::RenderPipelineDescriptor {
+            label: Some(label),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: target_format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
         },
-        fragment: Some(wgpu::FragmentState {
-            module: &shader,
-            entry_point: Some("fs_main"),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: target_format,
-                blend: Some(wgpu::BlendState::REPLACE),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-        }),
-        primitive: wgpu::PrimitiveState::default(),
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
-        multiview_mask: None,
-        cache: None,
-    })
+    )
 }
 
 /// Size-independent SMAA setup: generates + uploads the two lookup textures
@@ -1894,30 +1932,33 @@ fn create_taa_resolve_direct_pipeline(
             write_mask: wgpu::ColorWrites::ALL,
         })
     };
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some(label),
-        layout: Some(&layout),
-        vertex: wgpu::VertexState {
-            module: &shader,
-            entry_point: Some("vs_main"),
-            buffers: &[],
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
+    crate::pipeline_cache::create_render_pipeline(
+        device,
+        wgpu::RenderPipelineDescriptor {
+            label: Some(label),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main_direct"),
+                targets: &[
+                    color_target(TAA_HISTORY_FORMAT),
+                    color_target(output_format),
+                ],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
         },
-        fragment: Some(wgpu::FragmentState {
-            module: &shader,
-            entry_point: Some("fs_main_direct"),
-            targets: &[
-                color_target(TAA_HISTORY_FORMAT),
-                color_target(output_format),
-            ],
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-        }),
-        primitive: wgpu::PrimitiveState::default(),
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
-        multiview_mask: None,
-        cache: None,
-    })
+    )
 }
 
 fn write_manual_exposure(queue: &wgpu::Queue, present: &PresentProcessor, exposure: f32) {
@@ -2085,6 +2126,17 @@ mod present_gpu_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn render_scale_sizes_and_clamps() {
+        assert_eq!(scaled_render_size(1920, 1080, 1.0), (1920, 1080));
+        assert_eq!(scaled_render_size(1920, 1080, 0.75), (1440, 810));
+        assert_eq!(scaled_render_size(1920, 1080, 0.5), (960, 540));
+        assert_eq!(scaled_render_size(1920, 1080, 0.1), (480, 270));
+        assert_eq!(scaled_render_size(1920, 1080, 2.0), (1920, 1080));
+        assert_eq!(scaled_render_size(1920, 1080, f32::NAN), (1920, 1080));
+        assert_eq!(scaled_render_size(1, 1, 0.25), (1, 1));
+    }
 
     #[test]
     fn capped_render_size_keeps_safe_size() {

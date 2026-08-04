@@ -78,6 +78,7 @@ struct WaterParamsGpu {
 // reject fragments behind scene geometry itself. Clear under MSAA, where the
 // pass still attaches the real scene depth.
 const WATER_RENDER_FLAG_SCENE_DEPTH_REJECT: u32 = 1 << 0;
+const WATER_RENDER_FLAG_SCENE_GEOMETRY: u32 = 1 << 1;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -217,9 +218,11 @@ pub struct WaterPrepareContext {
     pub camera_2d_position: [f32; 2],
     pub camera_3d_position: [f32; 3],
     pub camera_3d_frustum_planes: [[f32; 4]; 6],
+    pub camera_3d_lod_scale: [f32; 2],
     pub sky_color: [f32; 3],
     pub time_seconds: f32,
     pub delta_seconds: f32,
+    pub scene_geometry_present: bool,
 }
 
 // Render pipelines depend on color format, sample count, and the scene depth
@@ -254,87 +257,93 @@ fn create_water_render_pipelines(
         bind_group_layouts: &[Some(render_bgl), Some(camera_3d_bgl), Some(depth_bgl)],
         immediate_size: 0,
     });
-    let render_pipeline_2d = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("perro_water_2d_pipeline"),
-        layout: Some(&render_layout_2d),
-        vertex: wgpu::VertexState {
-            module: &render_shader,
-            entry_point: Some("vs_water_2d"),
-            buffers: &[],
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
+    let render_pipeline_2d = crate::pipeline_cache::create_render_pipeline(
+        device,
+        wgpu::RenderPipelineDescriptor {
+            label: Some("perro_water_2d_pipeline"),
+            layout: Some(&render_layout_2d),
+            vertex: wgpu::VertexState {
+                module: &render_shader,
+                entry_point: Some("vs_water_2d"),
+                buffers: &[],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &render_shader,
+                entry_point: Some("fs_water_2d"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: color_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: sample_count.max(1),
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview_mask: None,
+            cache: None,
         },
-        fragment: Some(wgpu::FragmentState {
-            module: &render_shader,
-            entry_point: Some("fs_water_2d"),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: color_format,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-        }),
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            strip_index_format: None,
-            front_face: wgpu::FrontFace::Ccw,
-            cull_mode: None,
-            polygon_mode: wgpu::PolygonMode::Fill,
-            unclipped_depth: false,
-            conservative: false,
+    );
+    let render_pipeline_3d = crate::pipeline_cache::create_render_pipeline(
+        device,
+        wgpu::RenderPipelineDescriptor {
+            label: Some("perro_water_3d_pipeline"),
+            layout: Some(&render_layout_3d),
+            vertex: wgpu::VertexState {
+                module: &render_shader_3d,
+                entry_point: Some("vs_water_3d"),
+                buffers: &[],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &render_shader_3d,
+                entry_point: Some("fs_water_3d"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: color_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                // Matches the 3D scene depth target this pipeline attaches.
+                format: crate::scene_depth_format(sample_count.max(1)),
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: sample_count.max(1),
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview_mask: None,
+            cache: None,
         },
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState {
-            count: sample_count.max(1),
-            mask: !0,
-            alpha_to_coverage_enabled: false,
-        },
-        multiview_mask: None,
-        cache: None,
-    });
-    let render_pipeline_3d = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("perro_water_3d_pipeline"),
-        layout: Some(&render_layout_3d),
-        vertex: wgpu::VertexState {
-            module: &render_shader_3d,
-            entry_point: Some("vs_water_3d"),
-            buffers: &[],
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &render_shader_3d,
-            entry_point: Some("fs_water_3d"),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: color_format,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-        }),
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            strip_index_format: None,
-            front_face: wgpu::FrontFace::Ccw,
-            cull_mode: Some(wgpu::Face::Back),
-            polygon_mode: wgpu::PolygonMode::Fill,
-            unclipped_depth: false,
-            conservative: false,
-        },
-        depth_stencil: Some(wgpu::DepthStencilState {
-            // Matches the 3D scene depth target this pipeline attaches.
-            format: crate::scene_depth_format(sample_count.max(1)),
-            depth_write_enabled: Some(true),
-            depth_compare: Some(wgpu::CompareFunction::LessEqual),
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
-        }),
-        multisample: wgpu::MultisampleState {
-            count: sample_count.max(1),
-            mask: !0,
-            alpha_to_coverage_enabled: false,
-        },
-        multiview_mask: None,
-        cache: None,
-    });
+    );
     (render_pipeline_2d, render_pipeline_3d)
 }
 
@@ -503,14 +512,17 @@ impl GpuWater {
             bind_group_layouts: &[Some(&compute_bgl)],
             immediate_size: 0,
         });
-        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("perro_water_gpu_pipeline"),
-            layout: Some(&layout),
-            module: &shader,
-            entry_point: Some("cs_main"),
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-            cache: None,
-        });
+        let compute_pipeline = crate::pipeline_cache::create_compute_pipeline(
+            device,
+            wgpu::ComputePipelineDescriptor {
+                label: Some("perro_water_gpu_pipeline"),
+                layout: Some(&layout),
+                module: &shader,
+                entry_point: Some("cs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
+            },
+        );
         let (render_pipeline_2d, render_pipeline_3d) = create_water_render_pipelines(
             device,
             color_format,
@@ -912,7 +924,7 @@ impl GpuWater {
         }
         for (node, water) in waters_3d {
             readback_rate = readback_rate.max(water.sample_readback_rate);
-            let lod = water_lod_3d(water, ctx.camera_3d_position);
+            let lod = water_lod_3d(water, ctx.camera_3d_position, ctx.camera_3d_lod_scale);
             let cells = water_cell_count(lod.grid.sim);
             let offset = cell_needed;
             if cells > 0 {
@@ -1042,8 +1054,12 @@ impl GpuWater {
             water_count: self.water_count,
             water_2d_count: self.water_2d_count,
             cell_count: cell_needed.min(u32::MAX as usize) as u32,
-            render_flags: if self.sample_count <= 1 {
+            render_flags: (if self.sample_count <= 1 {
                 WATER_RENDER_FLAG_SCENE_DEPTH_REJECT
+            } else {
+                0
+            }) | if ctx.scene_geometry_present {
+                WATER_RENDER_FLAG_SCENE_GEOMETRY
             } else {
                 0
             },

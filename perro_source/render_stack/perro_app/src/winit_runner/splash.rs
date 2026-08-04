@@ -25,9 +25,12 @@ impl<B: GraphicsBackend> RunnerState<B> {
             match result {
                 perro_runtime::RuntimeRenderResult::Texture(id) => {
                     self.startup_splash.texture_id = Some(id);
+                    self.startup_splash.rgba = None;
+                    crate::boot_log::mark("splash texture ready");
                 }
                 perro_runtime::RuntimeRenderResult::Failed(_) => {
                     self.startup_splash.texture_requested = false;
+                    crate::boot_log::mark("splash texture failed; retry");
                 }
                 perro_runtime::RuntimeRenderResult::Mesh(_)
                 | perro_runtime::RuntimeRenderResult::Material(_) => {}
@@ -80,18 +83,43 @@ impl<B: GraphicsBackend> RunnerState<B> {
             && let Some(source) = self.startup_splash.source.clone()
         {
             self.startup_splash.texture_requested = true;
-            commands.push(RenderCommand::Resource(Box::new(
-                ResourceCommand::CreateTexture {
+            let texture_source =
+                if self.app.runtime.provider_mode() == perro_runtime::ProviderMode::Static {
+                    self.startup_splash
+                        .source_hash
+                        .map(|value| value.to_string())
+                        .unwrap_or(source)
+                } else {
+                    source
+                };
+            // Resource commands cannot ride the late-overlay lane: that lane
+            // only applies 2D draw commands. Queue the texture on the main
+            // bridge so the next splash frame can show it, reveal the window,
+            // and unblock deferred boot loading.
+            let resource = match (
+                self.startup_splash.rgba.clone(),
+                self.startup_splash.texture_size,
+            ) {
+                (Some(rgba), Some((width, height))) => ResourceCommand::CreateRuntimeTexture {
                     request: STARTUP_SPLASH_TEXTURE_REQUEST,
                     id: TextureID::nil(),
-                    source: self
-                        .startup_splash
-                        .source_hash
-                        .map(|v| v.to_string())
-                        .unwrap_or(source),
+                    reserved: true,
+                    source: texture_source,
+                    width,
+                    height,
+                    rgba,
+                },
+                _ => ResourceCommand::CreateTexture {
+                    request: STARTUP_SPLASH_TEXTURE_REQUEST,
+                    id: TextureID::nil(),
+                    source: texture_source,
                     reserved: true,
                 },
-            )));
+            };
+            self.app
+                .graphics
+                .submit(RenderCommand::Resource(Box::new(resource)));
+            crate::boot_log::mark("splash texture queued");
         }
 
         let Some(texture_id) = self.startup_splash.texture_id else {

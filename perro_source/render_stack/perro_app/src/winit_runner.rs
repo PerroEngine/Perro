@@ -233,7 +233,8 @@ const TIMING_CSV_HEADER: &str = concat!(
     "skip_render_3d,skip_render_2d,scene_passes_encoded,scene_render_passes,sky_draws,",
     "mesh_blend_seam_passes,mesh_blend_scene_copies,mesh_blend_copy_pixels,",
     "mesh_blend_source_depth_passes,mesh_blend_source_depth_reuses,water_depth_copies,",
-    "water_depth_clears,shadow_layer_renders,shadow_multimesh_batch_draws,",
+    "water_depth_clears,shadow_layer_renders,shadow_regular_batch_draws,",
+    "shadow_multimesh_batch_draws,",
     "shadow_multimesh_instance_draws,shadow_multimesh_culled_layers,",
     "shadow_empty_layer_skips,",
     "stream_count,stream_renders,gpu_stream_encode_us,stream_pixels,",
@@ -313,7 +314,7 @@ impl TimingCsvWriter {
         );
         let _ = write!(
             out,
-            ",{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            ",{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
             draw.draw_calls_2d,
             draw.draw_calls_3d,
             draw.sprite_batches_2d,
@@ -346,6 +347,7 @@ impl TimingCsvWriter {
             draw.water_depth_copies,
             draw.water_depth_clears,
             draw.shadow_layer_renders,
+            draw.shadow_regular_batch_draws,
             draw.shadow_multimesh_batch_draws,
             draw.shadow_multimesh_instance_draws,
             draw.shadow_multimesh_culled_layers,

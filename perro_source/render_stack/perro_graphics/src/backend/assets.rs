@@ -37,8 +37,16 @@ impl PerroGraphics {
     // no-op w/o it + a 2D-only session must not spin.
     pub(super) fn pipeline_warm_pending(&self) -> bool {
         self.gpu.as_ref().is_some_and(|gpu| {
-            gpu.has_three_d()
-                && (!self.pending_pipeline_warms.is_empty() || gpu.base_families_pending())
+            let main_post_requested = crate::postprocess::PostProcessor::has_effects(
+                self.renderer_3d.camera().post_processing.as_ref(),
+            ) || crate::postprocess::PostProcessor::has_effects(
+                self.renderer_2d.camera().post_processing.as_ref(),
+            ) || crate::postprocess::PostProcessor::has_effects(
+                self.global_post_processing_cache.as_ref(),
+            ) || !self.retained_waters_3d_cache.is_empty();
+            (gpu.has_three_d()
+                && (!self.pending_pipeline_warms.is_empty() || gpu.base_families_pending()))
+                || gpu.post_pipelines_pending(main_post_requested, &self.retained_camera_streams)
         })
     }
 
@@ -103,6 +111,12 @@ impl PerroGraphics {
             }
         }
         let total_start = Instant::now();
+        // Tick even when this draw takes an idle early-out. Pipeline compiles
+        // often finish on the last active frame; the following idle frames are
+        // the settle window that makes one cache write cover the whole burst.
+        if let Some(gpu) = self.gpu.as_mut() {
+            gpu.poll_idle_maintenance();
+        }
         self.poll_async_mesh_loads();
         self.poll_async_texture_loads();
         let now = Instant::now();
@@ -119,7 +133,8 @@ impl PerroGraphics {
         late_overlay_pending.clear();
         late_overlay_pending.extend(late_overlay_commands);
         let has_pending = !self.frame.pending_commands.is_empty();
-        let has_late_overlay = !late_overlay_pending.is_empty()
+        let has_late_overlay_commands = !late_overlay_pending.is_empty();
+        let has_late_overlay = has_late_overlay_commands
             || self.late_overlay_2d.retained_sprite_count() > 0
             || !self.late_overlay_2d.retained_rects().is_empty();
         // A budgeted warm queue drains a few materials per frame, so the frame
@@ -130,9 +145,60 @@ impl PerroGraphics {
         // without it, and a 2D-only session that creates materials must not
         // spin forever.
         let has_pending_pipeline_warms = self.pipeline_warm_pending();
+        let auto_exposure = |effects: &[perro_structs::PostProcessEffect]| {
+            effects.iter().any(|effect| {
+                matches!(
+                    effect,
+                    perro_structs::PostProcessEffect::Exposure {
+                        auto_exposure: true,
+                        ..
+                    }
+                )
+            })
+        };
+        let material_revision = self.resources.material_revision();
+        let stream_continuous = self.retained_camera_streams.iter().any(|(node, stream)| {
+            let dynamic_source = matches!(stream.source, CameraStreamSourceState::Webcam { .. })
+                || !stream.waters_2d.is_empty()
+                || !stream.waters_3d.is_empty()
+                || !stream.point_particles_2d.is_empty()
+                || !stream.point_particles_3d.is_empty()
+                || auto_exposure(stream.post_processing.as_ref())
+                || stream
+                    .lighting_3d
+                    .sky
+                    .as_ref()
+                    .is_some_and(|sky| !sky.time.paused || !sky.shaders.is_empty());
+            let animated_material = self
+                .animated_stream_memo
+                .get(node)
+                .filter(|(key, revision, _)| {
+                    *key == Arc::as_ptr(stream) as usize && *revision == material_revision
+                })
+                .is_none_or(|(_, _, animated)| *animated);
+            dynamic_source || animated_material
+        });
         let has_continuous_updates = self.renderer_3d.has_active_sky_animation()
             || has_pending_pipeline_warms
-            || self.has_retained_animated_custom_material();
+            || self.has_retained_animated_custom_material()
+            || self.taa_enabled
+            || self.renderer_2d.retained_water_count() > 0
+            || self.late_overlay_2d.retained_water_count() > 0
+            || self.renderer_2d.retained_point_particle_count() > 0
+            || self.late_overlay_2d.retained_point_particle_count() > 0
+            || self.particles_3d.retained_point_particle_count() > 0
+            || auto_exposure(self.renderer_3d.camera().post_processing.as_ref())
+            || auto_exposure(self.renderer_2d.camera().post_processing.as_ref())
+            || self.global_post_processing.effects().any(|effect| {
+                matches!(
+                    effect,
+                    perro_structs::PostProcessEffect::Exposure {
+                        auto_exposure: true,
+                        ..
+                    }
+                )
+            })
+            || stream_continuous;
         let has_retained_scene = self.renderer_2d.retained_sprite_count() > 0
             || !self.renderer_2d.retained_rects().is_empty()
             || has_late_overlay
@@ -157,7 +223,11 @@ impl PerroGraphics {
                 ..DrawFrameTiming::default()
             });
         }
-        if !has_pending && !has_continuous_updates && !self.redraw_requested {
+        if !has_pending
+            && !has_late_overlay_commands
+            && !has_continuous_updates
+            && !self.redraw_requested
+        {
             self.frame.scratch_late_overlay_commands = late_overlay_pending;
             return Some(DrawFrameTiming {
                 total: total_start.elapsed(),
@@ -209,6 +279,24 @@ impl PerroGraphics {
             &self.renderer_3d.camera(),
         );
         let process_commands = process_start.elapsed();
+        // Runtime camera extraction may resend byte-identical cameras every
+        // tick. Once those bits clear, a static scene needs no GPU acquire,
+        // submit, or present; keep CPU simulation alive and retain the last
+        // swapchain image. Continuous effects above veto this path.
+        if frame_dirty_bits == 0
+            && !has_late_overlay_commands
+            && !has_continuous_updates
+            && !self.redraw_requested
+        {
+            pending.clear();
+            self.frame.scratch_commands = pending;
+            return Some(DrawFrameTiming {
+                process_commands,
+                total: total_start.elapsed(),
+                idle_clear: true,
+                ..DrawFrameTiming::default()
+            });
+        }
         let prepare_start = Instant::now();
         let (
             (camera_2d, _stats, upload),
@@ -637,11 +725,27 @@ impl PerroGraphics {
                     PIPELINE_WARM_TIME_BUDGET,
                 )
             };
+            let main_post_requested =
+                crate::postprocess::PostProcessor::has_effects(camera_3d.post_processing.as_ref())
+                    || crate::postprocess::PostProcessor::has_effects(
+                        camera_2d_state.post_processing.as_ref(),
+                    )
+                    || crate::postprocess::PostProcessor::has_effects(
+                        self.global_post_processing_cache.as_ref(),
+                    )
+                    || !self.retained_waters_3d_cache.is_empty();
+            let warm_start = Instant::now();
+            let post_warmed = gpu.warm_post_pipelines(
+                main_post_requested,
+                &self.retained_camera_streams,
+                warm_max,
+                Some(warm_budget),
+            );
             gpu.warm_material_pipelines(
                 &mut self.pending_pipeline_warms,
                 self.static_shader_lookup,
-                warm_max,
-                Some(warm_budget),
+                warm_max.saturating_sub(post_warmed),
+                Some(warm_budget.saturating_sub(warm_start.elapsed())),
             );
             gpu_timing = gpu.render(RenderFrame {
                 resources: &self.resources,
@@ -784,6 +888,7 @@ impl PerroGraphics {
             water_depth_copies: gpu_timing.water_depth_copies,
             water_depth_clears: gpu_timing.water_depth_clears,
             shadow_layer_renders: gpu_timing.shadow_layer_renders,
+            shadow_regular_batch_draws: gpu_timing.shadow_regular_batch_draws,
             shadow_multimesh_batch_draws: gpu_timing.shadow_multimesh_batch_draws,
             shadow_multimesh_instance_draws: gpu_timing.shadow_multimesh_instance_draws,
             shadow_multimesh_culled_layers: gpu_timing.shadow_multimesh_culled_layers,

@@ -3,13 +3,13 @@ mod tests {
     use super::{
         ProjectBuildOptions, ProjectBuildTarget, SceneVarUsage, ScriptMethodParam,
         ScriptsBuildProfile, android_apk_artifact_path, checked_res_relative_path,
-        compile_scripts_with_profile, emit_static_steam_app_id_fn, emit_web_route_html_files,
-        export_project_android_bundle, generate_call_param_binding, generate_dlc_static_modules,
-        generate_embedded_entry_files, generate_perro_assets, generate_project_static_modules,
-        module_ident_from_path_part, native_output_artifact_name, native_output_folder_name,
-        normalize_cargo_output_paths, steam_runtime_library_name, sweep_unknown_embedded_entries,
-        sync_android_project_manifest, sync_dlc_scripts, sync_scripts, target_binary_name,
-        target_slug_from_triple, transpile_frontend_script,
+        compile_scripts_with_profile, copy_file_overwriting, emit_static_steam_app_id_fn,
+        emit_web_route_html_files, export_project_android_bundle, generate_call_param_binding,
+        generate_dlc_static_modules, generate_embedded_entry_files, generate_perro_assets,
+        generate_project_static_modules, module_ident_from_path_part, native_output_artifact_name,
+        native_output_folder_name, normalize_cargo_output_paths, steam_runtime_library_name,
+        sweep_unknown_embedded_entries, sync_android_project_manifest, sync_dlc_scripts,
+        sync_scripts, target_binary_name, target_slug_from_triple, transpile_frontend_script,
         transpile_frontend_script_with_scene_vars, transpiled_exports_script_ctor,
         validate_native_target_triple, web_route_html_path, write_scripts_lib,
     };
@@ -398,6 +398,10 @@ lifecycle!({});
         perro_static_pipeline::write_static_mod_rs(&root).expect("write static mod");
         generate_embedded_entry_files(&root).expect("generate embedded main");
         generate_perro_assets(&root).expect("generate assets");
+        let entry_shared = std::fs::read_to_string(root.join(".perro/project/src/entry_shared.rs"))
+            .expect("generated entry source");
+        assert_eq!(entry_shared.matches("render_scale:").count(), 3);
+        assert_eq!(entry_shared.matches("power_preference:").count(), 3);
         assert_static_module_fixture_refs(&root);
         assert_static_scene_fixture_node_types(&root);
         assert_generated_native_main_hides_windows_console(&root);

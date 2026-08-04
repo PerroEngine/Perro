@@ -314,9 +314,9 @@ mod tests {
         let mut water = test_water_3d();
         water.resolution = [4096, 2048];
         water.render_resolution = [256, 256];
-        let near = water_lod_3d(&water, [0.0, 2.0, 0.0]);
-        let mid = water_lod_3d(&water, [260.0, 2.0, 0.0]);
-        let culled = water_lod_3d(&water, [100_000.0, 2.0, 100_000.0]);
+        let near = water_lod_3d(&water, [0.0, 2.0, 0.0], [720.0, 0.0]);
+        let mid = water_lod_3d(&water, [260.0, 2.0, 0.0], [720.0, 0.0]);
+        let culled = water_lod_3d(&water, [100_000.0, 2.0, 100_000.0], [720.0, 0.0]);
 
         assert_eq!(near.grid.sim, [256, 256]);
         assert_eq!(mid.grid.sim, near.grid.sim);
@@ -342,6 +342,18 @@ mod tests {
         assert_eq!(lod.grid.render, [146, 73]);
         assert!(lod.grid.render[0] >= 256 / 2);
         assert!(lod.grid.render[1] >= 128 / 2);
+    }
+
+    #[test]
+    fn water_3d_projected_lod_caps_subpixel_tessellation() {
+        let mut water = test_water_3d();
+        water.size = [64.0, 32.0];
+        let far =
+            water_projected_render_resolution(&water, [0.0, 0.0, 400.0], [720.0, 0.0], [256, 128]);
+        assert_eq!(far, [65, 33]);
+        let near =
+            water_projected_render_resolution(&water, [0.0, 0.0, 40.0], [720.0, 0.0], [256, 128]);
+        assert_eq!(near, [256, 128]);
     }
 
     #[test]
@@ -763,9 +775,11 @@ mod tests {
                     camera_2d_position: [0.0, 0.0],
                     camera_3d_position: [0.0, 8.0, 24.0],
                     camera_3d_frustum_planes: [[0.0, 0.0, 0.0, 1.0e9]; 6],
+                    camera_3d_lod_scale: [360.0, 0.0],
                     sky_color: [0.4, 0.6, 0.9],
                     time_seconds: 0.0,
                     delta_seconds: 1.0 / 60.0,
+                    scene_geometry_present: true,
                 },
             );
             assert!(
@@ -834,9 +848,11 @@ mod tests {
             camera_2d_position: [0.0, 0.0],
             camera_3d_position: [0.0, 0.0, 0.0],
             camera_3d_frustum_planes: [[0.0, 0.0, 0.0, 1.0]; 6],
+            camera_3d_lod_scale: [0.0; 2],
             sky_color: [0.0, 0.0, 0.0],
             time_seconds: 0.0,
             delta_seconds: 1.0 / 60.0,
+            scene_geometry_present: false,
         };
         water_gpu.prepare(&device, &queue, &waters, &[], ctx);
         let after_first = water_gpu.coastline_upload_bytes();
