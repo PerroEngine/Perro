@@ -142,3 +142,56 @@ a driver without its own shader cache ever shows a real difference.
 An earlier pass attributed ~370ms of startup to `PostProcessor::new`. That was
 wrong by two orders of magnitude -- the boot mark was too coarse and bundled
 `surface.configure`. Always split a mark before optimising what it points at.
+
+## Water render: the biggest number, decomposed (2026-08-04)
+
+water.scn, one `WaterBody3D`, 100x100 units, `render_resolution = (256, 256)`.
+`water_render` here is `main - mesh - shadow - post`, i.e. the water RENDER
+passes in the scene chain (the `gpu_timestamp_water` bracket is the sim, 44us).
+
+Vary window pixels (`render_scale`) and mesh vertices (`render_resolution`)
+independently:
+
+| render_scale | water_render |
+|---|---|
+| 1.0 | 2104us |
+| 0.5 | 1369us |
+
+| render_resolution | verts | water_render |
+|---|---|---|
+| 256x256 | 65k | 2100us |
+| 128x128 | 16k | 1426us |
+| 64x64 | 4k | 1245us |
+
+Fitting both: **fill ~980us, vertex/mesh ~855us, fixed overhead ~265us.**
+
+So ~40% of the water cost is VERTEX work, and it is not being reduced.
+
+### Why: water LOD is per-BODY, not per-chunk
+
+`water_lod_3d` picks one resolution for the whole body from
+`water_lod_surface_distance(body_pos, camera, radius)`. With the camera on or
+near a 100x100 plane that distance is ~0, so the body resolves to full
+256x256 -- and the far half of the same plane is tessellated as finely as the
+near half. A big water plane can never LOD down while the camera stands on it.
+
+Chunking DOES exist and DOES frustum-cull per chunk
+(`build_render_chunks_3d`), but with 256x256 / `WATER_CHUNK_QUADS = 128` that
+is only 2x2 = 4 chunks, and on this scene all 4 are visible, so culling
+removes nothing.
+
+### The fix is small: the plumbing is already there
+
+`WaterRenderChunkGpu` ALREADY carries per-chunk `render_width` / `render_height`
+plus `uv_origin` / `uv_scale`. `build_render_chunks_3d` just assigns every chunk
+the same body-level resolution. Feeding each chunk its OWN distance-derived LOD
+resolution is a change local to the chunk builder.
+
+Worth pairing with a smaller `WATER_CHUNK_QUADS` so a body splits into enough
+chunks for per-chunk LOD to have resolution to work with.
+
+### Also noticed
+
+`GpuWater::render_3d` creates a bind group EVERY frame in the encode path
+(`perro_water_scene_color_blit_bg`). CPU-side, not part of the GPU numbers
+above, but it is per-frame allocation in a hot path.
