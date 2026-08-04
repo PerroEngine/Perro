@@ -50,19 +50,7 @@ pub(in super::super) fn resolve_scene_water_body(field: &SceneFieldName) -> Opti
 pub(in super::super) fn resolve_water_body(field: &str) -> Option<WaterBodyField> {
     match field {
         "shape" => Some(WaterBodyField::Shape),
-        "resolution" | "sim_resolution" => Some(WaterBodyField::Resolution),
-        "render_resolution" | "mesh_resolution" => Some(WaterBodyField::RenderResolution),
-        "vertices_per_meter"
-        | "verts_per_meter"
-        | "vpm"
-        | "resolution_per_meter"
-        | "sim_vertices_per_meter" => Some(WaterBodyField::VerticesPerMeter),
-        "sim_cells_per_meter" | "simulation_cells_per_meter" => {
-            Some(WaterBodyField::SimCellsPerMeter)
-        }
-        "render_vertices_per_meter" | "render_verts_per_meter" | "mesh_vertices_per_meter" => {
-            Some(WaterBodyField::RenderVerticesPerMeter)
-        }
+        "quality" | "water_quality" | "fidelity" => Some(WaterBodyField::Quality),
         "depth" => Some(WaterBodyField::Depth),
         "flow" => Some(WaterBodyField::Flow),
         "wind" => Some(WaterBodyField::Wind),
@@ -76,10 +64,6 @@ pub(in super::super) fn resolve_water_body(field: &str) -> Option<WaterBodyField
         "buoyancy" => Some(WaterBodyField::Buoyancy),
         "drag" => Some(WaterBodyField::Drag),
         "sample_readback_rate" | "readback_rate" => Some(WaterBodyField::SampleReadbackRate),
-        "lod_near_distance" | "lod_near" => Some(WaterBodyField::LodNearDistance),
-        "lod_mid_distance" | "lod_mid" => Some(WaterBodyField::LodMidDistance),
-        "lod_far_distance" | "lod_far" => Some(WaterBodyField::LodFarDistance),
-        "lod_min_resolution" | "min_resolution" => Some(WaterBodyField::LodMinResolution),
         "collision_layers" => Some(WaterBodyField::CollisionLayers),
         "collision_mask" => Some(WaterBodyField::CollisionMask),
         "link_layers" | "water_link_layers" => Some(WaterBodyField::LinkLayers),
@@ -110,6 +94,37 @@ pub(in super::super) fn resolve_water_body(field: &str) -> Option<WaterBodyField
         "distance_fog_strength" => Some(WaterBodyField::DistanceFogStrength),
         "coastline" => Some(WaterBodyField::Coastline),
         "debug" => Some(WaterBodyField::Debug),
+        _ => None,
+    }
+}
+
+/// Water fidelity knobs removed in favour of the single `quality` tier.
+///
+/// The old set (absolute grid sizes + LOD distance bands) got body size,
+/// camera distance, window size and `render_scale` all wrong. `quality` maps to
+/// a target triangle edge in screen pixels instead, so one value covers all
+/// four. Returns the deprecation detail for the error/warning text.
+pub fn water_body_removed_field(field: &str) -> Option<&'static str> {
+    match field {
+        "resolution" | "sim_resolution" | "render_resolution" | "mesh_resolution" => {
+            Some("removed; use quality = \"low\" | \"medium\" | \"high\" | \"ultra\"")
+        }
+        "vertices_per_meter"
+        | "verts_per_meter"
+        | "vpm"
+        | "resolution_per_meter"
+        | "sim_vertices_per_meter"
+        | "sim_cells_per_meter"
+        | "simulation_cells_per_meter"
+        | "render_vertices_per_meter"
+        | "render_verts_per_meter"
+        | "mesh_vertices_per_meter" => {
+            Some("removed; use quality = \"low\" | \"medium\" | \"high\" | \"ultra\"")
+        }
+        "lod_near_distance" | "lod_near" | "lod_mid_distance" | "lod_mid" | "lod_far_distance"
+        | "lod_far" | "lod_min_resolution" | "min_resolution" => Some(
+            "removed; water LOD is per-chunk + screen-space now — use quality = \"low\" | \"medium\" | \"high\" | \"ultra\"",
+        ),
         _ => None,
     }
 }

@@ -898,9 +898,8 @@ fn instance_accel_threshold_and_coverage() {
 fn ray_query_survives_a_triangle_miss_before_the_hit() {
     let mut runtime = Runtime::new();
     // Linear tri scan: two coplanar triangles sharing one AABB, ray through
-    // the SECOND only. Built directly (not via `create_mesh_data`) because the
-    // decoded-query cache is process-global and keyed on `MeshID` + revision,
-    // which collides across `Runtime`s inside one test binary.
+    // the SECOND only. Built directly so the scan itself is under test, with
+    // no node/cache path in between.
     let vertex = |position| perro_render_bridge::RuntimeMeshVertex {
         position,
         normal: [0.0, 1.0, 0.0],
@@ -966,5 +965,117 @@ fn ray_query_survives_a_triangle_miss_before_the_hit() {
         (hit.distance - 39.44).abs() < 0.05,
         "hit @ the rotated cube surface, got {}",
         hit.distance
+    );
+}
+
+/// Global ray bounds stay in global-distance units even when the queried mesh
+/// has a small scale. Normalizing the inverse-transformed direction changed
+/// its parameter into mesh-local units, so the AABB test compared ~100 local
+/// units against a 1-unit global bound and rejected this valid hit.
+#[test]
+fn bounded_global_ray_hits_a_scaled_mesh() {
+    let mut runtime = Runtime::new();
+    let node_id = runtime.create::<MeshInstance3D>();
+    runtime
+        .render_3d
+        .mesh_sources
+        .insert(node_id, "__cube__".to_string());
+    assert!(NodeAPI::set_global_transform_3d(
+        &mut runtime,
+        node_id,
+        Transform3D::new(
+            Vector3::ZERO,
+            Quaternion::IDENTITY,
+            Vector3::new(0.01, 0.01, 0.01),
+        ),
+    ));
+
+    let hit = NodeAPI::mesh_instance_surface_on_global_ray(
+        &mut runtime,
+        node_id,
+        Vector3::new(0.0, 1.0, 0.0),
+        Vector3::new(0.0, -1.0, 0.0),
+        1.0,
+    )
+    .expect("scaled cube surface lies inside the global ray bound");
+    assert!(
+        (hit.distance - 0.995).abs() < 1.0e-4,
+        "expect global hit distance 0.995, got {}",
+        hit.distance
+    );
+}
+
+/// Regression: two `Runtime`s in one process must never read each other's
+/// decoded query geometry.
+///
+/// `MeshID`s and revisions restart per `Runtime`, so the cache key is only
+/// unique WITHIN a runtime. While the decoded-mesh cache was a process-global
+/// static, the second runtime's lookup hit the first runtime's entry under the
+/// same key and every query answered from the wrong vertices. Any host with two
+/// live runtimes -- editor + play-mode preview, tooling, embedding, one test
+/// binary -- was exposed.
+#[test]
+fn separate_runtimes_do_not_share_decoded_query_geometry() {
+    // Same topology at two heights, so a downward ray's distance says which
+    // runtime's geometry answered.
+    let quad = |height: f32| {
+        let vertex = |position| perro_render_bridge::RuntimeMeshVertex {
+            position,
+            normal: [0.0, 1.0, 0.0],
+            uv: [0.0, 0.0],
+            paint_uv: [0.0, 0.0],
+            joints: [0; 4],
+            weights: UnitVector4::ZERO,
+        };
+        Mesh3D {
+            vertices: vec![
+                vertex([0.0, height, 0.0]),
+                vertex([1.0, height, 0.0]),
+                vertex([0.0, height, 1.0]),
+                vertex([1.0, height, 1.0]),
+            ],
+            indices: vec![0, 1, 2, 1, 3, 2],
+            surface_ranges: vec![],
+            blend_shapes: Vec::new(),
+        }
+    };
+    let build = |runtime: &mut Runtime, height: f32| {
+        let mesh_id = MeshAPI::create_mesh_data(runtime.resource_api.as_ref(), quad(height));
+        let node_id = runtime.create::<MeshInstance3D>();
+        runtime.with_node_mut::<MeshInstance3D, _, _>(node_id, |mesh| mesh.mesh = mesh_id);
+        (mesh_id, node_id)
+    };
+    let shoot = |runtime: &mut Runtime, node_id| {
+        NodeAPI::mesh_instance_surface_on_global_ray(
+            runtime,
+            node_id,
+            Vector3::new(0.5, 10.0, 0.5),
+            Vector3::new(0.0, -1.0, 0.0),
+            100.0,
+        )
+        .expect("ray down the quad must hit")
+        .distance
+    };
+
+    let mut first = Runtime::new();
+    let (first_mesh, first_node) = build(&mut first, 1.0);
+    // Populate the first runtime's cache before the second one exists.
+    assert!((shoot(&mut first, first_node) - 9.0).abs() < 1.0e-3);
+
+    let mut second = Runtime::new();
+    let (second_mesh, second_node) = build(&mut second, 3.0);
+    assert_eq!(
+        first_mesh, second_mesh,
+        "precondition: ids restart per runtime, so both meshes share a cache key"
+    );
+
+    assert!(
+        (shoot(&mut second, second_node) - 7.0).abs() < 1.0e-3,
+        "second runtime read the first runtime's geometry"
+    );
+    // And the fresh runtime's insert must not have retired the first's entry.
+    assert!(
+        (shoot(&mut first, first_node) - 9.0).abs() < 1.0e-3,
+        "first runtime read the second runtime's geometry"
     );
 }

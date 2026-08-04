@@ -474,6 +474,12 @@ pub struct Runtime {
     /// validated against `(structural_revision, node_change_stamp)` @ build
     /// time, so only writes 2 THAT node retire the entry.
     mesh_query_node_cache: mesh_query::QueryNodeDataCache,
+    /// Decoded query geometry (verts + tris + BVH) 4 mesh point/ray/region
+    /// queries. Per-runtime, NOT static: both key spaces (`MeshID` + revision,
+    /// source path) only mean anything inside one Runtime, so a shared map fed
+    /// runtime B the geometry runtime A cached under the same id.
+    /// `Mutex` cuz the query paths read it thru `&self`.
+    mesh_query_mesh_cache: std::sync::Mutex<mesh_query::QueryMeshCache>,
     /// test/bench probe: # of QueryNodeData rebuilds (cache misses). proves
     /// repeated queries on an unchanged node hit the cache.
     #[cfg(any(test, feature = "bench"))]
@@ -802,6 +808,7 @@ impl Runtime {
             ui_node_ids_scratch: Vec::new(),
             audio: AudioPropagationState::new(),
             mesh_query_node_cache: mesh_query::QueryNodeDataCache::default(),
+            mesh_query_mesh_cache: std::sync::Mutex::default(),
             #[cfg(any(test, feature = "bench"))]
             mesh_query_node_rebuilds: std::cell::Cell::new(0),
             #[cfg(any(test, feature = "bench"))]

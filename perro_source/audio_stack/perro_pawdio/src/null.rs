@@ -531,7 +531,10 @@ mod tests {
     #[test]
     fn mic_v1_round_trip_stays_available_without_backend() {
         let clip = MicClip::new(vec![1, -2, 3, -4], 48_000, 2);
-        assert_eq!(MicClip::unpack(&clip.pack()).expect("unpack mic clip"), clip);
+        assert_eq!(
+            MicClip::unpack(&clip.pack()).expect("unpack mic clip"),
+            clip
+        );
         assert_eq!(&clip.wav_bytes()[..4], b"RIFF");
     }
 }

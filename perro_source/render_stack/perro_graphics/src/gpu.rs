@@ -1048,7 +1048,6 @@ pub struct RenderFrame<'a> {
     pub decals_3d_revision: u64,
     pub camera_streams: &'a [(NodeID, Arc<CameraStreamState>)],
     pub camera_2d: Camera2DUniform,
-    pub camera_2d_position: [f32; 2],
     pub post_processing_2d: Arc<[perro_structs::PostProcessEffect]>,
     pub post_processing_global: Arc<[perro_structs::PostProcessEffect]>,
     pub accessibility: VisualAccessibilitySettings,
@@ -1362,6 +1361,7 @@ pub struct RenderGpuTiming {
     pub shadow_multimesh_instance_draws: u64,
     pub shadow_multimesh_culled_layers: u32,
     pub shadow_empty_layer_skips: u32,
+    pub shadow_multiview_passes: u32,
     /// Camera-stream / sub-view work this frame. Kept out of the main-view
     /// fields above so a stream never inflates main-scene numbers.
     pub stream_count: u32,

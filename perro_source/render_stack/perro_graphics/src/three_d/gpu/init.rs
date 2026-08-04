@@ -292,6 +292,7 @@ impl Gpu3D {
         let material_texture_bgl = bgls.material_texture.clone();
         let ibl_bgl = bgls.ibl.clone();
         let shadow_bgl = bgls.shadow.clone();
+        let shadow_multiview_bgl = bgls.shadow_multiview.clone();
         let sky_bgl = bgls.sky.clone();
         let mesh_blend_mask_id_bgl = bgls.mesh_blend_mask_id.clone();
         let mesh_blend_seam_bgl = bgls.mesh_blend_seam.clone();
@@ -309,6 +310,37 @@ impl Gpu3D {
                     size: std::mem::size_of::<Scene3DUniform>() as u64,
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                     mapped_at_creation: false,
+                })
+            })
+            .collect();
+        // Multiview shadow depth: available only when the adapter exposes
+        // `MULTIVIEW` and allows at least one point light's 6 cube faces in a
+        // single pass. `PERRO_DISABLE_MULTIVIEW_SHADOWS=1` forces the per-layer
+        // path back on for A/B measurement.
+        let shadow_multiview_supported = cfg!(not(target_arch = "wasm32"))
+            && device.features().contains(wgpu::Features::MULTIVIEW)
+            && device.limits().max_multiview_view_count >= MAX_MULTIVIEW_SHADOW_VIEWS as u32
+            && !shadows::multiview_shadows_disabled();
+        let shadow_multiview_buffers: Vec<_> = (0..shadows::SHADOW_LAYER_SET_COUNT)
+            .map(|_| {
+                device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("perro_shadow_multiview_buffer"),
+                    size: std::mem::size_of::<ShadowMultiviewUniform>() as u64,
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                })
+            })
+            .collect();
+        let shadow_multiview_bind_groups: Vec<_> = shadow_multiview_buffers
+            .iter()
+            .map(|buffer| {
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("perro_shadow_multiview_bg"),
+                    layout: &shadow_multiview_bgl,
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: buffer.as_entire_binding(),
+                    }],
                 })
             })
             .collect();
@@ -1532,6 +1564,12 @@ impl Gpu3D {
             point_shadow_layer_views,
             point_shadow_layers_allocated: 0,
             shadow_map_sampler,
+            shadow_multiview_supported,
+            shadow_multiview_buffers,
+            shadow_multiview_bind_groups,
+            last_shadow_multiview: vec![None; shadows::SHADOW_LAYER_SET_COUNT],
+            shadow_multiview_layer_views: Vec::new(),
+            shadow_union_scratch: Vec::new(),
             sky_buffer,
             sky_bind_group,
             _sky_noise_texture: sky_noise_texture,

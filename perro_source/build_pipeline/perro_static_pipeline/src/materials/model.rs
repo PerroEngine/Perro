@@ -17,6 +17,8 @@ pub(super) struct CustomMaterialLiteral {
     pub(super) images: Vec<CustomImageLiteral>,
     pub(super) lighting: CustomMaterialLighting3D,
     pub(super) surface: StandardMaterial3D,
+    pub(crate) release_bake: bool,
+    pub(crate) bake_resolution: Option<[u32; 2]>,
 }
 
 #[derive(Clone)]
@@ -126,6 +128,8 @@ pub(super) struct CustomMaterialKey {
     images: Vec<CustomImageKey>,
     lighting: CustomMaterialLighting3D,
     surface: StandardMaterialKey,
+    release_bake: bool,
+    bake_resolution: Option<[u32; 2]>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -228,6 +232,8 @@ impl From<&MaterialLiteral> for MaterialKey {
                 shader_path: v.shader_path.clone(),
                 lighting: v.lighting,
                 surface: standard_material_key(&v.surface),
+                release_bake: v.release_bake,
+                bake_resolution: v.bake_resolution,
                 params: v
                     .params
                     .iter()

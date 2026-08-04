@@ -385,9 +385,12 @@ pub(super) fn mesh_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType)
 
 pub(super) fn water_fields(fields: &mut Vec<SceneNodeField>) {
     push(fields, "Water", "shape", NodeFieldType::object(Vec::new()));
-    push(fields, "Water", "resolution", NodeFieldType::Vec2);
-    push(fields, "Water", "render_resolution", NodeFieldType::Vec2);
-    push(fields, "Water", "vertices_per_meter", NodeFieldType::F32);
+    push(
+        fields,
+        "Water",
+        "quality",
+        NodeFieldType::enumeration(WATER_QUALITY_OPTIONS),
+    );
     push(fields, "Water", "depth", NodeFieldType::F32);
     push(fields, "Water", "flow", NodeFieldType::Vec2);
     push(fields, "Water", "wind", NodeFieldType::Vec2);

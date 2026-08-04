@@ -1102,10 +1102,8 @@ mod tests {
     #[test]
     fn resolve_dev_res_path_follows_root_layout_probe() {
         let _guard = TEST_LOCK.lock().expect("required value must be present");
-        let root = std::env::temp_dir().join(format!(
-            "perro_io_res_root_layout_{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("perro_io_res_root_layout_{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         // Root *is* the res directory: no res/res doubling.
         fs::create_dir_all(&root).expect("required value must be present");

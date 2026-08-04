@@ -13,8 +13,7 @@ impl WaterBody2D {
             base: Node2D::new(),
             water: WaterSurfaceParams {
                 shape: crate::WaterShape::rect(perro_structs::Vector2::new(32.0, 32.0)),
-                resolution: [801, 801],
-                render_resolution: [801, 801],
+                quality: perro_structs::WaterQuality::Low,
                 depth: 4.0,
                 flow: perro_structs::Vector2::ZERO,
                 wind: perro_structs::Vector2::new(1.0, 0.0),
@@ -25,19 +24,7 @@ impl WaterBody2D {
                     length: 18.0,
                     damping: 0.985,
                 },
-                physics: crate::WaterPhysicsParams {
-                    buoyancy: 2.0,
-                    drag: 0.75,
-                    wake_strength: 1.35,
-                    foam_strength: 0.9,
-                    sample_readback_rate: 30.0,
-                },
-                lod: crate::WaterLodParams {
-                    near_distance: 128.0,
-                    mid_distance: 384.0,
-                    far_distance: 896.0,
-                    min_resolution: [32, 32],
-                },
+                physics: crate::WaterPhysicsParams::for_quality(perro_structs::WaterQuality::Low),
                 collision_layers: crate::BitMask::ALL,
                 collision_mask: crate::BitMask::NONE,
                 link: crate::WaterLinkParams {

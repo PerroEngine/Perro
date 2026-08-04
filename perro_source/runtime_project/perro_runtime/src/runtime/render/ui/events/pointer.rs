@@ -1,7 +1,7 @@
 use super::*;
 
 impl Runtime {
-    pub(super) fn ui_pointer_screen_point(&mut self) -> Vector2 {
+    pub(in crate::runtime::render_ui) fn ui_pointer_screen_point(&mut self) -> Vector2 {
         if let Some(point) = self.render_ui.pointer_screen_point {
             return point;
         }
@@ -86,15 +86,14 @@ impl Runtime {
         &mut self,
         computed: &AHashMap<NodeID, ComputedUiRect>,
         computed_scales: &AHashMap<NodeID, Vector2>,
+        hovered: Option<NodeID>,
         command_ids: &mut Vec<NodeID>,
         command_seen: &mut ahash::AHashSet<NodeID>,
     ) {
         let virtual_font_scale = self.ui_virtual_font_scale(self.input.viewport_size());
         let mouse_pos = self.input.mouse_position();
-        let pointer_point = self.ui_pointer_screen_point();
         let mouse_pressed = self.input.is_mouse_pressed(MouseButton::Left);
         let mouse_down = self.input.is_mouse_down(MouseButton::Left);
-        let hovered = self.hovered_text_edit(computed, UiInputSource::Kbm, pointer_point);
         if self.render_ui.hovered_text_edit != hovered {
             if let Some(prev) = self.render_ui.hovered_text_edit {
                 self.emit_text_edit_event(prev, "unhovered", None);

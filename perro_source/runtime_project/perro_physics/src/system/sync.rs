@@ -1,7 +1,5 @@
+use super::queries::{flush_removed_colliders_bvh_2d, flush_removed_colliders_bvh_3d};
 use super::*;
-use super::queries::{
-    flush_removed_colliders_bvh_2d, flush_removed_colliders_bvh_3d,
-};
 
 impl PhysicsSystem {
     pub fn sync_world_2d(
@@ -133,12 +131,6 @@ impl PhysicsSystem {
                     rb.enable_ccd(false);
                 }
                 state.sync_signature = body.sync_signature;
-            } else if state.kind == crate::BodyKind::Rigid
-                && state.idle_sync_frames >= 1
-                && let Some(rb) = world.bodies.get_mut(state.handle)
-                && !rb.is_sleeping()
-            {
-                rb.sleep();
             }
 
             if state.shape_signature != body.shape_signature {
@@ -185,11 +177,9 @@ impl PhysicsSystem {
                     // Make the new collider query-visible b4 the next step.
                     if let Some(collider) = world.colliders.get(handle) {
                         let aabb = collider.compute_aabb();
-                        world.broad_phase.set_aabb(
-                            &world.integration_parameters,
-                            handle,
-                            aabb,
-                        );
+                        world
+                            .broad_phase
+                            .set_aabb(&world.integration_parameters, handle, aabb);
                     }
                 }
                 state.shape_signature = body.shape_signature;
@@ -384,12 +374,6 @@ impl PhysicsSystem {
                     rb.enable_ccd(false);
                 }
                 state.sync_signature = body.sync_signature;
-            } else if state.kind == crate::BodyKind::Rigid
-                && state.idle_sync_frames >= 1
-                && let Some(rb) = world.bodies.get_mut(state.handle)
-                && !rb.is_sleeping()
-            {
-                rb.sleep();
             }
 
             if state.shape_signature != body.shape_signature {
@@ -440,11 +424,9 @@ impl PhysicsSystem {
                     // Make the new collider query-visible b4 the next step.
                     if let Some(collider) = world.colliders.get(handle) {
                         let aabb = collider.compute_aabb();
-                        world.broad_phase.set_aabb(
-                            &world.integration_parameters,
-                            handle,
-                            aabb,
-                        );
+                        world
+                            .broad_phase
+                            .set_aabb(&world.integration_parameters, handle, aabb);
                     }
                 }
                 state.shape_signature = body.shape_signature;
@@ -702,6 +684,50 @@ mod tests {
             static_mesh_lookup: None,
             static_collision_trimesh_lookup: None,
         }
+    }
+
+    #[test]
+    fn unchanged_sync_keeps_rapier_2d_awake_island_coherent() {
+        let mut system = PhysicsSystem::new();
+        let bodies = (1..=70).map(body_2d).collect::<Vec<_>>();
+        system.sync_world_2d(&bodies, |_, _| {});
+        system.step_world_2d(-9.81, 1.0 / 60.0);
+
+        let world = system.world_2d.as_mut().expect("2d world");
+        world
+            .body_map
+            .get_mut(&NodeID::new(17))
+            .expect("2d body state")
+            .idle_sync_frames = 1;
+
+        system.sync_world_2d(&bodies, |_, _| {});
+        let world = system.world_2d.as_ref().expect("2d world");
+        let state = world.body_map.get(&NodeID::new(17)).expect("2d body state");
+        assert!(!world.bodies[state.handle].is_sleeping());
+
+        system.step_world_2d(-9.81, 1.0 / 60.0);
+    }
+
+    #[test]
+    fn unchanged_sync_keeps_rapier_3d_awake_island_coherent() {
+        let mut system = PhysicsSystem::new();
+        let bodies = (1..=70).map(body_3d).collect::<Vec<_>>();
+        system.sync_world_3d(&bodies, asset_context(), |_, _| {});
+        system.step_world_3d(-9.81, 1.0 / 60.0);
+
+        let world = system.world_3d.as_mut().expect("3d world");
+        world
+            .body_map
+            .get_mut(&NodeID::new(17))
+            .expect("3d body state")
+            .idle_sync_frames = 1;
+
+        system.sync_world_3d(&bodies, asset_context(), |_, _| {});
+        let world = system.world_3d.as_ref().expect("3d world");
+        let state = world.body_map.get(&NodeID::new(17)).expect("3d body state");
+        assert!(!world.bodies[state.handle].is_sleeping());
+
+        system.step_world_3d(-9.81, 1.0 / 60.0);
     }
 
     fn joint_2d(id: u32, body_a: u32, body_b: u32) -> crate::JointDesc2D {

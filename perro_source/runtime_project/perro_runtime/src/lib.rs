@@ -30,9 +30,9 @@ pub use runtime::{
 pub use runtime::{Runtime, RuntimeFixedUpdateTiming, RuntimeScriptApi, RuntimeUpdateTiming};
 pub use runtime_project::{
     AntiAlias, AudioConfig, AudioPropagationConfig, FrameRateCap, LocalizationConfig,
-    OcclusionCulling, ParticleSimDefault, ProjectLoadError, ProjectMetadata, ProjectRoute,
-    ProjectRoutesConfig, ProviderMode, RenderUiConfig, RenderingConfig, RuntimeProject,
-    RuntimeProjectConfig, ShadowQuality, SsaoQuality, StaticAnimationLookup,
+    OcclusionCulling, ParticleSimDefault, PowerPreference, ProjectLoadError, ProjectMetadata,
+    ProjectRoute, ProjectRoutesConfig, ProviderMode, RenderUiConfig, RenderingConfig,
+    RuntimeProject, RuntimeProjectConfig, ShadowQuality, SsaoQuality, StaticAnimationLookup,
     StaticAnimationTreeLookup, StaticAudioLookup, StaticBytesLookup, StaticCsvLookup,
     StaticLocalizationLookup, StaticMaterialLookup, StaticParticleLookup, StaticProjectConfig,
     StaticSceneLookup, StaticShaderLookup, StaticSkeletonLookup, StaticTilesetLookup,

@@ -524,6 +524,98 @@ fn fs_mask(in: VertexOutput) -> @location(0) u32 {
 }
 ";
 
+/// Max shadow depth layers one multiview pass may cover. 6 = a point light's
+/// cube faces, the biggest layer set the shadow encoder forms; cascades (4) and
+/// spot lights (<=4) fit under it. The multiview shadow shaders declare the
+/// view-proj array at this length, so every multiview pipeline shares one
+/// uniform layout no matter how many views its pass actually uses.
+pub const MAX_MULTIVIEW_SHADOW_VIEWS: usize = 6;
+
+// Group 1 the shadow depth pipelines leave free (the depth pipeline layouts
+// bind only group 0). Holds the view-proj of every layer in the multiview set;
+// `perro_mv_view` is the private lane vs_main seeds from `@builtin(view_index)`
+// so the vertex-modifier helper -- which is shared with the single-view depth
+// path and takes no view argument -- can read it without a signature change.
+const MULTIVIEW_SHADOW_PRELUDE_WGSL: &str = "\
+struct PerroMultiviewShadow { view_proj: array<mat4x4<f32>, 6>, };
+@group(1) @binding(0) var<uniform> perro_mv_shadow: PerroMultiviewShadow;
+var<private> perro_mv_view: u32 = 0u;
+";
+
+fn multiview_replace(source: String, anchor: &str, replacement: &str) -> String {
+    assert!(
+        source.contains(anchor),
+        "multiview shadow shader patch anchor drifted: `{anchor}`"
+    );
+    source.replace(anchor, replacement)
+}
+
+/// Rewrite a single-view depth shader into its multiview shadow twin.
+///
+/// Three edits, all on the minified source (whitespace already collapsed to
+/// single spaces, so the anchors below are the source lines joined by one
+/// space -- see `perro_wgsl::optimize_source`):
+/// 1. prepend the group-1 view-proj array + the private view lane;
+/// 2. project through `perro_mv_shadow.view_proj[perro_mv_view]` instead of the
+///    single `scene.view_proj`;
+/// 3. take `@builtin(view_index)` in `vs_main` and seed the private lane.
+///
+/// Every anchor is asserted, so a drifting source fails the build instead of
+/// silently emitting a shader that writes all views with view 0's matrix.
+fn build_multiview_shadow_wgsl(base: &str) -> String {
+    let wgsl = multiview_replace(
+        base.to_string(),
+        "var clip = scene.view_proj * vec4<f32>(vertex.position, 1.0);",
+        "var clip = perro_mv_shadow.view_proj[perro_mv_view] * vec4<f32>(vertex.position, 1.0);",
+    );
+    let wgsl = multiview_replace(
+        wgsl,
+        "@builtin(instance_index) instance_index: u32) -> VertexOutput { ",
+        "@builtin(instance_index) instance_index: u32, @builtin(view_index) perro_view_index: u32) \
+         -> VertexOutput { perro_mv_view = perro_view_index; ",
+    );
+    let mut out = String::with_capacity(MULTIVIEW_SHADOW_PRELUDE_WGSL.len() + wgsl.len());
+    out.push_str(MULTIVIEW_SHADOW_PRELUDE_WGSL);
+    out.push_str(&wgsl);
+    out
+}
+
+#[inline]
+pub fn create_shadow_depth_multiview_shader_module_rigid(
+    device: &wgpu::Device,
+) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_shadow_depth_multiview_rigid"),
+        source: wgpu::ShaderSource::Wgsl(
+            build_multiview_shadow_wgsl(regular::DEPTH_PREPASS_RIGID_WGSL).into(),
+        ),
+    })
+}
+
+#[inline]
+pub fn create_shadow_depth_multiview_shader_module_rigid_packed_lod(
+    device: &wgpu::Device,
+) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_shadow_depth_multiview_rigid_packed_lod"),
+        source: wgpu::ShaderSource::Wgsl(
+            build_multiview_shadow_wgsl(&build_packed_lod_depth_rigid_wgsl()).into(),
+        ),
+    })
+}
+
+#[inline]
+pub fn create_shadow_depth_multiview_shader_module_skinned(
+    device: &wgpu::Device,
+) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_shadow_depth_multiview_skinned"),
+        source: wgpu::ShaderSource::Wgsl(
+            build_multiview_shadow_wgsl(regular::DEPTH_PREPASS_SKINNED_WGSL).into(),
+        ),
+    })
+}
+
 fn build_mesh_blend_mask_wgsl(base: &str) -> String {
     let mut out = String::with_capacity(base.len() + MESH_BLEND_MASK_FS_WGSL.len() + 1);
     out.push_str(base);
@@ -756,6 +848,68 @@ mod tests {
         Validator::new(ValidationFlags::all(), Capabilities::empty())
             .validate(&module)
             .unwrap_or_else(|err| panic!("{label}: {err}"));
+    }
+
+    /// The multiview patch is three string replacements on minified WGSL, the
+    /// exact shape that has silently no-opped before (newline anchors vs
+    /// minified source). Each `multiview_replace` asserts its own anchor, so a
+    /// drift panics here rather than shipping a shadow map where every view
+    /// writes with view 0's matrix.
+    #[test]
+    fn multiview_shadow_wgsl_patches_and_validates() {
+        for (label, base) in [
+            ("rigid", regular::DEPTH_PREPASS_RIGID_WGSL.to_string()),
+            ("skinned", regular::DEPTH_PREPASS_SKINNED_WGSL.to_string()),
+            ("packed_lod", build_packed_lod_depth_rigid_wgsl()),
+        ] {
+            let wgsl = build_multiview_shadow_wgsl(&base);
+            assert!(
+                wgsl.contains("@builtin(view_index) perro_view_index: u32"),
+                "{label}: vs_main never takes view_index"
+            );
+            assert!(
+                wgsl.contains("perro_mv_view = perro_view_index;"),
+                "{label}: private view lane never seeded"
+            );
+            assert!(
+                wgsl.contains("perro_mv_shadow.view_proj[perro_mv_view]"),
+                "{label}: projection still single-view"
+            );
+            assert!(
+                !wgsl.contains("scene.view_proj *"),
+                "{label}: a single-view projection survived the patch"
+            );
+            let module = naga::front::wgsl::parse_str(&wgsl)
+                .unwrap_or_else(|err| panic!("multiview {label}: {err}"));
+            Validator::new(ValidationFlags::all(), Capabilities::MULTIVIEW)
+                .validate(&module)
+                .unwrap_or_else(|err| panic!("multiview {label}: {err}"));
+        }
+    }
+
+    /// The WGSL declares the view-proj array at a literal length; the Rust
+    /// uniform is sized from the const. They must agree or the bind group is
+    /// short and every multiview pipeline fails validation.
+    #[test]
+    fn multiview_shadow_prelude_matches_view_count() {
+        assert!(
+            MULTIVIEW_SHADOW_PRELUDE_WGSL
+                .contains(&format!("array<mat4x4<f32>, {MAX_MULTIVIEW_SHADOW_VIEWS}>")),
+            "prelude array length drifted from MAX_MULTIVIEW_SHADOW_VIEWS"
+        );
+    }
+
+    /// The single-view depth prepass shares its source with the shadow path and
+    /// must NOT gain a multiview binding: it runs on a plain one-layer target.
+    #[test]
+    fn single_view_depth_wgsl_stays_multiview_free() {
+        for base in [
+            regular::DEPTH_PREPASS_RIGID_WGSL,
+            regular::DEPTH_PREPASS_SKINNED_WGSL,
+        ] {
+            assert!(!base.contains("view_index"));
+            assert!(base.contains("scene.view_proj *"));
+        }
     }
 
     #[test]

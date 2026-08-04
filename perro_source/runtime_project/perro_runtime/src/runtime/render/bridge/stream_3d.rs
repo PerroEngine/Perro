@@ -157,10 +157,45 @@ impl Runtime {
     pub(super) fn stream_member_3d(
         &mut self,
         node: NodeID,
+        stream_node: NodeID,
         camera_mask: BitMask,
         localize: &StreamLocalize3D,
         out: &mut Stream3DCollect,
     ) {
+        // Only sub-view targets compose camera-stream quads. Camera stream ->
+        // camera stream sampling can form target feedback cycles.
+        if self.is_sub_view_node(stream_node)
+            && let Some((transform, size, tint)) =
+                self.nodes
+                    .get(node)
+                    .and_then(|node_ref| match &node_ref.data {
+                        SceneNodeData::CameraStream3D(stream)
+                            if stream.visible
+                                && stream.stream.enabled
+                                && stream_render_mask_matches(
+                                    camera_mask,
+                                    stream.render_layers,
+                                ) =>
+                        {
+                            Some((stream.transform, stream.size, stream.tint))
+                        }
+                        _ => None,
+                    })
+        {
+            let model = self
+                .stream_localized_transform_3d(node, localize)
+                .unwrap_or(transform)
+                .to_mat4()
+                .to_cols_array_2d();
+            out.draws.push(CameraStreamDraw3DState::CameraStreamQuad {
+                texture: Self::camera_stream_texture_id(node),
+                tint: Runtime::color_modulate(tint, self.effective_self_modulate(node)),
+                node,
+                model,
+                size: [size[0].max(0.001), size[1].max(0.001)],
+            });
+            return;
+        }
         // nested sub-view quad.
         if let Some((transform, size, tint)) =
             self.nodes
@@ -708,8 +743,7 @@ impl Runtime {
                         simulation_delta: self.time.delta.max(0.0),
                         size: water_render_size_3d(water),
                         shape: water_shape_state_3d(water.shape),
-                        resolution: water.resolution,
-                        render_resolution: water.render_resolution,
+                        quality: water.quality,
                         depth: water.shape.depth(water.depth),
                         flow: [water.flow.x, water.flow.y],
                         wind: [water.wind.x, water.wind.y],
@@ -721,10 +755,6 @@ impl Runtime {
                         wake_strength: water.physics.wake_strength,
                         foam_strength: water.physics.foam_strength,
                         sample_readback_rate: water.physics.sample_readback_rate,
-                        lod_near_distance: water.lod.near_distance,
-                        lod_mid_distance: water.lod.mid_distance,
-                        lod_far_distance: water.lod.far_distance,
-                        lod_min_resolution: water.lod.min_resolution,
                         collision_layers: water.collision_layers,
                         collision_mask: water.collision_mask,
                         deep_color: water.optics.deep_color,

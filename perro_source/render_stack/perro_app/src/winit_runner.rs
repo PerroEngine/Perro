@@ -237,6 +237,7 @@ const TIMING_CSV_HEADER: &str = concat!(
     "shadow_multimesh_batch_draws,",
     "shadow_multimesh_instance_draws,shadow_multimesh_culled_layers,",
     "shadow_empty_layer_skips,",
+    "shadow_multiview_passes,",
     "stream_count,stream_renders,gpu_stream_encode_us,stream_pixels,",
     "stream_draw_calls_3d,stream_draw_batches_3d,stream_draw_triangles_3d,",
     "stream_render_passes,stream_shadow_layer_renders",
@@ -316,7 +317,7 @@ impl TimingCsvWriter {
         );
         let _ = write!(
             out,
-            ",{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            ",{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
             draw.draw_calls_2d,
             draw.draw_calls_3d,
             draw.sprite_batches_2d,
@@ -354,6 +355,7 @@ impl TimingCsvWriter {
             draw.shadow_multimesh_instance_draws,
             draw.shadow_multimesh_culled_layers,
             draw.shadow_empty_layer_skips,
+            draw.shadow_multiview_passes,
         );
         let _ = writeln!(
             out,

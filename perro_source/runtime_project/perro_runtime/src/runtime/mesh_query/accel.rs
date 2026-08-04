@@ -1,15 +1,10 @@
 use super::*;
 
-/// Byte budget for the process-global query-mesh cache. Query geometry is
+/// Byte budget for one [`Runtime`]'s query-mesh cache. Query geometry is
 /// rebuilt on demand from the mesh source / runtime mesh data, so eviction
 /// only costs a re-decode + BVH rebuild on the next query against that mesh.
 /// Mirrors the decoded-texture budget pattern in `perro_graphics` resources.
 const QUERY_MESH_CACHE_MAX_BYTES: usize = 64 * 1024 * 1024;
-
-pub(super) fn mesh_query_cache() -> &'static Mutex<QueryMeshCache> {
-    static CACHE: OnceLock<Mutex<QueryMeshCache>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(QueryMeshCache::default()))
-}
 
 #[inline]
 pub(super) fn runtime_mesh_query_cache_key(mesh_id: MeshID, revision: u64) -> u64 {
@@ -32,9 +27,18 @@ struct QueryMeshCacheEntry {
     last_used: u64,
 }
 
-/// Process-global cache of decoded query geometry (vertices + triangles +
-/// BVH), keyed by either `string_to_u64(source)` (source-path meshes) or
+/// Cache of decoded query geometry (vertices + triangles + BVH), keyed by
+/// either `string_to_u64(source)` (source-path meshes) or
 /// [`runtime_mesh_query_cache_key`] (runtime meshes, key encodes revision).
+///
+/// Lives on [`Runtime`], NOT in a static. Both key spaces are only unique
+/// within one runtime: `MeshID`s and revisions restart per `Runtime`, so a
+/// process-global map handed the second `Runtime`'s meshes the first one's
+/// geometry for every query, and a source path resolves against the runtime's
+/// own project. Any host with two live runtimes -- editor + play-mode preview,
+/// tooling, multi-instance embedding, one test binary -- hit that. Per-runtime
+/// also means the entries die with the runtime instead of squatting the budget
+/// until LRU pressure evicts them.
 ///
 /// Two leak guards on top of the plain map it replaced:
 /// - a runtime mesh's revision bump inserts under a NEW key, so the previous
@@ -44,7 +48,7 @@ struct QueryMeshCacheEntry {
 ///   least-recently-used eviction (touch-on-get), enforced only on inserts
 ///   that push the cache over budget.
 #[derive(Default)]
-pub(super) struct QueryMeshCache {
+pub(crate) struct QueryMeshCache {
     entries: AHashMap<u64, QueryMeshCacheEntry>,
     /// `mesh_id.as_u64()` -> cache key of the latest inserted revision.
     latest_runtime_key_by_mesh: AHashMap<u64, u64>,

@@ -7,12 +7,13 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+ahash = { version = "0.8.12", default-features = false, features = ["std"] }
 glam = "0.31.0"
-meshopt = "0.6.2"
 rayon = "1.10"
 
 [dev-dependencies]
 criterion = "0.5"
+gltf.workspace = true
 
 [[bench]]
 name = "lod_builder"

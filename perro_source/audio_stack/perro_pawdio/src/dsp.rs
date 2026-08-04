@@ -562,11 +562,7 @@ mod tests {
         };
         control.update_spatial(params);
         assert!(
-            control
-                .pending_wet
-                .lock()
-                .expect("stage slot")
-                .is_some(),
+            control.pending_wet.lock().expect("stage slot").is_some(),
             "worker stages the delay lines"
         );
 

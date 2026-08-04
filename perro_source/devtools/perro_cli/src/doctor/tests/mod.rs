@@ -19,6 +19,32 @@ fn temp_project() -> PathBuf {
 }
 
 #[test]
+fn removed_water_fidelity_field_is_hard_error_with_replacement() {
+    let project = temp_project();
+    fs::create_dir_all(project.join("res")).expect("test setup/result must succeed");
+    fs::write(
+        project.join("res/water.scn"),
+        r#"
+$root = @Water
+
+[Water]
+    [WaterBody3D]
+        resolution = (128, 128)
+    [/WaterBody3D]
+[/Water]
+"#,
+    )
+    .expect("test setup/result must succeed");
+
+    let mut report = ValidationReport::default();
+    validate_removed_scene_fields(&project, &mut report).expect("test setup/result must succeed");
+
+    assert_eq!(report.errors, 1);
+    assert!(report.messages[0].contains("resolution"));
+    assert!(report.messages[0].contains("quality"));
+}
+
+#[test]
 fn script_ref_missing_warns_and_existing_ref_stays_clean() {
     let project = temp_project();
     fs::create_dir_all(project.join("res/scripts")).expect("test setup/result must succeed");

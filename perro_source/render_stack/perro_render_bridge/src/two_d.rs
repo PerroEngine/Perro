@@ -1,5 +1,5 @@
 use super::*;
-use perro_structs::{AudioListenerOptions, BitMask};
+use perro_structs::{AudioListenerOptions, BitMask, WaterQuality};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Camera2DState {
@@ -320,8 +320,8 @@ pub struct Water2DState {
     pub simulation_delta: f32,
     pub size: [f32; 2],
     pub shape: WaterShapeState,
-    pub resolution: [u32; 2],
-    pub render_resolution: [u32; 2],
+    /// Single fidelity tier. Sim grid + mesh density derive from it.
+    pub quality: WaterQuality,
     pub depth: f32,
     pub flow: [f32; 2],
     pub wind: [f32; 2],
@@ -333,10 +333,6 @@ pub struct Water2DState {
     pub wake_strength: f32,
     pub foam_strength: f32,
     pub sample_readback_rate: f32,
-    pub lod_near_distance: f32,
-    pub lod_mid_distance: f32,
-    pub lod_far_distance: f32,
-    pub lod_min_resolution: [u32; 2],
     pub collision_layers: BitMask,
     pub collision_mask: BitMask,
     pub deep_color: Color,

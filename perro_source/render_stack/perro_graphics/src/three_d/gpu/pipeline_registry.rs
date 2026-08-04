@@ -105,6 +105,12 @@ pub struct SharedBindGroupLayouts3D {
     pub(crate) sky: wgpu::BindGroupLayout,
     pub(crate) mesh_blend_mask_id: wgpu::BindGroupLayout,
     pub(crate) mesh_blend_seam: wgpu::BindGroupLayout,
+    /// Group 1 of the multiview shadow depth pipelines: the view-proj of every
+    /// layer the pass covers, indexed by `@builtin(view_index)`. Group 0 stays
+    /// the ordinary camera layout, so a multiview pass reuses the existing
+    /// per-layer camera bind groups for everything that is view-invariant
+    /// (time, atlas resolution, skeletons, blend shapes, custom params).
+    pub(crate) shadow_multiview: wgpu::BindGroupLayout,
 }
 
 impl SharedBindGroupLayouts3D {
@@ -346,6 +352,24 @@ impl SharedBindGroupLayouts3D {
         let ibl = environment::create_environment_bgl(device);
         let mesh_blend_mask_id = mesh_blend_screen::create_mesh_blend_mask_id_bgl(device);
         let mesh_blend_seam = mesh_blend_screen::create_mesh_blend_seam_bgl(device);
+        let shadow_multiview = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("perro_shadow_multiview_bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(
+                        std::num::NonZeroU64::new(
+                            std::mem::size_of::<ShadowMultiviewUniform>() as u64
+                        )
+                        .expect("shadow multiview uniform size must be non-zero"),
+                    ),
+                },
+                count: None,
+            }],
+        });
         Self {
             camera,
             water_camera,
@@ -357,8 +381,44 @@ impl SharedBindGroupLayouts3D {
             sky,
             mesh_blend_mask_id,
             mesh_blend_seam,
+            shadow_multiview,
         }
     }
+}
+
+/// Full contiguous multiview mask for `views` layers, or `None` when the layer
+/// count cannot be a multiview pass.
+///
+/// `None` at 0 and 1 is deliberate and load-bearing: wgpu derives the pass's
+/// multiview-ness from the depth attachment's layer count, and a one-layer view
+/// is NOT multiview -- pass and pipeline must both carry `None` there, which is
+/// exactly the single-view path. Anything above
+/// [`MAX_MULTIVIEW_SHADOW_VIEWS`] is refused because the shaders declare their
+/// view-proj array at that length.
+#[inline]
+pub(super) fn multiview_view_mask(views: u32) -> Option<std::num::NonZeroU32> {
+    if views < 2 || views > MAX_MULTIVIEW_SHADOW_VIEWS as u32 {
+        return None;
+    }
+    std::num::NonZeroU32::new((1u32 << views) - 1)
+}
+
+/// Get-or-build one view-count entry of a multiview pipeline map. The keyspace
+/// is 2..=6, so a linear scan beats a hash map (same call the registry cache
+/// makes).
+fn multiview_pipeline(
+    cells: &Mutex<Vec<(u32, Arc<PipelinePair>)>>,
+    views: u32,
+    build: impl FnOnce(std::num::NonZeroU32) -> PipelinePair,
+) -> Arc<PipelinePair> {
+    let mask = multiview_view_mask(views).expect("multiview pipeline needs a 2..=6 view count");
+    let mut cells = cells.lock().expect("multiview pipeline map poisoned");
+    if let Some((_, pair)) = cells.iter().find(|(key, _)| *key == views) {
+        return pair.clone();
+    }
+    let pair = Arc::new(build(mask));
+    cells.push((views, pair.clone()));
+    pair
 }
 
 fn storage_ro_entry(binding: u32, visibility: wgpu::ShaderStages) -> wgpu::BindGroupLayoutEntry {
@@ -391,6 +451,11 @@ pub struct PipelineRegistry {
     multimesh_depth_layout: wgpu::PipelineLayout,
     depth_layout: wgpu::PipelineLayout,
     rigid_depth_layout: wgpu::PipelineLayout,
+    // Same group 0 as the single-view depth layouts, plus group 1 = the
+    // multiview view-proj array. Separate layouts (not an extra group on the
+    // shared ones) so the single-view depth prepass keeps its exact layout.
+    depth_multiview_layout: wgpu::PipelineLayout,
+    rigid_depth_multiview_layout: wgpu::PipelineLayout,
     mask_multimesh_layout: wgpu::PipelineLayout,
     mask_rigid_layout: wgpu::PipelineLayout,
     mask_skinned_layout: wgpu::PipelineLayout,
@@ -426,6 +491,14 @@ pub struct PipelineRegistry {
     shadow_depth_skinned: OnceLock<PipelinePair>,
     shadow_depth_rigid: OnceLock<PipelinePair>,
     shadow_depth_rigid_packed_lod: OnceLock<PipelinePair>,
+    // Multiview shadow depth, keyed by the pass's view count: wgpu requires the
+    // pipeline's `multiview_mask` to match the pass's exactly, and the encoder
+    // forms sets of 2..=MAX_MULTIVIEW_SHADOW_VIEWS layers. Keyed maps rather
+    // than one cell per count so a scene only ever compiles the counts its own
+    // light set produces (typically 4 for cascades and 6 for a point light).
+    shadow_depth_multiview_skinned: Mutex<Vec<(u32, Arc<PipelinePair>)>>,
+    shadow_depth_multiview_rigid: Mutex<Vec<(u32, Arc<PipelinePair>)>>,
+    shadow_depth_multiview_rigid_packed_lod: Mutex<Vec<(u32, Arc<PipelinePair>)>>,
     mask_rigid: OnceLock<PipelinePair>,
     mask_rigid_packed_lod: OnceLock<PipelinePair>,
     mask_skinned: OnceLock<PipelinePair>,
@@ -487,6 +560,18 @@ impl PipelineRegistry {
             bind_group_layouts: &[Some(&bgls.rigid_camera)],
             immediate_size: 0,
         });
+        let depth_multiview_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("perro_depth_multiview_pipeline_layout"),
+                bind_group_layouts: &[Some(&bgls.camera), Some(&bgls.shadow_multiview)],
+                immediate_size: 0,
+            });
+        let rigid_depth_multiview_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("perro_depth_multiview_pipeline_layout_rigid"),
+                bind_group_layouts: &[Some(&bgls.rigid_camera), Some(&bgls.shadow_multiview)],
+                immediate_size: 0,
+            });
         let mask_multimesh_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("perro_mesh_blend_mask_layout_multimesh"),
@@ -523,6 +608,8 @@ impl PipelineRegistry {
             multimesh_depth_layout,
             depth_layout,
             rigid_depth_layout,
+            depth_multiview_layout,
+            rigid_depth_multiview_layout,
             mask_multimesh_layout,
             mask_rigid_layout,
             mask_skinned_layout,
@@ -555,6 +642,9 @@ impl PipelineRegistry {
             shadow_depth_skinned: OnceLock::new(),
             shadow_depth_rigid: OnceLock::new(),
             shadow_depth_rigid_packed_lod: OnceLock::new(),
+            shadow_depth_multiview_skinned: Mutex::new(Vec::new()),
+            shadow_depth_multiview_rigid: Mutex::new(Vec::new()),
+            shadow_depth_multiview_rigid_packed_lod: Mutex::new(Vec::new()),
             mask_rigid: OnceLock::new(),
             mask_rigid_packed_lod: OnceLock::new(),
             mask_skinned: OnceLock::new(),
@@ -997,6 +1087,7 @@ impl PipelineRegistry {
                     &self.depth_layout,
                     &shader,
                     cull,
+                    None,
                 )
             })
         })
@@ -1011,6 +1102,7 @@ impl PipelineRegistry {
                     &self.rigid_depth_layout,
                     &shader,
                     cull,
+                    None,
                 )
             })
         })
@@ -1025,6 +1117,63 @@ impl PipelineRegistry {
                     &self.rigid_depth_layout,
                     &shader,
                     cull,
+                    None,
+                )
+            })
+        })
+    }
+
+    /// Multiview shadow depth for a pass covering `views` layers.
+    ///
+    /// `views` is the pass's layer count; the returned pair is built with
+    /// `multiview_mask = (1 << views) - 1`, the contiguous full mask wgpu
+    /// demands unless `SELECTIVE_MULTIVIEW` is enabled. Callers must hold the
+    /// returned `Arc` for as long as the render pass borrows the pipeline.
+    pub(crate) fn shadow_depth_multiview_rigid(&self, views: u32) -> Arc<PipelinePair> {
+        multiview_pipeline(&self.shadow_depth_multiview_rigid, views, |mask| {
+            let shader = create_shadow_depth_multiview_shader_module_rigid(&self.device);
+            self.pair(|cull| {
+                create_shadow_depth_pipeline_rigid(
+                    &self.device,
+                    &self.rigid_depth_multiview_layout,
+                    &shader,
+                    cull,
+                    Some(mask),
+                )
+            })
+        })
+    }
+
+    pub(crate) fn shadow_depth_multiview_rigid_packed_lod(&self, views: u32) -> Arc<PipelinePair> {
+        multiview_pipeline(
+            &self.shadow_depth_multiview_rigid_packed_lod,
+            views,
+            |mask| {
+                let shader =
+                    create_shadow_depth_multiview_shader_module_rigid_packed_lod(&self.device);
+                self.pair(|cull| {
+                    create_shadow_depth_pipeline_rigid_packed_lod(
+                        &self.device,
+                        &self.rigid_depth_multiview_layout,
+                        &shader,
+                        cull,
+                        Some(mask),
+                    )
+                })
+            },
+        )
+    }
+
+    pub(crate) fn shadow_depth_multiview_skinned(&self, views: u32) -> Arc<PipelinePair> {
+        multiview_pipeline(&self.shadow_depth_multiview_skinned, views, |mask| {
+            let shader = create_shadow_depth_multiview_shader_module_skinned(&self.device);
+            self.pair(|cull| {
+                create_shadow_depth_pipeline_skinned(
+                    &self.device,
+                    &self.depth_multiview_layout,
+                    &shader,
+                    cull,
+                    Some(mask),
                 )
             })
         })
@@ -1183,5 +1332,44 @@ impl PipelineRegistryCache {
         ));
         registries.push(((color_format, sample_count), registry.clone()));
         registry
+    }
+}
+
+#[cfg(test)]
+mod multiview_mask_tests {
+    use super::{MAX_MULTIVIEW_SHADOW_VIEWS, multiview_view_mask};
+
+    /// A 2..=6 layer set gets the contiguous full mask. Sparse masks would need
+    /// `SELECTIVE_MULTIVIEW`, which nothing here requests, so the mask must
+    /// always be `(1 << views) - 1` for a view spanning exactly those layers.
+    #[test]
+    fn mask_is_the_contiguous_full_mask() {
+        assert_eq!(multiview_view_mask(2).map(|m| m.get()), Some(0b11));
+        assert_eq!(multiview_view_mask(4).map(|m| m.get()), Some(0b1111));
+        assert_eq!(multiview_view_mask(6).map(|m| m.get()), Some(0b11_1111));
+        for views in 2..=MAX_MULTIVIEW_SHADOW_VIEWS as u32 {
+            let mask = multiview_view_mask(views)
+                .expect("in-range view count")
+                .get();
+            assert_eq!(mask.count_ones(), views);
+            assert_eq!(mask.trailing_ones(), views);
+        }
+    }
+
+    /// 0 and 1 are NOT multiview: wgpu reads multiview-ness off the attachment's
+    /// layer count, and a one-layer view is a plain single-view pass whose
+    /// pipeline must also carry `None`.
+    #[test]
+    fn single_and_empty_sets_are_not_multiview() {
+        assert!(multiview_view_mask(0).is_none());
+        assert!(multiview_view_mask(1).is_none());
+    }
+
+    /// The shaders declare their view-proj array at `MAX_MULTIVIEW_SHADOW_VIEWS`,
+    /// so a longer set has no matrix to read and must be refused.
+    #[test]
+    fn sets_longer_than_the_shader_array_are_refused() {
+        assert!(multiview_view_mask(MAX_MULTIVIEW_SHADOW_VIEWS as u32 + 1).is_none());
+        assert!(multiview_view_mask(32).is_none());
     }
 }

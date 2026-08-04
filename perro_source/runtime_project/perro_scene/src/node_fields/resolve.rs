@@ -6,4 +6,5 @@ mod string_fields;
 pub(super) use string_fields::*;
 #[path = "resolve/shared.rs"]
 mod shared;
+pub use shared::water_body_removed_field;
 pub(super) use shared::*;

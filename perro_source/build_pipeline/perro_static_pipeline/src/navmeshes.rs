@@ -1,4 +1,8 @@
-use crate::{ResFileTree, StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, prune_embedded_dir, res_dir, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn};
+use crate::{
+    ResFileTree, StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes,
+    prune_embedded_dir, res_dir, static_dir, write_hash_const, write_if_changed,
+    write_static_lookup_fn,
+};
 use perro_asset_formats::pnav;
 use perro_resource_api::sub_apis::parse_pnav_resource_bytes;
 use std::{collections::HashSet, fmt::Write as _, fs, path::Path};
@@ -141,7 +145,8 @@ mod tests {
             embedded_dir: embedded_dir.clone(),
             asset_prefix: "res://".to_string(),
         }));
-        let result = generate_static_navmeshes(&root, &crate::ResFileTree::scan(&root).expect("res scan"));
+        let result =
+            generate_static_navmeshes(&root, &crate::ResFileTree::scan(&root).expect("res scan"));
         set_static_pipeline_overrides(None);
         result.expect("generate static navmeshes");
 
@@ -170,7 +175,8 @@ mod tests {
             embedded_dir,
             asset_prefix: "res://".to_string(),
         }));
-        let result = generate_static_navmeshes(&root, &crate::ResFileTree::scan(&root).expect("res scan"));
+        let result =
+            generate_static_navmeshes(&root, &crate::ResFileTree::scan(&root).expect("res scan"));
         set_static_pipeline_overrides(None);
 
         assert!(result.is_err());

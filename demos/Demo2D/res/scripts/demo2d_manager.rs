@@ -903,8 +903,7 @@ methods!({
             let _ = with_node_mut!(ctx.run, WaterBody2D, water, |node| {
                 node.transform.position = base;
                 node.water.shape = WaterShape::rect(Vector2::new(170.0, 90.0));
-                node.water.resolution = [96, 48];
-                node.water.render_resolution = [96, 48];
+                node.water.quality = WaterQuality::Medium;
                 node.water.flow = Vector2::new(0.3 * (pool as f32 - 1.0), 0.0);
                 node.water.wind = Vector2::new(1.0, 0.0);
                 node.water.optics.deep_color = [

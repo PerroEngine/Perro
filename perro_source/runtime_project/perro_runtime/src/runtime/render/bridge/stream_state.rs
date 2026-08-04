@@ -3,7 +3,7 @@ use super::*;
 use crate::runtime::world_state::AutoResolutionState;
 
 /// Bucket 4 the long axis of an auto resolution, in target px. Rounds UP, so
-/// the target is never smaller than the exact supersampled rect.
+/// the target is never smaller than the exact 1x rect.
 const AUTO_RESOLUTION_BUCKET: u32 = 64;
 /// Refreshes a smaller size must hold b4 the target shrinks. Growth lands
 /// same-refresh; only shrink waits.
@@ -31,13 +31,10 @@ fn auto_resolution_bucket(exact: f32) -> u32 {
 /// the target aspect (a 100x60 rect -> 256x128), which the UI composite turns
 /// into letterbox bars, so only the long axis quantizes.
 ///
-/// `scale` = THE project supersample factor (`perro_structs::supersample_scale`
-/// via [`Runtime::auto_resolution_scale`]), the same number the UI raster
-/// target multiplies by. Never a local constant here: equal factors are what
-/// make this target land 1:1 with its footprint in the UI raster target instead
-/// of stacking a 2nd supersample. Display DPI never reaches the runtime
-/// (`ui_pixel_snap_scale_factor` is a hardcoded 1.0), so no
-/// `min(scale, scale_factor)` term.
+/// `scale` comes from `perro_structs::supersample_scale` via
+/// [`Runtime::auto_resolution_scale`]. It is the same fixed 1x value the UI
+/// raster uses. Never add a local multiplier here: equal factors keep this
+/// target matched to its UI footprint. Display DPI does not size this target.
 fn auto_resolution_target(size: [f32; 2], scale: f32) -> [u32; 2] {
     let exact = [(size[0] * scale).max(1.0), (size[1] * scale).max(1.0)];
     let long = usize::from(exact[1] > exact[0]);
@@ -57,37 +54,10 @@ fn auto_resolution_target(size: [f32; 2], scale: f32) -> [u32; 2] {
     out
 }
 
-/// How much a sub-view target oversamples its own on-screen rect, as ONE
-/// uniform factor.
-///
-/// Uniform, not per-axis: nested rects resolve against the owner's aspect-FIT
-/// basis (the biggest rect-aspect box inside the target), whose scale is the
-/// min over axes. A per-axis factor would skew the nested target's aspect and
-/// letterbox it whenever the owner's target aspect != its rect aspect.
-///
-/// Capped at `scale` (THE project supersample factor) so a nested target never
-/// lands BELOW the footprint it occupies in the owner target. Past that the
-/// owner already supersamples harder than the auto rule asks for, and the
-/// owner's own downsample carries the quality; dropping under 1:1 there would
-/// be visibly softer than the surface it composites into.
-///
-/// Degenerate rects (0 / NaN / sub-px) carry no usable ratio -> 1.0 (no
-/// divide), never an inf that would collapse a nested target to 1px.
-fn sub_view_supersample_factor(target: [u32; 2], logical: [f32; 2], scale: f32) -> f32 {
-    let scale = scale.max(1.0);
-    let axis = |target_px: u32, logical_px: f32| {
-        if logical_px >= 1.0 {
-            let factor = target_px as f32 / logical_px;
-            factor.is_finite().then_some(factor)
-        } else {
-            None
-        }
-    };
-    match (axis(target[0], logical[0]), axis(target[1], logical[1])) {
-        (Some(x), Some(y)) => x.min(y).clamp(1.0, scale),
-        (Some(v), None) | (None, Some(v)) => v.clamp(1.0, scale),
-        (None, None) => 1.0,
-    }
+/// Nested UI layout already returns owner-target pixels. Shared 1x sizing uses
+/// that footprint directly; no ancestor-derived divide or multiply applies.
+fn sub_view_supersample_factor(_target: [u32; 2], _logical: [f32; 2], _scale: f32) -> f32 {
+    1.0
 }
 
 /// Relative aspect difference btw two target sizes.
@@ -160,30 +130,20 @@ impl Default for StreamCollectedLanes {
 }
 
 impl Runtime {
-    /// THE supersample factor an auto (0) sub-view resolution multiplies by.
+    /// Shared 1x factor for auto (0) sub-view resolution.
     ///
-    /// # Single-supersample invariant
+    /// # Single-scale invariant
     ///
-    /// For any render target `T`: `effective_supersample(T) == own_factor(T)`.
-    /// `own_factor(T)` is derived from `T`'s OWN on-screen size (or the
-    /// resolution its author pinned) and never from its nesting depth or from
-    /// any ancestor's factor. Two targets in a parent/child chain each
-    /// supersample exactly once; the chain does not multiply.
+    /// UI and auto `UiSubView` targets both use 1x. Nesting does not multiply
+    /// that scale or derive another factor from an ancestor.
     ///
     /// Enforced in three places:
-    /// - here: the factor is ONE shared number
-    ///   (`perro_structs::supersample_scale`), so the UI raster target and an
-    ///   auto sub-view target can never drift apart and stack;
-    /// - `prepare_nested_sub_views`: a nested rect arrives in OWNER-TARGET px,
-    ///   so the owner's oversample is divided back out before this factor is
-    ///   applied;
-    /// - `sub_view_supersample_factor`: the divisor is capped at this factor,
-    ///   so a nested target never lands below its footprint in the owner.
+    /// `perro_structs::supersample_scale` remains the sole policy source so UI
+    /// and runtime sizing cannot drift apart.
     ///
     /// Camera streams (`CameraStream2D` / `CameraStream3D` / `UiCameraStream`)
-    /// never derive a size from an on-screen rect: their resolution is the
-    /// author's, so their own factor is 1.0 by construction and they cannot
-    /// stack from either side of a nesting chain.
+    /// never derive a size from an on-screen rect: their resolution stays the
+    /// author's and cannot inherit this scale.
     pub(crate) fn auto_resolution_scale(&self) -> f32 {
         perro_structs::supersample_scale_f32(
             self.project()
@@ -215,15 +175,9 @@ impl Runtime {
         self.compute_ui_rect(node, root, computed, scales, auto)
     }
 
-    /// `owner_supersample` = owner target px / owner on-screen logical px,
-    /// uniform + capped (see `sub_view_supersample_factor`). Nested rects come
-    /// out of `nested_ui_sub_view_rect` in the OWNER
-    /// TARGET's pixel space, which already carries the owner's supersample.
-    /// Feeding that straight to `auto_resolution_target` would apply the
-    /// project supersample factor a 2nd time and compound per nesting level (4x
-    /// px @ depth 1, 16x @ depth 2). Divide it back out so each level
-    /// supersamples exactly once against its true on-screen size. This is the
-    /// nesting half of the invariant on `Runtime::auto_resolution_scale`.
+    /// Nested rects come from `nested_ui_sub_view_rect` in owner-target pixels.
+    /// `owner_supersample` stays 1 under the shared policy, so the rect passes
+    /// through unchanged before 1x auto sizing.
     fn prepare_nested_sub_views(
         &mut self,
         owner: NodeID,
@@ -241,6 +195,24 @@ impl Runtime {
             let Some(scene_node) = self.nodes.get(node) else {
                 continue;
             };
+            let camera_stream = match &scene_node.data {
+                SceneNodeData::CameraStream2D(stream) => Some(stream.stream.clone()),
+                SceneNodeData::CameraStream3D(stream) => Some(stream.stream.clone()),
+                SceneNodeData::UiCameraStream(stream) => Some(stream.stream.clone()),
+                _ => None,
+            };
+            if let Some(stream) = camera_stream {
+                if !self.is_effectively_visible(node) {
+                    self.queue_camera_stream_remove(node);
+                    continue;
+                }
+                if let Some(state) = self.camera_stream_state(node, &stream) {
+                    self.queue_camera_stream_upsert(node, Arc::new(state));
+                } else {
+                    self.queue_camera_stream_remove(node);
+                }
+                continue;
+            }
             let (view, auto_size) = match &scene_node.data {
                 SceneNodeData::UiSubView(view) => {
                     let view = SubView::from(view.as_ref());
@@ -270,8 +242,14 @@ impl Runtime {
                         });
                     (view, auto_size)
                 }
-                SceneNodeData::SubView2D(view) => (view.sub_view.clone(), None),
-                SceneNodeData::SubView3D(view) => (view.sub_view.clone(), None),
+                SceneNodeData::SubView2D(view) => (
+                    view.sub_view.clone(),
+                    Some([owner_resolution[0] as f32, owner_resolution[1] as f32]),
+                ),
+                SceneNodeData::SubView3D(view) => (
+                    view.sub_view.clone(),
+                    Some([owner_resolution[0] as f32, owner_resolution[1] as f32]),
+                ),
                 _ => continue,
             };
             if !self.is_effectively_visible(node) {
@@ -444,7 +422,7 @@ impl Runtime {
             if let (Some(mask), Some(out), Some(localize)) =
                 (three_d, out_3d.as_mut(), localize_3d.as_ref())
             {
-                self.stream_member_3d(node, mask, localize, out);
+                self.stream_member_3d(node, stream_node, mask, localize, out);
             }
         }
         let mut lanes = StreamCollectedLanes::default();
@@ -658,10 +636,8 @@ impl Runtime {
                 view.resolution.y.clamp(1, 8192),
             ];
         }
-        // `None` = no on-screen size is knowable for this host (SubView2D /
-        // SubView3D live in world units, not px). The 1x1 fallback bottoms out
-        // at one bucket; the node defaults carry an explicit 512x512 so the
-        // branch above normally wins.
+        // World-space hosts pass their current render target size: main
+        // viewport at the root, owner sub-view resolution when nested.
         let size = auto_size.unwrap_or([1.0, 1.0]);
         let mut want = auto_resolution_target(size, self.auto_resolution_scale());
         // one explicit axis: it pins that side, the other keeps its bucket.
@@ -690,11 +666,8 @@ impl Runtime {
 
         let resolution = self.sub_view_resolution(view_node, view, auto_size);
 
-        // How much this target oversamples its own on-screen rect. Auto res is
-        // ~the project supersample factor (bucketing drifts it); an explicit
-        // `resolution` is whatever the author picked. No known logical size
-        // (SubView2D / SubView3D render targets) => the target IS the logical
-        // size, 1.0.
+        // Shared auto scale is 1x. Explicit targets keep author size. World
+        // sub-views have no logical UI rect, so their divisor is also 1x.
         let owner_supersample = match auto_size {
             Some(size) => {
                 sub_view_supersample_factor(resolution, size, self.auto_resolution_scale())
@@ -890,14 +863,15 @@ impl Runtime {
 #[cfg(test)]
 mod stream_retention_tests {
     use super::*;
-    use perro_nodes::{AmbientLight2D, Node3D, SubView3D as SubView3DNode};
+    use perro_nodes::{
+        AmbientLight2D, Camera2D, CameraStream2D as CameraStream2DNode, Node3D,
+        SubView3D as SubView3DNode, UiCameraStream,
+    };
     use perro_runtime_api::sub_apis::NodeAPI;
     use perro_structs::TextureFilterMode;
 
-    /// The factor a default (filtering) project runs at. `Runtime::new()` has
-    /// no project, so `auto_resolution_scale` falls back to the same default.
+    /// Shared 1x scale. Texture filter mode never changes target size.
     const SCALE: f32 = perro_structs::supersample_scale_f32(TextureFilterMode::LinearMipmap);
-    /// A point-sampled (pixel-art) project opts out of supersampling entirely.
     const NEAREST_SCALE: f32 = perro_structs::supersample_scale_f32(TextureFilterMode::Nearest);
 
     fn sub_view_of(runtime: &Runtime, view: NodeID) -> SubView {
@@ -1014,13 +988,14 @@ mod stream_retention_tests {
             let got_aspect = target[0] as f32 / target[1] as f32;
             assert!((got_aspect - want_aspect).abs() / want_aspect < 0.01);
         }
-        // exact-bucket 16:9 rects keep their exact supersampled target.
-        assert_eq!(auto_resolution_target([320.0, 180.0], SCALE), [640, 360]);
-        assert_eq!(auto_resolution_target([1280.0, 720.0], SCALE), [2560, 1440]);
+        // exact-bucket 16:9 rects keep their exact 1x target.
+        assert_eq!(auto_resolution_target([320.0, 180.0], SCALE), [320, 180]);
+        assert_eq!(auto_resolution_target([1280.0, 720.0], SCALE), [1280, 720]);
         // clamped, not overflowed; degenerate input never panics.
-        assert_eq!(auto_resolution_target([f32::MAX, f32::MAX], SCALE), [
-            8192, 8192
-        ]);
+        assert_eq!(
+            auto_resolution_target([f32::MAX, f32::MAX], SCALE),
+            [8192, 8192]
+        );
         assert_eq!(auto_resolution_target([f32::NAN, 0.0], SCALE), [64, 64]);
     }
 
@@ -1046,7 +1021,7 @@ mod stream_retention_tests {
         let mut state = AutoResolutionState::default();
         let big = state.resolve(auto_resolution_target([1000.0, 1000.0], SCALE));
         // one bucket smaller, same aspect: hold applies.
-        let want = auto_resolution_target([992.0, 992.0], SCALE);
+        let want = auto_resolution_target([960.0, 960.0], SCALE);
         assert!(want[0] < big[0]);
         for _ in 0..AUTO_RESOLUTION_SHRINK_HOLD - 1 {
             assert_eq!(state.resolve(want), big);
@@ -1090,37 +1065,33 @@ mod stream_retention_tests {
         }
     }
 
-    /// `sub_view_supersample_factor` divides the owner's oversample back out of
-    /// a nested rect. Without it the project supersample factor compounds per
-    /// nesting level (measured: 3 levels each 0.5x its parent all landed on
-    /// 1920x1080 instead of 1920x1080 / 960x540 / 512x288).
+    /// Shared 1x policy never divides by a filter-driven oversample. Even an
+    /// explicit oversized owner stays capped at 1x for nested auto sizing.
     #[test]
-    fn sub_view_supersample_factor_divides_owner_oversample_back_out() {
-        // auto res: target is the project factor x the on-screen rect.
+    fn sub_view_supersample_factor_stays_one_at_one_x_policy() {
         assert_eq!(
             sub_view_supersample_factor([1920, 1080], [960.0, 540.0], SCALE),
-            2.0
+            1.0
         );
         // 1:1 target adds no oversample to divide out.
         assert_eq!(
             sub_view_supersample_factor([960, 540], [960.0, 540.0], SCALE),
             1.0
         );
-        // Past 2x the cap holds, so a nested target never drops below the
-        // footprint it occupies in the owner target.
+        // Explicit oversize never raises the shared factor.
         assert_eq!(
             sub_view_supersample_factor([3840, 2160], [960.0, 540.0], SCALE),
-            2.0
+            1.0
         );
         // Owner target aspect != rect aspect: uniform min-axis factor, so the
         // nested target keeps its aspect instead of letterboxing.
         assert_eq!(
             sub_view_supersample_factor([960, 1080], [320.0, 180.0], SCALE),
-            2.0
+            1.0
         );
         assert_eq!(
             sub_view_supersample_factor([480, 1080], [320.0, 180.0], SCALE),
-            1.5
+            1.0
         );
         // Degenerate logical sizes must not produce inf/NaN (would collapse a
         // nested target to 1px) -> neutral 1.0.
@@ -1139,7 +1110,7 @@ mod stream_retention_tests {
         // One usable axis still yields a factor.
         assert_eq!(
             sub_view_supersample_factor([1920, 1080], [960.0, 0.0], SCALE),
-            2.0
+            1.0
         );
         // Never scales a nested rect UP.
         assert_eq!(
@@ -1148,27 +1119,24 @@ mod stream_retention_tests {
         );
     }
 
-    /// End-to-end shape of the fix: a level-N rect arrives in owner-target px,
-    /// and dividing by the owner factor before `auto_resolution_target` keeps
-    /// each level supersampling exactly once. Mirrors sv_nested.scn (each level
-    /// half its parent on both axes) at a 1920x1080 window.
+    /// Each nested level uses its owner-target footprint at 1x. Bucketing may
+    /// round up, but no filter-driven multiplier compounds with depth.
     #[test]
     fn nested_auto_resolution_halves_per_level_instead_of_compounding() {
         // depth 0: rect is real screen px.
         let l1 = auto_resolution_target([960.0, 540.0], SCALE);
-        assert_eq!(l1, [1920, 1080]);
+        assert_eq!(l1, [960, 540]);
 
-        // depth 1: rect measured in the L1 TARGET = 960x540 target px.
+        // depth 1: half the L1 target.
         let f1 = sub_view_supersample_factor(l1, [960.0, 540.0], SCALE);
-        assert_eq!(f1, 2.0);
-        let l2 = auto_resolution_target([960.0 / f1, 540.0 / f1], SCALE);
-        assert_eq!(l2, [960, 540]);
+        assert_eq!(f1, 1.0);
+        let l2 = auto_resolution_target([480.0 / f1, 270.0 / f1], SCALE);
+        assert_eq!(l2, [512, 288]);
 
-        // depth 2: rect measured in the L2 target = 480x270 target px.
+        // depth 2: half the L2 target.
         let f2 = sub_view_supersample_factor(l2, [480.0, 270.0], SCALE);
-        let l3 = auto_resolution_target([480.0 / f2, 270.0 / f2], SCALE);
-        // 240x135 * 2 = 480x270, long axis buckets up to 512.
-        assert_eq!(l3, [512, 288]);
+        let l3 = auto_resolution_target([256.0 / f2, 144.0 / f2], SCALE);
+        assert_eq!(l3, [256, 144]);
 
         // the whole point: strictly shrinking, not 3x the same target.
         assert!(l3[0] < l2[0] && l2[0] < l1[0]);
@@ -1176,21 +1144,16 @@ mod stream_retention_tests {
             .iter()
             .map(|r| u64::from(r[0]) * u64::from(r[1]))
             .sum();
-        // compounding cost 3 x 1920x1080 = 6_220_800 px.
-        assert_eq!(total, 2_739_456);
+        assert_eq!(total, 702_720);
     }
 
-    /// THE INVARIANT, stated as a test: for any target,
-    /// `effective_supersample(T) == own_factor(T)`, at every nesting depth.
+    /// THE INVARIANT: every auto target uses its own 1x rect at every depth.
     ///
-    /// Walks 6 levels of the real pipeline shape (measure rect in owner-target
-    /// px -> divide the owner factor out -> supersample once) and asserts each
-    /// level's target is exactly its OWN on-screen size x the project factor
-    /// (bucket rounding aside, which only ever rounds UP and never by a whole
-    /// factor).
+    /// Walk 6 levels of target-space layout. Bucket rounding may round UP, but
+    /// no filter or ancestor multiplier may enter target sizing.
     #[test]
-    fn effective_supersample_equals_own_factor_at_every_depth() {
-        for scale in [SCALE, NEAREST_SCALE] {
+    fn effective_scale_stays_one_at_every_depth() {
+        for scale in [SCALE] {
             // level 0 on-screen size, then each level is half its parent.
             let mut on_screen = [960.0f32, 540.0];
             let mut owner: Option<([u32; 2], [f32; 2])> = None;
@@ -1210,11 +1173,7 @@ mod stream_retention_tests {
                         (auto_resolution_target(divided, scale), owner_factor)
                     }
                 };
-                // THIS target measured against its OWN on-screen size. The only
-                // slack permitted over `on_screen * scale` is the long-axis
-                // bucket, which rounds UP by < AUTO_RESOLUTION_BUCKET px. A
-                // leaked ancestor factor would instead multiply the whole
-                // target, which cannot hide inside one bucket.
+                // Only long-axis bucket slack may exceed the 1x rect.
                 let long = usize::from(on_screen[1] > on_screen[0]);
                 let exact = on_screen[long] * scale;
                 let got = target[long] as f32;
@@ -1233,19 +1192,17 @@ mod stream_retention_tests {
         }
     }
 
-    /// A `Nearest` project drops the supersample everywhere at once, so the
-    /// runtime target still lands 1:1 in the (now un-supersampled) UI raster
-    /// target. Both ends read the same function, so they cannot disagree.
+    /// Every filter mode uses the same 1x target policy.
     #[test]
-    fn nearest_filter_drops_the_factor_on_both_ends_together() {
+    fn every_filter_mode_keeps_one_x_on_both_ends() {
+        assert_eq!(SCALE, 1.0);
         assert_eq!(NEAREST_SCALE, 1.0);
         // target == rect: the depth-0 footprint in a 1x UI raster target.
         assert_eq!(
             auto_resolution_target([960.0, 540.0], NEAREST_SCALE),
             [960, 540]
         );
-        // No oversample exists to divide back out, and the cap is 1.0, so a
-        // nested level cannot be scaled up either.
+        // No filter mode creates an oversample to divide back out.
         assert_eq!(
             sub_view_supersample_factor([960, 540], [960.0, 540.0], NEAREST_SCALE),
             1.0
@@ -1260,9 +1217,10 @@ mod stream_retention_tests {
             sub_view_supersample_factor([1920, 1080], [960.0, 540.0], 0.0),
             1.0
         );
-        assert_eq!(auto_resolution_target([320.0, 180.0], NEAREST_SCALE), [
-            320, 180
-        ]);
+        assert_eq!(
+            auto_resolution_target([320.0, 180.0], NEAREST_SCALE),
+            [320, 180]
+        );
     }
 
     /// TASK 3 path: camera streams (`CameraStream2D` / `CameraStream3D` /
@@ -1308,17 +1266,12 @@ mod stream_retention_tests {
         assert_eq!(again.resolution, [829, 467]);
     }
 
-    /// TASK 3 path: `SubView2D` / `SubView3D` hosts live in world units, so no
-    /// on-screen px size is knowable and every call site passes `auto_size:
-    /// None`. Their target is their explicit `resolution` (512x512 by default),
-    /// own factor 1.0.
-    ///
-    /// LATENT LIMITATION locked here: an author who zeroes `resolution` to ask
-    /// for "auto" gets the 1x1 fallback, i.e. one bucket (64x64), NOT a target
-    /// derived from `size`. Auto resolution is meaningful only for `UiSubView`.
+    /// World-space hosts use the current render target when resolution is auto:
+    /// main viewport at the root, owner target when nested.
     #[test]
-    fn world_space_sub_views_use_explicit_resolution_and_bottom_out_at_one_bucket() {
+    fn world_space_sub_views_use_explicit_or_current_target_resolution() {
         let mut runtime = Runtime::new();
+        runtime.set_viewport_size(1280, 720);
         let (view, _light, _mover) = retention_scene(&mut runtime);
         let mut sub_view = sub_view_of(&runtime, view);
         // node default: explicit, so auto resolution never engages.
@@ -1328,20 +1281,16 @@ mod stream_retention_tests {
             .expect("test or bench setup must succeed");
         assert_eq!(state.resolution, [512, 512]);
 
-        // zeroed = "auto", but there is no rect to scale: one bucket, both
-        // scales. Not `size`-derived; documented above.
+        // zeroed = auto -> main viewport target.
         sub_view.resolution = perro_structs::UVector2::new(0, 0);
         let state = runtime
-            .sub_view_state(view, &sub_view, None)
+            .sub_view_state(view, &sub_view, Some([1280.0, 720.0]))
             .expect("test or bench setup must succeed");
-        assert_eq!(state.resolution, [AUTO_RESOLUTION_BUCKET; 2]);
+        assert_eq!(state.resolution, [1280, 720]);
     }
 
-    /// TASK 3 path: mixed nesting. A sub-view whose OWNER is a camera stream
-    /// gets its rect in real screen/world px (a camera stream carries no
-    /// oversample to divide out), so its target is its own factor once. And a
-    /// camera stream nested under a sub-view keeps its pinned resolution. The
-    /// chain is factor-free in both directions.
+    /// Mixed nesting: auto sub-view uses its 1x rect; camera stream keeps its
+    /// pinned resolution. No scale crosses either composition edge.
     #[test]
     fn mixed_nesting_never_multiplies_factors() {
         // sub-view under a camera stream: the owner factor is 1.0, so the
@@ -1355,13 +1304,11 @@ mod stream_retention_tests {
             [nested_rect[0] / owner_factor, nested_rect[1] / owner_factor],
             SCALE,
         );
-        // 400x225 * 2 = 800x450, long axis buckets up to 832.
-        assert_eq!(nested, [832, 468]);
-        assert!((nested[0] as f32 / nested_rect[0]) < SCALE * 2.0);
+        // 400x225 at 1x, long axis bucketed up to 448.
+        assert_eq!(nested, [448, 252]);
+        assert!((nested[0] as f32 / nested_rect[0]) < 2.0);
 
-        // camera stream under a sub-view: the owner target oversamples 2x, and
-        // the stream's pinned resolution ignores it entirely (a camera stream
-        // has no rect -> target derivation to inherit the factor through).
+        // Camera stream under a 1x sub-view keeps pinned resolution.
         let ui_owner_target = auto_resolution_target([960.0, 540.0], SCALE);
         assert_eq!(
             sub_view_supersample_factor(ui_owner_target, [960.0, 540.0], SCALE),
@@ -1397,5 +1344,84 @@ mod stream_retention_tests {
             .camera_stream_state(stream_node, &stream)
             .expect("test or bench setup must succeed");
         assert_eq!(state.resolution, [300, 200]);
+        // Camera streams from one watched world never sample each other: that
+        // would permit A -> B -> A target feedback. A sub-view target is the
+        // composition owner, so it may sample the pinned stream target.
+        assert!(
+            !state
+                .draws_3d
+                .iter()
+                .any(|draw| matches!(draw, CameraStreamDraw3DState::CameraStreamQuad { .. }))
+        );
+
+        let outer_view = sub_view_of(&runtime, view);
+        let outer = runtime
+            .sub_view_state(view, &outer_view, None)
+            .expect("outer SubView3D state");
+        assert!(outer.draws_3d.iter().any(|draw| matches!(
+            draw,
+            CameraStreamDraw3DState::CameraStreamQuad { node, texture, .. }
+                if *node == stream_node
+                    && *texture == Runtime::camera_stream_texture_id(stream_node)
+        )));
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+                if *node == stream_node && state.resolution == [300, 200]
+        )));
+    }
+
+    #[test]
+    fn sub_view_composes_2d_and_ui_camera_streams_at_pinned_resolution() {
+        let mut runtime = Runtime::new();
+        let (view, _light, _mover) = retention_scene(&mut runtime);
+        let camera = NodeAPI::create::<Camera2D>(&mut runtime);
+        let stream_2d = NodeAPI::create::<CameraStream2DNode>(&mut runtime);
+        let stream_ui = NodeAPI::create::<UiCameraStream>(&mut runtime);
+        for node in [camera, stream_2d, stream_ui] {
+            assert!(runtime.reparent(view, node));
+        }
+        if let Some(mut node) = runtime.nodes.get_mut(camera)
+            && let SceneNodeData::Camera2D(camera) = &mut node.data
+        {
+            camera.active = true;
+        }
+        if let Some(mut node) = runtime.nodes.get_mut(stream_2d)
+            && let SceneNodeData::CameraStream2D(stream) = &mut node.data
+        {
+            stream.stream.camera = camera;
+            stream.stream.resolution = perro_structs::UVector2::new(321, 181);
+        }
+        if let Some(mut node) = runtime.nodes.get_mut(stream_ui)
+            && let SceneNodeData::UiCameraStream(stream) = &mut node.data
+        {
+            stream.stream.camera = camera;
+            stream.stream.resolution = perro_structs::UVector2::new(333, 187);
+            stream.base.layout.size = perro_ui::UiVector2::pixels(100.0, 50.0);
+        }
+
+        let outer_view = sub_view_of(&runtime, view);
+        let outer = runtime
+            .sub_view_state(view, &outer_view, None)
+            .expect("outer SubView3D state");
+        for stream in [stream_2d, stream_ui] {
+            assert!(
+                outer
+                    .sprites_2d
+                    .iter()
+                    .any(|sprite| sprite.texture == Runtime::camera_stream_texture_id(stream))
+            );
+        }
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        for (stream, resolution) in [(stream_2d, [321, 181]), (stream_ui, [333, 187])] {
+            assert!(commands.iter().any(|command| matches!(
+                command,
+                RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+                    if *node == stream && state.resolution == resolution
+            )));
+        }
     }
 }

@@ -85,11 +85,15 @@ var<uniform> params: Params;
 var<storage, read> coastline_cells: array<vec4<f32>>;
 struct WaterRenderChunk {
     water_idx: u32,
-    render_width: u32,
-    render_height: u32,
+    // surface quads per axis, power of 2
+    quads: u32,
     flags: u32,
-    uv_origin: vec2<f32>,
-    uv_scale: vec2<f32>,
+    // 4 x u8: neighbour snap ratio for -u/+u/-v/+v edges
+    edge_snap: u32,
+    chunk_x: u32,
+    chunk_y: u32,
+    chunks_x: u32,
+    chunks_y: u32,
 }
 @group(0) @binding(4)
 var<storage, read> render_chunks: array<WaterRenderChunk>;
@@ -705,44 +709,34 @@ struct WaterVertexLocal {
     valid: bool,
 }
 
-fn water_surface_vertex(w: Water, vertex_idx: u32) -> WaterVertexLocal {
-    let width = max(w.flags.x, 1u);
-    let height = max(w.flags.y, 1u);
-    let quad_width = width - 1u;
-    let quad_height = height - 1u;
-    let quad_count = quad_width * quad_height;
-    let cell = vertex_idx / 6u;
-    if w.sim.y == 0u || quad_count == 0u || cell >= quad_count {
-        return WaterVertexLocal(vec3<f32>(0.0), vec2<f32>(0.0), 0.0, false);
-    }
-    var corner = array<vec2<u32>, 6>(
-        vec2<u32>(0u, 0u),
-        vec2<u32>(1u, 1u),
-        vec2<u32>(1u, 0u),
-        vec2<u32>(0u, 0u),
-        vec2<u32>(0u, 1u),
-        vec2<u32>(1u, 1u),
+// Body uv from integer chunk coords + a 0..1 step inside the chunk. Integer
+// math on both sides of a shared edge lands on bit-identical uv, so neighbour
+// chunks at different LOD sample the same height. Never rebuild this from
+// float uv_origin/uv_scale: the last-ULP mismatch reopens the crack.
+fn water_chunk_uv(chunk: WaterRenderChunk, t: vec2<f32>) -> vec2<f32> {
+    return vec2<f32>(
+        (f32(chunk.chunk_x) + t.x) / f32(max(chunk.chunks_x, 1u)),
+        (f32(chunk.chunk_y) + t.y) / f32(max(chunk.chunks_y, 1u)),
     );
-    let cx = cell % quad_width;
-    let cy = cell / quad_width;
-    let c = corner[vertex_idx % 6u];
-    let uv = vec2<f32>(f32(cx + c.x) / f32(quad_width), f32(cy + c.y) / f32(quad_height));
-    let pos = vec3<f32>(
+}
+
+fn water_chunk_edge_snap(chunk: WaterRenderChunk, edge: u32) -> u32 {
+    return max((chunk.edge_snap >> (edge * 8u)) & 0xFFu, 1u);
+}
+
+fn water_chunk_local_pos(w: Water, uv: vec2<f32>) -> vec3<f32> {
+    return vec3<f32>(
         (uv.x - 0.5) * w.size_depth_time.x,
         water_height_geometry(w, uv, w.wave_profile.y),
         (uv.y - 0.5) * w.size_depth_time.y,
     );
-    return WaterVertexLocal(pos, uv, 0.0, true);
 }
 
 fn water_chunk_surface_vertex(w: Water, chunk: WaterRenderChunk, vertex_idx: u32) -> WaterVertexLocal {
-    let width = max(chunk.render_width, 2u);
-    let height = max(chunk.render_height, 2u);
-    let quad_width = width - 1u;
-    let quad_height = height - 1u;
-    let quad_count = quad_width * quad_height;
+    let quads = max(chunk.quads, 1u);
+    let quad_count = quads * quads;
     let cell = vertex_idx / 6u;
-    if w.sim.y == 0u || quad_count == 0u || cell >= quad_count {
+    if w.sim.y == 0u || cell >= quad_count {
         return WaterVertexLocal(vec3<f32>(0.0), vec2<f32>(0.0), 0.0, false);
     }
     var corner = array<vec2<u32>, 6>(
@@ -753,27 +747,51 @@ fn water_chunk_surface_vertex(w: Water, chunk: WaterRenderChunk, vertex_idx: u32
         vec2<u32>(0u, 1u),
         vec2<u32>(1u, 1u),
     );
-    let cx = cell % quad_width;
-    let cy = cell / quad_width;
     let c = corner[vertex_idx % 6u];
-    let local_uv = vec2<f32>(f32(cx + c.x) / f32(quad_width), f32(cy + c.y) / f32(quad_height));
-    let uv = chunk.uv_origin + local_uv * chunk.uv_scale;
-    let pos = vec3<f32>(
-        (uv.x - 0.5) * w.size_depth_time.x,
-        water_height_geometry(w, uv, w.wave_profile.y),
-        (uv.y - 0.5) * w.size_depth_time.y,
-    );
-    return WaterVertexLocal(pos, uv, 0.0, true);
+    var gx = cell % quads + c.x;
+    var gy = cell / quads + c.y;
+    // Crack fix: on an edge whose neighbour is coarser, snap the along-edge
+    // index down onto the neighbour's knots. Ratios are powers of 2 that divide
+    // `quads`, so the snapped point is exactly a neighbour vertex; the quads in
+    // between collapse to zero-area instead of leaving a gap.
+    if gx == 0u {
+        let r = water_chunk_edge_snap(chunk, 0u);
+        gy = (gy / r) * r;
+    } else if gx == quads {
+        let r = water_chunk_edge_snap(chunk, 1u);
+        gy = (gy / r) * r;
+    }
+    if gy == 0u {
+        let r = water_chunk_edge_snap(chunk, 2u);
+        gx = (gx / r) * r;
+    } else if gy == quads {
+        let r = water_chunk_edge_snap(chunk, 3u);
+        gx = (gx / r) * r;
+    }
+    let uv = water_chunk_uv(chunk, vec2<f32>(f32(gx), f32(gy)) / f32(quads));
+    return WaterVertexLocal(water_chunk_local_pos(w, uv), uv, 0.0, true);
 }
 
-fn water_rect_side_vertex(w: Water, side_idx: u32) -> WaterVertexLocal {
-    let width = max(w.flags.x, 1u);
-    let height = max(w.flags.y, 1u);
-    let horizontal_segments = width - 1u;
-    let vertical_segments = height - 1u;
-    let side_count = horizontal_segments * 2u + vertical_segments * 2u;
-    let cell = side_idx / 6u;
-    if side_count == 0u || cell >= side_count {
+// Side wall for the body-border edges this chunk owns. Runs at the chunk's own
+// edge tessellation (border edges never snap: no neighbour), so the wall top
+// shares the surface border vertices exactly.
+fn water_chunk_side_vertex(w: Water, chunk: WaterRenderChunk, side_idx: u32) -> WaterVertexLocal {
+    let quads = max(chunk.quads, 1u);
+    let per_edge = quads * 6u;
+    let slot = side_idx / per_edge;
+    let rem = side_idx % per_edge;
+    var edge = 4u;
+    var seen = 0u;
+    for (var e = 0u; e < 4u; e = e + 1u) {
+        if (chunk.flags & (1u << e)) != 0u {
+            if seen == slot {
+                edge = e;
+                break;
+            }
+            seen = seen + 1u;
+        }
+    }
+    if edge >= 4u {
         return WaterVertexLocal(vec3<f32>(0.0), vec2<f32>(0.0), 1.0, false);
     }
     var corner = array<vec2<f32>, 6>(
@@ -784,28 +802,21 @@ fn water_rect_side_vertex(w: Water, side_idx: u32) -> WaterVertexLocal {
         vec2<f32>(1.0, 1.0),
         vec2<f32>(0.0, 1.0),
     );
-    let c = corner[side_idx % 6u];
-    let top_t = 1.0 - c.y;
+    let c = corner[rem % 6u];
+    let t = (f32(rem / 6u) + c.x) / f32(quads);
+    // Perimeter winding: v=0 runs +u, u=1 runs +v, v=1 runs -u, u=0 runs -v.
     var uv = vec2<f32>(0.0, 0.0);
-
-    if cell < horizontal_segments {
-        let edge_t = (f32(cell) + c.x) / f32(horizontal_segments);
-        uv = vec2<f32>(edge_t, 0.0);
-    } else if cell < horizontal_segments + vertical_segments {
-        let seg = cell - horizontal_segments;
-        let edge_t = (f32(seg) + c.x) / f32(vertical_segments);
-        uv = vec2<f32>(1.0, edge_t);
-    } else if cell < horizontal_segments * 2u + vertical_segments {
-        let seg = cell - horizontal_segments - vertical_segments;
-        let edge_t = (f32(seg) + c.x) / f32(horizontal_segments);
-        uv = vec2<f32>(1.0 - edge_t, 1.0);
+    if edge == 0u {
+        uv = vec2<f32>(0.0, water_chunk_uv(chunk, vec2<f32>(0.0, 1.0 - t)).y);
+    } else if edge == 1u {
+        uv = vec2<f32>(1.0, water_chunk_uv(chunk, vec2<f32>(0.0, t)).y);
+    } else if edge == 2u {
+        uv = vec2<f32>(water_chunk_uv(chunk, vec2<f32>(t, 0.0)).x, 0.0);
     } else {
-        let seg = cell - horizontal_segments * 2u - vertical_segments;
-        let edge_t = (f32(seg) + c.x) / f32(vertical_segments);
-        uv = vec2<f32>(0.0, 1.0 - edge_t);
+        uv = vec2<f32>(water_chunk_uv(chunk, vec2<f32>(1.0 - t, 0.0)).x, 1.0);
     }
     let top = water_height_geometry(w, uv, w.wave_profile.y);
-    let y = mix(-max(w.size_depth_time.z, 0.001), top, top_t);
+    let y = mix(-max(w.size_depth_time.z, 0.001), top, 1.0 - c.y);
     let pos = vec3<f32>(
         (uv.x - 0.5) * w.size_depth_time.x,
         y,
@@ -884,17 +895,18 @@ fn vs_water_3d(
     let chunk = render_chunks[chunk_idx];
     let water_idx = chunk.water_idx;
     let w = waters[water_idx];
-    var surface_vertex_count = (max(chunk.render_width, 2u) - 1u) * (max(chunk.render_height, 2u) - 1u) * 6u;
+    let quads = max(chunk.quads, 1u);
+    var surface_vertex_count = quads * quads * 6u;
     var local_vertex = water_chunk_surface_vertex(w, chunk, vertex_idx);
-    if (chunk.flags & 2u) != 0u {
+    if (chunk.flags & 16u) != 0u {
         let counts = water_circle_counts(w);
         surface_vertex_count = counts.x * counts.y * 6u;
         local_vertex = water_circle_surface_vertex(w, vertex_idx);
         if vertex_idx >= surface_vertex_count {
             local_vertex = water_circle_side_vertex(w, vertex_idx - surface_vertex_count);
         }
-    } else if vertex_idx >= surface_vertex_count && (chunk.flags & 1u) != 0u {
-        local_vertex = water_rect_side_vertex(w, vertex_idx - surface_vertex_count);
+    } else if vertex_idx >= surface_vertex_count && (chunk.flags & 15u) != 0u {
+        local_vertex = water_chunk_side_vertex(w, chunk, vertex_idx - surface_vertex_count);
     } else if vertex_idx >= surface_vertex_count {
         local_vertex.valid = false;
     }
@@ -912,8 +924,11 @@ fn vs_water_3d(
         let t = w.wave_profile.y;
         // central differences: forward diffs bias the gradient per-quad and
         // neighbouring triangles disagree -> faceted grid seams under spec
-        let ndu = vec2<f32>(1.0 / max(f32(w.flags.x), 2.0), 0.0);
-        let ndv = vec2<f32>(0.0, 1.0 / max(f32(w.flags.y), 2.0));
+        // Epsilon rides the SIM grid, not the mesh: the height field's real
+        // detail limit is the cell size, and per-chunk LOD makes mesh spacing
+        // vary across one body.
+        let ndu = vec2<f32>(1.0 / max(f32(w.sim.z), 2.0), 0.0);
+        let ndv = vec2<f32>(0.0, 1.0 / max(f32(w.sim.w), 2.0));
         let h_l = water_height_geometry(w, local_vertex.uv - ndu, t);
         let h_r = water_height_geometry(w, local_vertex.uv + ndu, t);
         let h_d = water_height_geometry(w, local_vertex.uv - ndv, t);

@@ -4,6 +4,7 @@ impl Runtime {
     pub(in super::super) fn refresh_button_visual_states(
         &mut self,
         computed: &AHashMap<NodeID, ComputedUiRect>,
+        text_hovered: Option<NodeID>,
         command_ids: &mut Vec<NodeID>,
         command_seen: &mut ahash::AHashSet<NodeID>,
     ) {
@@ -81,6 +82,7 @@ impl Runtime {
             if !inactive {
                 collect_button_events(node, prev, next, &mut events);
             }
+            let state_changed = prev != next;
             let hover_target = if next == UiButtonVisualState::Neutral {
                 0.0
             } else {
@@ -91,7 +93,17 @@ impl Runtime {
             } else {
                 0.0
             };
-            let needs_motion = prev != next || motions.contains_key(&node);
+            // Color/stroke-only state changes snap in one command. A spring
+            // would produce identical rects plus the built-in wiggle for many
+            // frames, forcing needless UI raster work. Keep motion only when
+            // this transition changes button geometry explicitly.
+            let starts_motion = state_changed
+                && computed.get(&node).copied().is_some_and(|base_rect| {
+                    let z = self.ui_effective_z(node);
+                    ui_rect_state_from_node(&scene_node.data, base_rect, prev, z)
+                        != ui_rect_state_from_node(&scene_node.data, base_rect, next, z)
+                });
+            let needs_motion = starts_motion || motions.contains_key(&node);
             if needs_motion {
                 let motion = motions.entry(node).or_insert(UiButtonMotion {
                     hover: if prev == UiButtonVisualState::Neutral {
@@ -109,7 +121,7 @@ impl Runtime {
                     wiggle_time: 1.0,
                     wiggle_sign: 1.0,
                 });
-                if prev != next
+                if state_changed
                     && (prev == UiButtonVisualState::Neutral
                         || next == UiButtonVisualState::Neutral)
                 {
@@ -147,14 +159,13 @@ impl Runtime {
                     motions.remove(&node);
                 }
             }
-            if needs_motion && command_seen.insert(node) {
+            if (state_changed || needs_motion) && command_seen.insert(node) {
                 command_ids.push(node);
             }
         }
 
         self.render_ui.button_states = next_states;
         self.render_ui.button_motions = motions;
-        let text_hovered = self.hovered_text_edit(computed, UiInputSource::Kbm, pointer_point);
         let scrollbar_hovered = self.render_ui.active_scrollbar.is_some()
             || self.hit_scrollbar(pointer_point, computed).is_some();
         let cursor_icon = text_hovered

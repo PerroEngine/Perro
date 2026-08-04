@@ -1,9 +1,18 @@
-use crate::{ResFileTree, StaticPipelineError, asset_prefix, asset_uri, ensure_unique_hashes, res_dir, static_dir, strip_asset_prefix, write_hash_const, write_static_lookup_fn};
+use crate::{
+    ResFileTree, StaticPipelineError, asset_prefix, asset_uri, ensure_unique_hashes, res_dir,
+    static_dir, strip_asset_prefix, write_hash_const, write_static_lookup_fn,
+};
 use perro_asset_formats::source_ext;
 use perro_scene::{NodeType, Parser, SceneFieldName, SceneNodeData, SceneNodeDataBase, SceneValue};
 use perro_structs::Color;
 use rayon::prelude::*;
-use std::{borrow::Cow, collections::HashMap, fmt::Write as _, fs, io, path::Path};
+use std::{
+    borrow::Cow,
+    collections::{HashMap, HashSet},
+    fmt::Write as _,
+    fs, io,
+    path::Path,
+};
 
 pub fn generate_static_scenes(
     project_root: &Path,
@@ -20,6 +29,10 @@ pub fn generate_static_scenes(
         .collect::<Vec<_>>();
     scene_paths.sort();
     ensure_unique_hashes("scene", scene_paths.iter().map(String::as_str))?;
+    let bake_materials = crate::materials::collect_shader_bake_jobs(project_root, res_tree)?
+        .into_iter()
+        .map(|job| job.material_uri)
+        .collect::<HashSet<_>>();
 
     let mut emitted_scenes = scene_paths
         .par_iter()
@@ -38,6 +51,8 @@ pub fn generate_static_scenes(
             if let Some(mount_name) = static_dlc_mount_name() {
                 resolve_scene_dlc_self_paths(&mut parsed, &mount_name);
             }
+            rewrite_shader_use_material_refs(&mut parsed, &bake_materials)
+                .map_err(|err| io::Error::other(format!("{res_path}: {err}")))?;
             let emitted = emit_static_scene_const(res_path, &parsed)
                 .map_err(|err| io::Error::other(err.to_string()))?;
             Ok((res_path.clone(), emitted))
@@ -117,6 +132,115 @@ use std::borrow::Cow;\n\n\
         perro_asset_formats::dlc::DlcAssetAccess::ENGINE_LOCAL,
         scene_paths.iter().map(|path| (path.as_str(), false)),
     );
+    Ok(())
+}
+
+fn rewrite_shader_use_material_refs(
+    scene: &mut perro_scene::Scene,
+    bake_materials: &HashSet<String>,
+) -> Result<(), String> {
+    for node in scene.nodes.to_mut() {
+        rewrite_shader_use_data(&mut node.data, bake_materials)?;
+    }
+    Ok(())
+}
+
+fn rewrite_shader_use_data(
+    data: &mut SceneNodeData,
+    bake_materials: &HashSet<String>,
+) -> Result<(), String> {
+    if let Some(base) = data.base.as_mut() {
+        match base {
+            SceneNodeDataBase::Borrowed(value) => {
+                let mut owned = (**value).clone();
+                rewrite_shader_use_data(&mut owned, bake_materials)?;
+                *base = SceneNodeDataBase::Owned(Box::new(owned));
+            }
+            SceneNodeDataBase::Owned(value) => rewrite_shader_use_data(value, bake_materials)?,
+        }
+    }
+    if !matches!(
+        data.node_type,
+        NodeType::MeshInstance3D | NodeType::MultiMeshInstance3D
+    ) {
+        return Ok(());
+    }
+    let fields = data.fields.to_mut();
+    let top_mode = fields.iter().find_map(|(name, value)| {
+        (name.as_ref() == "shader_use")
+            .then(|| scene_string(value))
+            .flatten()
+            .map(str::to_owned)
+    });
+    if let Some(mode) = top_mode {
+        for (name, value) in fields.iter_mut() {
+            if name.as_ref() == "material" {
+                rewrite_material_value(value, &mode, bake_materials)?;
+            }
+        }
+    }
+    for (name, value) in fields.iter_mut() {
+        if name.as_ref() != "surfaces" {
+            continue;
+        }
+        let SceneValue::Array(items) = value else {
+            continue;
+        };
+        for item in items.to_mut() {
+            let SceneValue::Object(entries) = item else {
+                continue;
+            };
+            let mode = entries.iter().find_map(|(key, value)| {
+                (key.as_ref() == "shader_use")
+                    .then(|| scene_string(value))
+                    .flatten()
+                    .map(str::to_owned)
+            });
+            let Some(mode) = mode else {
+                continue;
+            };
+            for (key, value) in entries.to_mut() {
+                if matches!(key.as_ref(), "material" | "source") {
+                    rewrite_material_value(value, &mode, bake_materials)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn scene_string(value: &SceneValue) -> Option<&str> {
+    match value {
+        SceneValue::Str(value) => Some(value.as_ref()),
+        SceneValue::Key(value) => Some(value.as_ref()),
+        _ => None,
+    }
+}
+
+fn rewrite_material_value(
+    value: &mut SceneValue,
+    mode: &str,
+    bake_materials: &HashSet<String>,
+) -> Result<(), String> {
+    let SceneValue::Str(source) = value else {
+        return Ok(());
+    };
+    let bake_capable = bake_materials.contains(source.as_ref());
+    let next = match mode {
+        "baked" | "bake" | "auto" | "both" if bake_capable => {
+            crate::materials::baked_material_uri(source.as_ref())
+        }
+        "baked" | "bake" | "auto" | "both" => {
+            return Err(format!(
+                "material `{}` needs `release_bake = true`",
+                source.as_ref()
+            ));
+        }
+        "runtime" if bake_capable => crate::materials::runtime_material_uri(source.as_ref()),
+        "runtime" => return Ok(()),
+        _ => return Ok(()),
+    };
+    *source = Cow::Owned(next);
     Ok(())
 }
 
@@ -711,7 +835,7 @@ fn sanitize_ident(path: &str) -> String {
 mod tests {
     use super::{
         emit_static_node_type, emit_static_scene_const, emit_static_scene_value_str,
-        resolve_scene_dlc_self_paths,
+        resolve_scene_dlc_self_paths, rewrite_shader_use_material_refs,
     };
     use perro_scene::NodeType;
     use perro_scene::Parser;
@@ -813,6 +937,32 @@ mod tests {
             ),
             "SceneValue::Str(Cow::Borrowed(\"res://models/course.glb:mesh[0]\"))"
         );
+    }
+
+    #[test]
+    fn static_scene_rewrites_baked_material_ref() {
+        let mut scene = Parser::new(
+            r#"
+            [Backdrop]
+            [MeshInstance3D]
+                material = "res://materials/background.pmat"
+                shader_use = "baked"
+            [/MeshInstance3D]
+            [/Backdrop]
+            "#,
+        )
+        .parse_scene();
+
+        rewrite_shader_use_material_refs(
+            &mut scene,
+            &["res://materials/background.pmat".to_string()]
+                .into_iter()
+                .collect(),
+        )
+        .expect("bake ref rewrites");
+        let emitted = emit_static_scene_const("res://main.scn", &scene)
+            .expect("required value must be present");
+        assert!(emitted.code.contains("__perro_baked__/material_"));
     }
 
     #[test]

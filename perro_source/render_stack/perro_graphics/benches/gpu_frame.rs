@@ -1101,7 +1101,7 @@ fn sprite_command_z(i: u32, texture: TextureID, z_index: i32) -> RenderCommand {
 
 fn water_command_with_idle(
     i: u32,
-    resolution: u32,
+    _resolution: u32,
     impacts: u32,
     idle_mode: WaterIdleModeState,
 ) -> RenderCommand {
@@ -1116,8 +1116,7 @@ fn water_command_with_idle(
             simulation_delta: 1.0 / 60.0,
             size: [44.0, 44.0],
             shape: WaterShapeState::Rect,
-            resolution: [resolution, resolution],
-            render_resolution: [resolution, resolution],
+            quality: perro_structs::WaterQuality::Ultra,
             depth: 4.0,
             flow: [0.12, 0.03],
             wind: [1.0, 0.2],
@@ -1129,10 +1128,6 @@ fn water_command_with_idle(
             wake_strength: 1.0,
             foam_strength: 0.7,
             sample_readback_rate: 30.0,
-            lod_near_distance: 128.0,
-            lod_mid_distance: 384.0,
-            lod_far_distance: 896.0,
-            lod_min_resolution: [32, 32],
             collision_layers: BitMask::with([1]),
             collision_mask: BitMask::NONE,
             deep_color: color([0.02, 0.16, 0.28, 0.86]),
@@ -1183,8 +1178,8 @@ fn water_sim_command(i: u32, resolution: u32, impacts: u32) -> RenderCommand {
 
 fn water_sim_command_with_render(
     i: u32,
-    resolution: u32,
-    render_resolution: u32,
+    _resolution: u32,
+    _render_resolution: u32,
     impacts: u32,
 ) -> RenderCommand {
     let [x, y] = grid2(i, 48.0);
@@ -1202,8 +1197,7 @@ fn water_sim_command_with_render(
             simulation_delta: 1.0 / 60.0,
             size: [44.0, 44.0],
             shape: WaterShapeState::Rect,
-            resolution: [resolution, resolution],
-            render_resolution: [render_resolution, render_resolution],
+            quality: perro_structs::WaterQuality::Ultra,
             depth: 4.0,
             flow: [0.12, 0.03],
             wind: [1.0, 0.2],
@@ -1215,10 +1209,6 @@ fn water_sim_command_with_render(
             wake_strength: 1.0,
             foam_strength: 0.7,
             sample_readback_rate: 0.0,
-            lod_near_distance: 128.0,
-            lod_mid_distance: 384.0,
-            lod_far_distance: 896.0,
-            lod_min_resolution: [32, 32],
             collision_layers: BitMask::with([1]),
             collision_mask: BitMask::NONE,
             deep_color: color([0.02, 0.16, 0.28, 0.86]),

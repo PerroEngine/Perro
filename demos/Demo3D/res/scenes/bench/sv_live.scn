@@ -1290,7 +1290,7 @@ parent = @SubViewBench
         receive_shadows = true
         material = {
             type = "standard",
-            base_color_factor = (0.318, 0.941, 0.411, 1.0),
+            base_color_factor = (0.319, 0.941, 0.411, 1.0),
             roughness_factor = 0.554,
             metallic_factor = 0.0,
             alpha_mode = "OPAQUE",
@@ -3811,7 +3811,7 @@ parent = @SubViewBench
         material = {
             type = "standard",
             base_color_factor = (0.717, 0.351, 0.550, 1.0),
-            roughness_factor = 0.318,
+            roughness_factor = 0.319,
             metallic_factor = 0.0,
             alpha_mode = "OPAQUE",
             double_sided = false
@@ -7104,7 +7104,7 @@ parent = @view_world
         receive_shadows = true
         material = {
             type = "standard",
-            base_color_factor = (0.779, 0.509, 0.318, 1.0),
+            base_color_factor = (0.779, 0.509, 0.319, 1.0),
             roughness_factor = 0.686,
             metallic_factor = 0.0,
             alpha_mode = "OPAQUE",
@@ -9205,7 +9205,7 @@ parent = @view_world
         material = {
             type = "standard",
             base_color_factor = (0.711, 0.804, 0.876, 1.0),
-            roughness_factor = 0.318,
+            roughness_factor = 0.319,
             metallic_factor = 0.0,
             alpha_mode = "OPAQUE",
             double_sided = false
@@ -10224,4 +10224,3 @@ parent = @view_world
         [/Node3D]
     [/MeshInstance3D]
 [/ViewCube239]
-

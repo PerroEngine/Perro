@@ -141,14 +141,9 @@ impl BarkPlayer {
             None
         };
         match (pcm, decoder) {
-            (Some(pcm), _) => append_cached_with_trims(
-                &sink,
-                pcm,
-                dsp.clone(),
-                trim_start,
-                play_duration,
-                looped,
-            ),
+            (Some(pcm), _) => {
+                append_cached_with_trims(&sink, pcm, dsp.clone(), trim_start, play_duration, looped)
+            }
             (None, Some(decoder)) => append_with_trims(
                 &sink,
                 decoder.convert_samples::<f32>(),

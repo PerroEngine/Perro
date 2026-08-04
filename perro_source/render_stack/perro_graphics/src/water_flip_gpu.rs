@@ -259,7 +259,7 @@ impl GpuWaterFlip {
         self.max_particles_per_water = 0;
         self.max_grid_cells_per_water = 0;
         for (id, water) in waters.iter().filter(|(_, water)| !water.paused) {
-            let (dims, particles) = flip_layout(water.resolution, water.depth);
+            let (dims, particles) = flip_layout(water.quality.sim_resolution(), water.depth);
             let cells = dims[0].saturating_mul(dims[1]).saturating_mul(dims[2]);
             self.max_particles_per_water = self.max_particles_per_water.max(particles);
             self.max_grid_cells_per_water = self.max_grid_cells_per_water.max(cells);

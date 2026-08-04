@@ -950,9 +950,7 @@ parent = @WaterDemo
             type = "cube",
             size = (100.0, 15.0, 100.0)
         }
-        resolution = (128.0, 128.0)
-        render_resolution = (256.0, 256.0)
-        lod_min_resolution = (32.0, 32.0)
+        quality = "low"
         depth = 8.0
         wave_speed = 0.4
         wave_scale = 1.1
@@ -980,9 +978,6 @@ parent = @WaterDemo
             scattering_strength = 0.4,
             distance_fog_strength = 0.3
         }
-        lod_near = 25.0
-        lod_mid = 100.0
-        lod_far = 500.0
         [Node3D]
             position = (0.0, 0.0, 0.0)
         [/Node3D]

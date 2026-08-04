@@ -14,6 +14,7 @@ pub use types::*;
 mod defaults;
 pub use defaults::*;
 mod resolve;
+pub use resolve::water_body_removed_field;
 use resolve::*;
 
 #[cfg(test)]

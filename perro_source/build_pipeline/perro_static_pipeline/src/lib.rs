@@ -13,6 +13,7 @@ mod navmeshes;
 mod particles;
 mod res_tree;
 mod scenes;
+mod shader_bake;
 mod shaders;
 mod skeletons;
 mod textures;

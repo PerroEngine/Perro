@@ -17,6 +17,7 @@ pub mod supersample;
 pub mod texture_filter;
 pub mod unorm;
 pub mod visual_accessibility;
+pub mod water_quality;
 
 pub use audio::*;
 pub use bit_mask::*;
@@ -36,3 +37,4 @@ pub use supersample::*;
 pub use texture_filter::*;
 pub use unorm::*;
 pub use visual_accessibility::*;
+pub use water_quality::*;

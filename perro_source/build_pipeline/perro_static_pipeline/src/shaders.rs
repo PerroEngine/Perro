@@ -1,4 +1,8 @@
-use crate::{ResFileTree, StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, prune_embedded_dir, res_dir, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn};
+use crate::{
+    ResFileTree, StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes,
+    prune_embedded_dir, res_dir, static_dir, write_hash_const, write_if_changed,
+    write_static_lookup_fn,
+};
 use perro_asset_formats::source_ext;
 use std::{collections::HashSet, fmt::Write as _, fs, path::Path};
 
@@ -15,6 +19,7 @@ pub fn generate_static_shaders(
     let shader_paths = res_tree.filter_ext(|ext| source_ext::contains(source_ext::SHADER, ext));
 
     let mut shaders = Vec::<(String, String)>::with_capacity(shader_paths.len());
+    let mut synthesized_shaders = HashSet::<String>::new();
     for rel in shader_paths {
         let res_path = asset_uri(&rel);
         let full_path = res_dir.join(&rel);
@@ -27,6 +32,18 @@ pub fn generate_static_shaders(
             fs::create_dir_all(parent)?;
         }
         write_if_changed(&output_path, optimized.as_bytes())?;
+        shaders.push((res_path, rel));
+    }
+    if !crate::materials::collect_shader_bake_jobs(project_root, res_tree)?.is_empty() {
+        let res_path = crate::materials::baked_sample_shader_uri();
+        synthesized_shaders.insert(res_path.clone());
+        let rel = "__perro_baked__/sample_texture.wgsl".to_string();
+        let output_path = embedded_shaders_dir.join(&rel);
+        if let Some(parent) = output_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let source = "fn shade_material(in: FragmentInput) -> vec4<f32> { return custom_image_sample(in, 0u, in.uv); }\n";
+        write_if_changed(&output_path, source.as_bytes())?;
         shaders.push((res_path, rel));
     }
     prune_embedded_dir(
@@ -85,7 +102,9 @@ pub fn generate_static_shaders(
     crate::record_static_assets(
         perro_asset_formats::dlc::DlcAssetKind::SHADER,
         perro_asset_formats::dlc::DlcAssetAccess::BYTES,
-        shaders.iter().map(|(path, _)| (path.as_str(), false)),
+        shaders
+            .iter()
+            .map(|(path, _)| (path.as_str(), synthesized_shaders.contains(path))),
     );
     Ok(())
 }
@@ -152,6 +171,10 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     let color = unpack_rgba8(in.packed_color); /* inline */
     return vec4<f32>(color.rgb * custom_f_param(in, 0u).rgb, color.a);
 }
+
+fn bake_texture(in: BakeInput) -> vec4<f32> {
+    return vec4<f32>(in.uv, bake_param(in, 0u).x, 1.0);
+}
 "#;
         fs::write(res_dir.join("shaders/custom.wgsl"), source).expect("write shader");
 
@@ -161,7 +184,8 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
             embedded_dir: embedded_dir.clone(),
             asset_prefix: "res://".to_string(),
         }));
-        let result = generate_static_shaders(&root, &crate::ResFileTree::scan(&root).expect("res scan"));
+        let result =
+            generate_static_shaders(&root, &crate::ResFileTree::scan(&root).expect("res scan"));
         set_static_pipeline_overrides(None);
         result.expect("generate static shaders");
 
@@ -189,7 +213,8 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
             embedded_dir: root.join("embedded"),
             asset_prefix: "res://".to_string(),
         }));
-        let result = generate_static_shaders(&root, &crate::ResFileTree::scan(&root).expect("res scan"));
+        let result =
+            generate_static_shaders(&root, &crate::ResFileTree::scan(&root).expect("res scan"));
         set_static_pipeline_overrides(None);
 
         let err = result.expect_err("broken shader must fail the static build");
@@ -216,7 +241,8 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
             embedded_dir: root.join("embedded"),
             asset_prefix: "res://".to_string(),
         }));
-        let result = generate_static_shaders(&root, &crate::ResFileTree::scan(&root).expect("res scan"));
+        let result =
+            generate_static_shaders(&root, &crate::ResFileTree::scan(&root).expect("res scan"));
         set_static_pipeline_overrides(None);
 
         result.expect("shader with no engine entry fn must not fail the build");

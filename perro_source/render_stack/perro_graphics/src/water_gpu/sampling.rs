@@ -113,21 +113,13 @@ pub(super) fn water_3d_side_vertex_count(water: &WaterGpu) -> u32 {
         .saturating_mul(6)
 }
 
-pub(super) fn water_lod_2d(water: &Water2DState, camera: [f32; 2]) -> WaterLodDecision {
-    let pos = [water.model[2][0], water.model[2][1]];
-    water_lod(
-        water.resolution,
-        water.render_resolution,
-        water.size,
-        [
-            water.lod_near_distance,
-            water.lod_mid_distance,
-            water.lod_far_distance,
-        ],
-        water.lod_min_resolution,
-        pos,
-        camera,
-    )
+pub(super) fn water_lod_2d(water: &Water2DState) -> WaterLodDecision {
+    // 2D water rasterizes as one screen quad, so only the sim grid matters.
+    let sim = water.quality.sim_resolution();
+    WaterLodDecision {
+        grid: WaterGridResolution { sim, render: sim },
+        ripple_blend: 1.0,
+    }
 }
 
 pub(super) fn water_lod_3d(
@@ -135,58 +127,28 @@ pub(super) fn water_lod_3d(
     camera: [f32; 3],
     projection_scale: [f32; 2],
 ) -> WaterLodDecision {
-    let pos = water.model[3];
-    let radius = water_lod_shape_radius(water.shape, water.size);
-    let lod = water_lod_from_distance(
-        water.resolution,
-        water.render_resolution,
-        [
-            water.lod_near_distance,
-            water.lod_mid_distance,
-            water.lod_far_distance,
-        ],
-        water.lod_min_resolution,
-        water_lod_surface_distance([pos[0], pos[2]], [camera[0], camera[2]], radius),
-        WATER_3D_MAX_RENDER_RESOLUTION,
-        WATER_3D_RENDER_LOD_STRENGTH,
-    );
-    let render =
-        water_projected_render_resolution(water, camera, projection_scale, lod.grid.render);
+    let sim = water.quality.sim_resolution();
+    let render = water_body_reference_resolution(water, camera, projection_scale);
     WaterLodDecision {
-        grid: WaterGridResolution {
-            sim: [
-                water.resolution[0].clamp(1, 256),
-                water.resolution[1].clamp(1, 256),
-            ],
-            render,
-        },
-        ripple_blend: lod.ripple_blend,
+        grid: WaterGridResolution { sim, render },
+        ripple_blend: water_ripple_blend(water, camera, projection_scale, sim),
     }
 }
 
-// Keep at most one surface quad per ~2 projected pixels. Distance-only LOD
-// kept far 3D water above half authored resolution even when each quad became
-// sub-pixel; this cap preserves near silhouettes and removes invisible vertex
-// + fragment work. Eight-segment buckets limit camera-motion churn.
-pub(super) fn water_projected_render_resolution(
+/// Body-level reference mesh resolution. Rect bodies tessellate per chunk and
+/// ignore this; the circle/cylinder path still needs one segment count, and it
+/// rides the same screen-space rule.
+pub(super) fn water_body_reference_resolution(
     water: &Water3DState,
     camera: [f32; 3],
     projection_scale: [f32; 2],
-    current: [u32; 2],
 ) -> [u32; 2] {
-    if current[0] == 0 || current[1] == 0 {
-        return [0, 0];
-    }
-    let focal_px = projection_scale[0].max(0.0);
-    let ortho_px_per_world = projection_scale[1].max(0.0);
-    if focal_px <= 0.0 && ortho_px_per_world <= 0.0 {
-        return current;
-    }
-    let center = water.model[3];
-    let dx = center[0] - camera[0];
-    let dy = center[1] - camera[1];
-    let dz = center[2] - camera[2];
-    let distance = (dx * dx + dy * dy + dz * dz).sqrt().max(1.0e-3);
+    let ceiling = (water.quality.max_chunk_quads() * WATER_MAX_CHUNKS_PER_AXIS)
+        .clamp(2, WATER_3D_MAX_RENDER_RESOLUTION);
+    let px_per_world = water_px_per_world(water, camera, projection_scale);
+    let Some(px_per_world) = px_per_world else {
+        return [ceiling, ceiling];
+    };
     let scale_x = Vec3::new(water.model[0][0], water.model[0][1], water.model[0][2])
         .length()
         .max(1.0e-6);
@@ -194,98 +156,68 @@ pub(super) fn water_projected_render_resolution(
         .length()
         .max(1.0e-6);
     let world_axes = [water.size[0].abs() * scale_x, water.size[1].abs() * scale_z];
+    let target = water.quality.target_edge_pixels().max(1.0);
     std::array::from_fn(|axis| {
-        let projected_px = if ortho_px_per_world > 0.0 {
-            world_axes[axis] * ortho_px_per_world
-        } else {
-            world_axes[axis] * focal_px / distance
-        };
-        let segments = ((projected_px * 0.5).ceil() as u32).max(16);
-        let bucketed_vertices = segments.div_ceil(8).saturating_mul(8).saturating_add(1);
-        current[axis].min(bucketed_vertices.max(2))
+        let segments = (world_axes[axis] * px_per_world / target).ceil();
+        if !segments.is_finite() {
+            return ceiling;
+        }
+        (segments as u32).clamp(2, ceiling)
     })
+}
+
+/// Pixels per world unit at the body's nearest surface point. `None` = no
+/// projection info (headless / test) -> callers stay at the tier ceiling.
+fn water_px_per_world(
+    water: &Water3DState,
+    camera: [f32; 3],
+    projection_scale: [f32; 2],
+) -> Option<f32> {
+    let focal_px = projection_scale[0].max(0.0);
+    let ortho_px = projection_scale[1].max(0.0);
+    if ortho_px > 0.0 {
+        return Some(ortho_px);
+    }
+    if focal_px <= 0.0 {
+        return None;
+    }
+    let pos = water.model[3];
+    let radius = water_lod_shape_radius(water.shape, water.size);
+    let distance = water_lod_surface_distance([pos[0], pos[2]], [camera[0], camera[2]], radius)
+        .max(WATER_CHUNK_MIN_DISTANCE);
+    Some(focal_px / distance)
+}
+
+/// Fade sim ripples out once a sim cell stops covering a pixel. Same
+/// screen-space rule as tessellation, so it tracks window size + render scale.
+fn water_ripple_blend(
+    water: &Water3DState,
+    camera: [f32; 3],
+    projection_scale: [f32; 2],
+    sim: [u32; 2],
+) -> f32 {
+    let Some(px_per_world) = water_px_per_world(water, camera, projection_scale) else {
+        return 1.0;
+    };
+    let scale_x = Vec3::new(water.model[0][0], water.model[0][1], water.model[0][2])
+        .length()
+        .max(1.0e-6);
+    let scale_z = Vec3::new(water.model[2][0], water.model[2][1], water.model[2][2])
+        .length()
+        .max(1.0e-6);
+    let cell_world = (water.size[0].abs() * scale_x / sim[0].max(1) as f32)
+        .min(water.size[1].abs() * scale_z / sim[1].max(1) as f32);
+    let cell_px = cell_world * px_per_world;
+    if !cell_px.is_finite() {
+        return 1.0;
+    }
+    smooth01(((cell_px - 0.5) / 2.5).clamp(0.0, 1.0))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct WaterLodDecision {
     pub(super) grid: WaterGridResolution,
     pub(super) ripple_blend: f32,
-}
-
-pub(super) fn water_lod(
-    sim_resolution: [u32; 2],
-    render_resolution: [u32; 2],
-    _size: [f32; 2],
-    distances: [f32; 3],
-    min_resolution: [u32; 2],
-    water_pos: [f32; 2],
-    camera_pos: [f32; 2],
-) -> WaterLodDecision {
-    let dx = water_pos[0] - camera_pos[0];
-    let dy = water_pos[1] - camera_pos[1];
-    let distance = (dx * dx + dy * dy).sqrt();
-    water_lod_from_distance(
-        sim_resolution,
-        render_resolution,
-        distances,
-        min_resolution,
-        distance,
-        WATER_MAX_RENDER_RESOLUTION,
-        3.0,
-    )
-}
-
-pub(super) fn water_lod_from_distance(
-    sim_resolution: [u32; 2],
-    render_resolution: [u32; 2],
-    distances: [f32; 3],
-    min_resolution: [u32; 2],
-    distance: f32,
-    max_render_resolution: u32,
-    render_lod_strength: f32,
-) -> WaterLodDecision {
-    let near = distances[0].max(5.0);
-    let mid = distances[1].max(near);
-    let far = distances[2].max(mid);
-    let (lod_t, ripple_blend) = if distance <= near {
-        (0.0, 1.0)
-    } else if distance <= mid {
-        let span = (mid - near).max(0.001);
-        let t = smooth01(((distance - near) / span).clamp(0.0, 1.0));
-        (t * 0.42, 1.0 - t * 0.18)
-    } else if distance <= far {
-        let span = (far - mid).max(0.001);
-        let t = smooth01(((distance - mid) / span).clamp(0.0, 1.0));
-        (0.42 + t * 0.58, 0.82 - t * 0.42)
-    } else {
-        return WaterLodDecision {
-            grid: WaterGridResolution {
-                sim: [0, 0],
-                render: [0, 0],
-            },
-            ripple_blend: 0.0,
-        };
-    };
-    let q = lod_t * lod_t * (3.0 - 2.0 * lod_t);
-    let sim_div = 1.0 + q * 3.5;
-    let render_div = 1.0 + q * render_lod_strength.max(0.0);
-    WaterLodDecision {
-        grid: WaterGridResolution {
-            sim: [
-                ((sim_resolution[0] as f32 / sim_div).round() as u32)
-                    .clamp(min_resolution[0].clamp(1, 256), 256),
-                ((sim_resolution[1] as f32 / sim_div).round() as u32)
-                    .clamp(min_resolution[1].clamp(1, 256), 256),
-            ],
-            render: [
-                ((render_resolution[0] as f32 / render_div).round() as u32)
-                    .clamp(2, max_render_resolution),
-                ((render_resolution[1] as f32 / render_div).round() as u32)
-                    .clamp(2, max_render_resolution),
-            ],
-        },
-        ripple_blend,
-    }
 }
 
 pub(super) fn smooth01(t: f32) -> f32 {

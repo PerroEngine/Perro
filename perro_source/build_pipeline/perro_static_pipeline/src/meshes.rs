@@ -1,6 +1,10 @@
 //! Static render mesh import, LOD build, meshlet packing, and PMESH v1 encode.
 
-use crate::{CachedSource, ResFileTree, SourceCache, StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, source_stat, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn};
+use crate::{
+    CachedSource, ResFileTree, SourceCache, StaticPipelineError, asset_uri, embedded_dir,
+    ensure_unique_hashes, res_dir, source_stat, static_dir, write_hash_const, write_if_changed,
+    write_static_lookup_fn,
+};
 use perro_asset_formats::{
     pmesh::{
         EXTENSION as PMESH_EXTENSION,

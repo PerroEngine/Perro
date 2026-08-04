@@ -28,3 +28,14 @@ perro_runtime.workspace = true
 perro_ui.workspace = true
 perro_csv.workspace = true
 csv = "1.4"
+bytemuck = { version = "1.24.0", features = ["derive"] }
+pollster = "0.4.0"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+wgpu = { version = "30.0.0", default-features = false, features = ["std", "dx12", "vulkan", "wgsl"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+wgpu = { version = "30.0.0", default-features = false, features = ["std", "vulkan", "wgsl"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+wgpu = { version = "30.0.0", default-features = false, features = ["std", "metal", "wgsl"] }

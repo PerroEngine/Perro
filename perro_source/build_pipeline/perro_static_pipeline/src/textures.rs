@@ -1,4 +1,8 @@
-use crate::{CachedSource, ResFileTree, SourceCache, StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, source_stat, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn};
+use crate::{
+    CachedSource, ResFileTree, SourceCache, StaticPipelineError, asset_uri, embedded_dir,
+    ensure_unique_hashes, res_dir, source_stat, static_dir, write_hash_const, write_if_changed,
+    write_static_lookup_fn,
+};
 use perro_asset_formats::{
     ptex::{
         EXTENSION as PTEX_EXTENSION, FLAG_FORMAT_MASK as PTEX_FLAG_FORMAT_MASK,
@@ -12,6 +16,7 @@ use perro_graphics_assets::{SVG_RASTER_SCALE, decode_image_rgba};
 use perro_io::compress_zlib_best;
 use rayon::prelude::*;
 use std::{
+    collections::HashSet,
     fmt::Write as _,
     fs, io,
     path::{Path, PathBuf},
@@ -46,6 +51,7 @@ pub fn generate_static_textures(
     let context = format!("textures svg_scale={SVG_RASTER_SCALE}");
     let mut cache = SourceCache::open(&embedded_textures_dir, &context);
     let mut textures = Vec::<(String, String)>::with_capacity(texture_inputs.len());
+    let mut baked_texture_uris = HashSet::<String>::new();
     let mut misses = Vec::<(String, String, PathBuf, u64, u128)>::new();
     for (rel, res_path, full_path) in texture_inputs {
         let stat = source_stat(&full_path);
@@ -67,25 +73,7 @@ pub fn generate_static_textures(
             let file_bytes = fs::read(&full_path)?;
             let (raw_rgba, width, height) = decode_image_rgba(&file_bytes)
                 .ok_or_else(|| io::Error::other(format!("failed to decode image `{res_path}`")))?;
-            let (mut flags, packed_raw) = pack_texture_payload(&raw_rgba);
-            let compressed = compress_zlib_best(&packed_raw)?;
-            let payload: &[u8] = if compressed.len() < packed_raw.len() {
-                &compressed
-            } else {
-                flags |= PTEX_FLAG_PAYLOAD_RAW;
-                &packed_raw
-            };
-
-            let mut ptex = Vec::with_capacity(24 + payload.len());
-            ptex.extend_from_slice(PTEX_MAGIC);
-            ptex.extend_from_slice(&PTEX_VERSION.to_le_bytes());
-            ptex.extend_from_slice(&width.to_le_bytes());
-            ptex.extend_from_slice(&height.to_le_bytes());
-            ptex.extend_from_slice(
-                &((flags & PTEX_FLAG_FORMAT_MASK) | (flags & PTEX_FLAG_PAYLOAD_RAW)).to_le_bytes(),
-            );
-            ptex.extend_from_slice(&(packed_raw.len() as u32).to_le_bytes());
-            ptex.extend_from_slice(payload);
+            let ptex = encode_ptex(&raw_rgba, width, height)?;
             Ok((rel, res_path, len, mtime, ptex))
         })
         .collect::<io::Result<Vec<_>>>()?;
@@ -108,6 +96,32 @@ pub fn generate_static_textures(
             },
         );
         textures.push((res_path, rel_ptex));
+    }
+
+    for job in crate::materials::collect_shader_bake_jobs(project_root, res_tree)? {
+        baked_texture_uris.insert(job.texture_uri.clone());
+        let rel_ptex = format!(
+            "texture_{:016x}.{PTEX_EXTENSION}",
+            perro_ids::string_to_u64(&job.texture_uri)
+        );
+        let cache_key = format!("__shader_bake__/{}", job.material_uri);
+        let fingerprint = job.fingerprint();
+        let hit = cache.lookup(&cache_key, fingerprint, 0);
+        if hit.is_none() {
+            let rgba = crate::shader_bake::bake_shader_texture(&job)?;
+            let ptex = encode_ptex(&rgba, job.resolution[0], job.resolution[1])?;
+            write_if_changed(&embedded_textures_dir.join(&rel_ptex), &ptex)?;
+            cache.store(
+                &cache_key,
+                fingerprint,
+                0,
+                CachedSource {
+                    rows: vec![vec![job.texture_uri.clone(), rel_ptex.clone()]],
+                    files: vec![rel_ptex.clone()],
+                },
+            );
+        }
+        textures.push((job.texture_uri, rel_ptex));
     }
     cache.finish()?;
 
@@ -159,7 +173,9 @@ pub fn generate_static_textures(
     crate::record_static_assets(
         perro_asset_formats::dlc::DlcAssetKind::TEXTURE,
         perro_asset_formats::dlc::DlcAssetAccess::BYTES,
-        textures.iter().map(|(path, _)| (path.as_str(), false)),
+        textures
+            .iter()
+            .map(|(path, _)| (path.as_str(), baked_texture_uris.contains(path))),
     );
     Ok(())
 }
@@ -203,6 +219,28 @@ fn pack_texture_payload(raw_rgba: &[u8]) -> (u32, Vec<u8>) {
     }
 }
 
+fn encode_ptex(raw_rgba: &[u8], width: u32, height: u32) -> io::Result<Vec<u8>> {
+    let (mut flags, packed_raw) = pack_texture_payload(raw_rgba);
+    let compressed = compress_zlib_best(&packed_raw)?;
+    let payload: &[u8] = if compressed.len() < packed_raw.len() {
+        &compressed
+    } else {
+        flags |= PTEX_FLAG_PAYLOAD_RAW;
+        &packed_raw
+    };
+    let mut ptex = Vec::with_capacity(24 + payload.len());
+    ptex.extend_from_slice(PTEX_MAGIC);
+    ptex.extend_from_slice(&PTEX_VERSION.to_le_bytes());
+    ptex.extend_from_slice(&width.to_le_bytes());
+    ptex.extend_from_slice(&height.to_le_bytes());
+    ptex.extend_from_slice(
+        &((flags & PTEX_FLAG_FORMAT_MASK) | (flags & PTEX_FLAG_PAYLOAD_RAW)).to_le_bytes(),
+    );
+    ptex.extend_from_slice(&(packed_raw.len() as u32).to_le_bytes());
+    ptex.extend_from_slice(payload);
+    Ok(ptex)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{PTEX_VERSION, generate_static_textures};
@@ -235,7 +273,8 @@ mod tests {
         )
         .expect("write svg");
 
-        generate_static_textures(&root, &crate::ResFileTree::scan(&root).expect("res scan")).expect("generate textures");
+        generate_static_textures(&root, &crate::ResFileTree::scan(&root).expect("res scan"))
+            .expect("generate textures");
         let ptex_name = format!(
             "texture_{:016x}.ptex",
             perro_ids::string_to_u64("res://icon.svg")
@@ -251,6 +290,53 @@ mod tests {
         let (rgba, width, height) = decode_ptex(&ptex).expect("decode ptex");
         assert_eq!((width, height), (4, 4));
         assert_eq!(rgba.len(), 4 * 4 * 4);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    #[ignore = "requires GPU adapter"]
+    fn static_pipeline_bakes_wgsl_material_to_ptex() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("perro_shader_bake_{unique}"));
+        fs::create_dir_all(root.join("res/materials")).expect("create materials");
+        fs::create_dir_all(root.join("res/shaders")).expect("create shaders");
+        fs::write(
+            root.join("res/materials/background.pmat"),
+            "type = \"custom\"\nshader_path = \"res://shaders/background.wgsl\"\nrelease_bake = true\nbake_resolution = (2, 2)\n",
+        )
+        .expect("write material");
+        fs::write(
+            root.join("res/shaders/background.wgsl"),
+            "fn shade_material(in: FragmentInput) -> vec4<f32> { return vec4<f32>(in.uv, 0.25, 1.0); }\nfn bake_texture(in: BakeInput) -> vec4<f32> { return vec4<f32>(in.uv, 0.25, 1.0); }\n",
+        )
+        .expect("write shader");
+        let tree = crate::ResFileTree::scan(&root).expect("res scan");
+
+        generate_static_textures(&root, &tree).expect("bake texture");
+        crate::materials::generate_static_materials(&root, &tree).expect("gen materials");
+        crate::shaders::generate_static_shaders(&root, &tree).expect("gen shaders");
+
+        let texture_uri = crate::materials::baked_texture_uri("res://materials/background.pmat");
+        let ptex_name = format!(
+            "texture_{:016x}.ptex",
+            perro_ids::string_to_u64(&texture_uri)
+        );
+        let ptex = fs::read(
+            root.join(".perro/project/embedded/textures")
+                .join(ptex_name),
+        )
+        .expect("read baked ptex");
+        let (rgba, width, height) = decode_ptex(&ptex).expect("decode baked ptex");
+        assert_eq!((width, height), (2, 2));
+        assert_eq!(rgba.len(), 16);
+        assert!(
+            root.join(".perro/project/embedded/shaders/__perro_baked__/sample_texture.wgsl")
+                .exists()
+        );
 
         let _ = fs::remove_dir_all(root);
     }

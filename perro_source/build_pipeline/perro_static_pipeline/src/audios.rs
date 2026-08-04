@@ -1,4 +1,8 @@
-use crate::{CachedSource, ResFileTree, SourceCache, StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, source_stat, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn};
+use crate::{
+    CachedSource, ResFileTree, SourceCache, StaticPipelineError, asset_uri, embedded_dir,
+    ensure_unique_hashes, res_dir, source_stat, static_dir, write_hash_const, write_if_changed,
+    write_static_lookup_fn,
+};
 use perro_asset_formats::{
     pawdio::{
         EXTENSION as PAWDIO_EXTENSION, FLAG_ZLIB, MAGIC as PAWDIO_MAGIC, VERSION as PAWDIO_VERSION,

@@ -1,4 +1,7 @@
-use crate::{ResFileTree, StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir, write_hash_const, write_static_lookup_fn};
+use crate::{
+    ResFileTree, StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir,
+    write_hash_const, write_static_lookup_fn,
+};
 use perro_asset_formats::source_ext;
 use perro_scene::{Parser, SceneFieldIterRef, SceneObjectField, SceneValue};
 use perro_structs::{Color, Vector2};

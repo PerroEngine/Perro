@@ -152,10 +152,7 @@ mod tests {
 
     #[test]
     fn get_walks_object_and_array_levels() {
-        let root = object(&[(
-            "inner",
-            Variant::Array(vec![number(1), number(2)]),
-        )]);
+        let root = object(&[("inner", Variant::Array(vec![number(1), number(2)]))]);
         let found = get_nested_by_hash(
             "actors",
             root,
@@ -190,12 +187,7 @@ mod tests {
         let incoming = object(&[("label", number(5))]);
         assert!(apply_nested_object("leaf", &mut root, incoming, &[]));
         assert_eq!(
-            get_nested_by_hash(
-                "leaf",
-                root,
-                ScriptMemberID::from_string("leaf.label"),
-                &[]
-            ),
+            get_nested_by_hash("leaf", root, ScriptMemberID::from_string("leaf.label"), &[]),
             Some(number(5))
         );
     }

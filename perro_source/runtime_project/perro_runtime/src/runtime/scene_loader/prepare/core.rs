@@ -70,7 +70,7 @@ use perro_scene::{
 };
 use perro_structs::{
     BitMask, Color, CustomPostParam, CustomPostParamValue, IKTargetSolver, PostProcessEffect,
-    PostProcessSet, Quaternion, UVector2, Vector2, Vector3,
+    PostProcessSet, Quaternion, UVector2, Vector2, Vector3, WaterQuality,
 };
 use perro_ui::{
     UiAnimatedImage, UiAnimatedImageFrameSet, UiNode, UiButton, UiCheckbox, UiColorPicker,

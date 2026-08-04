@@ -7,6 +7,7 @@ use perro_render_bridge::{
     Water2DState, Water3DState, WaterBodyQueryState, WaterBodySampleState, WaterCoastlineShape2D,
     WaterCoastlineShape3D, WaterIdleModeState, WaterSampleState, WaterShapeState,
 };
+use perro_structs::WaterQuality;
 use std::collections::HashMap;
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::sync::mpsc;
@@ -16,15 +17,11 @@ const WATER_MAX_RENDER_RESOLUTION: u32 = 1024;
 const WATER_FLAG_DEBUG: u32 = 1 << 0;
 const WATER_FLAG_PAUSED: u32 = 1 << 1;
 const WATER_COASTLINE_INSET_METERS: f32 = 1.0;
-const WATER_CHUNK_QUADS: u32 = 128;
 const WATER_3D_MAX_RENDER_RESOLUTION: u32 = 256;
 // Frames without any 3D water before the scene-color refraction copy target
 // (half-res non-MSAA, full-res MSAA) releases back to 1x1 (2D-only water
 // never reads it).
 const WATER_SCENE_COLOR_IDLE_RELEASE_FRAMES: u32 = 120;
-// Keep silhouette tessellation dense; fragment normals alone cannot hide long
-// low-poly edges against the horizon. Far mesh stays >=57% per axis (~3x cut).
-const WATER_3D_RENDER_LOD_STRENGTH: f32 = 0.75;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -80,19 +77,44 @@ struct WaterParamsGpu {
 const WATER_RENDER_FLAG_SCENE_DEPTH_REJECT: u32 = 1 << 0;
 const WATER_RENDER_FLAG_SCENE_GEOMETRY: u32 = 1 << 1;
 
+/// One render chunk = one instance of the 3D water draw.
+///
+/// `chunk`/`chunks` are integer grid coords, not float uv: a shared edge then
+/// resolves to bit-identical uv in both neighbours, which is half of the
+/// crack-free story (the other half is `edge_snap`).
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Pod, Zeroable)]
 struct WaterRenderChunkGpu {
     water_idx: u32,
-    render_width: u32,
-    render_height: u32,
+    /// Surface quads per axis. Power of 2.
+    quads: u32,
     flags: u32,
-    uv_origin: [f32; 2],
-    uv_scale: [f32; 2],
+    /// 4 x u8 snap ratio for the -u/+u/-v/+v edges. >1 = neighbour is coarser,
+    /// so this chunk snaps its boundary vertices onto the neighbour's knots.
+    edge_snap: u32,
+    chunk: [u32; 2],
+    chunks: [u32; 2],
 }
 
-const WATER_CHUNK_FLAG_DRAW_SIDES: u32 = 1 << 0;
-const WATER_CHUNK_FLAG_CIRCLE: u32 = 1 << 1;
+// Body-border edges draw a side wall at that edge, at this chunk's own
+// tessellation, so the wall top shares the surface border vertices exactly.
+const WATER_CHUNK_FLAG_EDGE_NEG_U: u32 = 1 << 0;
+const WATER_CHUNK_FLAG_EDGE_POS_U: u32 = 1 << 1;
+const WATER_CHUNK_FLAG_EDGE_NEG_V: u32 = 1 << 2;
+const WATER_CHUNK_FLAG_EDGE_POS_V: u32 = 1 << 3;
+const WATER_CHUNK_EDGE_MASK: u32 = 0b1111;
+const WATER_CHUNK_FLAG_CIRCLE: u32 = 1 << 4;
+const WATER_CHUNK_EDGE_SNAP_NONE: u32 = 0x0101_0101;
+
+/// One `draw` per distinct chunk vertex count. Instances are sorted so equal
+/// counts are contiguous; without this every chunk would pay the max chunk's
+/// vertex count and per-chunk LOD would save no vertex work at all.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct WaterChunkDrawGroup {
+    vertex_count: u32,
+    first_instance: u32,
+    instance_count: u32,
+}
 
 pub struct GpuWater {
     flip_3d: GpuWaterFlip,
@@ -160,6 +182,8 @@ pub struct GpuWater {
     readback_copy_encoded: bool,
     staged_waters: Vec<WaterGpu>,
     staged_render_chunks: Vec<WaterRenderChunkGpu>,
+    staged_chunk_draws: Vec<WaterChunkDrawGroup>,
+    chunk_quads_scratch: Vec<u32>,
     coastline_cells_scratch: Vec<[f32; 4]>,
     // Per-water cached static coastline field (solid/edge/spill from the
     // coastline shapes), keyed by a content signature. Only the dynamic impacts
@@ -215,7 +239,6 @@ struct PendingWaterReadback {
 
 #[derive(Clone, Copy, Debug)]
 pub struct WaterPrepareContext {
-    pub camera_2d_position: [f32; 2],
     pub camera_3d_position: [f32; 3],
     pub camera_3d_frustum_planes: [[f32; 4]; 6],
     pub camera_3d_lod_scale: [f32; 2],
@@ -663,6 +686,8 @@ impl GpuWater {
             readback_copy_encoded: false,
             staged_waters: Vec::new(),
             staged_render_chunks: Vec::new(),
+            staged_chunk_draws: Vec::new(),
+            chunk_quads_scratch: Vec::new(),
             coastline_cells_scratch: Vec::new(),
             coastline_cache: HashMap::new(),
             coastline_force_upload: true,
@@ -864,6 +889,7 @@ impl GpuWater {
             self.max_cells_per_water = 0;
             self.max_3d_chunk_vertices = 0;
             self.render_3d_chunk_count = 0;
+            self.staged_chunk_draws.clear();
             self.readback_accum_seconds = 0.0;
             self.coastline_cache.clear();
             self.coastline_cells_scratch.clear();
@@ -885,6 +911,7 @@ impl GpuWater {
                 .reserve(needed - self.staged_waters.capacity());
         }
         self.staged_render_chunks.clear();
+        self.staged_chunk_draws.clear();
         // The coastline scratch is persistent: it mirrors the GPU buffer, so a
         // water whose field did not change keeps last frame's bytes in place
         // and neither the blend loop nor the upload runs.
@@ -894,7 +921,7 @@ impl GpuWater {
         let mut readback_rate = 0.0f32;
         for (node, water) in waters_2d {
             readback_rate = readback_rate.max(water.sample_readback_rate);
-            let lod = water_lod_2d(water, ctx.camera_2d_position);
+            let lod = water_lod_2d(water);
             let cells = water_cell_count(lod.grid.sim);
             let offset = cell_needed;
             if cells > 0 {
@@ -956,9 +983,12 @@ impl GpuWater {
             if lod.grid.render[0] > 0 && lod.grid.render[1] > 0 {
                 build_render_chunks_3d(
                     &mut self.staged_render_chunks,
+                    &mut self.chunk_quads_scratch,
                     water_idx,
                     water,
                     staged,
+                    ctx.camera_3d_position,
+                    ctx.camera_3d_lod_scale,
                     &ctx.camera_3d_frustum_planes,
                 );
             }
@@ -984,19 +1014,49 @@ impl GpuWater {
             self.readback_water_interval.retain(|node, _| live(node));
             self.readback_water_accum.retain(|node, _| live(node));
         }
+        // Group key first, distance second. Equal vertex counts must be
+        // contiguous so `render_3d` can issue one draw per LOD; within a group
+        // near-to-far order survives because vertex count falls with distance.
         self.staged_render_chunks.sort_by(|a, b| {
-            let da = water_render_chunk_distance_sq(
-                &self.staged_waters[a.water_idx as usize],
-                a,
-                ctx.camera_3d_position,
-            );
-            let db = water_render_chunk_distance_sq(
-                &self.staged_waters[b.water_idx as usize],
-                b,
-                ctx.camera_3d_position,
-            );
-            da.total_cmp(&db)
+            let va = water_render_chunk_vertex_count(&self.staged_waters[a.water_idx as usize], a);
+            let vb = water_render_chunk_vertex_count(&self.staged_waters[b.water_idx as usize], b);
+            vb.cmp(&va).then_with(|| {
+                let da = water_render_chunk_distance_sq(
+                    &self.staged_waters[a.water_idx as usize],
+                    a,
+                    ctx.camera_3d_position,
+                );
+                let db = water_render_chunk_distance_sq(
+                    &self.staged_waters[b.water_idx as usize],
+                    b,
+                    ctx.camera_3d_position,
+                );
+                da.total_cmp(&db)
+            })
         });
+        self.staged_chunk_draws.clear();
+        for (index, chunk) in self.staged_render_chunks.iter().enumerate() {
+            let vertex_count = water_render_chunk_vertex_count(
+                &self.staged_waters[chunk.water_idx as usize],
+                chunk,
+            );
+            if vertex_count == 0 {
+                continue;
+            }
+            match self.staged_chunk_draws.last_mut() {
+                Some(group)
+                    if group.vertex_count == vertex_count
+                        && group.first_instance + group.instance_count == index as u32 =>
+                {
+                    group.instance_count += 1;
+                }
+                _ => self.staged_chunk_draws.push(WaterChunkDrawGroup {
+                    vertex_count,
+                    first_instance: index as u32,
+                    instance_count: 1,
+                }),
+            }
+        }
         cell_needed = cell_needed.max(WATER_WORKGROUP_SIZE as usize);
         self.active_cell_count = cell_needed;
         self.max_cells_per_water = self
@@ -1006,14 +1066,9 @@ impl GpuWater {
             .max()
             .unwrap_or(WATER_WORKGROUP_SIZE as usize);
         self.max_3d_chunk_vertices = self
-            .staged_render_chunks
+            .staged_chunk_draws
             .iter()
-            .map(|chunk| {
-                water_render_chunk_vertex_count(
-                    &self.staged_waters[chunk.water_idx as usize],
-                    chunk,
-                )
-            })
+            .map(|group| group.vertex_count)
             .max()
             .unwrap_or(0);
         self.render_3d_chunk_count = self.staged_render_chunks.len().min(u32::MAX as usize) as u32;
@@ -1179,6 +1234,7 @@ impl GpuWater {
         self.readback_scheduled_nodes.clear();
         self.readback_copy_encoded = false;
         self.staged_render_chunks.clear();
+        self.staged_chunk_draws.clear();
         self.coastline_cache.clear();
         self.coastline_cells_scratch.clear();
         self.coastline_force_upload = true;
@@ -1286,7 +1342,14 @@ impl GpuWater {
             pass.set_bind_group(0, self.render_bind_group(), &[]);
             pass.set_bind_group(1, camera_bind_group, &[]);
             pass.set_bind_group(2, &self.depth_bind_group, &[]);
-            pass.draw(0..self.max_3d_chunk_vertices, 0..self.render_3d_chunk_count);
+            // One draw per LOD group. `instance_index` in WGSL is absolute, so
+            // the chunk lookup still indexes the shared buffer directly.
+            for group in &self.staged_chunk_draws {
+                pass.draw(
+                    0..group.vertex_count,
+                    group.first_instance..group.first_instance + group.instance_count,
+                );
+            }
         }
         self.flip_3d.render(
             encoder,

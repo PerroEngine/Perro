@@ -1,12 +1,16 @@
 use super::*;
 
 pub(super) fn apply_water_body_fields(node: &mut WaterSurfaceParams, ty: &str, fields: &[SceneObjectField]) {
-    let mut sim_cells_per_meter = None;
-    let mut render_vertices_per_meter = None;
+    // `quality` owns the readback-rate default, so an explicit
+    // `sample_readback_rate` has to win no matter which order they appear in.
+    let mut explicit_readback_rate = None;
     SceneFieldIterRef::new(fields).for_each(|name, value| {
         let field = match resolve_node_field(ty, name) {
             Some(NodeField::WaterBody2D(field)) | Some(NodeField::WaterBody3D(field)) => field,
-            _ => return,
+            _ => {
+                warn_removed_water_field(ty, name);
+                return;
+            }
         };
         match field {
             WaterBodyField::Shape => match ty {
@@ -14,59 +18,18 @@ pub(super) fn apply_water_body_fields(node: &mut WaterSurfaceParams, ty: &str, f
                     if let Some(shape) = as_shape_3d(value).and_then(water_shape_from_shape_3d) {
                         node.shape = shape;
                         node.depth = shape.depth(node.depth);
-                        if let Some(density) = sim_cells_per_meter {
-                            node.resolution = water_resolution_from_density(node.shape, density);
-                        }
-                        if let Some(density) = render_vertices_per_meter {
-                            node.render_resolution =
-                                water_resolution_from_density(node.shape, density);
-                        }
                     }
                 }
                 _ => {
                     if let Some(shape) = as_shape_2d(value).and_then(water_shape_from_shape_2d) {
                         node.shape = shape;
-                        if let Some(density) = sim_cells_per_meter {
-                            node.resolution = water_resolution_from_density(node.shape, density);
-                        }
-                        if let Some(density) = render_vertices_per_meter {
-                            node.render_resolution =
-                                water_resolution_from_density(node.shape, density);
-                        }
                     }
                 }
             },
-            WaterBodyField::Resolution => {
-                if let Some(resolution) = water_resolution_value(value) {
-                    node.resolution = resolution;
-                }
-            }
-            WaterBodyField::RenderResolution => {
-                if let Some(resolution) = water_resolution_value(value) {
-                    node.render_resolution = resolution;
-                }
-            }
-            WaterBodyField::VerticesPerMeter => {
-                if let Some(v) = as_f32(value) {
-                    let density = v.max(0.01);
-                    sim_cells_per_meter = Some(density);
-                    render_vertices_per_meter = Some(density);
-                    node.resolution = water_resolution_from_density(node.shape, density);
-                    node.render_resolution = water_resolution_from_density(node.shape, density);
-                }
-            }
-            WaterBodyField::SimCellsPerMeter => {
-                if let Some(v) = as_f32(value) {
-                    let density = v.max(0.01);
-                    sim_cells_per_meter = Some(density);
-                    node.resolution = water_resolution_from_density(node.shape, density);
-                }
-            }
-            WaterBodyField::RenderVerticesPerMeter => {
-                if let Some(v) = as_f32(value) {
-                    let density = v.max(0.01);
-                    render_vertices_per_meter = Some(density);
-                    node.render_resolution = water_resolution_from_density(node.shape, density);
+            WaterBodyField::Quality => {
+                if let Some(quality) = as_water_quality(value) {
+                    node.quality = quality;
+                    node.physics.sample_readback_rate = quality.sample_readback_rate();
                 }
             }
             WaterBodyField::Depth => {
@@ -138,33 +101,7 @@ pub(super) fn apply_water_body_fields(node: &mut WaterSurfaceParams, ty: &str, f
             }
             WaterBodyField::SampleReadbackRate => {
                 if let Some(v) = as_f32(value) {
-                    node.physics.sample_readback_rate = v.max(0.0);
-                }
-            }
-            WaterBodyField::LodNearDistance => {
-                if let Some(v) = as_f32(value) {
-                    node.lod.near_distance = v.max(0.0);
-                }
-            }
-            WaterBodyField::LodMidDistance => {
-                if let Some(v) = as_f32(value) {
-                    node.lod.mid_distance = v.max(node.lod.near_distance);
-                }
-            }
-            WaterBodyField::LodFarDistance => {
-                if let Some(v) = as_f32(value) {
-                    node.lod.far_distance = v.max(node.lod.mid_distance);
-                }
-            }
-            WaterBodyField::LodMinResolution => {
-                if let Some((x, y)) = value.as_vec2() {
-                    node.lod.min_resolution = [
-                        (x.max(1.0).round() as u32).clamp(1, 4096),
-                        (y.max(1.0).round() as u32).clamp(1, 4096),
-                    ];
-                } else if let Some(v) = as_i32(value) {
-                    let v = v.clamp(1, 4096) as u32;
-                    node.lod.min_resolution = [v, v];
+                    explicit_readback_rate = Some(v.max(0.0));
                 }
             }
             WaterBodyField::CollisionLayers => {
@@ -303,28 +240,25 @@ pub(super) fn apply_water_body_fields(node: &mut WaterSurfaceParams, ty: &str, f
             }
         }
     });
-}
-
-pub(super) fn water_resolution_value(value: &SceneValue) -> Option<[u32; 2]> {
-    if let Some((x, y)) = value.as_vec2() {
-        Some([
-            (x.max(1.0).round() as u32).clamp(1, 4096),
-            (y.max(1.0).round() as u32).clamp(1, 4096),
-        ])
-    } else {
-        as_i32(value).map(|v| {
-            let v = v.clamp(1, 4096) as u32;
-            [v, v]
-        })
+    if let Some(rate) = explicit_readback_rate {
+        node.physics.sample_readback_rate = rate;
     }
 }
 
-pub(super) fn water_resolution_from_density(shape: WaterShape, vertices_per_meter: f32) -> [u32; 2] {
-    let size = shape.surface_size();
-    [
-        ((size.x.abs() * vertices_per_meter).ceil() as u32 + 1).clamp(1, 4096),
-        ((size.y.abs() * vertices_per_meter).ceil() as u32 + 1).clamp(1, 4096),
-    ]
+/// Loud one-line deprecation for a removed water fidelity knob. Scene load
+/// cannot fail on a bad field, so the runtime warns and `perro doctor` errors.
+fn warn_removed_water_field(ty: &str, name: &str) {
+    if !matches!(ty, "WaterBody2D" | "WaterBody3D") {
+        return;
+    }
+    let Some(detail) = perro_scene::water_body_removed_field(name) else {
+        return;
+    };
+    eprintln!("[perro][runtime] {ty}.{name}: {detail}");
+}
+
+pub(super) fn as_water_quality(value: &SceneValue) -> Option<WaterQuality> {
+    WaterQuality::from_name(as_str(value)?)
 }
 
 pub(super) fn water_shape_from_shape_2d(shape: Shape2D) -> Option<WaterShape> {

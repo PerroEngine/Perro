@@ -19,7 +19,7 @@ use perro_runtime_api::sub_apis::{
 use perro_structs::Vector3;
 use rayon::prelude::*;
 use std::cell::RefCell;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 mod builtins;
 
@@ -76,7 +76,7 @@ mod simd;
 use accel::*;
 use decode::*;
 
-pub(crate) use accel::QueryNodeDataCache;
+pub(crate) use accel::{QueryMeshCache, QueryNodeDataCache};
 
 impl Runtime {
     pub(crate) fn query_mesh_instance_surface_at_global_point(
@@ -783,7 +783,7 @@ impl Runtime {
             return None;
         }
         let cache_key = string_to_u64(source);
-        if let Ok(mut cache) = mesh_query_cache().lock()
+        if let Ok(mut cache) = self.mesh_query_mesh_cache.lock()
             && let Some(mesh) = cache.get(cache_key)
         {
             return Some(mesh);
@@ -853,7 +853,7 @@ impl Runtime {
         }
 
         let mesh = Arc::new(loaded?);
-        if let Ok(mut cache) = mesh_query_cache().lock() {
+        if let Ok(mut cache) = self.mesh_query_mesh_cache.lock() {
             cache.insert_source_mesh(cache_key, mesh.clone());
         }
         Some(mesh)
@@ -948,7 +948,7 @@ impl Runtime {
         let mesh_id = self.resource_api.canonical_mesh_id(mesh_id);
         if let Some(revision) = self.resource_api.mesh_revision(mesh_id) {
             let cache_key = runtime_mesh_query_cache_key(mesh_id, revision);
-            if let Ok(mut cache) = mesh_query_cache().lock()
+            if let Ok(mut cache) = self.mesh_query_mesh_cache.lock()
                 && let Some(mesh) = cache.get(cache_key)
             {
                 return Some(mesh);
@@ -961,7 +961,7 @@ impl Runtime {
                         .map(|mesh| (revision, mesh))
                 })
                 .flatten()?;
-            if let Ok(mut cache) = mesh_query_cache().lock() {
+            if let Ok(mut cache) = self.mesh_query_mesh_cache.lock() {
                 cache.insert_runtime_mesh(mesh_id, revision, mesh.clone());
             }
             return Some(mesh);
@@ -1035,10 +1035,20 @@ fn query_ray_best_for_instance(
     let mesh_from_global = global_from_mesh.inverse();
     let global_normal_basis = Mat3::from_mat4(global_from_mesh).inverse().transpose();
     let ray_origin_local = mesh_from_global.transform_point3(ray_origin_global);
-    let ray_dir_local = mesh_from_global
-        .transform_vector3(ray_dir_global)
-        .normalize_or_zero();
-    if ray_dir_local.length_squared() <= 1e-10 {
+    // Keep the transformed direction UNNORMALIZED. `ray_dir_global` is unit,
+    // so the triangle/AABB parameter stays in global-distance units:
+    //
+    //   global_from_mesh * (origin_local + t * dir_local)
+    //     = origin_global + t * ray_dir_global
+    //
+    // Normalizing here made local `t` scale-dependent while comparing it to
+    // global `max_t` / best-hit bounds. A small mesh scale could therefore
+    // cull a valid bounded ray before the triangle test.
+    let ray_dir_local = mesh_from_global.transform_vector3(ray_dir_global);
+    if !ray_origin_local.is_finite()
+        || !ray_dir_local.is_finite()
+        || ray_dir_local.length_squared() <= 1e-10
+    {
         return None;
     }
     let mut best: Option<QueryHitCandidate> = None;

@@ -466,6 +466,7 @@ pub(super) fn create_shadow_depth_pipeline_skinned(
     pipeline_layout: &wgpu::PipelineLayout,
     shader: &wgpu::ShaderModule,
     cull_mode: Option<wgpu::Face>,
+    multiview_mask: Option<std::num::NonZeroU32>,
 ) -> wgpu::RenderPipeline {
     crate::pipeline_cache::create_render_pipeline(
         device,
@@ -574,7 +575,7 @@ pub(super) fn create_shadow_depth_pipeline_skinned(
                 },
             }),
             multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
+            multiview_mask,
             cache: None,
         },
     )

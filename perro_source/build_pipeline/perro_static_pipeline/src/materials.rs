@@ -1,4 +1,7 @@
-use crate::{ResFileTree, StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir, write_hash_const, write_static_lookup_fn};
+use crate::{
+    ResFileTree, StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir,
+    write_hash_const, write_static_lookup_fn,
+};
 use perro_asset_formats::source_ext;
 use perro_render_bridge::{
     CustomMaterialLighting3D, CustomMaterialParamValue3D, HandDrawnMaterial3D,
@@ -17,7 +20,8 @@ pub fn generate_static_materials(
     let static_dir = static_dir(project_root);
     fs::create_dir_all(&static_dir)?;
 
-    let material_paths = res_tree.filter_ext(|ext| source_ext::contains(source_ext::MATERIAL_INPUT, ext));
+    let material_paths =
+        res_tree.filter_ext(|ext| source_ext::contains(source_ext::MATERIAL_INPUT, ext));
 
     let mut materials = material_paths
         .into_par_iter()
@@ -50,6 +54,21 @@ pub fn generate_static_materials(
         .flatten()
         .collect::<Vec<_>>();
 
+    let mut expanded = Vec::with_capacity(materials.len() * 3);
+    for (path, material, synthesized) in materials.drain(..) {
+        if let MaterialLiteral::Custom(custom) = &material
+            && custom.release_bake
+        {
+            let baked = baked_material_literal(&path, custom);
+            expanded.push((runtime_material_uri(&path), material.clone(), true));
+            expanded.push((baked_material_uri(&path), baked.clone(), true));
+            let selected = baked;
+            expanded.push((path, selected, synthesized));
+        } else {
+            expanded.push((path, material, synthesized));
+        }
+    }
+    let mut materials = expanded;
     materials.sort_by(|a, b| a.0.cmp(&b.0));
 
     let mut unique_materials = Vec::<MaterialLiteral>::new();
@@ -126,6 +145,113 @@ pub fn generate_static_materials(
             .map(|(path, _, synthesized)| (path.as_str(), *synthesized)),
     );
     Ok(())
+}
+
+pub(crate) fn baked_texture_uri(material_uri: &str) -> String {
+    format!(
+        "{}__perro_baked__/texture_{:016x}.png",
+        crate::asset_prefix(),
+        perro_ids::string_to_u64(material_uri)
+    )
+}
+
+pub(crate) fn baked_material_uri(material_uri: &str) -> String {
+    format!(
+        "{}__perro_baked__/material_{:016x}.pmat",
+        crate::asset_prefix(),
+        perro_ids::string_to_u64(material_uri)
+    )
+}
+
+pub(crate) fn runtime_material_uri(material_uri: &str) -> String {
+    format!(
+        "{}__perro_runtime__/material_{:016x}.pmat",
+        crate::asset_prefix(),
+        perro_ids::string_to_u64(material_uri)
+    )
+}
+
+pub(crate) fn baked_sample_shader_uri() -> String {
+    format!(
+        "{}__perro_baked__/sample_texture.wgsl",
+        crate::asset_prefix()
+    )
+}
+
+fn baked_material_literal(path: &str, custom: &CustomMaterialLiteral) -> MaterialLiteral {
+    MaterialLiteral::Custom(CustomMaterialLiteral {
+        shader_path: baked_sample_shader_uri(),
+        params: Vec::new(),
+        images: vec![CustomImageLiteral {
+            name: Some("baked".to_string()),
+            source: baked_texture_uri(path),
+        }],
+        lighting: custom.lighting,
+        surface: custom.surface.clone(),
+        release_bake: false,
+        bake_resolution: None,
+    })
+}
+
+pub(crate) fn collect_shader_bake_jobs(
+    project_root: &Path,
+    res_tree: &ResFileTree,
+) -> Result<Vec<crate::shader_bake::ShaderBakeJob>, StaticPipelineError> {
+    let root = res_dir(project_root);
+    let mut jobs = Vec::new();
+    for rel in res_tree.filter_ext(|ext| ext.eq_ignore_ascii_case(source_ext::MATERIAL)) {
+        let material_uri = asset_uri(&rel);
+        let material_source = fs::read_to_string(root.join(&rel))?;
+        let Some(MaterialLiteral::Custom(custom)) = load_pmat_literal(&material_source) else {
+            continue;
+        };
+        if !custom.release_bake {
+            continue;
+        }
+        let Some(resolution) = custom.bake_resolution else {
+            continue;
+        };
+        let shader_rel = crate::strip_asset_prefix(&custom.shader_path).ok_or_else(|| {
+            StaticPipelineError::ShaderBake(format!(
+                "material `{material_uri}` bake shader must use project asset path: `{}`",
+                custom.shader_path
+            ))
+        })?;
+        let shader_source = fs::read_to_string(root.join(shader_rel)).map_err(|err| {
+            StaticPipelineError::ShaderBake(format!(
+                "material `{material_uri}` cannot read bake shader `{}`: {err}",
+                custom.shader_path
+            ))
+        })?;
+        let params = custom
+            .params
+            .iter()
+            .map(|param| match &param.value {
+                CustomMaterialParamValue3D::F32(v) => [*v, 0.0, 0.0, 0.0],
+                CustomMaterialParamValue3D::I32(v) => [*v as f32, 0.0, 0.0, 0.0],
+                CustomMaterialParamValue3D::Bool(v) => [u32::from(*v) as f32, 0.0, 0.0, 0.0],
+                CustomMaterialParamValue3D::Vec2(v) => [v[0], v[1], 0.0, 0.0],
+                CustomMaterialParamValue3D::Vec3(v) => [v[0], v[1], v[2], 0.0],
+                CustomMaterialParamValue3D::Vec4(v) => *v,
+            })
+            .collect::<Vec<_>>();
+        jobs.push(crate::shader_bake::ShaderBakeJob {
+            material_uri: material_uri.clone(),
+            texture_uri: baked_texture_uri(&material_uri),
+            shader_uri: custom.shader_path,
+            shader_source,
+            material_source,
+            resolution,
+            params,
+            image_sources: custom
+                .images
+                .into_iter()
+                .map(|image| image.source)
+                .collect(),
+        });
+    }
+    jobs.sort_by(|a, b| a.material_uri.cmp(&b.material_uri));
+    Ok(jobs)
 }
 
 mod model;
@@ -272,6 +398,8 @@ mod tests {
             params: Vec::new(),
             images: Vec::new(),
             lighting: CustomMaterialLighting3D::Raw,
+            release_bake: false,
+            bake_resolution: None,
             surface: StandardMaterial3D {
                 alpha_mode: 2,
                 double_sided: true,
@@ -295,6 +423,8 @@ mod tests {
             }],
             images: Vec::new(),
             lighting: CustomMaterialLighting3D::Raw,
+            release_bake: false,
+            bake_resolution: None,
             surface: StandardMaterial3D {
                 base_color_factor: color,
                 roughness_factor: 0.12345679,
@@ -341,6 +471,56 @@ params = {
         );
         assert_eq!(custom.params[1].name.as_deref(), Some("glow"));
         assert_eq!(custom.params[1].value, CustomMaterialParamValue3D::F32(0.9));
+    }
+
+    #[test]
+    fn pmat_literal_accepts_release_bake() {
+        let material = load_pmat_literal(
+            r#"
+type = "custom"
+shader_path = "res://shaders/background.wgsl"
+release_bake = true
+bake_resolution = (1920, 1080)
+"#,
+        )
+        .expect("material parses");
+
+        let MaterialLiteral::Custom(custom) = material else {
+            panic!("expected custom material");
+        };
+        assert!(custom.release_bake);
+        assert_eq!(custom.bake_resolution, Some([1920, 1080]));
+    }
+
+    #[test]
+    fn pmat_release_bake_defaults_resolution() {
+        let material = load_pmat_literal(
+            r#"
+type = "custom"
+shader_path = "res://shaders/background.wgsl"
+release_bake = true
+"#,
+        )
+        .expect("material parses");
+
+        let MaterialLiteral::Custom(custom) = material else {
+            panic!("expected custom material");
+        };
+        assert!(custom.release_bake);
+        assert_eq!(custom.bake_resolution, Some([1024, 1024]));
+    }
+
+    #[test]
+    fn pmat_release_bake_defaults_false() {
+        let material = load_pmat_literal(
+            "type = \"custom\"\nshader_path = \"res://shaders/background.wgsl\"\n",
+        )
+        .expect("material parses");
+        let MaterialLiteral::Custom(custom) = material else {
+            panic!("expected custom material");
+        };
+        assert!(!custom.release_bake);
+        assert_eq!(custom.bake_resolution, None);
     }
 
     #[test]

@@ -14,8 +14,7 @@ mod tests {
             simulation_delta: 1.0 / 60.0,
             size: [16.0, 16.0],
             shape: WaterShapeState::Rect,
-            resolution: [8, 8],
-            render_resolution: [16, 16],
+            quality: WaterQuality::Ultra,
             depth: 4.0,
             flow: [0.0, 0.0],
             wind: [1.0, 0.0],
@@ -27,10 +26,6 @@ mod tests {
             wake_strength: 1.35,
             foam_strength: 0.9,
             sample_readback_rate: 30.0,
-            lod_near_distance: 128.0,
-            lod_mid_distance: 384.0,
-            lod_far_distance: 896.0,
-            lod_min_resolution: [4, 4],
             collision_layers: perro_structs::BitMask::ALL,
             collision_mask: perro_structs::BitMask::NONE,
             deep_color: perro_structs::Color::new(0.02, 0.16, 0.28, 0.94),
@@ -91,8 +86,7 @@ mod tests {
             simulation_delta: 1.0 / 60.0,
             size: [16.0, 16.0],
             shape: WaterShapeState::Rect,
-            resolution: [8, 8],
-            render_resolution: [16, 16],
+            quality: WaterQuality::Ultra,
             depth: 4.0,
             flow: [0.0, 0.0],
             wind: [1.0, 0.0],
@@ -104,10 +98,6 @@ mod tests {
             wake_strength: 1.35,
             foam_strength: 0.9,
             sample_readback_rate: 30.0,
-            lod_near_distance: 128.0,
-            lod_mid_distance: 384.0,
-            lod_far_distance: 896.0,
-            lod_min_resolution: [4, 4],
             collision_layers: perro_structs::BitMask::ALL,
             collision_mask: perro_structs::BitMask::NONE,
             deep_color: perro_structs::Color::new(0.02, 0.16, 0.28, 0.94),
@@ -190,7 +180,15 @@ mod tests {
         assert!(WATER_3D_RENDER_WGSL.contains("let width = max(w.flags.x, 1u);"));
         assert!(WATER_3D_RENDER_WGSL.contains("water_circle_surface_vertex"));
         assert!(WATER_3D_RENDER_WGSL.contains("water_circle_side_vertex"));
-        assert!(WATER_3D_RENDER_WGSL.contains("horizontal_segments * 2u + vertical_segments"));
+        // per-chunk LOD contract: integer chunk uv + edge snap, else cracks
+        assert!(WATER_3D_RENDER_WGSL.contains("fn water_chunk_uv"));
+        assert!(WATER_3D_RENDER_WGSL.contains("fn water_chunk_edge_snap"));
+        assert!(WATER_3D_RENDER_WGSL.contains("gy = (gy / r) * r;"));
+        assert!(WATER_3D_RENDER_WGSL.contains("gx = (gx / r) * r;"));
+        assert!(WATER_3D_RENDER_WGSL.contains("fn water_chunk_side_vertex"));
+        // normals differentiate at the sim cell, not the (per-chunk) mesh step
+        assert!(WATER_3D_RENDER_WGSL.contains("1.0 / max(f32(w.sim.z), 2.0)"));
+        assert!(!WATER_3D_RENDER_WGSL.contains("chunk.uv_origin"));
         assert!(WATER_3D_RENDER_WGSL.contains("vec2<u32>(0u, 0u),"));
         assert!(WATER_3D_RENDER_WGSL.contains("vec2<u32>(1u, 1u),"));
         assert!(WATER_3D_RENDER_WGSL.contains("vec2<u32>(1u, 0u),"));
@@ -244,116 +242,206 @@ mod tests {
         assert!(deep_energy < 0.1);
     }
 
+    /// All-pass frustum planes: nothing is culled.
+    fn open_frustum() -> [[f32; 4]; 6] {
+        [[0.0, 1.0, 0.0, 1.0e9]; 6]
+    }
+
+    fn chunks_for(
+        water: &Water3DState,
+        camera: [f32; 3],
+        lod_scale: [f32; 2],
+    ) -> Vec<WaterRenderChunkGpu> {
+        let lod = water_lod_3d(water, camera, lod_scale);
+        let gpu = water_gpu_3d(
+            NodeID::from_parts(1, 0),
+            water,
+            lod.grid,
+            0,
+            water_cell_count(lod.grid.sim) as u32,
+            lod.ripple_blend,
+            [0.0, 0.0, 0.0],
+        );
+        let mut out = Vec::new();
+        let mut scratch = Vec::new();
+        build_render_chunks_3d(
+            &mut out,
+            &mut scratch,
+            0,
+            water,
+            gpu,
+            camera,
+            lod_scale,
+            &open_frustum(),
+        );
+        out
+    }
+
     #[test]
-    fn water_lod_resolution_clamps_with_distance() {
-        assert_eq!(
-            water_lod(
-                [256, 256],
-                [512, 512],
-                [64.0, 64.0],
-                [128.0, 384.0, 896.0],
-                [32, 32],
-                [0.0, 0.0],
-                [0.0, 0.0]
-            ),
-            WaterLodDecision {
-                grid: WaterGridResolution {
-                    sim: [256, 256],
-                    render: [512, 512],
-                },
-                ripple_blend: 1.0,
-            }
-        );
-        let mid = water_lod(
-            [256, 256],
-            [512, 512],
-            [64.0, 64.0],
-            [128.0, 384.0, 896.0],
-            [32, 32],
-            [512.0, 0.0],
-            [0.0, 0.0],
-        );
-        assert_eq!(mid.grid.sim, [91, 91]);
-        assert_eq!(mid.grid.render, [201, 201]);
-        assert!(mid.ripple_blend > 0.75 && mid.ripple_blend < 0.85);
-        let high = water_lod(
-            [4096, 4096],
-            [4096, 4096],
-            [64.0, 64.0],
-            [128.0, 384.0, 896.0],
-            [32, 32],
-            [0.0, 0.0],
-            [0.0, 0.0],
-        );
-        assert_eq!(high.grid.sim, [256, 256]);
-        assert_eq!(high.grid.render, [1024, 1024]);
-        assert_eq!(
-            water_lod(
-                [256, 256],
-                [512, 512],
-                [64.0, 64.0],
-                [128.0, 384.0, 896.0],
-                [32, 32],
-                [2048.0, 0.0],
-                [0.0, 0.0]
-            ),
-            WaterLodDecision {
-                grid: WaterGridResolution {
-                    sim: [0, 0],
-                    render: [0, 0],
-                },
-                ripple_blend: 0.0,
-            }
-        );
+    fn water_quality_tier_drives_sim_grid_and_readback_rate() {
+        let mut water = test_water_3d();
+        for (tier, sim, rate) in [
+            (WaterQuality::Low, [64, 64], 10.0),
+            (WaterQuality::Medium, [96, 96], 20.0),
+            (WaterQuality::High, [160, 160], 30.0),
+            (WaterQuality::Ultra, [256, 256], 60.0),
+        ] {
+            water.quality = tier;
+            assert_eq!(
+                water_lod_3d(&water, [0.0, 2.0, 0.0], [720.0, 0.0]).grid.sim,
+                sim
+            );
+            assert_eq!(tier.sample_readback_rate(), rate);
+        }
         assert_eq!(water_cell_count([0, 0]), 0);
         assert_eq!(water_cell_count([1, 1]), 1);
     }
 
     #[test]
-    fn water_lod_3d_keeps_simulation_active_while_render_lods() {
-        let mut water = test_water_3d();
-        water.resolution = [4096, 2048];
-        water.render_resolution = [256, 256];
-        let near = water_lod_3d(&water, [0.0, 2.0, 0.0], [720.0, 0.0]);
-        let mid = water_lod_3d(&water, [260.0, 2.0, 0.0], [720.0, 0.0]);
-        let culled = water_lod_3d(&water, [100_000.0, 2.0, 100_000.0], [720.0, 0.0]);
-
-        assert_eq!(near.grid.sim, [256, 256]);
-        assert_eq!(mid.grid.sim, near.grid.sim);
-        assert_eq!(culled.grid.sim, near.grid.sim);
-        assert!(mid.grid.render[0] < near.grid.render[0]);
-        assert_eq!(culled.grid.render, [0, 0]);
-        assert!(mid.ripple_blend < near.ripple_blend);
-        assert_eq!(culled.ripple_blend, 0.0);
+    fn water_quality_default_is_the_low_tier() {
+        let params = perro_structs::WaterQuality::default();
+        assert_eq!(params, perro_structs::WaterQuality::Low);
+        assert_eq!(params.target_edge_pixels(), 32.0);
+        assert_eq!(params.max_chunk_quads(), 16);
     }
 
     #[test]
-    fn water_lod_3d_keeps_far_surface_dense_enough_for_smooth_specular() {
-        let lod = water_lod_from_distance(
-            [256, 256],
-            [256, 128],
-            [100.0, 200.0, 400.0],
-            [16, 16],
-            400.0,
-            WATER_3D_MAX_RENDER_RESOLUTION,
-            WATER_3D_RENDER_LOD_STRENGTH,
+    fn chunk_quads_follow_screen_space_target_not_world_grid() {
+        // Same world chunk, 4x further away -> 4x fewer quads per axis.
+        let near = water_chunk_quads(WaterQuality::High, 16.0, 40.0, [800.0, 0.0]);
+        let far = water_chunk_quads(WaterQuality::High, 16.0, 160.0, [800.0, 0.0]);
+        assert!(near > far, "{near} vs {far}");
+        assert_eq!(near / far, 4);
+        // Half the window height -> half the projection scale -> half the quads.
+        let small_window = water_chunk_quads(WaterQuality::High, 16.0, 40.0, [400.0, 0.0]);
+        assert_eq!(small_window * 2, near);
+        // A finer tier asks for more quads at the same distance.
+        assert!(
+            water_chunk_quads(WaterQuality::Ultra, 16.0, 40.0, [800.0, 0.0])
+                >= water_chunk_quads(WaterQuality::Low, 16.0, 40.0, [800.0, 0.0])
         );
-
-        assert_eq!(lod.grid.render, [146, 73]);
-        assert!(lod.grid.render[0] >= 256 / 2);
-        assert!(lod.grid.render[1] >= 128 / 2);
+        // Always a power of 2 and capped by the tier.
+        for tier in WaterQuality::ALL {
+            for distance in [0.1, 1.0, 7.5, 100.0, 5000.0] {
+                let q = water_chunk_quads(tier, 16.0, distance, [800.0, 0.0]);
+                assert!(q.is_power_of_two(), "{tier} @ {distance} -> {q}");
+                assert!(q <= tier.max_chunk_quads());
+                assert!(q >= 1);
+            }
+        }
     }
 
     #[test]
-    fn water_3d_projected_lod_caps_subpixel_tessellation() {
+    fn chunk_count_scales_with_body_size() {
+        assert_eq!(water_chunk_counts([8.0, 8.0]), [1, 1]);
+        assert_eq!(water_chunk_counts([100.0, 100.0]), [8, 8]);
+        // Capped, but a big body still splits far past the old 2x2.
+        assert_eq!(water_chunk_counts([5000.0, 12.0]), [8, 1]);
+    }
+
+    #[test]
+    fn distant_chunks_get_lower_lod_than_near_chunks() {
         let mut water = test_water_3d();
-        water.size = [64.0, 32.0];
-        let far =
-            water_projected_render_resolution(&water, [0.0, 0.0, 400.0], [720.0, 0.0], [256, 128]);
-        assert_eq!(far, [65, 33]);
-        let near =
-            water_projected_render_resolution(&water, [0.0, 0.0, 40.0], [720.0, 0.0], [256, 128]);
-        assert_eq!(near, [256, 128]);
+        water.quality = WaterQuality::High;
+        water.size = [200.0, 200.0];
+        water.shape = WaterShapeState::Rect;
+        // Camera off one edge, looking across the body.
+        let chunks = chunks_for(&water, [0.0, 4.0, 140.0], [800.0, 0.0]);
+        assert!(
+            chunks.len() > 4,
+            "expect a real chunk grid, got {}",
+            chunks.len()
+        );
+        let near = chunks
+            .iter()
+            .max_by_key(|c| c.chunk[1])
+            .expect("near chunk");
+        let far = chunks.iter().min_by_key(|c| c.chunk[1]).expect("far chunk");
+        assert!(
+            near.quads > far.quads,
+            "near {} should out-tessellate far {}",
+            near.quads,
+            far.quads
+        );
+    }
+
+    #[test]
+    fn chunk_edge_snap_ratios_stay_bounded_and_crack_free() {
+        let mut water = test_water_3d();
+        water.quality = WaterQuality::Ultra;
+        water.size = [200.0, 200.0];
+        let chunks = chunks_for(&water, [0.0, 4.0, 140.0], [800.0, 0.0]);
+        let by_coord: std::collections::HashMap<(u32, u32), &WaterRenderChunkGpu> = chunks
+            .iter()
+            .map(|c| ((c.chunk[0], c.chunk[1]), c))
+            .collect();
+        for chunk in &chunks {
+            assert!(chunk.quads.is_power_of_two());
+            let (cx, cy) = (chunk.chunk[0], chunk.chunk[1]);
+            let neighbours = [
+                ((cx.wrapping_sub(1), cy), 0),
+                ((cx + 1, cy), 1),
+                ((cx, cy.wrapping_sub(1)), 2),
+                ((cx, cy + 1), 3),
+            ];
+            for ((nx, ny), edge) in neighbours {
+                let ratio = (chunk.edge_snap >> (edge * 8)) & 0xFF;
+                assert!((1..=WATER_CHUNK_MAX_LOD_RATIO).contains(&ratio), "{ratio}");
+                assert!(ratio.is_power_of_two(), "snap ratio must divide quads");
+                let Some(other) = by_coord.get(&(nx, ny)) else {
+                    // Body border: no neighbour, no snap, and a side wall.
+                    assert_eq!(ratio, 1);
+                    assert_ne!(chunk.flags & (1 << edge), 0);
+                    continue;
+                };
+                // Snapping only ever collapses onto the COARSER neighbour, and
+                // the ratio must divide this chunk's quad count exactly, else
+                // the snapped vertex misses the neighbour knot -> crack.
+                if other.quads < chunk.quads {
+                    assert_eq!(ratio, chunk.quads / other.quads);
+                } else {
+                    assert_eq!(ratio, 1);
+                }
+                assert_eq!(chunk.quads % ratio, 0);
+                assert_eq!(chunk.flags & (1 << edge), 0);
+            }
+        }
+    }
+
+    #[test]
+    fn lower_quality_costs_fewer_vertices() {
+        let mut water = test_water_3d();
+        water.size = [200.0, 200.0];
+        let mut previous = 0;
+        for tier in WaterQuality::ALL {
+            water.quality = tier;
+            let lod = water_lod_3d(&water, [0.0, 4.0, 140.0], [800.0, 0.0]);
+            let gpu = water_gpu_3d(
+                NodeID::from_parts(1, 0),
+                &water,
+                lod.grid,
+                0,
+                water_cell_count(lod.grid.sim) as u32,
+                lod.ripple_blend,
+                [0.0, 0.0, 0.0],
+            );
+            let total: u32 = chunks_for(&water, [0.0, 4.0, 140.0], [800.0, 0.0])
+                .iter()
+                .map(|chunk| water_render_chunk_vertex_count(&gpu, chunk))
+                .sum();
+            assert!(total > previous, "{tier} -> {total} vs {previous}");
+            previous = total;
+        }
+    }
+
+    #[test]
+    fn chunk_lod_ratio_clamp_lifts_coarse_neighbours() {
+        let mut quads = vec![64, 1, 1, 1];
+        clamp_chunk_lod_ratio(&mut quads, [4, 1]);
+        assert_eq!(quads, vec![64, 16, 4, 1]);
+        for pair in quads.windows(2) {
+            assert!(pair[0] / pair[1] <= WATER_CHUNK_MAX_LOD_RATIO);
+        }
     }
 
     #[test]
@@ -398,15 +486,15 @@ mod tests {
             NodeID::from_parts(7, 0),
             &water,
             WaterGridResolution {
-                sim: water.resolution,
-                render: water.resolution,
+                sim: water.quality.sim_resolution(),
+                render: water.quality.sim_resolution(),
             },
             4,
             64,
             1.0,
         );
         assert_eq!(staged.node, 7);
-        assert_eq!(staged.sim, [4, 64, 8, 8]);
+        assert_eq!(staged.sim, [4, 64, 256, 256]);
         assert_eq!(staged.kind, 2);
         assert_eq!(staged.flags[2] & WATER_FLAG_PAUSED, 0);
         let mut paused = water;
@@ -415,8 +503,8 @@ mod tests {
             NodeID::from_parts(7, 0),
             &paused,
             WaterGridResolution {
-                sim: paused.resolution,
-                render: paused.resolution,
+                sim: paused.quality.sim_resolution(),
+                render: paused.quality.sim_resolution(),
             },
             4,
             64,
@@ -484,7 +572,6 @@ mod tests {
 
     fn idle_coastline_water_2d() -> Water2DState {
         let mut water = test_water_2d();
-        water.resolution = [256, 256];
         water.impacts = Arc::from([]);
         water.coastline_shapes = Arc::from([WaterCoastlineShape2D::Circle {
             center: [0.0, 0.0],
@@ -575,7 +662,6 @@ mod tests {
         let node = NodeID::from_parts(8, 0);
         let mut cache: HashMap<NodeID, CachedCoastline> = HashMap::new();
         let mut water = test_water_3d();
-        water.resolution = [128, 128];
         water.impacts = Arc::from([]);
         water.coastline_shapes = Arc::from([WaterCoastlineShape3D::Sphere {
             center: [0.0, 0.0, 0.0],
@@ -610,7 +696,6 @@ mod tests {
         let node = NodeID::from_parts(9, 0);
         let mut cache: HashMap<NodeID, CachedCoastline> = HashMap::new();
         let mut water = test_water_2d();
-        water.resolution = [64, 64];
         water.impacts = Arc::from([]);
         let cells = water_cell_count([64, 64]);
         let mut out = vec![[1.0f32; 4]; cells];
@@ -772,7 +857,6 @@ mod tests {
                 &[],
                 &waters,
                 WaterPrepareContext {
-                    camera_2d_position: [0.0, 0.0],
                     camera_3d_position: [0.0, 8.0, 24.0],
                     camera_3d_frustum_planes: [[0.0, 0.0, 0.0, 1.0e9]; 6],
                     camera_3d_lod_scale: [360.0, 0.0],
@@ -845,7 +929,6 @@ mod tests {
 
         let waters = [(NodeID::from_parts(3, 0), idle_coastline_water_2d())];
         let ctx = WaterPrepareContext {
-            camera_2d_position: [0.0, 0.0],
             camera_3d_position: [0.0, 0.0, 0.0],
             camera_3d_frustum_planes: [[0.0, 0.0, 0.0, 1.0]; 6],
             camera_3d_lod_scale: [0.0; 2],

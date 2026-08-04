@@ -42,6 +42,7 @@ const PARTICLE_SIM_MODE_2D_OPTIONS: &[&str] = &["default", "cpu"];
 const PARTICLE_SIM_MODE_3D_OPTIONS: &[&str] = &["default", "cpu", "hybrid", "gpu"];
 const PARTICLE_RENDER_MODE_3D_OPTIONS: &[&str] = &["point", "billboard"];
 const WATER_IDLE_MODE_OPTIONS: &[&str] = &["calm", "sine", "chop", "storm", "river"];
+const WATER_QUALITY_OPTIONS: &[&str] = &["low", "medium", "high", "ultra"];
 const CAMERA_PROJECTION_SUBMENUS: &[NodeFieldEnumVariant] = &[
     NodeFieldEnumVariant::new(
         "perspective",

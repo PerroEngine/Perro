@@ -18,17 +18,18 @@ pub(super) fn water_relative_normal_velocity(body_velocity: f32, surface_velocit
     body_velocity - surface_velocity.clamp(-2.5, 2.5) * WATER_SURFACE_VELOCITY_FOLLOW
 }
 
-pub(super) fn water_force_lod(
-    near_distance: f32,
-    mid_distance: f32,
-    far_distance: f32,
-    water_pos: Vector2,
-    camera_pos: Vector2,
-) -> (f32, f32) {
+// Buoyancy force falloff bands, metres. Fixed: physics fidelity is not the
+// render `quality` tier's business, and the old per-body LOD distances that
+// used to feed this are gone.
+const WATER_FORCE_LOD_NEAR: f32 = 128.0;
+const WATER_FORCE_LOD_MID: f32 = 384.0;
+const WATER_FORCE_LOD_FAR: f32 = 896.0;
+
+pub(super) fn water_force_lod(water_pos: Vector2, camera_pos: Vector2) -> (f32, f32) {
     let distance = Vector2::distance(water_pos, camera_pos);
-    let near = near_distance.max(0.0);
-    let mid = mid_distance.max(near);
-    let far = far_distance.max(mid);
+    let near = WATER_FORCE_LOD_NEAR;
+    let mid = WATER_FORCE_LOD_MID;
+    let far = WATER_FORCE_LOD_FAR;
     if distance <= near {
         return (1.0, 0.0);
     }
@@ -336,13 +337,7 @@ pub(super) fn water_forces_for_body_2d(
                 * contact.min(1.0)
                 * blend.surface.physics.wake_strength.clamp(0.0, 2.5)
                 * 0.45);
-        let (scale, deadzone) = water_force_lod(
-            blend.surface.lod.near_distance,
-            blend.surface.lod.mid_distance,
-            blend.surface.lod.far_distance,
-            blend.pos,
-            camera_pos,
-        );
+        let (scale, deadzone) = water_force_lod(blend.pos, camera_pos);
         let cap = water_buoyancy_cap(
             mass,
             submerged,
@@ -449,13 +444,7 @@ pub(super) fn water_forces_for_body_3d(
                     * blend.surface.physics.wake_strength.clamp(0.0, 2.5)
                     * 0.45);
             let water_pos_2d = Vector2::new(blend.pos.x, blend.pos.z);
-            let (scale, deadzone) = water_force_lod(
-                blend.surface.lod.near_distance,
-                blend.surface.lod.mid_distance,
-                blend.surface.lod.far_distance,
-                water_pos_2d,
-                camera_pos,
-            );
+            let (scale, deadzone) = water_force_lod(water_pos_2d, camera_pos);
             let cap = water_buoyancy_cap(
                 mass,
                 submerged,

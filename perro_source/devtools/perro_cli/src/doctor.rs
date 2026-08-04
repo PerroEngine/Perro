@@ -102,8 +102,62 @@ fn validate_project(project_dir: &Path) -> Result<ValidationReport, String> {
 
     validate_script_warnings(project_dir, &mut report)?;
     validate_shaders(project_dir, &mut report)?;
+    validate_removed_scene_fields(project_dir, &mut report)?;
 
     Ok(report)
+}
+
+/// Scene load cannot fail on an unknown field, so a removed water fidelity knob
+/// would otherwise sit in a `.scn` doing nothing. Error here + name `quality`.
+fn validate_removed_scene_fields(
+    project_dir: &Path,
+    report: &mut ValidationReport,
+) -> Result<(), String> {
+    let mut files = Vec::new();
+    collect_scene_files_recursive(&project_dir.join("res"), &mut files)?;
+    collect_scene_files_recursive(&project_dir.join("dlcs"), &mut files)?;
+    for file in files {
+        let text = fs::read_to_string(&file)
+            .map_err(|err| format!("failed to read scene {}: {err}", file.display()))?;
+        let Ok(scene) = Parser::new(&text).try_parse_scene() else {
+            continue;
+        };
+        for node in scene.nodes.iter() {
+            let name = scene.key_name_or_id(node.key).to_string();
+            validate_removed_node_fields(&file, &name, &node.data, report);
+        }
+    }
+    Ok(())
+}
+
+fn validate_removed_node_fields(
+    file: &Path,
+    node_name: &str,
+    data: &SceneNodeData,
+    report: &mut ValidationReport,
+) {
+    if matches!(
+        data.node_type,
+        NodeType::WaterBody2D | NodeType::WaterBody3D
+    ) {
+        for (field, _) in data.fields.iter() {
+            let raw = field.as_ref();
+            if let Some(detail) = perro_scene::water_body_removed_field(raw) {
+                report.error(format!(
+                    "{}: `{node_name}` {:?} field `{raw}`: {detail}",
+                    file.display(),
+                    data.node_type
+                ));
+            }
+        }
+    }
+    if let Some(base) = data.base.as_ref() {
+        let base = match base {
+            perro_scene::SceneNodeDataBase::Borrowed(data) => data,
+            perro_scene::SceneNodeDataBase::Owned(data) => data.as_ref(),
+        };
+        validate_removed_node_fields(file, node_name, base, report);
+    }
 }
 
 // Game `.wgsl` files only become full modules once the engine wraps a prelude

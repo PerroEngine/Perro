@@ -1,6 +1,10 @@
 //! Static collision trimesh discovery and PMESH v1 collision packing.
 
-use crate::{CachedSource, ResFileTree, SourceCache, StaticPipelineError, asset_prefix, ensure_unique_hashes, is_asset_uri, res_dir, source_stat, static_dir, strip_asset_prefix, write_hash_const, write_if_changed, write_static_lookup_fn};
+use crate::{
+    CachedSource, ResFileTree, SourceCache, StaticPipelineError, asset_prefix,
+    ensure_unique_hashes, is_asset_uri, res_dir, source_stat, static_dir, strip_asset_prefix,
+    write_hash_const, write_if_changed, write_static_lookup_fn,
+};
 use perro_asset_formats::{
     pmesh::{
         EXTENSION as PMESH_EXTENSION, FLAG_INDEX_U16 as PMESH_FLAG_INDEX_U16,
@@ -462,7 +466,10 @@ fn read_index(raw: &[u8], index_start: usize, index: usize, index_u16: bool) -> 
 fn load_trimesh_from_gltf_bytes(bytes: &[u8], mesh_index: usize) -> Option<TriMeshData> {
     // buffers only: import_slice decodes every embedded image to RGBA, which
     // this collision path never uses.
-    let gltf::Gltf { document: doc, blob } = gltf::Gltf::from_slice(bytes).ok()?;
+    let gltf::Gltf {
+        document: doc,
+        blob,
+    } = gltf::Gltf::from_slice(bytes).ok()?;
     let buffers = gltf::import_buffers(&doc, None, blob).ok()?;
     let mesh = doc.meshes().nth(mesh_index)?;
     let mut vertices = Vec::<[f32; 3]>::new();

@@ -49,6 +49,7 @@ mod interaction;
 
 #[path = "ui/events.rs"]
 mod events;
+use events::UiInputSource;
 #[path = "ui/layout_core.rs"]
 mod layout_core;
 #[path = "ui/layout_rects.rs"]

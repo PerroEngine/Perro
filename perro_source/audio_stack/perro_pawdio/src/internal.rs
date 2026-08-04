@@ -228,10 +228,7 @@ pub(crate) struct CachedSoundFont {
 }
 
 impl CachedSoundFont {
-    pub(crate) fn estimate_footprint(
-        font: &rustysynth::SoundFont,
-        source_bytes: usize,
-    ) -> usize {
+    pub(crate) fn estimate_footprint(font: &rustysynth::SoundFont, source_bytes: usize) -> usize {
         std::mem::size_of_val(font.get_wave_data()).max(source_bytes)
     }
 }

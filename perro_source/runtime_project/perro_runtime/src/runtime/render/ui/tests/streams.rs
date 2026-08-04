@@ -706,7 +706,7 @@ mod streams {
         });
         let state = state.expect("viewport stream state");
         assert!(!state.tone_map_output);
-        assert_eq!(state.resolution, [640, 360]);
+        assert_eq!(state.resolution, [320, 180]);
         assert!(state.transparent_background);
         assert!(matches!(
             &state.source,
@@ -839,8 +839,8 @@ mod streams {
         assert!(commands.iter().any(|command| matches!(
             command,
             RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
-                // 200x100 rect, 2x supersample, long axis bucketed up to 64s.
-                if *node == viewport && state.resolution == [448, 224]
+                // 200x100 rect at 1x, long axis bucketed up to 64s.
+                if *node == viewport && state.resolution == [256, 128]
         )));
         assert!(commands.iter().any(|command| matches!(
             command,
@@ -868,8 +868,8 @@ mod streams {
             RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
                 if *node == viewport
                     && !state.transparent_background
-                    // 100x50 rect, 2x supersample, long axis bucketed.
-                    && state.resolution == [256, 128]
+                    // 100x50 rect at 1x, long axis bucketed.
+                    && state.resolution == [128, 64]
         )));
     }
 
@@ -1152,7 +1152,7 @@ mod streams {
                 _ => None,
             })
             .expect("first visible UiSubView state");
-        assert_eq!(first_visible.resolution, [2560, 1440]);
+        assert_eq!(first_visible.resolution, [1280, 720]);
         let first_visible_resolution = first_visible.resolution;
         assert_eq!(
             first_visible.resolution[0] as f32 / first_visible.resolution[1] as f32,

@@ -243,6 +243,57 @@ mod controls {
     }
 
     #[test]
+    fn color_only_button_hover_does_not_start_geometry_motion() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+        let node = insert_button(&mut runtime, [120.0, 40.0]);
+
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        runtime.set_mouse_position(400.0, 300.0);
+        runtime.extract_render_ui_commands();
+        assert!(!runtime.render_ui.button_motions.contains_key(&node));
+        runtime.drain_render_commands(&mut Vec::new());
+
+        let timing = runtime.extract_render_ui_commands_timed();
+        assert_eq!(timing.command_nodes, 0);
+        assert_eq!(timing.command_emitted, 0);
+    }
+
+    #[test]
+    fn pointer_motion_does_not_rebuild_unchanged_retained_ui_commands() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+        for index in 0..64 {
+            let panel = insert_panel(
+                &mut runtime,
+                [80.0 + index as f32, 40.0],
+                Color::new(0.1, 0.2, 0.3, 1.0),
+            );
+            if let Some(mut scene_node) = runtime.nodes.get_mut(panel)
+                && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
+            {
+                panel.mouse_filter = perro_ui::UiMouseFilter::Ignore;
+            }
+        }
+
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        runtime.set_mouse_position(10.0, 10.0);
+        let timing = runtime.extract_render_ui_commands_timed();
+
+        assert_eq!(timing.command_nodes, 0);
+        assert_eq!(timing.command_emitted, 0);
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        assert!(!commands.iter().any(|command| matches!(command, RenderCommand::Ui(_))));
+    }
+
+    #[test]
     fn button_held_before_hover_does_not_press_or_click() {
         let mut runtime = Runtime::new();
         runtime.set_viewport_size(800, 600);

@@ -132,16 +132,11 @@ fn draw_3d_dense_command_with_blend(
     }))
 }
 
-fn water_command(i: u32, resolution: u32, impacts: u32) -> RenderCommand {
-    water_command_with_idle(i, resolution, impacts, WaterIdleModeState::Sine)
+fn water_command(i: u32, _resolution: u32, impacts: u32) -> RenderCommand {
+    water_command_with_idle(i, impacts, WaterIdleModeState::Sine)
 }
 
-fn water_command_with_idle(
-    i: u32,
-    resolution: u32,
-    impacts: u32,
-    idle_mode: WaterIdleModeState,
-) -> RenderCommand {
+fn water_command_with_idle(i: u32, impacts: u32, idle_mode: WaterIdleModeState) -> RenderCommand {
     let x = (i % 64) as f32 * 36.0;
     let y = (i / 64) as f32 * 36.0;
     RenderCommand::TwoD(Command2D::UpsertWater {
@@ -154,8 +149,7 @@ fn water_command_with_idle(
             simulation_delta: 1.0 / 60.0,
             size: [32.0, 32.0],
             shape: WaterShapeState::Rect,
-            resolution: [resolution, resolution],
-            render_resolution: [resolution, resolution],
+            quality: perro_structs::WaterQuality::Ultra,
             depth: 4.0,
             flow: [0.1, 0.0],
             wind: [1.0, 0.2],
@@ -167,10 +161,6 @@ fn water_command_with_idle(
             wake_strength: 1.0,
             foam_strength: 0.65,
             sample_readback_rate: 30.0,
-            lod_near_distance: 128.0,
-            lod_mid_distance: 384.0,
-            lod_far_distance: 896.0,
-            lod_min_resolution: [32, 32],
             collision_layers: BitMask::with([1]),
             collision_mask: BitMask::NONE,
             deep_color: color([0.02, 0.16, 0.28, 0.86]),
@@ -591,7 +581,7 @@ fn bench_water_idle_prepare(c: &mut Criterion) {
             |b, idle_mode| {
                 let mut graphics = PerroGraphics::new();
                 b.iter_batched(
-                    || vec![water_command_with_idle(0, 128, 2, *idle_mode)],
+                    || vec![water_command_with_idle(0, 2, *idle_mode)],
                     |commands| {
                         graphics.submit_many(commands);
                         let timing = graphics.draw_frame_timed().expect("timing");

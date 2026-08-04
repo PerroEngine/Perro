@@ -24,7 +24,7 @@
 
 ## Purpose
 
-`project.toml` lives at the project root and declares your game's identity plus its runtime defaults. Both `perro dev` and `perro build` read it, so one file drives the boot scene, window shape, render quality, frame pacing, physics, audio, localization, Steam, and web metadata. Only `[project]` is required; every other table falls back to built-in defaults. Invalid enum strings or out-of-range numbers fail the parse hard, so a typo surfaces at load instead of silently changing behavior. Unknown tables print a warning and get ignored.
+`project.toml` lives at the project root and declares your game's identity plus its runtime defaults. Both `perro dev` and `perro build` read it, so one file drives the boot scene, window shape, render quality, frame pacing, physics, audio, localization, Steam, and web metadata. Only `[project]` is required; every other table falls back to built-in defaults. Invalid enum strings or invalid value types fail parse. Bounded tuning values may clamp when their field docs say so. Unknown tables print a warning and get ignored.
 
 Every table is a flat top-level topic — no dotted subtables in the current layout. Older dotted layouts still parse; see [Legacy Layout](#legacy-layout).
 
@@ -70,6 +70,9 @@ vsync = false
 hdr = "auto"                     # auto | on | off
 anti_alias = "fxaa"              # off | fxaa | smaa | taa | msaa2 | msaa4
 ssao = "medium"                  # off | low | medium | high | ultra
+shadow_quality = "low"           # low | medium | high
+render_scale = 1.0               # 0.25..=1.0; lower = fewer scene pixels
+power_preference = "high_performance" # high_performance | low_power
 occlusion_culling = "gpu"        # cpu | gpu | off
 particle_sim_default = "gpu"     # cpu | hybrid | gpu
 texture_filter = "linear_mipmap" # nearest | linear | linear_mipmap | anisotropic
@@ -157,6 +160,9 @@ Empty identity string = none. Legacy `[metadata]` table still parses; `[project]
 | `anti_alias`           | string | `"fxaa"`          | `"off"`, `"fxaa"`, `"smaa"`, `"taa"`, `"msaa2"`, `"msaa4"` |
 | `msaa`                 | bool   | legacy            | `true` / `false` (superseded by `anti_alias`) |
 | `ssao`                 | string | `"medium"`        | `"off"`, `"low"`, `"medium"`, `"high"`, `"ultra"` |
+| `shadow_quality`       | string | `"low"`           | `"low"`, `"medium"`, `"high"` |
+| `render_scale`         | number | `1.0`              | clamp `0.25..=1.0`           |
+| `power_preference`     | string | `"high_performance"` | `"high_performance"`, `"low_power"` |
 | `occlusion_culling`    | string | `"gpu"`           | `"cpu"`, `"gpu"`, `"off"`    |
 | `particle_sim_default` | string | `"cpu"`           | `"cpu"`, `"hybrid"`, `"gpu"` |
 | `texture_filter`       | string | `"linear_mipmap"` | see below                    |
@@ -214,7 +220,9 @@ Runtime derives internal canvas from it:
 
 Window opens at 75% monitor size, fit to this aspect.
 
-Render surface uses native window resolution.
+Swapchain uses native window resolution. Scene targets use `render_scale`; present upscales them to the window. `0.75` shades about 44% fewer pixels, `0.5` shades 75% fewer.
+
+`power_preference` gives adapter selection a hint. Platform/driver availability still decides the adapter.
 
 WASM forces some graphics features off when platform lacks support.
 
@@ -258,15 +266,10 @@ Effects:
 - linear smooths scale but may blur pixel art
 - anisotropic helps floors/walls at angle
 
-`texture_filter` also picks the UI supersample factor:
-
-- filtering modes raster UI at 2x and minify for edge AA
-- `"nearest"` rasters UI at 1x
-
-A point sampler gains no AA from a 2x source, so `"nearest"` would pay 4x UI
-raster cost for aliasing instead of smoothing. Auto-resolution `UiSubView`
-targets read the same factor, so both stay matched and a sub view still lands
-1:1 in the UI target.
+`texture_filter` changes sampling only. UI rasterizes at 1x for every mode.
+Auto-resolution `UiSubView` targets use the same 1x policy, so both stay
+matched and a sub view lands 1:1 in the UI target (apart from 64px target
+bucket rounding).
 
 Current limit:
 

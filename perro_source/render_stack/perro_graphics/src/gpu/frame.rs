@@ -28,7 +28,6 @@ impl Gpu {
             decals_3d_revision,
             camera_streams,
             camera_2d,
-            camera_2d_position,
             post_processing_2d,
             post_processing_global,
             accessibility,
@@ -326,7 +325,6 @@ impl Gpu {
                     waters_2d,
                     waters_3d,
                     WaterPrepareContext {
-                        camera_2d_position,
                         camera_3d_position: camera_3d.position,
                         camera_3d_frustum_planes: water_extract_frustum_planes(water_view_proj),
                         camera_3d_lod_scale: water_camera_lod_scale(&camera_3d, self.render_height),
@@ -879,7 +877,6 @@ impl Gpu {
                         camera_stream_cache_entry(&mut self.camera_stream_2d, *node, || {
                             Gpu2D::new(&self.device, self.render_format, 1, self.texture_filter)
                         });
-                    let camera_position = camera.position;
                     let camera = camera_2d_uniform_from_state(
                         camera,
                         stream.resolution[0],
@@ -973,7 +970,6 @@ impl Gpu {
                             stream.waters_2d.as_ref(),
                             &[],
                             WaterPrepareContext {
-                                camera_2d_position: camera_position,
                                 camera_3d_position: [0.0, 0.0, 0.0],
                                 camera_3d_frustum_planes: [[0.0; 4]; 6],
                                 camera_3d_lod_scale: [0.0; 2],
@@ -1158,7 +1154,6 @@ impl Gpu {
                             &[],
                             stream.waters_3d.as_ref(),
                             WaterPrepareContext {
-                                camera_2d_position: [0.0, 0.0],
                                 camera_3d_position: camera.position,
                                 camera_3d_frustum_planes: water_extract_frustum_planes(
                                     water_view_proj,
@@ -1239,7 +1234,6 @@ impl Gpu {
                             Gpu2D::new(&self.device, self.render_format, 1, self.texture_filter)
                         });
                     {
-                        let camera_position = overlay_camera.position;
                         let camera = camera_2d_uniform_from_state(
                             overlay_camera,
                             stream.resolution[0],
@@ -1300,7 +1294,6 @@ impl Gpu {
                                 stream.waters_2d.as_ref(),
                                 &[],
                                 WaterPrepareContext {
-                                    camera_2d_position: camera_position,
                                     camera_3d_position: [0.0, 0.0, 0.0],
                                     camera_3d_frustum_planes: [[0.0; 4]; 6],
                                     camera_3d_lod_scale: [0.0; 2],
@@ -2037,6 +2030,7 @@ impl Gpu {
             timing.shadow_multimesh_instance_draws = counters.shadow_multimesh_instance_draws;
             timing.shadow_multimesh_culled_layers = counters.shadow_multimesh_culled_layers;
             timing.shadow_empty_layer_skips = counters.shadow_empty_layer_skips;
+            timing.shadow_multiview_passes = counters.shadow_multiview_passes;
         }
         let present_start = Instant::now();
         if let Some(frame) = frame {

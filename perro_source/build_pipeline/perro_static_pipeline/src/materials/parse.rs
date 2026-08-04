@@ -43,9 +43,14 @@ pub(super) fn material_from_runtime_entries(
                 images: Vec::new(),
                 lighting: CustomMaterialLighting3D::Standard,
                 surface: StandardMaterial3D::default(),
+                release_bake: false,
+                bake_resolution: None,
             };
             apply_custom_runtime_entries(entries, &mut out, &mut any);
             apply_vertex_modifiers(entries, &mut out.surface.vertex_modifiers, &mut any);
+            if out.release_bake && out.bake_resolution.is_none() {
+                out.bake_resolution = Some([1024, 1024]);
+            }
             any.then_some(MaterialLiteral::Custom(out))
         }
     }
@@ -392,6 +397,30 @@ pub(super) fn apply_custom_runtime_entries(
                     *any = true;
                 }
             }
+            Some("releaseBake") => {
+                if let Some(value) = as_bool(value) {
+                    out.release_bake = value;
+                    *any = true;
+                }
+            }
+            Some("shaderUse") => {
+                if let Some(value) = as_string_value(value) {
+                    out.release_bake = matches!(value.as_str(), "baked" | "bake" | "auto" | "both");
+                    *any = true;
+                }
+            }
+            Some("bakeResolution") => {
+                let resolution = match value {
+                    SceneValue::Vec2 { x, y } => Some([*x as u32, *y as u32]),
+                    SceneValue::UVec2 { x, y } => Some([*x, *y]),
+                    SceneValue::IVec2 { x, y } => Some([(*x).max(1) as u32, (*y).max(1) as u32]),
+                    _ => None,
+                };
+                if let Some([width, height]) = resolution {
+                    out.bake_resolution = Some([width.clamp(1, 8192), height.clamp(1, 8192)]);
+                    *any = true;
+                }
+            }
             _ => {}
         }
     }
@@ -497,6 +526,9 @@ pub(super) fn canonical_custom_key(name: &str) -> Option<&'static str> {
         "output" | "shaderOutput" | "shader_output" | "lighting" | "light" | "lit" => {
             Some("output")
         }
+        "release_bake" | "releaseBake" => Some("releaseBake"),
+        "shader_use" | "shaderUse" | "bake_mode" => Some("shaderUse"),
+        "bake_resolution" | "bakeResolution" | "bake_size" => Some("bakeResolution"),
         _ => None,
     }
 }

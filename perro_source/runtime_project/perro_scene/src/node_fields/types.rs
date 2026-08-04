@@ -184,11 +184,8 @@ pub enum ParticleEmitter2DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WaterBodyField {
     Shape,
-    Resolution,
-    RenderResolution,
-    VerticesPerMeter,
-    SimCellsPerMeter,
-    RenderVerticesPerMeter,
+    /// Single fidelity tier: `low` | `medium` | `high` | `ultra`.
+    Quality,
     Depth,
     Flow,
     Wind,
@@ -202,10 +199,6 @@ pub enum WaterBodyField {
     Buoyancy,
     Drag,
     SampleReadbackRate,
-    LodNearDistance,
-    LodMidDistance,
-    LodFarDistance,
-    LodMinResolution,
     CollisionLayers,
     CollisionMask,
     LinkLayers,

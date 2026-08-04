@@ -1,4 +1,8 @@
-use crate::{ResFileTree, StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, prune_embedded_dir, res_dir, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn};
+use crate::{
+    ResFileTree, StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes,
+    prune_embedded_dir, res_dir, static_dir, write_hash_const, write_if_changed,
+    write_static_lookup_fn,
+};
 use perro_asset_formats::ptset::{
     EXTENSION as PTSET_EXTENSION, SOURCE_EXTENSION as PTSET_SOURCE_EXTENSION,
 };
@@ -146,7 +150,8 @@ mod tests {
             embedded_dir: root.join("embedded"),
             asset_prefix: "res://".to_string(),
         }));
-        generate_static_tilesets(&root, &crate::ResFileTree::scan(&root).expect("res scan")).expect("required value must be present");
+        generate_static_tilesets(&root, &crate::ResFileTree::scan(&root).expect("res scan"))
+            .expect("required value must be present");
         set_static_pipeline_overrides(None);
 
         let out = fs::read_to_string(static_dir.join("tilesets.rs"))

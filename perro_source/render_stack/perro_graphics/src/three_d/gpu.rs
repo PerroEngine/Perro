@@ -6,8 +6,9 @@ use super::{
         MAX_RAY_LIGHTS, MAX_SPOT_LIGHTS,
     },
     shaders::{
-        BuiltinShaderKind, MaterialShaderFeatures, build_custom_material_shader_with_prelude,
-        build_custom_multimesh_material_shader, create_depth_prepass_shader_module_rigid,
+        BuiltinShaderKind, MAX_MULTIVIEW_SHADOW_VIEWS, MaterialShaderFeatures,
+        build_custom_material_shader_with_prelude, build_custom_multimesh_material_shader,
+        create_depth_prepass_shader_module_rigid,
         create_depth_prepass_shader_module_rigid_packed_lod,
         create_depth_prepass_shader_module_skinned, create_frustum_cull_shader_module,
         create_hiz_depth_copy_shader_module, create_hiz_downsample_shader_module,
@@ -17,7 +18,9 @@ use super::{
         create_mesh_blend_mask_shader_module_skinned, create_mesh_blend_screen_shader_module,
         create_mesh_shader_module_rigid, create_mesh_shader_module_rigid_packed_lod,
         create_mesh_shader_module_skinned, create_multimesh_cull_shader_module,
-        create_multimesh_shader_module, create_sky_shader_module,
+        create_multimesh_shader_module, create_shadow_depth_multiview_shader_module_rigid,
+        create_shadow_depth_multiview_shader_module_rigid_packed_lod,
+        create_shadow_depth_multiview_shader_module_skinned, create_sky_shader_module,
         create_sky_shader_module_from_source, create_standard_shader_module_rigid_variant,
         create_standard_shader_module_skinned_variant, create_toon_shader_module_rigid,
         create_toon_shader_module_skinned, create_unlit_shader_module_rigid,
@@ -448,6 +451,20 @@ const CUSTOM_PARAM_KIND_VEC4: u32 = 3;
 // Set to false after validating shadow stability.
 const DEBUG_FORCE_WORLD_SUN_DIR: bool = false;
 const DEBUG_WORLD_SUN_DIR: [f32; 3] = [-0.45, -0.85, -0.28];
+
+/// Group 1 of the multiview shadow depth pipelines: one light view-proj per
+/// layer of the set the pass covers, indexed by `@builtin(view_index)`.
+///
+/// Always the full [`MAX_MULTIVIEW_SHADOW_VIEWS`] length even for a 4-view
+/// cascade pass: the WGSL declares the array at that size, so one bind group
+/// layout (and one `min_binding_size`) serves every view count. Unused slots
+/// hold the last written matrix and are never sampled -- the mask keeps the
+/// pass to `views` layers.
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
+struct ShadowMultiviewUniform {
+    view_proj: [[[f32; 4]; 4]; MAX_MULTIVIEW_SHADOW_VIEWS],
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
@@ -1062,6 +1079,29 @@ pub struct Gpu3D {
     point_shadow_layer_views: Vec<wgpu::TextureView>,
     point_shadow_layers_allocated: u32,
     shadow_map_sampler: wgpu::Sampler,
+    // Multiview shadow depth: one render pass writes a whole layer set (the 4
+    // ray cascades, the spot lights, or one point light's 6 faces) instead of
+    // one pass per layer. Measured cost of a shadow layer is the PASS, flat in
+    // atlas resolution, so collapsing 11 passes into 3 is the lever.
+    //
+    // Off when the adapter lacks `Features::MULTIVIEW` (and always on wasm), and
+    // per frame when multimesh shadow casters are staged -- their per-layer GPU
+    // instance cull rewrites one shared indirect buffer immediately before each
+    // layer's pass, which a set-wide pass cannot serve.
+    shadow_multiview_supported: bool,
+    // Group 1 of the multiview shadow pipelines, one per candidate set: the
+    // light view-proj of every layer in the set, indexed by `view_index`.
+    shadow_multiview_buffers: Vec<wgpu::Buffer>,
+    shadow_multiview_bind_groups: Vec<wgpu::BindGroup>,
+    last_shadow_multiview: Vec<Option<ShadowMultiviewUniform>>,
+    // Per-set `D2Array` depth attachment views, `(layer count, view)`. Cleared
+    // whenever an atlas is grown, shrunk or released.
+    shadow_multiview_layer_views: Vec<Option<(u32, wgpu::TextureView)>>,
+    // Union of the per-layer culls over one multiview set: a multiview draw
+    // reaches every view in the mask, so per-layer CPU culling collapses to one
+    // list that any layer of the set may need. Casters outside the whole set
+    // still drop out.
+    shadow_union_scratch: Vec<usize>,
     // Screen-space mesh blend (seam pass) state.
     screen_blend_supported: bool,
     mesh_blend_screen_active: bool,
@@ -1825,6 +1865,10 @@ pub(crate) struct PassCounters {
     // Shadow layers left out of the encoder entirely because their cull was
     // empty and their depth already held nothing but the clear.
     pub(crate) shadow_empty_layer_skips: u32,
+    // Shadow depth passes that wrote a whole layer set through multiview.
+    // `shadow_layer_renders - shadow_multiview_passes` is roughly the pass count
+    // saved versus one pass per layer.
+    pub(crate) shadow_multiview_passes: u32,
 }
 
 // Encoder-level GPU timestamp slots bracketing the shadow depth block. Both

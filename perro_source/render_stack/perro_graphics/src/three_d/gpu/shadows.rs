@@ -187,6 +187,112 @@ pub(super) struct ShadowLayerShrink {
 /// gives back its whole atlas set.
 pub(super) const STREAM_SHADOW_IDLE_RELEASE_TICKS: u32 = 10;
 
+/// Escape hatch for the multiview shadow path: `PERRO_DISABLE_MULTIVIEW_SHADOWS`
+/// forces every `Gpu3D` back onto one render pass per shadow layer, so the two
+/// paths can be A/B measured in the same build.
+pub(super) fn multiview_shadows_disabled() -> bool {
+    static DISABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *DISABLED.get_or_init(|| std::env::var_os("PERRO_DISABLE_MULTIVIEW_SHADOWS").is_some())
+}
+
+/// Which of the three shadow atlases a layer set lives in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ShadowAtlas {
+    Ray,
+    Spot,
+    Point,
+}
+
+/// One multiview candidate: a contiguous run of shadow layers inside a single
+/// atlas that a single depth pass can cover.
+///
+/// The runs are the natural light groupings, not an arbitrary packing: the four
+/// ray cascades, the spot lights (one layer each), and each point light's six
+/// cube faces. A multiview pass CLEARS every layer in its mask, so a set is
+/// all-or-nothing -- see `shadow_set_needs_render`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct ShadowLayerSet {
+    pub(super) set_index: usize,
+    pub(super) atlas: ShadowAtlas,
+    /// First layer in the flat `SHADOW_CAMERA_COUNT` space (scene uniforms,
+    /// frustums, `shadow_layer_valid`, `shadow_layer_empty`).
+    pub(super) flat_base: usize,
+    /// First layer inside the set's own atlas texture.
+    pub(super) atlas_base: usize,
+    pub(super) count: usize,
+    pub(super) label: &'static str,
+}
+
+/// Candidate sets: cascades, spot lights, then one per point light.
+pub(super) const SHADOW_LAYER_SET_COUNT: usize = 2 + MAX_SHADOW_POINT_LIGHTS;
+
+/// Build this frame's layer sets from the active layer counts. `None` slots are
+/// sets with no active layers.
+pub(super) fn shadow_layer_sets(
+    ray_layers: usize,
+    spot_layers: usize,
+    point_lights: usize,
+) -> [Option<ShadowLayerSet>; SHADOW_LAYER_SET_COUNT] {
+    let mut sets = [None; SHADOW_LAYER_SET_COUNT];
+    let ray_layers = ray_layers.min(MAX_SHADOW_RAY_CASCADES);
+    if ray_layers > 0 {
+        sets[0] = Some(ShadowLayerSet {
+            set_index: 0,
+            atlas: ShadowAtlas::Ray,
+            flat_base: 0,
+            atlas_base: 0,
+            count: ray_layers,
+            label: "perro_ray_shadow3d_pass",
+        });
+    }
+    let spot_layers = spot_layers.min(MAX_SHADOW_SPOT_LIGHTS);
+    if spot_layers > 0 {
+        sets[1] = Some(ShadowLayerSet {
+            set_index: 1,
+            atlas: ShadowAtlas::Spot,
+            flat_base: MAX_SHADOW_RAY_LIGHTS * MAX_SHADOW_RAY_CASCADES,
+            atlas_base: 0,
+            count: spot_layers,
+            label: "perro_spot_shadow3d_pass",
+        });
+    }
+    let point_base = MAX_SHADOW_RAY_LIGHTS * MAX_SHADOW_RAY_CASCADES + MAX_SHADOW_SPOT_LIGHTS;
+    for light in 0..point_lights.min(MAX_SHADOW_POINT_LIGHTS) {
+        sets[2 + light] = Some(ShadowLayerSet {
+            set_index: 2 + light,
+            atlas: ShadowAtlas::Point,
+            flat_base: point_base + light * POINT_SHADOW_FACE_COUNT,
+            atlas_base: light * POINT_SHADOW_FACE_COUNT,
+            count: POINT_SHADOW_FACE_COUNT,
+            label: "perro_point_shadow3d_pass",
+        });
+    }
+    sets
+}
+
+/// Per-SET cache decision, the multiview counterpart of
+/// [`shadow_layer_needs_render`] + [`empty_shadow_layer_skips`].
+///
+/// A multiview pass clears every layer in its mask, so the set cannot render a
+/// subset: it renders when at least one of its layers has real work, and then
+/// re-rasterizes the whole set. `valid[i]` is the existing per-layer depth cache
+/// (`shadow_layer_valid`); `skips_empty[i]` is the existing empty-layer skip
+/// (nothing survives that layer's cull AND the layer already holds exactly its
+/// clear).
+///
+/// Both per-layer signals are computed exactly as the single-view path computes
+/// them, so a set whose layers are all cached (static scene, unmoved light)
+/// costs the same zero as before -- the caching that makes static scenes cheap
+/// is preserved, it is only the GRANULARITY of a re-render that coarsens from
+/// one layer to one set.
+#[inline]
+pub(super) fn shadow_set_needs_render(valid: &[bool], skips_empty: &[bool]) -> bool {
+    valid
+        .iter()
+        .zip(skips_empty.iter())
+        .any(|(&valid, &skips)| !valid && !skips)
+}
+
 /// Recreate one shadow atlas at `layers`. `layers == 0` restores the 1x1
 /// single-layer placeholder the constructor allocates (empty layer-view vec, so
 /// every shadow render loop clamps back to zero).
@@ -279,8 +385,116 @@ impl Gpu3D {
         }
         if recreated {
             self.rebuild_shadow_bind_group(device);
+            // The cached per-set array views point at the old textures.
+            self.shadow_multiview_layer_views.clear();
         }
         recreated
+    }
+
+    /// Depth attachment for one multiview shadow set: a `D2Array` view over
+    /// exactly that set's layers, so the pass's mask is the contiguous
+    /// `(1 << count) - 1` and plain `MULTIVIEW` suffices (a sparse mask would
+    /// need `SELECTIVE_MULTIVIEW`).
+    ///
+    /// Cached per set and rebuilt whenever an atlas is; `None` means the atlas
+    /// does not hold the set's layers yet, and the caller falls back to the
+    /// per-layer path.
+    fn ensure_shadow_multiview_view(&mut self, set: ShadowLayerSet) -> Option<&wgpu::TextureView> {
+        if self.shadow_multiview_layer_views.len() != SHADOW_LAYER_SET_COUNT {
+            self.shadow_multiview_layer_views.clear();
+            self.shadow_multiview_layer_views
+                .resize_with(SHADOW_LAYER_SET_COUNT, || None);
+        }
+        let (texture, label, allocated) = match set.atlas {
+            ShadowAtlas::Ray => (
+                &self._shadow_map_texture,
+                "perro_ray_shadow_map_multiview",
+                self.ray_shadow_layers_allocated,
+            ),
+            ShadowAtlas::Spot => (
+                &self._spot_shadow_map_texture,
+                "perro_spot_shadow_map_multiview",
+                self.spot_shadow_layers_allocated,
+            ),
+            ShadowAtlas::Point => (
+                &self._point_shadow_map_texture,
+                "perro_point_shadow_map_multiview",
+                self.point_shadow_layers_allocated,
+            ),
+        };
+        if (set.atlas_base + set.count) as u32 > allocated {
+            return None;
+        }
+        let slot = self.shadow_multiview_layer_views.get_mut(set.set_index)?;
+        if slot.as_ref().map(|(count, _)| *count) != Some(set.count as u32) {
+            *slot = Some((
+                set.count as u32,
+                texture.create_view(&wgpu::TextureViewDescriptor {
+                    label: Some(label),
+                    format: Some(SHADOW_DEPTH_FORMAT),
+                    dimension: Some(wgpu::TextureViewDimension::D2Array),
+                    usage: Some(wgpu::TextureUsages::RENDER_ATTACHMENT),
+                    aspect: wgpu::TextureAspect::DepthOnly,
+                    base_mip_level: 0,
+                    mip_level_count: Some(1),
+                    base_array_layer: set.atlas_base as u32,
+                    array_layer_count: Some(set.count as u32),
+                }),
+            ));
+        }
+        slot.as_ref().map(|(_, view)| view)
+    }
+
+    /// Refresh the per-set attachment views and the group-1 view-proj arrays.
+    ///
+    /// Runs at the tail of `update_shadow_state`, where the per-layer scene
+    /// uniforms have just settled (including the deferred layers, which keep the
+    /// matrix their cached depth was drawn with -- `last_shadow_scenes` is the
+    /// authority for both the per-layer buffers and this array, so a deferred
+    /// layer inside a re-rendered set redraws consistently).
+    fn update_shadow_multiview_state(
+        &mut self,
+        queue: &wgpu::Queue,
+        ray_layers: usize,
+        spot_layers: usize,
+        point_lights: usize,
+    ) {
+        if !self.shadow_multiview_supported {
+            return;
+        }
+        if self.last_shadow_multiview.len() != SHADOW_LAYER_SET_COUNT {
+            self.last_shadow_multiview.clear();
+            self.last_shadow_multiview
+                .resize(SHADOW_LAYER_SET_COUNT, None);
+        }
+        for set in shadow_layer_sets(ray_layers, spot_layers, point_lights)
+            .into_iter()
+            .flatten()
+        {
+            if self.ensure_shadow_multiview_view(set).is_none() {
+                continue;
+            }
+            let mut uniform = ShadowMultiviewUniform::zeroed();
+            for view in 0..set.count.min(MAX_MULTIVIEW_SHADOW_VIEWS) {
+                if let Some(Some(scene)) = self.last_shadow_scenes.get(set.flat_base + view) {
+                    uniform.view_proj[view] = scene.view_proj;
+                }
+            }
+            if self
+                .last_shadow_multiview
+                .get(set.set_index)
+                .copied()
+                .flatten()
+                == Some(uniform)
+            {
+                continue;
+            }
+            let Some(buffer) = self.shadow_multiview_buffers.get(set.set_index) else {
+                continue;
+            };
+            queue.write_buffer(buffer, 0, bytemuck::bytes_of(&uniform));
+            self.last_shadow_multiview[set.set_index] = Some(uniform);
+        }
     }
 
     /// GC-tick half of the lazy shadow atlases: once an atlas needs fewer
@@ -344,6 +558,7 @@ impl Gpu3D {
         }
         if shrunk {
             self.rebuild_shadow_bind_group(device);
+            self.shadow_multiview_layer_views.clear();
             self.invalidate_shadow_layers();
         }
         shrunk
@@ -450,6 +665,7 @@ impl Gpu3D {
         self.shadow_cascade_defer_count = 0;
         self.shadow_cascade_light_dir = [[0.0; 3]; MAX_SHADOW_RAY_CASCADES];
         self.rebuild_shadow_bind_group(device);
+        self.shadow_multiview_layer_views.clear();
         self.invalidate_shadow_layers();
     }
 
@@ -919,6 +1135,12 @@ impl Gpu3D {
         self.ray_shadow_enabled = setup.ray_enabled;
         self.spot_shadow_count = setup.spot_count;
         self.point_shadow_count = setup.point_count;
+        self.update_shadow_multiview_state(
+            queue,
+            cascade_layers,
+            setup.spot_count,
+            setup.point_count,
+        );
     }
 }
 
@@ -2955,5 +3177,99 @@ mod local_light_budget_tests {
             ),
             [false, true, false, false]
         );
+    }
+}
+
+#[cfg(test)]
+mod shadow_layer_set_tests {
+    use super::{
+        MAX_SHADOW_POINT_LIGHTS, MAX_SHADOW_RAY_CASCADES, MAX_SHADOW_RAY_LIGHTS,
+        MAX_SHADOW_SPOT_LIGHTS, POINT_SHADOW_FACE_COUNT, SHADOW_CAMERA_COUNT, ShadowAtlas,
+        shadow_layer_sets, shadow_set_needs_render,
+    };
+
+    /// Sets are the natural light groupings, and every layer of the flat
+    /// `SHADOW_CAMERA_COUNT` space belongs to exactly one of them.
+    #[test]
+    fn layer_sets_cover_the_flat_layer_space_without_overlap() {
+        let sets = shadow_layer_sets(
+            MAX_SHADOW_RAY_CASCADES,
+            MAX_SHADOW_SPOT_LIGHTS,
+            MAX_SHADOW_POINT_LIGHTS,
+        );
+        let mut seen = vec![false; SHADOW_CAMERA_COUNT];
+        for set in sets.into_iter().flatten() {
+            for layer in 0..set.count {
+                let flat = set.flat_base + layer;
+                assert!(!seen[flat], "layer {flat} claimed by two sets");
+                seen[flat] = true;
+            }
+        }
+        assert!(seen.into_iter().all(|hit| hit));
+    }
+
+    /// A point light's whole cube is one set (a face may never show a different
+    /// pose than its neighbours), and inactive lights produce no set at all.
+    #[test]
+    fn layer_sets_follow_the_active_light_counts() {
+        let sets = shadow_layer_sets(MAX_SHADOW_RAY_CASCADES, 1, 1);
+        let live: Vec<_> = sets.into_iter().flatten().collect();
+        assert_eq!(live.len(), 3);
+        assert_eq!(live[0].count, MAX_SHADOW_RAY_CASCADES);
+        assert_eq!(live[0].atlas, ShadowAtlas::Ray);
+        assert_eq!(live[1].count, 1);
+        assert_eq!(
+            live[1].flat_base,
+            MAX_SHADOW_RAY_LIGHTS * MAX_SHADOW_RAY_CASCADES
+        );
+        assert_eq!(live[2].count, POINT_SHADOW_FACE_COUNT);
+        assert_eq!(live[2].atlas_base, 0);
+        assert!(
+            shadow_layer_sets(0, 0, 0)
+                .into_iter()
+                .all(|set| set.is_none())
+        );
+    }
+
+    /// The second point light's faces start after the first light's six, in
+    /// both the flat space and its own atlas.
+    #[test]
+    fn point_light_sets_are_contiguous_runs_per_light() {
+        let sets = shadow_layer_sets(0, 0, 2);
+        let live: Vec<_> = sets.into_iter().flatten().collect();
+        assert_eq!(live[0].atlas_base, 0);
+        assert_eq!(live[1].atlas_base, POINT_SHADOW_FACE_COUNT);
+        assert_eq!(
+            live[1].flat_base - live[0].flat_base,
+            POINT_SHADOW_FACE_COUNT
+        );
+    }
+
+    /// The cache that makes static scenes cheap survives: a set whose layers are
+    /// all still valid encodes nothing at all.
+    #[test]
+    fn fully_cached_set_renders_nothing() {
+        assert!(!shadow_set_needs_render(&[true; 6], &[false; 6]));
+    }
+
+    /// ... and so does the empty-layer skip: a set whose only stale layers can
+    /// all be skipped as already-clear stays out of the encoder.
+    #[test]
+    fn set_of_skippable_empty_layers_renders_nothing() {
+        assert!(!shadow_set_needs_render(
+            &[true, false, false, true],
+            &[false, true, true, false],
+        ));
+    }
+
+    /// One layer with real work pulls the whole set in -- a multiview pass
+    /// clears every layer in its mask, so it cannot render a subset.
+    #[test]
+    fn one_stale_layer_renders_the_whole_set() {
+        assert!(shadow_set_needs_render(
+            &[true, true, false, true],
+            &[false, false, false, false],
+        ));
+        assert!(shadow_set_needs_render(&[false; 6], &[false; 6]));
     }
 }

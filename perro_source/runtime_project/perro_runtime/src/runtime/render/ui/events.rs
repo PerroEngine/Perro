@@ -15,7 +15,7 @@ struct UiButtonLikeHitData<'a> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum UiInputSource {
+pub(in crate::runtime::render_ui) enum UiInputSource {
     Kbm,
     Gamepad(usize),
     JoyCon(usize),

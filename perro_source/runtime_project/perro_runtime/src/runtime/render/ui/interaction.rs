@@ -241,6 +241,38 @@ impl Runtime {
         let bootstrap_scan = self.render_ui.prev_visible.is_empty()
             && self.render_ui.retained_commands.is_empty()
             && self.render_ui.computed_rects.is_empty();
+        // Raw field edits may bypass runtime dirty hooks. Check only retained UI
+        // nodes + their parent chains, not every changed game node. The global
+        // revision makes mouse-only frames skip this walk entirely.
+        let arena_revision = self.nodes.mutation_revision();
+        let covered_arena_revision = self.render_ui.arena_mutation_revision;
+        let mut arena_changed_ids = std::mem::take(&mut self.render_ui.all_ids_scratch);
+        arena_changed_ids.clear();
+        if covered_arena_revision != arena_revision {
+            let mut changed_seen = std::mem::take(&mut self.render_ui.traversal_seen);
+            changed_seen.clear();
+            for visible in self.render_ui.prev_visible.iter().copied() {
+                let mut cursor = Some(visible);
+                while let Some(node) = cursor {
+                    let Some(scene_node) = self.nodes.get(node) else {
+                        break;
+                    };
+                    if self
+                        .nodes
+                        .node_change_stamp(node)
+                        .is_some_and(|stamp| stamp > covered_arena_revision)
+                        && changed_seen.insert(node)
+                    {
+                        arena_changed_ids.push(node);
+                    }
+                    cursor = (scene_node.parent != NodeID::nil()).then_some(scene_node.parent);
+                }
+            }
+            changed_seen.clear();
+            self.render_ui.traversal_seen = changed_seen;
+            self.render_ui.arena_mutation_revision = arena_revision;
+        }
+        let retained_arena_mutation_changed = !arena_changed_ids.is_empty();
         let input_changed = self.ui_pointer_changed() || self.ui_nav_input_changed();
         let scroll_input_changed = self.ui_scroll_input_changed();
         let text_input_changed =
@@ -251,6 +283,7 @@ impl Runtime {
             || self.dirty.has_pending_transform_roots()
             || !self.render_ui.removed_nodes.is_empty()
             || bootstrap_scan
+            || retained_arena_mutation_changed
             || input_changed
             || scroll_input_changed
             || text_input_changed
@@ -258,6 +291,8 @@ impl Runtime {
             || !self.render_ui.button_motions.is_empty()
             || self.has_active_scroll_container_animation();
         if !has_extraction_work {
+            arena_changed_ids.clear();
+            self.render_ui.all_ids_scratch = arena_changed_ids;
             if let (Some(timing), Some(total_start)) = (timing, total_start) {
                 timing.total = total_start.elapsed();
             }
@@ -282,6 +317,26 @@ impl Runtime {
                 .slot_get(index)
                 .map(|(node, _)| (node, self.dirty.ui_flags_at(index)))
         }));
+        // Raw/field-level node edits move per-node arena stamps even when they
+        // bypass runtime UI dirty hooks. Scan that compact lane only when the
+        // global arena revision moved, and expand changed roots through the
+        // normal traversal. Mouse-only frames never enter this path.
+        if retained_arena_mutation_changed {
+            dirty_entries.extend(
+                arena_changed_ids
+                    .iter()
+                    .copied()
+                    .filter(|&node| !self.dirty.is_node_dirty(node))
+                    .map(|node| {
+                        (
+                            node,
+                            DirtyState::UI_LAYOUT_MASK | DirtyState::DIRTY_COMMANDS,
+                        )
+                    }),
+            );
+        }
+        arena_changed_ids.clear();
+        self.render_ui.all_ids_scratch = arena_changed_ids;
         dirty_entries.retain(|(node, _)| self.node_world(*node) == Some(NodeID::nil()));
         let dirty_node_count = dirty_entries.len();
         // shared member view: refcount clone, no per-pass Vec copy.
@@ -337,7 +392,6 @@ impl Runtime {
                     default_flags: DirtyState::UI_LAYOUT_MASK | DirtyState::DIRTY_COMMANDS,
                 },
                 bootstrap_scan,
-                input_changed,
             },
             |node, out| {
                 if let Some(ui_parent) = layout_parents.get(&node)
@@ -509,10 +563,16 @@ impl Runtime {
         // frame-end dirty clear before the next layout pass sees them.
         // Collect them so the bridge can re-apply after the clear.
         self.render_ui.defer_dirty_marks = true;
+        // Resolve pointer hover once for all text/button handlers in this pass.
+        // The screen point itself is also cached by `ui_pointer_screen_point`.
+        let pointer_point = self.ui_pointer_screen_point();
+        let hovered_text_edit =
+            self.hovered_text_edit(&computed, UiInputSource::Kbm, pointer_point);
         self.process_ui_focus_input(&computed, &mut command_ids, &mut command_seen);
         self.process_text_edit_input(
             &computed,
             &computed_scales,
+            hovered_text_edit,
             &mut command_ids,
             &mut command_seen,
         );
@@ -523,7 +583,12 @@ impl Runtime {
             &mut command_ids,
             &mut command_seen,
         );
-        self.refresh_button_visual_states(&computed, &mut command_ids, &mut command_seen);
+        self.refresh_button_visual_states(
+            &computed,
+            hovered_text_edit,
+            &mut command_ids,
+            &mut command_seen,
+        );
         self.render_ui.defer_dirty_marks = false;
 
         let commands_start = timing.as_ref().map(|_| Instant::now());
@@ -812,6 +877,7 @@ impl Runtime {
 
         self.render_ui
             .restore_extraction_plan(traversal_ids, command_ids, command_seen);
+        self.render_ui.arena_mutation_revision = self.nodes.mutation_revision();
 
         if let (Some(timing), Some(total_start)) = (timing, total_start) {
             timing.total = total_start.elapsed();

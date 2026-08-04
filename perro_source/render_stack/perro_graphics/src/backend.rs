@@ -286,6 +286,10 @@ pub struct DrawFrameTiming {
     /// Shadow depth layers skipped because the layer already held only its
     /// clear and this frame's cull is still empty.
     pub shadow_empty_layer_skips: u32,
+    /// Shadow depth passes that wrote a whole layer set at once through
+    /// multiview. 0 means every layer took its own pass (adapter without
+    /// `Features::MULTIVIEW`, or multimesh casters staged).
+    pub shadow_multiview_passes: u32,
     /// Camera streams / sub-views present in the frame state this frame.
     pub stream_count: u32,
     /// Streams that actually encoded passes; the rest hit the per-stream idle

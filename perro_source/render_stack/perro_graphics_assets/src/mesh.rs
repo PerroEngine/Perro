@@ -1232,7 +1232,10 @@ mod tests {
             borrowed.vertices.as_ptr().cast::<u8>(),
             mesh.vertices.as_ptr().cast::<u8>()
         ));
-        assert!(std::ptr::eq(borrowed.indices.as_ptr(), mesh.indices.as_ptr()));
+        assert!(std::ptr::eq(
+            borrowed.indices.as_ptr(),
+            mesh.indices.as_ptr()
+        ));
     }
 
     #[test]

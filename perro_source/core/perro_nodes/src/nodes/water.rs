@@ -1,4 +1,4 @@
-use perro_structs::{BitMask, Color, Vector2, Vector3};
+use perro_structs::{BitMask, Color, Vector2, Vector3, WaterQuality};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum WaterIdleMode {
@@ -40,12 +40,19 @@ pub struct WaterPhysicsParams {
 
 impl Default for WaterPhysicsParams {
     fn default() -> Self {
+        Self::for_quality(WaterQuality::Low)
+    }
+}
+
+impl WaterPhysicsParams {
+    /// Physics defaults for a tier. Only the readback rate rides the tier.
+    pub const fn for_quality(quality: WaterQuality) -> Self {
         Self {
             buoyancy: 2.0,
             drag: 0.75,
             wake_strength: 1.35,
             foam_strength: 0.9,
-            sample_readback_rate: 30.0,
+            sample_readback_rate: quality.sample_readback_rate(),
         }
     }
 }
@@ -67,25 +74,6 @@ impl Default for WaterLinkParams {
             blend_width: 0.0,
             wave_transfer: 1.0,
             flow_transfer: 1.0,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct WaterLodParams {
-    pub near_distance: f32,
-    pub mid_distance: f32,
-    pub far_distance: f32,
-    pub min_resolution: [u32; 2],
-}
-
-impl Default for WaterLodParams {
-    fn default() -> Self {
-        Self {
-            near_distance: 128.0,
-            mid_distance: 384.0,
-            far_distance: 896.0,
-            min_resolution: [32, 32],
         }
     }
 }
@@ -269,15 +257,15 @@ impl Default for WaterShape {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WaterSurfaceParams {
     pub shape: WaterShape,
-    pub resolution: [u32; 2],
-    pub render_resolution: [u32; 2],
+    /// Single fidelity knob. Drives mesh density (screen-space), sim grid and
+    /// the default physics readback rate.
+    pub quality: WaterQuality,
     pub depth: f32,
     pub flow: Vector2,
     pub wind: Vector2,
     pub idle_mode: WaterIdleMode,
     pub wave: WaterWaveProfile,
     pub physics: WaterPhysicsParams,
-    pub lod: WaterLodParams,
     pub collision_layers: BitMask,
     pub collision_mask: BitMask,
     pub link: WaterLinkParams,
@@ -291,15 +279,13 @@ impl Default for WaterSurfaceParams {
     fn default() -> Self {
         Self {
             shape: WaterShape::rect(Vector2::new(32.0, 32.0)),
-            resolution: [801, 801],
-            render_resolution: [801, 801],
+            quality: WaterQuality::Low,
             depth: 4.0,
             flow: Vector2::ZERO,
             wind: Vector2::new(1.0, 0.0),
             idle_mode: WaterIdleMode::Calm,
             wave: WaterWaveProfile::default(),
             physics: WaterPhysicsParams::default(),
-            lod: WaterLodParams::default(),
             collision_layers: BitMask::ALL,
             collision_mask: BitMask::NONE,
             link: WaterLinkParams::default(),

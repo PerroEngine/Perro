@@ -1,4 +1,8 @@
-use crate::{CachedSource, ResFileTree, SourceCache, StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, source_stat, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn};
+use crate::{
+    CachedSource, ResFileTree, SourceCache, StaticPipelineError, asset_uri, embedded_dir,
+    ensure_unique_hashes, res_dir, source_stat, static_dir, write_hash_const, write_if_changed,
+    write_static_lookup_fn,
+};
 use perro_asset_formats::{
     pskel::{
         BONE_FLAG_HAS_INV_POS as PSKEL_BONE_FLAG_HAS_INV_POS,
@@ -61,7 +65,8 @@ pub fn generate_static_skeletons(
     fs::create_dir_all(&static_dir)?;
     fs::create_dir_all(&embedded_skeletons_dir)?;
 
-    let skeleton_paths = res_tree.filter_ext(|ext| source_ext::contains(source_ext::SKELETON_INPUT, ext));
+    let skeleton_paths =
+        res_tree.filter_ext(|ext| source_ext::contains(source_ext::SKELETON_INPUT, ext));
 
     // `.gltf` sources can reference external buffers a single-file stat would
     // miss, so they bypass the cache; everything else skips re-encoding when

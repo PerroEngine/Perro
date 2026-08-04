@@ -1,6 +1,6 @@
+use ahash::{AHashMap, AHashSet, RandomState};
 use glam::{Vec2, Vec3A};
 use rayon::prelude::*;
-use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -25,6 +25,11 @@ pub struct LodSet {
 pub const DEFAULT_LOD_TARGET_RATIOS: [f32; 6] = [1.0, 0.8, 0.6, 0.4, 0.25, 0.125];
 const PARALLEL_EDGE_SCORE_THRESHOLD: usize = 256;
 const PARALLEL_EDGE_SCORE_TRI_THRESHOLD: usize = 512;
+const PARALLEL_LOD_RATIO_TRI_THRESHOLD: usize = 4_096;
+// Above this size, one ratio at a time lets its parallel edge scoring own the
+// worker pool and reuses progressively smaller input. Running all six ratios
+// together multiplies scratch memory and becomes memory-bandwidth bound.
+const PARALLEL_LOD_RATIO_TRI_MAX: usize = 262_144;
 const COLLAPSE_NORMAL_DOT_MIN: f32 = 0.15;
 const COLLAPSE_CHEAP_NORMAL_DOT_MIN: f32 = 0.6;
 const COLLAPSE_CHEAP_UV_DIST2_MAX: f32 = 0.05;
@@ -363,11 +368,57 @@ fn build_surface_lods(
     surface_indices: &[u32],
     ratios: &[f32],
 ) -> Vec<Vec<u32>> {
+    let Some((&min_index, &max_index)) = surface_indices
+        .iter()
+        .min()
+        .zip(surface_indices.iter().max())
+    else {
+        return ratios.iter().map(|_| Vec::new()).collect();
+    };
+    let min_vertex = min_index as usize;
+    let max_vertex = max_index as usize;
+    if max_vertex < vertices.len()
+        && (min_vertex > 0 || max_vertex.saturating_add(1) < vertices.len())
+    {
+        let local_indices = surface_indices
+            .iter()
+            .map(|index| index - min_index)
+            .collect::<Vec<_>>();
+        let mut lods =
+            build_surface_lods_dense(&vertices[min_vertex..=max_vertex], &local_indices, ratios);
+        for lod in &mut lods {
+            for index in lod {
+                *index += min_index;
+            }
+        }
+        return lods;
+    }
+    build_surface_lods_dense(vertices, surface_indices, ratios)
+}
+
+fn build_surface_lods_dense(
+    vertices: &[LodVertex],
+    surface_indices: &[u32],
+    ratios: &[f32],
+) -> Vec<Vec<u32>> {
     let original_tri_count = surface_indices.len() / 3;
     if original_tri_count == 0 {
         return ratios.iter().map(|_| Vec::new()).collect();
     }
-    let mut current = surface_indices[..original_tri_count * 3].to_vec();
+    let source = &surface_indices[..original_tri_count * 3];
+    if (PARALLEL_LOD_RATIO_TRI_THRESHOLD..=PARALLEL_LOD_RATIO_TRI_MAX).contains(&original_tri_count)
+        && ratios.len() > 1
+    {
+        return ratios
+            .par_iter()
+            .map(|&ratio| {
+                let target = ((original_tri_count as f32) * ratio).ceil() as usize;
+                simplify_surface(vertices, source, target.clamp(1, original_tri_count))
+            })
+            .collect();
+    }
+
+    let mut current = source.to_vec();
     let mut lods = Vec::with_capacity(ratios.len());
     for &ratio in ratios {
         let target = ((original_tri_count as f32) * ratio).ceil() as usize;
@@ -382,80 +433,15 @@ fn build_surface_lods(
 }
 
 fn simplify_surface(vertices: &[LodVertex], surface_indices: &[u32], keep_tris: usize) -> Vec<u32> {
-    let target_count = keep_tris.saturating_mul(3);
-    let positions = vertices
-        .iter()
-        .map(|vertex| vertex.position)
-        .collect::<Vec<_>>();
-    let attributes = vertices
-        .iter()
-        .flat_map(|vertex| {
-            [
-                vertex.normal[0],
-                vertex.normal[1],
-                vertex.normal[2],
-                vertex.uv[0],
-                vertex.uv[1],
-            ]
-        })
-        .collect::<Vec<_>>();
-    let Ok(adapter) = meshopt::VertexDataAdapter::new(
-        meshopt::typed_to_bytes(&positions),
-        std::mem::size_of::<[f32; 3]>(),
-        0,
-    ) else {
-        return simplify_surface_fallback(vertices, surface_indices, keep_tris);
-    };
-    let vertex_locks = vec![false; vertices.len()];
-    let simplified = meshopt::simplify_with_attributes_and_locks(
-        surface_indices,
-        &adapter,
-        &attributes,
-        &[0.5, 0.5, 0.5, 0.1, 0.1],
-        5 * std::mem::size_of::<f32>(),
-        &vertex_locks,
-        target_count,
-        1.0,
-        meshopt::SimplifyOptions::None,
-        None,
-    );
-    if simplified.len() >= 3 && simplified.len() < surface_indices.len() {
-        simplified
-    } else {
-        simplify_surface_fallback(vertices, surface_indices, keep_tris)
-    }
-}
-
-fn simplify_surface_fallback(
-    vertices: &[LodVertex],
-    surface_indices: &[u32],
-    keep_tris: usize,
-) -> Vec<u32> {
-    const SLOW_SIMPLIFY_TRI_LIMIT: usize = 2_048;
-    if surface_indices.len() / 3 <= SLOW_SIMPLIFY_TRI_LIMIT {
-        simplify_surface_slow(vertices, surface_indices, keep_tris)
-    } else {
-        surface_indices.to_vec()
-    }
-}
-
-fn simplify_surface_slow(
-    vertices: &[LodVertex],
-    surface_indices: &[u32],
-    keep_tris: usize,
-) -> Vec<u32> {
     let tri_count = surface_indices.len() / 3;
-    if keep_tris >= tri_count {
-        return surface_indices[..tri_count * 3].to_vec();
+    let source = &surface_indices[..tri_count * 3];
+    if keep_tris >= tri_count || tri_count == 0 {
+        return source.to_vec();
     }
-    if surface_indices
-        .iter()
-        .any(|&idx| (idx as usize) >= vertices.len())
-    {
-        return surface_indices[..tri_count * 3].to_vec();
+    if source.iter().any(|&idx| idx as usize >= vertices.len()) {
+        return source.to_vec();
     }
-
-    let mut triangles = surface_indices[..tri_count * 3]
+    let mut triangles = source
         .chunks_exact(3)
         .map(|tri| [tri[0], tri[1], tri[2]])
         .filter(|tri| !tri_degenerate(*tri))
@@ -463,35 +449,50 @@ fn simplify_surface_slow(
     if triangles.len() <= keep_tris {
         return flatten_tris(&triangles);
     }
-    let quadrics = build_vertex_quadrics(vertices, &triangles);
+    let metric = SimplifyMetric::from_vertices(vertices, source);
     let mut scratch = SimplifyScratch::default();
     let mut guard = 0usize;
-    while triangles.len() > keep_tris && guard < tri_count.saturating_mul(16).max(64) {
+    while triangles.len() > keep_tris && guard < 128 {
         guard += 1;
         scratch.prepare(vertices.len(), triangles.len());
         build_topology(vertices, &triangles, &mut scratch);
-        let Some(collapse) = best_collapse(
+        let quadrics = build_vertex_quadrics(vertices, &triangles);
+        let collapses = ranked_collapses(
             vertices,
             &triangles,
             &quadrics,
             &scratch.edge_list,
             &scratch.adjacency,
             &scratch.tri_normals,
-        ) else {
+            metric,
+        );
+        if collapses.is_empty() {
             break;
-        };
-        if !apply_collapse_into(
-            vertices,
+        }
+        let collapse_limit = triangles.len().saturating_sub(keep_tris).div_ceil(2).max(1);
+        let selected = select_independent_collapses(
+            &collapses,
             &triangles,
-            collapse.keep,
-            collapse.remove,
+            &scratch.adjacency,
+            collapse_limit,
+            &mut scratch.locked_vertices,
+            &mut scratch.selected_collapses,
+        );
+        if selected == 0 {
+            break;
+        }
+        let Some(next_len) = apply_best_collapse_prefix(
+            &triangles,
+            &scratch.selected_collapses[..selected],
+            keep_tris,
             &mut scratch.next_triangles,
             &mut scratch.seen_triangles,
             &mut scratch.candidate_edges,
-        ) {
+            &mut scratch.collapse_remap,
+        ) else {
             break;
-        }
-        if scratch.next_triangles.len() >= triangles.len() {
+        };
+        if next_len >= triangles.len() {
             break;
         }
         std::mem::swap(&mut triangles, &mut scratch.next_triangles);
@@ -507,6 +508,41 @@ struct Collapse {
 }
 
 #[derive(Clone, Copy)]
+struct SimplifyMetric {
+    position_extent2: f64,
+    uv_extent2: f64,
+}
+
+impl SimplifyMetric {
+    fn from_vertices(vertices: &[LodVertex], indices: &[u32]) -> Self {
+        let mut pmin = [f32::INFINITY; 3];
+        let mut pmax = [f32::NEG_INFINITY; 3];
+        let mut uvmin = [f32::INFINITY; 2];
+        let mut uvmax = [f32::NEG_INFINITY; 2];
+        for &index in indices {
+            let vertex = &vertices[index as usize];
+            for axis in 0..3 {
+                pmin[axis] = pmin[axis].min(vertex.position[axis]);
+                pmax[axis] = pmax[axis].max(vertex.position[axis]);
+            }
+            for axis in 0..2 {
+                uvmin[axis] = uvmin[axis].min(vertex.uv[axis]);
+                uvmax[axis] = uvmax[axis].max(vertex.uv[axis]);
+            }
+        }
+        let position_extent = (pmax[0] - pmin[0])
+            .max(pmax[1] - pmin[1])
+            .max(pmax[2] - pmin[2])
+            .max(1.0e-6) as f64;
+        let uv_extent = (uvmax[0] - uvmin[0]).max(uvmax[1] - uvmin[1]).max(1.0e-6) as f64;
+        Self {
+            position_extent2: position_extent * position_extent,
+            uv_extent2: uv_extent * uv_extent,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
 struct EdgeCandidate {
     a: u32,
     b: u32,
@@ -518,15 +554,35 @@ struct EdgeInfo {
     count: u32,
 }
 
-#[derive(Default)]
 struct SimplifyScratch {
-    edges: HashMap<(u32, u32), EdgeInfo>,
+    edges: AHashMap<(u32, u32), EdgeInfo>,
     edge_list: Vec<EdgeCandidate>,
-    candidate_edges: HashMap<(u32, u32), EdgeInfo>,
+    candidate_edges: AHashMap<(u32, u32), EdgeInfo>,
     adjacency: Vec<Vec<usize>>,
     tri_normals: Vec<Option<[f32; 3]>>,
     next_triangles: Vec<[u32; 3]>,
-    seen_triangles: HashSet<[u32; 3]>,
+    seen_triangles: AHashSet<[u32; 3]>,
+    collapse_remap: Vec<u32>,
+    locked_vertices: Vec<bool>,
+    selected_collapses: Vec<Collapse>,
+}
+
+impl Default for SimplifyScratch {
+    fn default() -> Self {
+        let hash_state = || RandomState::with_seeds(0x5045, 0x5252, 0x4f51, 0x454d);
+        Self {
+            edges: AHashMap::with_hasher(hash_state()),
+            edge_list: Vec::new(),
+            candidate_edges: AHashMap::with_hasher(hash_state()),
+            adjacency: Vec::new(),
+            tri_normals: Vec::new(),
+            next_triangles: Vec::new(),
+            seen_triangles: AHashSet::with_hasher(hash_state()),
+            collapse_remap: Vec::new(),
+            locked_vertices: Vec::new(),
+            selected_collapses: Vec::new(),
+        }
+    }
 }
 
 impl SimplifyScratch {
@@ -547,17 +603,26 @@ impl SimplifyScratch {
         self.next_triangles.reserve(tri_capacity);
         self.seen_triangles.clear();
         self.seen_triangles.reserve(tri_capacity);
+        if self.collapse_remap.len() < vertex_count {
+            self.collapse_remap.resize(vertex_count, 0);
+        }
+        if self.locked_vertices.len() < vertex_count {
+            self.locked_vertices.resize(vertex_count, false);
+        }
+        self.selected_collapses.clear();
+        self.selected_collapses.reserve(tri_capacity / 4);
     }
 }
 
-fn best_collapse(
+fn ranked_collapses(
     vertices: &[LodVertex],
     triangles: &[[u32; 3]],
     quadrics: &[[f64; 10]],
     edges: &[EdgeCandidate],
     adjacency: &[Vec<usize>],
     tri_normals: &[Option<[f32; 3]>],
-) -> Option<Collapse> {
+    metric: SimplifyMetric,
+) -> Vec<Collapse> {
     let score_edge = |edge: &EdgeCandidate| {
         let mut best = None;
         let boundary_penalty = if edge.count <= 1 { 10_000.0 } else { 1.0 };
@@ -575,25 +640,25 @@ fn best_collapse(
             ) {
                 continue;
             }
-            let cost = collapse_cost(vertices, quadrics, keep, remove) * boundary_penalty;
+            let cost = collapse_cost(vertices, quadrics, keep, remove, metric) * boundary_penalty;
             best = better_collapse(best, Some(Collapse { keep, remove, cost }));
         }
         best
     };
-    if edges.len() >= PARALLEL_EDGE_SCORE_THRESHOLD
+    let mut out = if edges.len() >= PARALLEL_EDGE_SCORE_THRESHOLD
         && triangles.len() >= PARALLEL_EDGE_SCORE_TRI_THRESHOLD
     {
-        edges
-            .par_iter()
-            .map(score_edge)
-            .reduce(|| None, better_collapse)
+        edges.par_iter().filter_map(score_edge).collect::<Vec<_>>()
     } else {
-        let mut best = None;
-        for edge in edges {
-            best = better_collapse(best, score_edge(edge));
-        }
-        best
-    }
+        edges.iter().filter_map(score_edge).collect::<Vec<_>>()
+    };
+    out.sort_unstable_by(|a, b| {
+        a.cost
+            .total_cmp(&b.cost)
+            .then_with(|| a.keep.cmp(&b.keep))
+            .then_with(|| a.remove.cmp(&b.remove))
+    });
+    out
 }
 
 fn build_topology(vertices: &[LodVertex], triangles: &[[u32; 3]], scratch: &mut SimplifyScratch) {
@@ -636,7 +701,13 @@ fn better_collapse(current: Option<Collapse>, candidate: Option<Collapse>) -> Op
     }
 }
 
-fn collapse_cost(vertices: &[LodVertex], quadrics: &[[f64; 10]], keep: u32, remove: u32) -> f64 {
+fn collapse_cost(
+    vertices: &[LodVertex],
+    quadrics: &[[f64; 10]],
+    keep: u32,
+    remove: u32,
+    metric: SimplifyMetric,
+) -> f64 {
     let Some(keep_v) = vertices.get(keep as usize) else {
         return f64::INFINITY;
     };
@@ -657,7 +728,8 @@ fn collapse_cost(vertices: &[LodVertex], quadrics: &[[f64; 10]], keep: u32, remo
     let uv = dist2_2(keep_v.uv, remove_v.uv) as f64;
     let normal = (1.0 - dot3(keep_v.normal, remove_v.normal).clamp(-1.0, 1.0) as f64).max(0.0);
     let len = dist2_3(keep_v.position, remove_v.position) as f64;
-    qem + len * 0.001 + uv * 250.0 + normal * 250.0
+    let uv_scale = metric.position_extent2 / metric.uv_extent2;
+    qem + len * 0.001 + uv * uv_scale * 0.1 + normal * metric.position_extent2 * 0.5
 }
 
 fn collapse_preserves_normals(
@@ -715,20 +787,98 @@ fn collapse_passes_cheap_prune(
     !affected.is_empty()
 }
 
-fn apply_collapse_into(
-    _vertices: &[LodVertex],
+fn select_independent_collapses(
+    collapses: &[Collapse],
     triangles: &[[u32; 3]],
-    keep: u32,
-    remove: u32,
+    adjacency: &[Vec<usize>],
+    limit: usize,
+    locked: &mut [bool],
+    selected: &mut Vec<Collapse>,
+) -> usize {
+    locked.fill(false);
+    selected.clear();
+    for &collapse in collapses {
+        let keep = collapse.keep as usize;
+        let remove = collapse.remove as usize;
+        if locked.get(keep).copied().unwrap_or(true) || locked.get(remove).copied().unwrap_or(true)
+        {
+            continue;
+        }
+        selected.push(collapse);
+        for vertex in [keep, remove] {
+            locked[vertex] = true;
+            for &tri_index in adjacency.get(vertex).into_iter().flatten() {
+                if let Some(tri) = triangles.get(tri_index) {
+                    for &neighbor in tri {
+                        if let Some(value) = locked.get_mut(neighbor as usize) {
+                            *value = true;
+                        }
+                    }
+                }
+            }
+        }
+        if selected.len() >= limit {
+            break;
+        }
+    }
+    selected.len()
+}
+
+fn apply_best_collapse_prefix(
+    triangles: &[[u32; 3]],
+    collapses: &[Collapse],
+    keep_tris: usize,
     next: &mut Vec<[u32; 3]>,
-    seen: &mut HashSet<[u32; 3]>,
-    edge_counts: &mut HashMap<(u32, u32), EdgeInfo>,
+    seen: &mut AHashSet<[u32; 3]>,
+    edge_counts: &mut AHashMap<(u32, u32), EdgeInfo>,
+    remap: &mut [u32],
+) -> Option<usize> {
+    let mut count = collapses.len();
+    while count > 0 {
+        let valid = apply_collapse_batch(
+            triangles,
+            &collapses[..count],
+            next,
+            seen,
+            edge_counts,
+            remap,
+        );
+        if valid
+            && next.len() < triangles.len()
+            && (next.len() >= keep_tris.saturating_sub(2) || count == 1)
+        {
+            return Some(next.len());
+        }
+        count /= 2;
+    }
+    None
+}
+
+fn apply_collapse_batch(
+    triangles: &[[u32; 3]],
+    collapses: &[Collapse],
+    next: &mut Vec<[u32; 3]>,
+    seen: &mut AHashSet<[u32; 3]>,
+    edge_counts: &mut AHashMap<(u32, u32), EdgeInfo>,
+    remap: &mut [u32],
 ) -> bool {
+    next.clear();
+    seen.clear();
+    edge_counts.clear();
+    for (index, target) in remap.iter_mut().enumerate() {
+        *target = index as u32;
+    }
+    for collapse in collapses {
+        let Some(target) = remap.get_mut(collapse.remove as usize) else {
+            return false;
+        };
+        *target = collapse.keep;
+    }
     for &tri in triangles {
         let mapped = [
-            if tri[0] == remove { keep } else { tri[0] },
-            if tri[1] == remove { keep } else { tri[1] },
-            if tri[2] == remove { keep } else { tri[2] },
+            remap[tri[0] as usize],
+            remap[tri[1] as usize],
+            remap[tri[2] as usize],
         ];
         if tri_degenerate(mapped) {
             continue;
@@ -983,6 +1133,93 @@ mod tests {
                 .len()
                 < indices.len()
         );
+    }
+
+    #[test]
+    fn native_large_lods_hit_targets_and_keep_winding() {
+        let (vertices, indices, surfaces) = grid_mesh(48);
+        let ratios = [1.0, 0.5, 0.25];
+        let lods = build_lod_sets(&vertices, &indices, &surfaces, &ratios);
+        let source_tris = indices.len() / 3;
+
+        assert_eq!(lods.len(), ratios.len());
+        for (lod, ratio) in lods.iter().zip(ratios) {
+            let target_tris = ((source_tris as f32) * ratio).ceil() as usize;
+            assert!(lod.indices.len() / 3 <= target_tris);
+            assert!(lod.indices.chunks_exact(3).all(|tri| {
+                let a = vertices[tri[0] as usize].position;
+                let b = vertices[tri[1] as usize].position;
+                let c = vertices[tri[2] as usize].position;
+                cross3(sub3(b, a), sub3(c, a))[2] > 0.0
+            }));
+        }
+    }
+
+    #[test]
+    fn native_lod_build_is_deterministic() {
+        let (vertices, indices, surfaces) = grid_mesh(20);
+        let ratios = [1.0, 0.6, 0.25];
+        let first = build_lod_sets(&vertices, &indices, &surfaces, &ratios);
+        let second = build_lod_sets(&vertices, &indices, &surfaces, &ratios);
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn contiguous_surface_restores_global_vertex_indices() {
+        let mut vertices = vec![
+            LodVertex {
+                position: [0.0; 3],
+                normal: [0.0, 0.0, 1.0],
+                uv: [0.0; 2],
+            };
+            64
+        ];
+        for (offset, position) in [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            vertices[40 + offset].position = position;
+        }
+        let lods = build_surface_lods(&vertices, &[40, 41, 42, 40, 42, 43], &[1.0, 0.5]);
+        assert!(
+            lods.iter()
+                .flatten()
+                .all(|&index| (40..=43).contains(&index))
+        );
+    }
+
+    #[test]
+    fn attribute_error_raises_collapse_cost() {
+        let vertices = [
+            LodVertex {
+                position: [0.0, 0.0, 0.0],
+                normal: [0.0, 0.0, 1.0],
+                uv: [0.0, 0.0],
+            },
+            LodVertex {
+                position: [1.0, 0.0, 0.0],
+                normal: [0.0, 0.0, 1.0],
+                uv: [0.0, 0.0],
+            },
+            LodVertex {
+                position: [1.0, 0.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
+                uv: [1.0, 1.0],
+            },
+        ];
+        let quadrics = [[0.0; 10]; 3];
+        let metric = SimplifyMetric {
+            position_extent2: 1.0,
+            uv_extent2: 1.0,
+        };
+        let same_attributes = collapse_cost(&vertices, &quadrics, 0, 1, metric);
+        let changed_attributes = collapse_cost(&vertices, &quadrics, 0, 2, metric);
+        assert!(changed_attributes > same_attributes);
     }
 
     #[test]

@@ -36,6 +36,9 @@ pub(crate) fn write_if_changed(path: &Path, bytes: &[u8]) -> io::Result<()> {
     {
         return Ok(());
     }
+    if path.exists() {
+        fs::remove_file(path)?;
+    }
     fs::write(path, bytes)
 }
 
@@ -259,6 +262,11 @@ mod tests {
         assert_eq!(
             fs::read(&path).expect("required value must be present"),
             b"hello2"
+        );
+        write_if_changed(&path, b"HELLO2").expect("required value must be present");
+        assert_eq!(
+            fs::read(&path).expect("required value must be present"),
+            b"HELLO2"
         );
         let _ = fs::remove_dir_all(&dir);
     }

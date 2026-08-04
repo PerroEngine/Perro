@@ -12,6 +12,7 @@ use perro_ui::{UiImageScaleMode, UiNode, UiNodeBase};
 /// `Camera3D` replaces the matching implicit view for this scope.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SubView {
+    /// Zero axes follow the current render target size.
     pub resolution: UVector2,
     pub aspect_ratio: f32,
     pub aspect_mode: UiImageScaleMode,

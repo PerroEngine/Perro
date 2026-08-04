@@ -562,7 +562,10 @@ impl Runtime {
             });
             if let Some((visible, view, local_transform, size, z_index, tint)) = sub_view_data {
                 if visible {
-                    if let Some(stream_state) = self.sub_view_state(node, &view, None) {
+                    let viewport = self.input.viewport_size();
+                    if let Some(stream_state) =
+                        self.sub_view_state(node, &view, Some([viewport.x, viewport.y]))
+                    {
                         let tint =
                             Runtime::color_modulate(tint, self.effective_self_modulate(node));
                         let texture_resolution = stream_state.resolution;
@@ -642,8 +645,7 @@ impl Runtime {
                             simulation_delta: self.time.delta.max(0.0),
                             size: water_render_size(water),
                             shape: water_shape_state(water.shape),
-                            resolution: water.resolution,
-                            render_resolution: water.render_resolution,
+                            quality: water.quality,
                             depth: water.depth,
                             flow: [water.flow.x, water.flow.y],
                             wind: [water.wind.x, water.wind.y],
@@ -655,10 +657,6 @@ impl Runtime {
                             wake_strength: water.physics.wake_strength,
                             foam_strength: water.physics.foam_strength,
                             sample_readback_rate: water.physics.sample_readback_rate,
-                            lod_near_distance: water.lod.near_distance,
-                            lod_mid_distance: water.lod.mid_distance,
-                            lod_far_distance: water.lod.far_distance,
-                            lod_min_resolution: water.lod.min_resolution,
                             collision_layers: water.collision_layers,
                             collision_mask: water.collision_mask,
                             deep_color: Runtime::color_modulate(water.optics.deep_color, modulate),

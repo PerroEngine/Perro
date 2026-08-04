@@ -84,6 +84,40 @@ images = {
 }
 ```
 
+### Static Texture Baking
+
+Static builds can run a custom shader once and embed its result as a PTEX texture.
+Mark the material with `release_bake = true` and add this WGSL function:
+
+```wgsl
+fn bake_texture(in: BakeInput) -> vec4<f32> {
+    let glow = bake_param(in, 0u).x;
+    let grid = step(0.98, fract(in.uv.x * 24.0))
+        + step(0.98, fract(in.uv.y * 24.0));
+    return vec4<f32>(vec3<f32>(0.02, 0.08, 0.14) + grid * glow, 1.0);
+}
+```
+
+`BakeInput` fields:
+
+- `uv`: normalized texture coordinate.
+- `pixel`: pixel coordinate.
+- `resolution`: output size in pixels.
+- `bake_param(in, index)`: material `params` entry packed as `vec4<f32>`.
+
+The build renders a full-screen triangle into an sRGB RGBA texture, reads it back,
+encodes PTEX, and generates a small material that samples it. The original material
+path resolves to the baked variant when `release_bake = true`; generated runtime and baked
+aliases support per-mesh and per-surface selection.
+
+Current bake limits:
+
+- Pure WGSL plus material params only; custom `images` are rejected.
+- `shade_vertex` output cannot be represented by a texture and is rejected.
+- Runtime-only inputs such as time, camera, world position, lights, and scene state
+  should not drive `bake_texture`; bake from `uv`, `pixel`, `resolution`, and params.
+- Baking requires a Windows, Linux, or macOS build host with a WebGPU adapter.
+
 ```rust
 let custom_id = material_create!(
     res,

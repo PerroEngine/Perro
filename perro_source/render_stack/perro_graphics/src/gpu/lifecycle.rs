@@ -238,6 +238,26 @@ impl Gpu {
         if adapter_features.contains(wgpu::Features::MULTI_DRAW_INDIRECT_COUNT) {
             required_features |= wgpu::Features::MULTI_DRAW_INDIRECT_COUNT;
         }
+        // Optional: one shadow depth pass per LAYER SET instead of per layer
+        // (`@builtin(view_index)` picks the light matrix). A shadow layer costs
+        // ~7-10us flat in atlas resolution -- the cost is the pass -- so folding
+        // a point light's 6 faces or the 4 cascades into one pass is the lever.
+        // Absent (metal / wasm / older drivers) the per-layer path stays in
+        // charge, unchanged. `max_multiview_view_count` defaults to 0, so the
+        // limit has to be raised with it or every multiview pass fails.
+        let shadow_multiview_views = crate::three_d::shaders::MAX_MULTIVIEW_SHADOW_VIEWS as u32;
+        let multiview_views = adapter
+            .limits()
+            .max_multiview_view_count
+            .min(shadow_multiview_views);
+        let mut required_limits = wgpu::Limits::default();
+        if cfg!(not(target_arch = "wasm32"))
+            && adapter_features.contains(wgpu::Features::MULTIVIEW)
+            && multiview_views >= shadow_multiview_views
+        {
+            required_features |= wgpu::Features::MULTIVIEW;
+            required_limits.max_multiview_view_count = multiview_views;
+        }
         // Optional: let the driver reuse machine code it already generated on a
         // prior launch (blob on disk). wgpu implement it on Vulkan only, so on
         // DX12/Metal/GL/wasm this stay off + every pipeline build is unchanged.
@@ -246,7 +266,7 @@ impl Gpu {
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("perro_device"),
                 required_features,
-                required_limits: wgpu::Limits::default(),
+                required_limits,
                 experimental_features: wgpu::ExperimentalFeatures::disabled(),
                 memory_hints: if low_memory_adapter {
                     wgpu::MemoryHints::MemoryUsage

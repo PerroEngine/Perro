@@ -1,4 +1,7 @@
-use crate::{ResFileTree, StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir, write_hash_const, write_static_lookup_fn};
+use crate::{
+    ResFileTree, StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir,
+    write_hash_const, write_static_lookup_fn,
+};
 use perro_animation::{
     AnimationBoneSelector, AnimationEase, AnimationEvent, AnimationEventScope,
     AnimationInterpolation, AnimationKeyMode, AnimationObjectKey, AnimationObjectTrack,
@@ -953,7 +956,8 @@ fps = 24
             .expect("failed to create source parent");
         std::fs::write(&source_abs, TEST_PANIM_SRC).expect("failed to write source panim");
 
-        generate_static_animations(&root, &crate::ResFileTree::scan(&root).expect("res scan")).expect("static animation generation should succeed");
+        generate_static_animations(&root, &crate::ResFileTree::scan(&root).expect("res scan"))
+            .expect("static animation generation should succeed");
 
         let embedded_abs = root
             .join(".perro")
@@ -1030,7 +1034,8 @@ target_rest Arm.L = (1, 2, 3) | (0, 0, 0.70710677, 0.70710677) | (1, 1, 1)
         )
         .expect("write retarget map");
 
-        generate_static_animations(&root, &crate::ResFileTree::scan(&root).expect("res scan")).expect("generate retargeted static animation");
+        generate_static_animations(&root, &crate::ResFileTree::scan(&root).expect("res scan"))
+            .expect("generate retargeted static animation");
 
         let generated =
             std::fs::read_to_string(root.join(".perro/project/src/static/animations.rs"))

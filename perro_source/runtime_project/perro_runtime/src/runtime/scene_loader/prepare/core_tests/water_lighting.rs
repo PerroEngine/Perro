@@ -9,8 +9,7 @@ mod water_lighting {
             [water]
             [WaterBody2D]
                 shape = { type="quad" width=64 height=32 }
-                resolution = (256, 128)
-                render_resolution = (512, 256)
+                quality = "high"
                 depth = 7.5
                 flow = (2, 0)
                 wind = (0, 1)
@@ -24,10 +23,6 @@ mod water_lighting {
                 buoyancy = 4.0
                 drag = 0.25
                 sample_readback_rate = 20
-                lod_near_distance = 80
-                lod_mid_distance = 240
-                lod_far_distance = 720
-                lod_min_resolution = 16
                 collision_layers = [2, 4]
                 collision_mask = [1, 3]
                 deep_color = (0.0, 0.1, 0.2, 0.9)
@@ -60,8 +55,7 @@ mod water_lighting {
                         size: Vector2::new(64.0, 32.0),
                     }
                 );
-                assert_eq!(node.water.resolution, [256, 128]);
-                assert_eq!(node.water.render_resolution, [512, 256]);
+                assert_eq!(node.water.quality, perro_structs::WaterQuality::High);
                 assert_eq!(node.water.depth, 7.5);
                 assert_eq!(node.water.flow.x, 2.0);
                 assert_eq!(node.water.wind.y, 1.0);
@@ -75,10 +69,6 @@ mod water_lighting {
                 assert_eq!(node.water.physics.buoyancy, 4.0);
                 assert_eq!(node.water.physics.drag, 0.25);
                 assert_eq!(node.water.physics.sample_readback_rate, 20.0);
-                assert_eq!(node.water.lod.near_distance, 80.0);
-                assert_eq!(node.water.lod.mid_distance, 240.0);
-                assert_eq!(node.water.lod.far_distance, 720.0);
-                assert_eq!(node.water.lod.min_resolution, [16, 16]);
                 assert_eq!(node.water.collision_layers.bits(), 0b1010);
                 assert_eq!(node.water.collision_mask.bits(), 0b101);
                 assert_eq!(node.water.optics.deep_color, Color::new(0.0, 0.1, 0.2, 0.9));
@@ -560,14 +550,12 @@ mod water_lighting {
     }
 
     #[test]
-    fn water_vertices_per_meter_derives_resolution_from_shape() {
+    fn water_quality_defaults_to_low_and_drives_readback_rate() {
         let scene = Parser::new(
             r#"
             $root = @water
             [water]
             [WaterBody3D]
-                sim_cells_per_meter = 2
-                render_vertices_per_meter = 4
                 shape = { type="cube" size=(20, 8, 10) }
             [/WaterBody3D]
             [/water]
@@ -586,23 +574,95 @@ mod water_lighting {
 
         match &water.node.data {
             SceneNodeData::WaterBody3D(node) => {
-                assert_eq!(node.water.resolution, [41, 21]);
-                assert_eq!(node.water.render_resolution, [81, 41]);
+                assert_eq!(node.water.quality, perro_structs::WaterQuality::Low);
+                assert_eq!(node.water.physics.sample_readback_rate, 10.0);
             }
             other => panic!("expected WaterBody3D node, got {other:?}"),
         }
     }
 
     #[test]
-    fn water_resolution_fields_set_sim_and_render_density() {
+    fn water_quality_tier_sets_readback_rate_unless_overridden() {
         let scene = Parser::new(
             r#"
             $root = @water
             [water]
             [WaterBody3D]
                 shape = { type="cube" size=(20, 8, 10) }
-                sim_cells_per_meter = 25
-                render_vertices_per_meter = 50
+                quality = "ultra"
+            [/WaterBody3D]
+            [/water]
+
+            [pinned]
+            parent = water
+            [WaterBody3D]
+                shape = { type="cube" size=(20, 8, 10) }
+                sample_readback_rate = 5
+                quality = "ultra"
+            [/WaterBody3D]
+            [/pinned]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+        let find = |name: &str| {
+            prepared
+                .nodes
+                .iter()
+                .find(|pending| pending.key_name == name)
+                .map(|pending| match &pending.node.data {
+                    SceneNodeData::WaterBody3D(node) => node.water,
+                    other => panic!("expected WaterBody3D node, got {other:?}"),
+                })
+                .expect("water node")
+        };
+        let tiered = find("water");
+        assert_eq!(tiered.quality, perro_structs::WaterQuality::Ultra);
+        assert_eq!(tiered.physics.sample_readback_rate, 60.0);
+        // explicit rate wins over the tier default, whatever the field order
+        assert_eq!(find("pinned").physics.sample_readback_rate, 5.0);
+    }
+
+    #[test]
+    fn removed_water_fidelity_fields_name_quality_as_replacement() {
+        for field in [
+            "resolution",
+            "render_resolution",
+            "mesh_resolution",
+            "vertices_per_meter",
+            "sim_cells_per_meter",
+            "render_vertices_per_meter",
+            "lod_near_distance",
+            "lod_mid_distance",
+            "lod_far_distance",
+            "lod_min_resolution",
+            "min_resolution",
+        ] {
+            let detail = perro_scene::water_body_removed_field(field)
+                .unwrap_or_else(|| panic!("`{field}` must report as removed"));
+            assert!(detail.starts_with("removed;"), "{field}: {detail}");
+            assert!(detail.contains("quality"), "{field}: {detail}");
+        }
+        assert_eq!(perro_scene::water_body_removed_field("quality"), None);
+        assert_eq!(perro_scene::water_body_removed_field("depth"), None);
+    }
+
+    #[test]
+    fn removed_water_fidelity_fields_do_not_resolve_or_apply() {
+        let scene = Parser::new(
+            r#"
+            $root = @water
+            [water]
+            [WaterBody3D]
+                shape = { type="cube" size=(20, 8, 10) }
+                quality = "medium"
+                resolution = (256, 128)
+                render_resolution = (512, 256)
+                lod_min_resolution = 16
+                lod_near_distance = 80
             [/WaterBody3D]
             [/water]
             "#,
@@ -620,8 +680,9 @@ mod water_lighting {
 
         match &water.node.data {
             SceneNodeData::WaterBody3D(node) => {
-                assert_eq!(node.water.resolution, [501, 251]);
-                assert_eq!(node.water.render_resolution, [1001, 501]);
+                // removed knobs are inert: the tier alone decides fidelity
+                assert_eq!(node.water.quality, perro_structs::WaterQuality::Medium);
+                assert_eq!(node.water.physics.sample_readback_rate, 20.0);
             }
             other => panic!("expected WaterBody3D node, got {other:?}"),
         }

@@ -376,7 +376,10 @@ pub struct RenderUiState {
     pub command_ids: Vec<NodeID>,
     pub command_seen: AHashSet<NodeID>,
     pub dirty_entries_scratch: Vec<(NodeID, u16)>,
+    /// Reused lane for node-arena stamp changes that bypass runtime dirty hooks.
     pub all_ids_scratch: Vec<NodeID>,
+    /// Arena revision covered by retained UI state.
+    pub arena_mutation_revision: u64,
     /// dirty node -> its auto-layout ui parent; siblings resolve through
     /// `layout_children_memo_scratch` so no per-node Vec clones happen.
     pub layout_parent_scratch: AHashMap<NodeID, NodeID>,
@@ -456,7 +459,6 @@ pub struct UiDirtyMask {
 pub struct UiExtractionOptions {
     pub mask: UiDirtyMask,
     pub bootstrap_scan: bool,
-    pub input_changed: bool,
 }
 
 pub struct UiExtractionPlan {
@@ -476,6 +478,7 @@ impl RenderUiState {
             command_seen: AHashSet::default(),
             dirty_entries_scratch: Vec::new(),
             all_ids_scratch: Vec::new(),
+            arena_mutation_revision: 0,
             layout_parent_scratch: AHashMap::default(),
             layout_children_memo_scratch: AHashMap::default(),
             layout_children_flat_scratch: Vec::new(),
@@ -621,7 +624,11 @@ impl RenderUiState {
                 command_ids.push(node);
             }
         }
-        if options.input_changed || options.bootstrap_scan {
+        // Bootstrap must seed every retained command once. Pointer input does
+        // not: input handlers append only nodes whose visual state changed.
+        // Visiting the whole retained UI on every mouse sample made pointer
+        // motion O(all UI nodes), even when no command changed.
+        if options.bootstrap_scan {
             for node in self.retained_commands.keys().copied() {
                 if command_seen.insert(node) {
                     command_ids.push(node);
@@ -1255,7 +1262,7 @@ mod tests {
     }
 
     #[test]
-    fn ui_extraction_plan_adds_layout_children_commands_and_retained_input() {
+    fn ui_extraction_plan_adds_layout_children_commands_without_retained_input_fanout() {
         let mut state = RenderUiState::new();
         let retained = node(50);
         state
@@ -1270,7 +1277,6 @@ mod tests {
                 default_flags: 0b0001,
             },
             bootstrap_scan: false,
-            input_changed: true,
         };
         let plan = state.collect_extraction_plan(
             [
@@ -1300,7 +1306,7 @@ mod tests {
             node_set(&[node(1), node(20), node(21), node(4), node(10), node(200)])
         );
         assert!(plan.command_ids.contains(&node(3)));
-        assert!(plan.command_ids.contains(&retained));
+        assert!(!plan.command_ids.contains(&retained));
         for id in plan.traversal_ids.iter() {
             assert!(plan.command_ids.contains(id));
         }
@@ -1309,5 +1315,32 @@ mod tests {
         assert!(state.traversal_ids.is_empty());
         assert!(state.command_ids.is_empty());
         assert!(state.command_seen.is_empty());
+    }
+
+    #[test]
+    fn ui_extraction_plan_bootstrap_still_visits_retained_commands() {
+        let mut state = RenderUiState::new();
+        let retained = node(50);
+        state
+            .retained_commands
+            .insert(retained, UiCommand::RemoveNode { node: retained });
+
+        let plan = state.collect_extraction_plan(
+            Vec::<(NodeID, u16)>::new(),
+            Vec::<NodeID>::new(),
+            UiExtractionOptions {
+                mask: UiDirtyMask {
+                    layout_mask: 0b0001,
+                    layout_parent: 0b0010,
+                    commands: 0b0100,
+                    default_flags: 0b0101,
+                },
+                bootstrap_scan: true,
+            },
+            |_, _| {},
+            |_, _| {},
+        );
+
+        assert_eq!(plan.command_ids, vec![retained]);
     }
 }

@@ -186,128 +186,7 @@ impl Gpu3D {
             encoder.write_timestamp(slots.query_set, slots.begin);
         }
         if self.shadow_pass_enabled && self.has_shadow_casters {
-            let multimesh_casters = self.multimesh_shadow_casters_present();
-            if self.ray_shadow_enabled {
-                for cascade in 0..MAX_SHADOW_RAY_CASCADES.min(self.shadow_layer_views.len()) {
-                    // Cached-valid layer: depth retained, skip the pass entirely.
-                    if self
-                        .shadow_layer_valid
-                        .get(cascade)
-                        .copied()
-                        .unwrap_or(false)
-                    {
-                        continue;
-                    }
-                    if self.shadow_layer_skips_as_empty(cascade, multimesh_casters) {
-                        if let Some(valid) = self.shadow_layer_valid.get_mut(cascade) {
-                            *valid = true;
-                        }
-                        continue;
-                    }
-                    self.encode_multimesh_shadow_cull(encoder, cascade);
-                    self.pass_counters.render_passes += 1;
-                    let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("perro_ray_shadow3d_pass"),
-                        color_attachments: &[],
-                        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                            view: &self.shadow_layer_views[cascade],
-                            depth_ops: Some(wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(1.0),
-                                store: wgpu::StoreOp::Store,
-                            }),
-                            stencil_ops: None,
-                        }),
-                        timestamp_writes: None,
-                        occlusion_query_set: None,
-                        multiview_mask: None,
-                    });
-                    let stats = draw_shadow_batches(self, &mut shadow_pass, cascade);
-                    drop(shadow_pass);
-                    self.note_shadow_draw_stats(stats);
-                    if let Some(valid) = self.shadow_layer_valid.get_mut(cascade) {
-                        *valid = true;
-                    }
-                }
-            }
-            for spot in 0..self
-                .spot_shadow_count
-                .min(self.spot_shadow_layer_views.len())
-            {
-                let flat = MAX_SHADOW_RAY_LIGHTS * MAX_SHADOW_RAY_CASCADES + spot;
-                if self.shadow_layer_valid.get(flat).copied().unwrap_or(false) {
-                    continue;
-                }
-                if self.shadow_layer_skips_as_empty(flat, multimesh_casters) {
-                    if let Some(valid) = self.shadow_layer_valid.get_mut(flat) {
-                        *valid = true;
-                    }
-                    continue;
-                }
-                self.encode_multimesh_shadow_cull(encoder, flat);
-                self.pass_counters.render_passes += 1;
-                let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("perro_spot_shadow3d_pass"),
-                    color_attachments: &[],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &self.spot_shadow_layer_views[spot],
-                        depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(1.0),
-                            store: wgpu::StoreOp::Store,
-                        }),
-                        stencil_ops: None,
-                    }),
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                    multiview_mask: None,
-                });
-                let stats = draw_shadow_batches(self, &mut shadow_pass, flat);
-                drop(shadow_pass);
-                self.note_shadow_draw_stats(stats);
-                if let Some(valid) = self.shadow_layer_valid.get_mut(flat) {
-                    *valid = true;
-                }
-            }
-            let point_layers = self
-                .point_shadow_count
-                .saturating_mul(POINT_SHADOW_FACE_COUNT)
-                .min(self.point_shadow_layer_views.len());
-            for layer in 0..point_layers {
-                let flat = MAX_SHADOW_RAY_LIGHTS * MAX_SHADOW_RAY_CASCADES
-                    + MAX_SHADOW_SPOT_LIGHTS
-                    + layer;
-                if self.shadow_layer_valid.get(flat).copied().unwrap_or(false) {
-                    continue;
-                }
-                if self.shadow_layer_skips_as_empty(flat, multimesh_casters) {
-                    if let Some(valid) = self.shadow_layer_valid.get_mut(flat) {
-                        *valid = true;
-                    }
-                    continue;
-                }
-                self.encode_multimesh_shadow_cull(encoder, flat);
-                self.pass_counters.render_passes += 1;
-                let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("perro_point_shadow3d_pass"),
-                    color_attachments: &[],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &self.point_shadow_layer_views[layer],
-                        depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(1.0),
-                            store: wgpu::StoreOp::Store,
-                        }),
-                        stencil_ops: None,
-                    }),
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                    multiview_mask: None,
-                });
-                let stats = draw_shadow_batches(self, &mut shadow_pass, flat);
-                drop(shadow_pass);
-                self.note_shadow_draw_stats(stats);
-                if let Some(valid) = self.shadow_layer_valid.get_mut(flat) {
-                    *valid = true;
-                }
-            }
+            self.encode_shadow_depth_passes(encoder);
         }
         if let Some(slots) = shadow_timestamps {
             encoder.write_timestamp(slots.query_set, slots.end);
@@ -1742,6 +1621,90 @@ mod tests {
         let mut out = Vec::new();
         shadow_layer_cull(&indices, &batches, &transforms, &frustum, &mut out);
         assert_eq!(out, vec![1], "fully off-view multi-instance batch culled");
+    }
+
+    /// The multiview tradeoff, measured on the cull: a multiview draw reaches
+    /// every view in the mask, so per-layer culling is replaced by the union
+    /// over the set's frustums. A caster inside ANY layer of the set is
+    /// submitted to all of them (the other layers' frustums clip it), and a
+    /// caster outside the whole set still drops out -- that is what keeps the
+    /// union from degenerating into "draw everything".
+    #[test]
+    fn shadow_set_cull_unions_the_sets_frustums() {
+        let batches = [
+            test_batch(0, 1, 1.0),
+            test_batch(1, 1, 1.0),
+            test_batch(2, 1, 1.0),
+        ];
+        let transforms = [
+            translated_instance([0.0, 0.0, 0.0]),
+            translated_instance([40.0, 0.0, 0.0]),
+            // Outside both layers: dropped by the union too.
+            translated_instance([400.0, 0.0, 0.0]),
+        ];
+        let frustums = [frustum_at([0.0, 0.0, 0.0]), frustum_at([40.0, 0.0, 0.0])];
+        let indices = [0usize, 1, 2];
+        let mut out = Vec::new();
+        let mut layer_empty = [false; 6];
+        shadow_set_cull(
+            &indices,
+            &batches,
+            &transforms,
+            &frustums,
+            &mut out,
+            &mut layer_empty,
+        );
+        assert_eq!(out, vec![0, 1], "union of both layers, in draw order");
+        assert_eq!(
+            &layer_empty[..2],
+            &[false, false],
+            "each layer saw one caster"
+        );
+    }
+
+    /// `shadow_layer_empty` keeps its exact per-layer meaning under multiview:
+    /// a layer that saw nothing is still reported empty even though the pass
+    /// drew the set's union into it.
+    #[test]
+    fn shadow_set_cull_reports_per_layer_emptiness() {
+        let batches = [test_batch(0, 1, 1.0)];
+        let transforms = [translated_instance([0.0, 0.0, 0.0])];
+        let frustums = [frustum_at([0.0, 0.0, 0.0]), frustum_at([400.0, 0.0, 0.0])];
+        let indices = [0usize];
+        let mut out = Vec::new();
+        let mut layer_empty = [false; 6];
+        shadow_set_cull(
+            &indices,
+            &batches,
+            &transforms,
+            &frustums,
+            &mut out,
+            &mut layer_empty,
+        );
+        assert_eq!(out, vec![0]);
+        assert_eq!(&layer_empty[..2], &[false, true]);
+    }
+
+    /// A batch with no usable world sphere survives, and forbids every layer of
+    /// the set from claiming it drew nothing -- same conservatism the per-layer
+    /// cull applies.
+    #[test]
+    fn shadow_set_cull_keeps_unbounded_batches_and_marks_all_layers_live() {
+        let batches = [test_batch(0, 4, 1.0e9)];
+        let transforms = [translated_instance([400.0, 0.0, 0.0])];
+        let frustums = [frustum_at([0.0, 0.0, 0.0]), frustum_at([40.0, 0.0, 0.0])];
+        let mut out = Vec::new();
+        let mut layer_empty = [true; 6];
+        shadow_set_cull(
+            &[0usize],
+            &batches,
+            &transforms,
+            &frustums,
+            &mut out,
+            &mut layer_empty,
+        );
+        assert_eq!(out, vec![0]);
+        assert_eq!(&layer_empty[..2], &[false, false]);
     }
 
     #[test]

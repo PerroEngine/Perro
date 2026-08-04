@@ -30,42 +30,41 @@ impl BarkPlayer {
         }
         // Cow keeps uncompressed static blobs borrowed until the single
         // Arc::from below, so that path copies once instead of twice.
-        let (bytes, load_stats): (std::borrow::Cow<'_, [u8]>, _) = if let Some(lookup) =
-            static_audio_lookup
-        {
-            #[cfg(feature = "profile")]
-            let lookup_begin = Instant::now();
-            let looked_up = lookup(source_hash);
-            #[cfg(feature = "profile")]
-            let lookup_elapsed = lookup_begin.elapsed();
-            let (decoded, decompress_elapsed) = decode_static_pawdio(looked_up)?;
-            #[cfg(not(feature = "profile"))]
-            let _ = decompress_elapsed;
-            #[cfg(feature = "profile")]
-            let stats = SourceLoadStats {
-                kind: SourceLoadKind::Static,
-                static_lookup: lookup_elapsed,
-                pawdio_decompress: decompress_elapsed,
-                disk_read: Duration::ZERO,
+        let (bytes, load_stats): (std::borrow::Cow<'_, [u8]>, _) =
+            if let Some(lookup) = static_audio_lookup {
+                #[cfg(feature = "profile")]
+                let lookup_begin = Instant::now();
+                let looked_up = lookup(source_hash);
+                #[cfg(feature = "profile")]
+                let lookup_elapsed = lookup_begin.elapsed();
+                let (decoded, decompress_elapsed) = decode_static_pawdio(looked_up)?;
+                #[cfg(not(feature = "profile"))]
+                let _ = decompress_elapsed;
+                #[cfg(feature = "profile")]
+                let stats = SourceLoadStats {
+                    kind: SourceLoadKind::Static,
+                    static_lookup: lookup_elapsed,
+                    pawdio_decompress: decompress_elapsed,
+                    disk_read: Duration::ZERO,
+                };
+                #[cfg(not(feature = "profile"))]
+                let stats = SourceLoadStats;
+                (decoded, stats)
+            } else {
+                #[cfg(feature = "profile")]
+                let disk_begin = Instant::now();
+                let disk = perro_io::load_asset(source).map_err(|err| err.to_string())?;
+                #[cfg(feature = "profile")]
+                let stats = SourceLoadStats {
+                    kind: SourceLoadKind::Disk,
+                    static_lookup: Duration::ZERO,
+                    pawdio_decompress: Duration::ZERO,
+                    disk_read: disk_begin.elapsed(),
+                };
+                #[cfg(not(feature = "profile"))]
+                let stats = SourceLoadStats;
+                (std::borrow::Cow::Owned(disk), stats)
             };
-            #[cfg(not(feature = "profile"))]
-            let stats = SourceLoadStats;
-            (decoded, stats)
-        } else {
-            #[cfg(feature = "profile")]
-            let disk_begin = Instant::now();
-            let disk = perro_io::load_asset(source).map_err(|err| err.to_string())?;
-            #[cfg(feature = "profile")]
-            let stats = SourceLoadStats {
-                kind: SourceLoadKind::Disk,
-                static_lookup: Duration::ZERO,
-                pawdio_decompress: Duration::ZERO,
-                disk_read: disk_begin.elapsed(),
-            };
-            #[cfg(not(feature = "profile"))]
-            let stats = SourceLoadStats;
-            (std::borrow::Cow::Owned(disk), stats)
-        };
         let shared: Arc<[u8]> = Arc::from(bytes);
         let source_key: Arc<str> = Arc::from(source);
         let asset_epoch = state.next_cache_epoch.max(1);

@@ -1,6 +1,8 @@
 use super::*;
 use crate::two_d::{WaterBodyQueryState, WaterIdleModeState, WaterLinkState, WaterShapeState};
-use perro_structs::{AudioListenerOptions, BitMask, Color, CustomPostParam, Quaternion, Vector3};
+use perro_structs::{
+    AudioListenerOptions, BitMask, Color, CustomPostParam, Quaternion, Vector3, WaterQuality,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Camera3DState {
@@ -213,8 +215,9 @@ pub struct Water3DState {
     pub simulation_delta: f32,
     pub size: [f32; 2],
     pub shape: WaterShapeState,
-    pub resolution: [u32; 2],
-    pub render_resolution: [u32; 2],
+    /// Single fidelity tier. Sim grid + per-chunk screen-space mesh density
+    /// derive from it.
+    pub quality: WaterQuality,
     pub depth: f32,
     pub flow: [f32; 2],
     pub wind: [f32; 2],
@@ -226,10 +229,6 @@ pub struct Water3DState {
     pub wake_strength: f32,
     pub foam_strength: f32,
     pub sample_readback_rate: f32,
-    pub lod_near_distance: f32,
-    pub lod_mid_distance: f32,
-    pub lod_far_distance: f32,
-    pub lod_min_resolution: [u32; 2],
     pub collision_layers: BitMask,
     pub collision_mask: BitMask,
     pub deep_color: Color,

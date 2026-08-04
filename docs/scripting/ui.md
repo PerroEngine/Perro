@@ -140,7 +140,7 @@ All inherit `UiNode` layout fields.
 - Chooses active local cameras with the same winner rules as the main world.
 - Keeps spatial descendants out of the main world render pass.
 - Clips the final image to the viewport's UI clip rect and optional corner radius.
-- Uses 2x the computed UI rect as render resolution for edge AA unless `resolution` overrides it.
+- Uses the computed UI rect at 1x, rounded to a 64px long-axis bucket, unless `resolution` overrides it.
 - Keeps transparent backgrounds premultiplied for clean filtered edges.
 - Tone-maps local 3D HDR once before linear UI composition.
 - Treats `background` alpha below `1` as transparent and skips the local sky fill.
@@ -151,7 +151,7 @@ All inherit `UiNode` layout fields.
 [preview]
 [UiSubView]
     size = (320, 180)
-    resolution = (640, 360)
+    resolution = (320, 180)
     view_position = (0, 0, 5)
     background = "#00000000"
     corner_radius = 0.08

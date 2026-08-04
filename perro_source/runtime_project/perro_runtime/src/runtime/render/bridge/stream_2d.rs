@@ -104,6 +104,90 @@ impl Runtime {
         localize: &StreamLocalize2D,
         out: &mut Stream2DCollect,
     ) {
+        // Camera-stream quads only compose into a sub-view target. Letting one
+        // camera stream sample another stream from the same watched world can
+        // form A -> B -> A feedback; main-world stream quads stay on the main
+        // renderer path instead.
+        if self.is_sub_view_node(stream_node) {
+            if let Some((stream, rect)) = self.nodes.get(node).and_then(|node_ref| {
+                let SceneNodeData::UiCameraStream(stream) = &node_ref.data else {
+                    return None;
+                };
+                if !stream.visible || !stream.stream.enabled {
+                    return None;
+                }
+                let rect = self.nested_ui_sub_view_rect(
+                    stream_node,
+                    node,
+                    stream_resolution?,
+                    &mut out.rect_computed,
+                    &mut out.rect_scales,
+                    &mut out.rect_auto,
+                )?;
+                Some((stream.as_ref().clone(), rect))
+            }) {
+                let model = perro_structs::Transform2D::new(
+                    rect.center,
+                    stream.base.transform.rotation,
+                    stream.base.transform.scale,
+                )
+                .to_mat3()
+                .to_cols_array_2d();
+                out.sprites.push(Sprite2DCommand {
+                    texture: Self::camera_stream_texture_id(node),
+                    model,
+                    tint: Runtime::color_modulate(stream.tint, self.effective_self_modulate(node)),
+                    uv_min: [0.0, 0.0],
+                    uv_max: [1.0, 1.0],
+                    uv_normalized: true,
+                    size: [rect.size.x.max(0.001), rect.size.y.max(0.001)],
+                    z_index: stream.base.layout.z_index,
+                });
+                return;
+            }
+            if let Some((texture, transform, tint, aspect, z_index)) = self
+                .nodes
+                .get(node)
+                .and_then(|node_ref| match &node_ref.data {
+                    SceneNodeData::CameraStream2D(stream)
+                        if stream.visible
+                            && stream.stream.enabled
+                            && stream_render_mask_matches(camera_mask, stream.render_layers) =>
+                    {
+                        Some((
+                            Self::camera_stream_texture_id(node),
+                            stream.transform,
+                            stream.tint,
+                            if stream.stream.aspect_ratio > 0.0 {
+                                stream.stream.aspect_ratio
+                            } else {
+                                stream.stream.resolution.x as f32
+                                    / stream.stream.resolution.y.max(1) as f32
+                            },
+                            stream.z_index,
+                        ))
+                    }
+                    _ => None,
+                })
+            {
+                let model = self
+                    .stream_localized_transform_2d(node, localize)
+                    .unwrap_or(transform)
+                    .to_mat3()
+                    .to_cols_array_2d();
+                out.sprites.push(Sprite2DCommand {
+                    texture,
+                    model,
+                    tint: Runtime::color_modulate(tint, self.effective_self_modulate(node)),
+                    uv_min: [0.0, 0.0],
+                    uv_max: [1.0, 1.0],
+                    uv_normalized: true,
+                    size: [aspect.max(0.001), 1.0],
+                    z_index,
+                });
+                return;
+            }
+        }
         // nested ui sub-view quad.
         if let Some((view, rect)) = self.nodes.get(node).and_then(|node_ref| {
             let SceneNodeData::UiSubView(view) = &node_ref.data else {
@@ -402,8 +486,7 @@ impl Runtime {
                     simulation_delta: self.time.delta.max(0.0),
                     size: water_render_size_2d(water),
                     shape: water_shape_state_2d(water.shape),
-                    resolution: water.resolution,
-                    render_resolution: water.render_resolution,
+                    quality: water.quality,
                     depth: water.shape.depth(water.depth),
                     flow: [water.flow.x, water.flow.y],
                     wind: [water.wind.x, water.wind.y],
@@ -415,10 +498,6 @@ impl Runtime {
                     wake_strength: water.physics.wake_strength,
                     foam_strength: water.physics.foam_strength,
                     sample_readback_rate: water.physics.sample_readback_rate,
-                    lod_near_distance: water.lod.near_distance,
-                    lod_mid_distance: water.lod.mid_distance,
-                    lod_far_distance: water.lod.far_distance,
-                    lod_min_resolution: water.lod.min_resolution,
                     collision_layers: water.collision_layers,
                     collision_mask: water.collision_mask,
                     deep_color: water.optics.deep_color,

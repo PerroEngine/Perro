@@ -733,7 +733,6 @@ impl PhysicsSystem {
             }
         }
     }
-
 }
 
 /// Propagate a just-moved body's pose to its colliders + patch their leaves in

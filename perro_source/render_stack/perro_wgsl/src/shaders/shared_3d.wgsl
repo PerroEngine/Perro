@@ -201,6 +201,19 @@ fn custom_f_param(in: FragmentInput, index: u32) -> vec4<f32> {
     );
 }
 
+// Bake-only input stays part of runtime preludes so one WGSL source can hold
+// both shade_material and bake_texture. Runtime pipelines never call the bake fn.
+struct BakeInput {
+    uv: vec2<f32>,
+    pixel: vec2<f32>,
+    resolution: vec2<f32>,
+    params: array<vec4<f32>, 16>,
+}
+
+fn bake_param(in: BakeInput, index: u32) -> vec4<f32> {
+    return in.params[min(index, 15u)];
+}
+
 fn custom_v_param(out: VertexOutput, index: u32) -> vec4<f32> {
     if index >= out.custom_range.y {
         return vec4<f32>(0.0);

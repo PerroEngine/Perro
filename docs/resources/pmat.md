@@ -296,6 +296,40 @@ params = {
 }
 ```
 
+#### Static Shader Baking
+
+Custom materials can turn a procedural WGSL result into a texture during a static build:
+
+```txt
+type = "custom"
+shader_path = "res://shaders/background.wgsl"
+release_bake = true
+bake_resolution = (1920, 1080)
+output = "final"
+```
+
+- `release_bake = false` is the default and keeps runtime WGSL everywhere.
+- `release_bake = true` keeps runtime WGSL in dev and selects a baked texture in release.
+- `bake_resolution` sets the baked texture size and clamps each dimension to `1..8192`.
+- `release_bake = true` defaults to `(1024, 1024)` when no resolution is set.
+- Dynamic/dev loading keeps the runtime shader for fast iteration.
+
+A mesh or individual surface can select the generated variant in a static scene:
+
+```scn
+[Backdrop]
+    [MeshInstance3D]
+        material = "res://materials/background.pmat"
+        shader_use = "baked"
+    [/MeshInstance3D]
+[/Backdrop]
+```
+
+Use `shader_use = "runtime"` on the mesh or surface to force the runtime variant in a static build.
+Use `shader_use = "baked"` to force its baked variant.
+Surface entries use the same field beside their `material`/`source` field.
+See `docs/resources/shaders.md` for the bake WGSL entry point.
+
 ## Inline Materials (Scene)
 
 When defining materials inline in a `.scn` file, **string values must be quoted**:

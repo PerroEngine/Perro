@@ -7,11 +7,11 @@ startup_splash = "res://perro.svg"
 [graphics]
 aspect_ratio = "16:9"
 vsync = false
-msaa = true
+anti_alias = "msaa4"
 occlusion_culling = "off"
 particle_sim_default = "gpu"
 
-[rendering.ui]
+[ui]
 pixel_snapping = true
 
 [runtime]
