@@ -854,6 +854,8 @@ impl PerroGraphics {
             gpu_timestamp_main: gpu_timing.gpu_timestamp_main,
             gpu_timestamp_water: gpu_timing.gpu_timestamp_water,
             gpu_timestamp_shadow: gpu_timing.gpu_timestamp_shadow,
+            gpu_timestamp_mesh: gpu_timing.gpu_timestamp_mesh,
+            gpu_timestamp_post: gpu_timing.gpu_timestamp_post,
             draw_calls_2d: gpu_timing.draw_calls_2d,
             draw_calls_3d: gpu_timing.draw_calls_3d,
             sprite_batches_2d: gpu_timing.sprite_batches_2d,

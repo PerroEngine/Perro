@@ -224,6 +224,10 @@ pub struct DrawFrameTiming {
     /// depth block. Zero on adapters without TIMESTAMP_QUERY, and on frames
     /// where the readback of an earlier frame was still in flight.
     pub gpu_timestamp_shadow: Duration,
+    /// Scene mesh pass alone; post+present = main - mesh - shadow.
+    pub gpu_timestamp_mesh: Duration,
+    /// Post chain + tonemap/present tail.
+    pub gpu_timestamp_post: Duration,
     pub draw_calls_2d: u32,
     pub draw_calls_3d: u32,
     pub sprite_batches_2d: u32,

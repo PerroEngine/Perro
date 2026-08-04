@@ -589,6 +589,8 @@ struct GpuTimestampTimer {
     last_main: Duration,
     last_water: Duration,
     last_shadow: Duration,
+    last_mesh: Duration,
+    last_post: Duration,
 }
 
 impl GpuTimestampTimer {
@@ -598,7 +600,15 @@ impl GpuTimestampTimer {
     // resolves garbage.
     const SHADOW_BEGIN: u32 = 4;
     const SHADOW_END: u32 = 5;
-    const QUERY_COUNT: u32 = 6;
+    // 6/7 mesh: the opaque+alpha scene pass alone. `main` already covers the
+    // whole encoder and `shadow` its own block, so post+present falls out as
+    // main - mesh - shadow without another pair to keep written-exactly-once.
+    const MESH_BEGIN: u32 = 6;
+    const MESH_END: u32 = 7;
+    // 8/9 post chain + tonemap/present: the full-screen tail of the frame.
+    const POST_BEGIN: u32 = 8;
+    const POST_END: u32 = 9;
+    const QUERY_COUNT: u32 = 10;
     const BUFFER_SIZE: u64 = Self::QUERY_COUNT as u64 * std::mem::size_of::<u64>() as u64;
 
     fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
@@ -628,6 +638,8 @@ impl GpuTimestampTimer {
             last_main: Duration::ZERO,
             last_water: Duration::ZERO,
             last_shadow: Duration::ZERO,
+            last_mesh: Duration::ZERO,
+            last_post: Duration::ZERO,
         }
     }
 
@@ -662,6 +674,16 @@ impl GpuTimestampTimer {
                         * f64::from(self.timestamp_period_ns);
                     self.last_shadow = Duration::from_nanos(nanos.max(0.0) as u64);
                 }
+                if timestamps.len() >= 8 && timestamps[7] >= timestamps[6] {
+                    let nanos = (timestamps[7] - timestamps[6]) as f64
+                        * f64::from(self.timestamp_period_ns);
+                    self.last_mesh = Duration::from_nanos(nanos.max(0.0) as u64);
+                }
+                if timestamps.len() >= 10 && timestamps[9] >= timestamps[8] {
+                    let nanos = (timestamps[9] - timestamps[8]) as f64
+                        * f64::from(self.timestamp_period_ns);
+                    self.last_post = Duration::from_nanos(nanos.max(0.0) as u64);
+                }
                 drop(data);
                 self.readback_buffer.unmap();
                 self.pending_rx = None;
@@ -683,6 +705,22 @@ impl GpuTimestampTimer {
 
     fn write_start(&self, encoder: &mut wgpu::CommandEncoder) {
         encoder.write_timestamp(&self.query_set, 0);
+    }
+
+    fn write_mesh_start(&self, encoder: &mut wgpu::CommandEncoder) {
+        encoder.write_timestamp(&self.query_set, Self::MESH_BEGIN);
+    }
+
+    fn write_mesh_end(&self, encoder: &mut wgpu::CommandEncoder) {
+        encoder.write_timestamp(&self.query_set, Self::MESH_END);
+    }
+
+    fn write_post_start(&self, encoder: &mut wgpu::CommandEncoder) {
+        encoder.write_timestamp(&self.query_set, Self::POST_BEGIN);
+    }
+
+    fn write_post_end(&self, encoder: &mut wgpu::CommandEncoder) {
+        encoder.write_timestamp(&self.query_set, Self::POST_END);
     }
 
     fn write_water_start(&self, encoder: &mut wgpu::CommandEncoder) {
@@ -1280,6 +1318,10 @@ pub struct RenderGpuTiming {
     pub gpu_timestamp_main: Duration,
     pub gpu_timestamp_water: Duration,
     pub gpu_timestamp_shadow: Duration,
+    /// Opaque+alpha scene mesh pass alone. post+present = main - mesh - shadow.
+    pub gpu_timestamp_mesh: Duration,
+    /// Post chain + tonemap/present: the full-screen tail.
+    pub gpu_timestamp_post: Duration,
     pub draw_calls_2d: u32,
     pub draw_calls_3d: u32,
     pub sprite_batches_2d: u32,

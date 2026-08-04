@@ -224,7 +224,7 @@ const TIMING_CSV_HEADER: &str = concat!(
     "gpu_acquire_surface_us,gpu_acquire_view_us,gpu_encode_main_us,gpu_submit_main_us,",
     "gpu_submit_finish_main_us,gpu_submit_queue_main_us,gpu_post_process_us,",
     "gpu_accessibility_us,gpu_present_us,gpu_timestamp_main_us,gpu_timestamp_water_us,",
-    "gpu_timestamp_shadow_us,gpu_total_us,draw_total_us,idle_clear,",
+    "gpu_timestamp_shadow_us,gpu_timestamp_mesh_us,gpu_timestamp_post_us,gpu_total_us,draw_total_us,idle_clear,",
     "draw_calls_2d,draw_calls_3d,sprite_batches_2d,sprite_bind_group_switches_2d,",
     "draw_batches_3d,pipeline_compiles_3d,pipeline_warms_pending_3d,pipeline_switches_3d,",
     "texture_bind_group_switches_3d,draw_instances_3d,draw_triangles_3d,draw_material_refs_3d,",
@@ -285,7 +285,7 @@ impl TimingCsvWriter {
         // Split across three calls purely for readability; the row is one line.
         let _ = write!(
             out,
-            ",{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            ",{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
             draw.process_commands.as_micros(),
             draw.prepare_cpu.as_micros(),
             draw.gpu_prepare_2d.as_micros(),
@@ -308,6 +308,8 @@ impl TimingCsvWriter {
             draw.gpu_timestamp_main.as_micros(),
             draw.gpu_timestamp_water.as_micros(),
             draw.gpu_timestamp_shadow.as_micros(),
+            draw.gpu_timestamp_mesh.as_micros(),
+            draw.gpu_timestamp_post.as_micros(),
             draw.gpu_total.as_micros(),
             draw.total.as_micros(),
             if draw.idle_clear { 1 } else { 0 },

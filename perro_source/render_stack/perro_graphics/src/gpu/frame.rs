@@ -10,6 +10,9 @@ impl Gpu {
             timing.gpu_timestamp_main = timer.last_main;
             timing.gpu_timestamp_water = timer.last_water;
             timing.gpu_timestamp_shadow = timer.last_shadow;
+            // Slots 6/7 bracket shadow + mesh; shadow is timed separately.
+            timing.gpu_timestamp_mesh = timer.last_mesh.saturating_sub(timer.last_shadow);
+            timing.gpu_timestamp_post = timer.last_post;
         }
         let RenderFrame {
             resources,
@@ -1513,6 +1516,10 @@ impl Gpu {
             .then(|| self.gpu_timer.as_ref().map(GpuTimestampTimer::shadow_slots))
             .flatten();
         let mut shadow_timestamps_written = false;
+        // Same paired-every-frame rule as water/shadow: slots 6/7 bracket the
+        // whole 3D block, so `mesh = that - shadow` at harvest. A frame with no
+        // 3D view (or a retained-scene frame) writes the pair back to back.
+        let mut mesh_timestamps_written = false;
         // ---- scene chain: everything that writes the retained scene texture.
         // Skipped wholesale on a retained-scene frame; `scene_passes_encoded`
         // stays 0 there, which is what the fast-path tests assert on.
@@ -1521,6 +1528,10 @@ impl Gpu {
                 self.three_d.is_none() && self.two_d.is_some() && !waters_2d.is_empty();
             if let Some(three_d) = self.three_d.as_mut() {
                 timing.scene_passes_encoded += 1;
+                if gpu_timer_active && let Some(timer) = self.gpu_timer.as_ref() {
+                    timer.write_mesh_start(&mut encoder);
+                    mesh_timestamps_written = true;
+                }
                 three_d.render_pass(
                     &self.queue,
                     &mut encoder,
@@ -1532,6 +1543,9 @@ impl Gpu {
                     shadow_slots,
                 );
                 shadow_timestamps_written = three_d.shadow_timestamps_written();
+                if gpu_timer_active && let Some(timer) = self.gpu_timer.as_ref() {
+                    timer.write_mesh_end(&mut encoder);
+                }
                 // Seam pass runs on the resolved offscreen scene texture, before
                 // particles/water/2D draw on top.
                 if blend_screen_active && !direct_present && self.sample_count == 1 {
@@ -1676,6 +1690,13 @@ impl Gpu {
             }
         }
         // ---- end scene chain.
+        if !mesh_timestamps_written
+            && gpu_timer_active
+            && let Some(timer) = self.gpu_timer.as_ref()
+        {
+            timer.write_mesh_start(&mut encoder);
+            timer.write_mesh_end(&mut encoder);
+        }
         if !shadow_timestamps_written
             && gpu_timer_active
             && let Some(timer) = self.gpu_timer.as_ref()
@@ -1694,6 +1715,11 @@ impl Gpu {
         }
         let mut current_tex = FrameTex::Scene;
         let post_view_generation = self.post_view_generation;
+        // Opened before the post closure borrows the encoder; closed just
+        // before the frame end marker, so the pair spans post + UI + present.
+        if gpu_timer_active && let Some(timer) = self.gpu_timer.as_ref() {
+            timer.write_post_start(&mut encoder);
+        }
         let mut apply_post_chain = |effects: &[perro_structs::PostProcessEffect],
                                     current_tex: &mut FrameTex| {
             if effects.is_empty() {
@@ -1940,6 +1966,9 @@ impl Gpu {
             }
         }
         if gpu_timer_active && let Some(timer) = self.gpu_timer.as_ref() {
+            // Post pair closes immediately before the frame end marker, so it
+            // spans the post chain + UI + tonemap/present tail.
+            timer.write_post_end(&mut encoder);
             timer.write_end_and_resolve(&mut encoder);
         }
         if let Some(water) = self.water.as_mut() {
