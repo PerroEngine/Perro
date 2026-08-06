@@ -257,6 +257,29 @@ pub trait SceneAPI {
         let _ = path_hash;
         self.scene_preload_typed(path)
     }
+    /// Start a preload on a worker and return its handle immediately.
+    ///
+    /// Nothing blocks the calling frame: parse + prepare run off-thread and the
+    /// handle turns usable on a later tick. Poll with `scene_preload_ready`
+    /// before `scene_load_preloaded`. Repeat calls for one path share a handle.
+    fn scene_preload_async(&mut self, path: &str) -> PreloadedSceneID {
+        // Runtimes without background support keep the blocking behavior: the
+        // handle is simply ready the moment it is returned.
+        self.scene_preload(path).unwrap_or_else(|_| PreloadedSceneID::nil())
+    }
+    fn scene_preload_async_hashed(&mut self, path_hash: u64, path: &str) -> PreloadedSceneID {
+        let _ = path_hash;
+        self.scene_preload_async(path)
+    }
+    /// Whether a handle finished loading and can be passed to
+    /// `scene_load_preloaded`. False for unknown or still-loading handles.
+    fn scene_preload_ready(&self, _id: PreloadedSceneID) -> bool {
+        false
+    }
+    /// Whether a handle is still loading on a worker.
+    fn scene_preload_pending(&self, _id: PreloadedSceneID) -> bool {
+        false
+    }
     fn scene_load_preloaded(&mut self, _id: PreloadedSceneID) -> Result<NodeID, String> {
         Err("preloaded scene loading is not supported by this runtime".to_string())
     }
@@ -369,6 +392,34 @@ impl<'rt, R: SceneAPI + ?Sized> SceneModule<'rt, R> {
         self.rt.scene_preload_hashed_typed(path_hash, path)
     }
 
+    /// Non-blocking preload: returns a handle now, loads on a worker.
+    ///
+    /// ```ignore
+    /// let next = ctx.Scene().preload_async("res://levels/2.scn");
+    /// // later frames
+    /// if ctx.Scene().preload_ready(next) {
+    ///     ctx.Scene().load_preloaded(next)?;
+    /// }
+    /// ```
+    pub fn preload_async<P: IntoScenePath>(&mut self, path: P) -> PreloadedSceneID {
+        let path = path.into_scene_path();
+        self.rt.scene_preload_async(path.as_ref())
+    }
+
+    pub fn preload_async_hashed(&mut self, path_hash: u64, path: &str) -> PreloadedSceneID {
+        self.rt.scene_preload_async_hashed(path_hash, path)
+    }
+
+    /// Whether a handle from `preload_async` finished loading.
+    pub fn preload_ready<I: IntoPreloadedSceneID>(&self, id: I) -> bool {
+        self.rt.scene_preload_ready(id.into_preloaded_scene_id())
+    }
+
+    /// Whether a handle from `preload_async` is still loading.
+    pub fn preload_pending<I: IntoPreloadedSceneID>(&self, id: I) -> bool {
+        self.rt.scene_preload_pending(id.into_preloaded_scene_id())
+    }
+
     pub fn load_preloaded<I: IntoPreloadedSceneID>(&mut self, id: I) -> Result<NodeID, String> {
         self.rt.scene_load_preloaded(id.into_preloaded_scene_id())
     }
@@ -450,6 +501,19 @@ macro_rules! scene_preload {
     }};
     ($ctx:expr, $path:expr) => {
         $ctx.Scene().preload($path)
+    };
+}
+
+/// `scene_preload!` that does not block the frame. Returns a handle right
+/// away; check `Scene().preload_ready(handle)` before loading it.
+#[macro_export]
+macro_rules! scene_preload_async {
+    ($ctx:expr, $path:literal) => {{
+        const __PATH_HASH: u64 = $crate::__perro_string_to_u64($path);
+        $ctx.Scene().preload_async_hashed(__PATH_HASH, $path)
+    }};
+    ($ctx:expr, $path:expr) => {
+        $ctx.Scene().preload_async($path)
     };
 }
 

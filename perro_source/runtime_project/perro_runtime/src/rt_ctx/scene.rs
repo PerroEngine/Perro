@@ -65,6 +65,22 @@ impl SceneAPI for Runtime {
             .map_err(LoadError::Legacy)
     }
 
+    fn scene_preload_async(&mut self, path: &str) -> PreloadedSceneID {
+        self.preload_scene_async_at_runtime_hashed(Self::scene_source_hash(path), path)
+    }
+
+    fn scene_preload_async_hashed(&mut self, path_hash: u64, path: &str) -> PreloadedSceneID {
+        self.preload_scene_async_at_runtime_hashed(path_hash, path)
+    }
+
+    fn scene_preload_ready(&self, id: PreloadedSceneID) -> bool {
+        self.preloaded_scene_ready_at_runtime(id)
+    }
+
+    fn scene_preload_pending(&self, id: PreloadedSceneID) -> bool {
+        self.preloaded_scene_pending_at_runtime(id)
+    }
+
     fn scene_load_preloaded(&mut self, id: PreloadedSceneID) -> Result<NodeID, String> {
         self.scene_load_preloaded_typed(id)
             .map_err(|err| err.to_string())

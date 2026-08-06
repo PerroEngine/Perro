@@ -23,6 +23,7 @@ use std::sync::Arc;
 #[cfg(feature = "profile")]
 use std::time::{Duration, Instant};
 
+pub(crate) mod background;
 mod merge;
 pub(crate) mod prepare;
 
@@ -177,6 +178,11 @@ struct SceneLoadStats {
 impl Runtime {
     fn source_hash(path: &str) -> u64 {
         parse_hashed_source_uri(path).unwrap_or_else(|| string_to_u64(path))
+    }
+
+    /// `source_hash` for callers outside this module (the ctx-facing API).
+    pub(crate) fn scene_source_hash(path: &str) -> u64 {
+        Self::source_hash(path)
     }
 
     fn resolve_scene_by_hash_and_path(
@@ -343,6 +349,114 @@ impl Runtime {
         self.preloaded_scene_reverse_paths
             .insert(id, path.to_string());
         Ok(id)
+    }
+
+    /// Context a worker needs to load + prepare without the `Runtime`.
+    fn background_scene_context(&self) -> background::BackgroundSceneContext {
+        background::BackgroundSceneContext {
+            provider_mode: self.provider_mode,
+            static_scene_lookup: self
+                .project()
+                .and_then(|project| project.static_scene_lookup),
+            static_ui_style_lookup: self
+                .project()
+                .and_then(|project| project.static_ui_style_lookup),
+        }
+    }
+
+    /// Start a preload on a worker thread and return its handle immediately.
+    ///
+    /// The handle is not usable until [`Self::preloaded_scene_ready_at_runtime`]
+    /// reports it ready; `scene_load_preloaded` on a still-loading handle fails
+    /// the same way an unknown handle does. Calling this twice for one path
+    /// returns the same handle instead of queueing the work twice.
+    pub(crate) fn preload_scene_async_at_runtime_hashed(
+        &mut self,
+        path_hash: u64,
+        path: &str,
+    ) -> PreloadedSceneID {
+        if let Some(existing) = self.preloaded_scene_paths.get(&path_hash).copied() {
+            return existing;
+        }
+        if let Some(pending) = self.pending_preload_paths.get(&path_hash).copied() {
+            return pending;
+        }
+        let mut next = self.next_preloaded_scene_id;
+        if next == 0 {
+            next = 1;
+        }
+        let id = PreloadedSceneID::from_u64(next);
+        self.next_preloaded_scene_id = next.saturating_add(1);
+        self.pending_preload_paths.insert(path_hash, id);
+        self.pending_preloads.insert(id, path.to_string());
+        self.spawn_scene_preload(id, path_hash, path.to_string());
+        id
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn spawn_scene_preload(&mut self, id: PreloadedSceneID, path_hash: u64, path: String) {
+        let context = self.background_scene_context();
+        let tx = self.scene_preload_tx.clone();
+        rayon::spawn(move || {
+            let prepared = context.load_and_prepare(path.as_str());
+            let _ = tx.send(background::BackgroundPreloadResult {
+                id,
+                path_hash,
+                path,
+                prepared,
+            });
+        });
+    }
+
+    /// Single-threaded fallback: wasm has no pool, so the work runs now and
+    /// posts to the same channel, keeping the poll path identical.
+    #[cfg(target_arch = "wasm32")]
+    fn spawn_scene_preload(&mut self, id: PreloadedSceneID, path_hash: u64, path: String) {
+        let context = self.background_scene_context();
+        let prepared = context.load_and_prepare(path.as_str());
+        let _ = self
+            .scene_preload_tx
+            .send(background::BackgroundPreloadResult {
+                id,
+                path_hash,
+                path,
+                prepared,
+            });
+    }
+
+    /// Install finished background preloads. Runs once per update tick.
+    pub(crate) fn poll_async_scene_preloads(&mut self) {
+        while let Ok(result) = self.scene_preload_rx.try_recv() {
+            self.pending_preloads.remove(&result.id);
+            // A drop between spawn and completion retires the handle: the id is
+            // gone from the pending map, so the result is stale and dropped.
+            if self.pending_preload_paths.get(&result.path_hash) != Some(&result.id) {
+                continue;
+            }
+            self.pending_preload_paths.remove(&result.path_hash);
+            match result.prepared {
+                Ok((scene, prepared)) => {
+                    self.preloaded_scenes.insert(result.id, scene);
+                    self.preloaded_prepared_scenes.insert(result.id, prepared);
+                    self.preloaded_scene_paths.insert(result.path_hash, result.id);
+                    self.preloaded_scene_reverse_paths.insert(result.id, result.path);
+                }
+                Err(err) => {
+                    eprintln!("[perro][runtime] background preload failed `{}`: {err}", result.path);
+                }
+            }
+        }
+    }
+
+    /// Whether a handle finished loading. Nil for an unknown handle too: both
+    /// mean "not usable with `scene_load_preloaded`".
+    pub(crate) fn preloaded_scene_ready_at_runtime(&self, id: PreloadedSceneID) -> bool {
+        self.preloaded_prepared_scenes.contains_key(&id)
+    }
+
+    /// Whether a handle is still being loaded on a worker.
+    pub(crate) fn preloaded_scene_pending_at_runtime(&self, id: PreloadedSceneID) -> bool {
+        self.pending_preloads.contains_key(&id)
     }
 
     pub(crate) fn free_preloaded_scene_at_runtime(&mut self, id: PreloadedSceneID) -> bool {

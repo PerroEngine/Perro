@@ -521,6 +521,58 @@ fn loaded_scene_root_removes_hidden_owner_and_sibling_roots() {
     assert!(runtime.nodes.named_ids("sibling").next().is_none());
 }
 
+/// Background preload must not need the `Runtime` to resolve or prepare: the
+/// worker carries its own context. Static provider mode keeps the test to
+/// in-memory lookups (no shared project-root global, no disk).
+#[test]
+fn async_preload_lands_off_thread_and_loads_when_ready() {
+    use std::sync::OnceLock;
+
+    static BACKGROUND_SCENE: OnceLock<perro_scene::Scene> = OnceLock::new();
+    fn lookup(_path_hash: u64) -> &'static perro_scene::Scene {
+        BACKGROUND_SCENE.get_or_init(|| {
+            Parser::new("$root = @root\n\n[root]\n[Node]\n[/Node]\n[/root]\n").parse_scene()
+        })
+    }
+
+    let path = "res://background_preload.scn";
+    let path_hash = perro_ids::string_to_u64(path);
+    let mut project = RuntimeProject::new("Scene Test", ".");
+    project.static_scene_lookup = Some(lookup);
+    let mut runtime = Runtime::new();
+    runtime.project = Some(std::rc::Rc::new(project));
+    runtime.provider_mode = crate::runtime_project::ProviderMode::Static;
+
+    let id = runtime.preload_scene_async_at_runtime_hashed(path_hash, path);
+    assert!(!id.is_nil());
+    // Repeat requests share one handle instead of queueing the work twice.
+    assert_eq!(
+        runtime.preload_scene_async_at_runtime_hashed(path_hash, path),
+        id
+    );
+
+    // The handle is unusable until a poll installs the finished work.
+    assert!(!runtime.preloaded_scene_ready_at_runtime(id));
+    assert!(runtime.load_preloaded_scene_at_runtime(id).is_err());
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !runtime.preloaded_scene_ready_at_runtime(id) {
+        runtime.poll_async_scene_preloads();
+        assert!(
+            std::time::Instant::now() < deadline,
+            "background preload never completed"
+        );
+        std::thread::yield_now();
+    }
+    assert!(!runtime.preloaded_scene_pending_at_runtime(id));
+
+    let root = runtime
+        .load_preloaded_scene_at_runtime(id)
+        .expect("background-preloaded scene loads");
+    assert!(runtime.nodes.contains(root));
+    assert!(runtime.free_preloaded_scene_at_runtime(id));
+}
+
 #[test]
 fn preload_compiles_once_and_spawns_distinct_instances() {
     let scene = Parser::new("$root = @root\n\n[root]\n[Node]\n[/Node]\n[/root]\n").parse_scene();

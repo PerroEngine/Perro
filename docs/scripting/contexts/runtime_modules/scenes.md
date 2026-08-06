@@ -13,6 +13,9 @@
 | `load_hashed` | [`load_hashed`](#load_hashed) |
 | `preload` | [`preload`](#preload) |
 | `preload_hashed` | [`preload_hashed`](#preload_hashed) |
+| `preload_async` | [`preload_async`](#preload_async) |
+| `preload_ready` | [`preload_ready`](#preload_ready) |
+| `preload_pending` | [`preload_pending`](#preload_pending) |
 | `load_preloaded` | [`load_preloaded`](#load_preloaded) |
 | `free_preloaded` | [`free_preloaded`](#free_preloaded) |
 | `drop_preloaded` | [`drop_preloaded`](#drop_preloaded) |
@@ -22,6 +25,7 @@
 | `assets_ready` | [`assets_ready`](#assets_ready) |
 | `scene_load` | [`scene_load`](#scene_load) |
 | `scene_preload` | [`scene_preload`](#scene_preload) |
+| `scene_preload_async` | [`scene_preload_async`](#scene_preload_async) |
 | `scene_free_preloaded` | [`scene_free_preloaded`](#scene_free_preloaded) |
 | `scene_drop_preloaded` | [`scene_drop_preloaded`](#scene_drop_preloaded) |
 | `scene_asset_progress` | [`scene_asset_progress`](#scene_asset_progress) |
@@ -41,6 +45,7 @@ hot path so the actual swap does not hitch mid-action.
 
 - Level transition when the player reaches an exit: `scene_load!(ctx.run, "res://levels/level2.pscene")` returns the new root `NodeID`.
 - Seamless streaming: `scene_preload!(ctx.run, "res://levels/boss.pscene")` during a calm corridor, then instance the warmed copy with `ctx.run.Scene().load_preloaded(id)` at the boss door.
+- Preload without spending a frame on it: `scene_preload_async!(ctx.run, "res://levels/boss.pscene")` returns a handle immediately and parses + prepares the scene on a worker thread. Check `ctx.run.Scene().preload_ready(handle)` on later frames, then `load_preloaded`.
 - Spawn a prefab instance (enemy squad, pickup, particle burst): `scene_load!` a small scene and reparent its root under a spawn-point node.
 - Main-menu "Play": load the first gameplay scene from the button handler.
 - Reclaim memory once an area is behind the player: `scene_free_preloaded!(ctx.run, "res://levels/boss.pscene")` or `scene_drop_preloaded!`.
@@ -133,6 +138,39 @@ methods!({
 | Returns | `Result<PreloadedSceneID, String>` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
 | Fails when / edge behavior | Returns `Err` when `preload_hashed` cannot validate or complete the operation; preserve the error text for diagnostics. |
+
+### `preload_async`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Scene()` |
+| Signature | `pub fn preload_async<P: IntoScenePath>(&mut self, path: P) -> PreloadedSceneID` |
+| Params | `&mut self, path: P` |
+| Returns | `PreloadedSceneID` |
+| Use when | Use when a preload must not cost the calling frame: parse + prepare run on a worker and the handle turns usable on a later tick. |
+| Fails when / edge behavior | Never blocks and never returns an error. A failed load logs and leaves the handle permanently not-ready, so gate every use on `preload_ready`. Repeat calls for one path share a handle. |
+
+### `preload_ready`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Scene()` |
+| Signature | `pub fn preload_ready<I: IntoPreloadedSceneID>(&self, id: I) -> bool` |
+| Params | `&self, id: I` |
+| Returns | `bool` |
+| Use when | Use when deciding whether a `preload_async` handle can be passed to `load_preloaded`. |
+| Fails when / edge behavior | False for unknown, dropped, still-loading, and failed handles alike. |
+
+### `preload_pending`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Scene()` |
+| Signature | `pub fn preload_pending<I: IntoPreloadedSceneID>(&self, id: I) -> bool` |
+| Params | `&self, id: I` |
+| Returns | `bool` |
+| Use when | Use when a loading screen needs to tell "still working" apart from "finished or failed". |
+| Fails when / edge behavior | False once the worker reports back, whether it succeeded or failed. |
 
 ### `load_preloaded`
 
@@ -232,6 +270,17 @@ methods!({
 | Returns | `resource/runtime ID or `Result` as shown by backing method` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
 | Fails when / edge behavior | Uses the backing `scene_preload` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
+
+### `scene_preload_async`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Scene()` |
+| Signature | `scene_preload_async!(ctx.run, path)` |
+| Params | `ctx, path` |
+| Returns | `PreloadedSceneID` |
+| Use when | Use when a preload must not cost the calling frame. A string literal path hashes at compile time, same as `scene_preload!`. |
+| Fails when / edge behavior | Uses the backing `preload_async` behavior unchanged: no error return, gate use on `Scene().preload_ready(handle)`. |
 
 ### `scene_free_preloaded`
 

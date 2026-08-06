@@ -274,6 +274,14 @@ pub struct Runtime {
     pub(crate) preloaded_scene_paths: AHashMap<u64, PreloadedSceneID>,
     pub(crate) preloaded_scene_reverse_paths: AHashMap<PreloadedSceneID, String>,
     pub(crate) next_preloaded_scene_id: u64,
+    /// Handles whose load + prepare is running on a worker, by id and by path
+    /// hash (the second one dedupes repeat requests for one path).
+    pub(crate) pending_preloads: AHashMap<PreloadedSceneID, String>,
+    pub(crate) pending_preload_paths: AHashMap<u64, PreloadedSceneID>,
+    pub(crate) scene_preload_tx:
+        std::sync::mpsc::Sender<scene_loader::background::BackgroundPreloadResult>,
+    pub(crate) scene_preload_rx:
+        std::sync::mpsc::Receiver<scene_loader::background::BackgroundPreloadResult>,
 
     pub nodes: NodeArena,
     pub(crate) scripts: ScriptCollection,
@@ -653,6 +661,7 @@ impl Runtime {
     }
 
     pub fn new() -> Self {
+        let (scene_preload_tx, scene_preload_rx) = std::sync::mpsc::channel();
         Self {
             time: Timing {
                 fixed_delta: 0.0,
@@ -692,6 +701,10 @@ impl Runtime {
             prepared_scene_cache: RefCell::new(ScenePathLruCache::default()),
             preloaded_scenes: AHashMap::new(),
             preloaded_prepared_scenes: AHashMap::new(),
+            pending_preloads: AHashMap::new(),
+            pending_preload_paths: AHashMap::new(),
+            scene_preload_tx,
+            scene_preload_rx,
             preloaded_scene_paths: AHashMap::new(),
             preloaded_scene_reverse_paths: AHashMap::new(),
             next_preloaded_scene_id: 1,
@@ -1191,6 +1204,7 @@ impl Runtime {
         self.flush_queued_ui_signals();
         self.process_pending_web_route_change();
         self.apply_loaded_skeleton_bones();
+        self.poll_async_scene_preloads();
         self.run_start_schedule();
         self.schedules.snapshot_update(&self.scripts);
         self.run_update_schedule();
@@ -1211,6 +1225,7 @@ impl Runtime {
         self.flush_queued_ui_signals();
         self.process_pending_web_route_change();
         self.apply_loaded_skeleton_bones();
+        self.poll_async_scene_preloads();
 
         let start_schedule_start = Instant::now();
         self.run_start_schedule();
