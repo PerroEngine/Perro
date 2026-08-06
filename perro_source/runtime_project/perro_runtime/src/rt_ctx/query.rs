@@ -563,9 +563,7 @@ fn recommended_workers(total_nodes: usize, estimated_cost_per_node: u32) -> usiz
         return 1;
     }
 
-    std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1)
+    perro_structs::structs::devsim::worker_count()
 }
 
 /// Cheap slot-lane type reject. The mirror value is always accurate for

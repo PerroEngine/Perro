@@ -1306,12 +1306,10 @@ pub const fn lookup_scene(_path_hash: u64) -> &'static Scene {
 fn default_static_materials_rs() -> String {
     r#"#![allow(unused_imports)]
 
-use perro_render_bridge::{Material3D, StandardMaterial3D};
+use perro_render_bridge::Material3D;
 
-const EMPTY_MATERIAL: Material3D = Material3D::Standard(StandardMaterial3D::const_default());
-
-pub const fn lookup_material(_path_hash: u64) -> &'static Material3D {
-    &EMPTY_MATERIAL
+pub const fn lookup_material(_path_hash: u64) -> Option<&'static Material3D> {
+    None
 }
 "#
     .to_string()

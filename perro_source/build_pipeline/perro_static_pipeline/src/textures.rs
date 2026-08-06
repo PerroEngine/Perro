@@ -12,7 +12,9 @@ use perro_asset_formats::{
     },
     source_ext,
 };
-use perro_graphics_assets::{SVG_RASTER_SCALE, decode_image_rgba, mip::build_rgba_levels_for_filter};
+use perro_graphics_assets::{
+    SVG_RASTER_SCALE, decode_image_rgba, mip::build_rgba_levels_for_filter,
+};
 use perro_io::compress_zlib_best;
 use rayon::prelude::*;
 use std::{
@@ -214,7 +216,10 @@ fn pack_texture_payload(raw_rgba: &[u8]) -> (u32, Vec<u8>) {
     if is_opaque && is_gray {
         // Byte-strided gather; `extend` per pixel could not use the known
         // output length.
-        let packed = raw_rgba.chunks_exact(4).map(|px| px[0]).collect::<Vec<u8>>();
+        let packed = raw_rgba
+            .chunks_exact(4)
+            .map(|px| px[0])
+            .collect::<Vec<u8>>();
         (PTEX_FLAG_FORMAT_R8, packed)
     } else if is_opaque {
         let mut packed = vec![0u8; (raw_rgba.len() / 4) * 3];
@@ -426,7 +431,10 @@ mod tests {
         );
         assert_eq!(baked.len(), generated.len() - 1);
         for (baked, generated) in baked.iter().zip(generated.iter().skip(1)) {
-            assert_eq!((baked.width, baked.height), (generated.width, generated.height));
+            assert_eq!(
+                (baked.width, baked.height),
+                (generated.width, generated.height)
+            );
             assert_eq!(baked.rgba, generated.rgba, "baked chain must match runtime");
         }
     }

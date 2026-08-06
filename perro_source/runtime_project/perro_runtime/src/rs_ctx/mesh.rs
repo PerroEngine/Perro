@@ -572,10 +572,10 @@ mod tests {
         RuntimeResourceApi::new(None, None, None, None, None, None, None, None)
     }
 
-    fn static_material_lookup(_: u64) -> &'static Material3D {
+    fn static_material_lookup(_: u64) -> Option<&'static Material3D> {
         static MATERIAL: Material3D =
             Material3D::Standard(perro_render_bridge::StandardMaterial3D::const_default());
-        &MATERIAL
+        Some(&MATERIAL)
     }
 
     fn new_static_material_api() -> std::rc::Rc<RuntimeResourceApi> {

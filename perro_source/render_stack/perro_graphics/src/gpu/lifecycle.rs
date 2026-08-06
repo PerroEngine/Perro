@@ -1,6 +1,22 @@
 use super::*;
 
 impl Gpu {
+    fn note_surface_acquire_success(&mut self) {
+        if let Some(status) = self.surface_acquire_failure.take() {
+            eprintln!("[perro][gfx] surface acquire recovered after ({status})");
+            perro_structs::structs::boot_log::mark("surface acquire recovered");
+        }
+    }
+
+    fn note_surface_acquire_failure(&mut self, status: &'static str) {
+        if self.surface_acquire_failure == Some(status) {
+            return;
+        }
+        self.surface_acquire_failure = Some(status);
+        eprintln!("[perro][gfx] surface acquire fail=({status})");
+        perro_structs::structs::boot_log::mark(&format!("surface acquire fail: {status}"));
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     pub fn wait_idle(&mut self) {
         let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
@@ -25,8 +41,12 @@ impl Gpu {
     /// reconfigure at the live size and retry the acquire once.
     pub(crate) fn acquire_surface_texture(&mut self) -> Option<wgpu::SurfaceTexture> {
         match self.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(frame) => Some(frame),
+            wgpu::CurrentSurfaceTexture::Success(frame) => {
+                self.note_surface_acquire_success();
+                Some(frame)
+            }
             wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
+                self.note_surface_acquire_success();
                 self.surface_resync_request = self.drifted_window_size();
                 Some(frame)
             }
@@ -43,13 +63,44 @@ impl Gpu {
                 self.surface_resync_request = drift;
                 match self.surface.get_current_texture() {
                     wgpu::CurrentSurfaceTexture::Success(frame)
-                    | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => Some(frame),
-                    _ => None,
+                    | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
+                        self.note_surface_acquire_success();
+                        Some(frame)
+                    }
+                    wgpu::CurrentSurfaceTexture::Timeout => {
+                        self.note_surface_acquire_failure("timeout after reconfigure");
+                        None
+                    }
+                    wgpu::CurrentSurfaceTexture::Occluded => {
+                        self.note_surface_acquire_failure("occluded after reconfigure");
+                        None
+                    }
+                    wgpu::CurrentSurfaceTexture::Validation => {
+                        self.note_surface_acquire_failure("validation after reconfigure");
+                        None
+                    }
+                    wgpu::CurrentSurfaceTexture::Outdated => {
+                        self.note_surface_acquire_failure("outdated after reconfigure");
+                        None
+                    }
+                    wgpu::CurrentSurfaceTexture::Lost => {
+                        self.note_surface_acquire_failure("lost after reconfigure");
+                        None
+                    }
                 }
             }
-            wgpu::CurrentSurfaceTexture::Timeout
-            | wgpu::CurrentSurfaceTexture::Occluded
-            | wgpu::CurrentSurfaceTexture::Validation => None,
+            wgpu::CurrentSurfaceTexture::Timeout => {
+                self.note_surface_acquire_failure("timeout");
+                None
+            }
+            wgpu::CurrentSurfaceTexture::Occluded => {
+                self.note_surface_acquire_failure("occluded");
+                None
+            }
+            wgpu::CurrentSurfaceTexture::Validation => {
+                self.note_surface_acquire_failure("validation");
+                None
+            }
         }
     }
 
@@ -158,16 +209,24 @@ impl Gpu {
 
     pub async fn new_async(window: Arc<Window>, cfg: GpuConfig) -> Result<Self, String> {
         perro_structs::structs::boot_log::mark("gpu: enter");
-        let instance = wgpu::Instance::default();
+        // Keep DX12/Vulkan selectable in shipped builds. Instance::default()
+        // enables both compiled backends but does not apply WGPU_BACKEND.
+        let instance =
+            wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle().with_env());
         perro_structs::structs::boot_log::mark("gpu: wgpu instance");
         let surface = instance
             .create_surface(window.clone())
             .map_err(|err| format!("surface create fail: {err}"))?;
 
+        // `PERRO_SIM` dev perf simulation. Reuses the constrained-adapter
+        // policy below instead of adding a second low-end path, so a simulated
+        // run exercises the exact code a real iGPU ships through.
+        let sim = perro_structs::structs::devsim::profile();
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 apply_limit_buckets: false,
                 power_preference: match cfg.power_preference {
+                    _ if sim.prefer_low_power => wgpu::PowerPreference::LowPower,
                     crate::PowerPreference::HighPerformance => {
                         wgpu::PowerPreference::HighPerformance
                     }
@@ -180,17 +239,25 @@ impl Gpu {
             .map_err(|err| format!("GPU adapter request fail: {err}"))?;
         perro_structs::structs::boot_log::mark("gpu: adapter");
         let adapter_info = adapter.get_info();
-        let low_memory_adapter = matches!(
-            adapter_info.device_type,
-            wgpu::DeviceType::IntegratedGpu | wgpu::DeviceType::VirtualGpu | wgpu::DeviceType::Cpu
-        );
-        let constrained_adapter =
-            low_memory_adapter && std::env::var_os("PERRO_FULL_GPU_QUALITY").is_none();
+        // A simulated low-end run takes the memory-hint path too: the hint is
+        // part of what makes an iGPU behave like an iGPU.
+        let low_memory_adapter = sim.gpu_constrained
+            || matches!(
+                adapter_info.device_type,
+                wgpu::DeviceType::IntegratedGpu
+                    | wgpu::DeviceType::VirtualGpu
+                    | wgpu::DeviceType::Cpu
+            );
+        // An explicit sim request wins over the full-quality escape hatch:
+        // asking for the low-end tier is the whole point of the run.
+        let constrained_adapter = low_memory_adapter
+            && (sim.gpu_constrained || std::env::var_os("PERRO_FULL_GPU_QUALITY").is_none());
         let max_render_pixels = if constrained_adapter {
             1920 * 1080
         } else {
             MAX_FRAME_RENDER_PIXELS
-        };
+        }
+        .min(sim.max_render_pixels.unwrap_or(u64::MAX));
         let effective_ssao = if constrained_adapter {
             match cfg.ssao {
                 crate::SsaoQuality::Off => crate::SsaoQuality::Off,
@@ -408,6 +475,7 @@ impl Gpu {
             queue,
             config,
             surface_resync_request: None,
+            surface_acquire_failure: None,
             surface_view_format,
             hdr_status: selection.status,
             render_width,

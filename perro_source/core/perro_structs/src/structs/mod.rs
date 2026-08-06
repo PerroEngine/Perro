@@ -4,6 +4,7 @@ pub mod boot_log;
 pub mod collision_policy;
 pub mod color;
 pub mod const_param;
+pub mod devsim;
 pub mod hdr;
 pub mod ik;
 pub mod matrix;

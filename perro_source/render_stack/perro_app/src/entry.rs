@@ -413,6 +413,9 @@ pub fn run_dev_project_from_path(
     default_name: &str,
 ) -> Result<AppExitResult, RunProjectError> {
     crate::boot_log::start();
+    // B4 any rayon use: the worker-count cap only applies to a pool that has
+    // not been built yet.
+    crate::devsim::init();
     eprintln!(
         "perro dev runner: load project {}",
         project_root.to_string_lossy()
@@ -454,6 +457,7 @@ pub fn run_headless_dev_project_from_path(
     project_root: &Path,
     default_name: &str,
 ) -> Result<(), RunProjectError> {
+    crate::devsim::init();
     let project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)?;
     run_headless_runtime(create_dev_runtime(project));
     Ok(())
@@ -502,6 +506,7 @@ pub fn run_static_project_from_path(
     project_root: &Path,
     default_name: &str,
 ) -> Result<AppExitResult, RunProjectError> {
+    crate::devsim::init();
     let project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)?;
     clear_steam_fossilize_application_filter(project.config.steam.enabled);
     let _ = perro_web::init_router();
@@ -636,6 +641,7 @@ pub fn run_static_embedded_project(
     input: StaticEmbeddedProject<'_>,
 ) -> Result<AppExitResult, RunProjectError> {
     crate::boot_log::start();
+    crate::devsim::init();
     clear_steam_fossilize_application_filter(input.steam.enabled);
     let _ = perro_web::init_router();
     let mut static_config = perro_runtime::StaticProjectConfig::new(
@@ -751,6 +757,7 @@ pub fn run_static_embedded_project(
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn run_static_embedded_project_headless(input: StaticEmbeddedProject<'_>) {
+    crate::devsim::init();
     let mut static_config = perro_runtime::StaticProjectConfig::new(
         input.project.project_name,
         input.project.main_scene_hash,

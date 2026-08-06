@@ -785,6 +785,9 @@ pub struct Gpu {
     // Drained by the runner, which drives a normal resize so surface, render
     // targets, and the 2D/UI viewport all move together.
     surface_resync_request: Option<(u32, u32)>,
+    // Last acquire failure class. Log only state changes so a stuck surface is
+    // diagnosable in release boot logs without one line per frame.
+    surface_acquire_failure: Option<&'static str>,
     surface_view_format: wgpu::TextureFormat,
     hdr_status: HdrStatus,
     render_width: u32,

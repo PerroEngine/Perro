@@ -883,6 +883,10 @@ struct RunnerState<B: GraphicsBackend> {
     app: App<B>,
     title: String,
     window: Option<Arc<Window>>,
+    // Startup-present latch, not raw OS visibility. Windows creates its HWND
+    // visible to avoid DX12's hidden-surface occlusion result, but this stays
+    // false until the splash texture presents so boot-scene asset work cannot
+    // starve the splash upload.
     window_visible: bool,
     last_frame_start: Instant,
     last_frame_end: Instant,
@@ -981,9 +985,10 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler<RunnerUserEvent>
                 self.window_visible = true;
             }
             let initial_present = if self.startup_splash.active {
-                // Pump hidden frames until splash texture reaches a real
-                // swapchain present. Boot load starts only aft that visible
-                // splash, so sync scene work cannot expose a black window.
+                // Pump startup frames until the splash texture reaches a real
+                // swapchain present. Windows is already visible to avoid a
+                // hidden-surface occlusion deadlock; other targets still show
+                // only after the first present.
                 self.app.graphics.set_startup_warm_boost(true);
                 let splash_overlay = self.startup_splash_overlay_commands(1.0);
                 self.app.present_with_overlay_timed_no_ui(splash_overlay)
@@ -1262,7 +1267,11 @@ fn window_attributes(
 
     let mut attrs = WindowAttributes::default()
         .with_title(title)
-        .with_visible(false);
+        // DX12 may classify a hidden Win32 swapchain as occluded. That surface
+        // cannot present, so waiting for a present before showing the window
+        // can never complete. Start visible on Windows and let the startup
+        // splash cover initialization.
+        .with_visible(cfg!(target_os = "windows"));
     #[cfg(target_arch = "wasm32")]
     {
         attrs = attrs.with_append(true);

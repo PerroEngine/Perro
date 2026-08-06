@@ -240,7 +240,6 @@ fn fallback_mip_chain() -> Vec<RgbaMipLevel> {
     }]
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -287,7 +286,10 @@ mod tests {
         // flat color must survive downsampling unchanged. This is the property
         // that would show up as banding if the tables were off.
         for value in 0..=255u8 {
-            assert_eq!(linear_to_srgb_u8_with(encode, decode[value as usize]), value);
+            assert_eq!(
+                linear_to_srgb_u8_with(encode, decode[value as usize]),
+                value
+            );
         }
 
         assert_eq!(linear_to_srgb_u8_with(encode, -1.0), 0);
@@ -385,5 +387,4 @@ mod tests {
             .collect();
         assert_eq!(dims, vec![(4, 2), (2, 1), (1, 1)]);
     }
-
 }

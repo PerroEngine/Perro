@@ -10,6 +10,12 @@ workspace = true
 bytemuck = { version = "1.24.0", features = ["derive"] }
 glam = "0.31.0"
 perro_ids.workspace = true
+
+# Perf-sim core cap installs the shared rayon pool (see structs/devsim.rs).
+# Native only: wasm has no thread pool to cap.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rayon = "1.10"
+
 [dev-dependencies]
 criterion = "0.5"
 rayon = "1.10"

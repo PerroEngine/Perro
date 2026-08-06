@@ -106,9 +106,6 @@ pub fn generate_static_materials(
         );
     }
     out.push('\n');
-    out.push_str(
-        "static EMPTY_MATERIAL: Material3D = Material3D::Standard(StandardMaterial3D::const_default());\n\n",
-    );
     for (index, (path, _, _)) in material_refs.iter().enumerate() {
         write_hash_const(&mut out, &format!("MATERIAL_HASH_{index}"), path);
     }
@@ -122,7 +119,7 @@ pub fn generate_static_materials(
             (
                 perro_ids::string_to_u64(path),
                 format!("MATERIAL_HASH_{hash_index}"),
-                format!("&MATERIAL_{index}"),
+                format!("Some(&MATERIAL_{index})"),
             )
         })
         .collect::<Vec<_>>();
@@ -131,8 +128,8 @@ pub fn generate_static_materials(
         "lookup_material",
         "MATERIAL_TABLE",
         "MaterialEntry",
-        "&'static Material3D",
-        "&EMPTY_MATERIAL",
+        "Option<&'static Material3D>",
+        "None",
         &lookup_entries,
     );
 
@@ -267,7 +264,8 @@ use gltf_import::*;
 mod tests {
     use super::{
         CustomImageLiteral, CustomMaterialLiteral, CustomParamLiteral, MaterialLiteral,
-        load_pmat_literal, material_literal_to_code, materials_from_gltf_file,
+        generate_static_materials, load_pmat_literal, material_literal_to_code,
+        materials_from_gltf_file,
     };
     use perro_render_bridge::{
         CustomMaterial3D, CustomMaterialImage3D, CustomMaterialLighting3D, CustomMaterialParam3D,
@@ -298,6 +296,39 @@ mod tests {
             "emissiveFactor": [0.2, 0.3, 0.4]
         }]
     }"#;
+
+    #[test]
+    fn static_material_lookup_emits_explicit_miss() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock after epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "perro_static_material_lookup_{}_{}",
+            std::process::id(),
+            unique
+        ));
+        std::fs::create_dir_all(root.join("res/materials")).expect("create material dir");
+        std::fs::write(
+            root.join("res/materials/known.pmat"),
+            "type = \"standard\"\nroughness_factor = 0.5\n",
+        )
+        .expect("write material");
+        let tree = crate::ResFileTree::scan(&root).expect("scan res");
+
+        generate_static_materials(&root, &tree).expect("generate materials");
+        let generated =
+            std::fs::read_to_string(root.join(".perro/project/src/static/materials.rs"))
+                .expect("read generated materials");
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert!(generated.contains(
+            "pub const fn lookup_material(path_hash: u64) -> Option<&'static Material3D>"
+        ));
+        assert!(generated.contains("Some(&MATERIAL_0)"));
+        assert!(generated.contains("_ => None"));
+        assert!(!generated.contains("EMPTY_MATERIAL"));
+    }
 
     #[test]
     fn material_codegen_uses_default_ctor_for_default_standard() {

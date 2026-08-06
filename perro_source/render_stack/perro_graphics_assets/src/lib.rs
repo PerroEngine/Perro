@@ -16,6 +16,6 @@ pub use mesh::{
 pub use texture::{
     SVG_RASTER_SCALE, clear_svg_caches, decode_gltf_texture, decode_image_logical_size,
     decode_image_rgba, decode_image_rgba_arc, decode_image_rgba_max_size, decode_image_size,
-    decode_ptex, decode_ptex_mip_levels, encode_rgba_image, gltf_texture_source_from_mesh_source, load_texture_rgba,
-    load_texture_rgba_arc, save_rgba_image,
+    decode_ptex, decode_ptex_mip_levels, encode_rgba_image, gltf_texture_source_from_mesh_source,
+    load_texture_rgba, load_texture_rgba_arc, save_rgba_image,
 };

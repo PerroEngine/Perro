@@ -35,8 +35,8 @@ impl GltfAPI for RuntimeResourceApi {
         if !is_gltf_path(path) {
             return Err(format!("not gltf source: {source}"));
         }
-        let bytes =
-            perro_io::load_asset_cow(path).map_err(|err| format!("load gltf fail {path}: {err}"))?;
+        let bytes = perro_io::load_asset_cow(path)
+            .map_err(|err| format!("load gltf fail {path}: {err}"))?;
         convert_gltf_animation_bytes_to_panim(&bytes, fps, animation_index, skeleton_object, path)
     }
 
@@ -50,8 +50,8 @@ impl GltfAPI for RuntimeResourceApi {
         if !is_gltf_path(path) {
             return Err(format!("not gltf source: {source}"));
         }
-        let bytes =
-            perro_io::load_asset_cow(path).map_err(|err| format!("load gltf fail {path}: {err}"))?;
+        let bytes = perro_io::load_asset_cow(path)
+            .map_err(|err| format!("load gltf fail {path}: {err}"))?;
         convert_gltf_material_bytes_to_pmat(&bytes, material_index, path)
     }
 }

@@ -65,9 +65,7 @@ impl Runtime {
         match scope {
             QueryScope::Root => {
                 let workers = if slot_count >= QUERY_SPATIAL_PAR_MIN_SLOTS {
-                    std::thread::available_parallelism()
-                        .map(|n| n.get())
-                        .unwrap_or(1)
+                    perro_structs::structs::devsim::worker_count()
                 } else {
                     1
                 };

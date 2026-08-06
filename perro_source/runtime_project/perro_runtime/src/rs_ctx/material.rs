@@ -22,7 +22,9 @@ impl MaterialAPI for RuntimeResourceApi {
     }
 
     fn load_material_source_hashed(&self, source_hash: u64, source: Option<&str>) -> MaterialID {
-        let material = Arc::new(self.static_material(source_hash).unwrap_or_default());
+        let Some(material) = self.initial_material(source_hash) else {
+            return MaterialID::nil();
+        };
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         if let Some(id) = state.material_by_source.get(&source_hash).copied() {
             return id;
@@ -126,7 +128,9 @@ impl MaterialAPI for RuntimeResourceApi {
     }
 
     fn reserve_material_source_hashed(&self, source_hash: u64, source: Option<&str>) -> MaterialID {
-        let material = Arc::new(self.static_material(source_hash).unwrap_or_default());
+        let Some(material) = self.initial_material(source_hash) else {
+            return MaterialID::nil();
+        };
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         if let Some(id) = state.material_by_source.get(&source_hash).copied() {
             if state.material_pending_by_source.contains_key(&source_hash) {
@@ -293,9 +297,11 @@ impl RuntimeResourceApi {
         id
     }
 
-    fn static_material(&self, source_hash: u64) -> Option<Material3D> {
-        self.static_material_lookup
-            .map(|lookup| lookup(source_hash).clone())
+    fn initial_material(&self, source_hash: u64) -> Option<Arc<Material3D>> {
+        match self.static_material_lookup {
+            Some(lookup) => lookup(source_hash).cloned().map(Arc::new),
+            None => Some(Arc::new(Material3D::default())),
+        }
     }
 
     pub(crate) fn is_material_id_pending(&self, material: MaterialID) -> bool {
@@ -494,7 +500,52 @@ fn parse_fragment_index(fragment: &str, key: &str) -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
-    use super::normalized_static_material_lookup_alias;
+    use super::{RuntimeResourceApi, normalized_static_material_lookup_alias};
+    use perro_ids::string_to_u64;
+    use perro_render_bridge::{Material3D, StandardMaterial3D};
+    use perro_resource_api::sub_apis::MaterialAPI;
+
+    const KNOWN_SOURCE: &str = "res://materials/known.pmat";
+    static KNOWN_MATERIAL: Material3D = Material3D::Standard(StandardMaterial3D::const_default());
+
+    fn static_material_lookup(hash: u64) -> Option<&'static Material3D> {
+        (hash == string_to_u64(KNOWN_SOURCE)).then_some(&KNOWN_MATERIAL)
+    }
+
+    fn static_api() -> std::rc::Rc<RuntimeResourceApi> {
+        RuntimeResourceApi::new(
+            Some(static_material_lookup),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+    }
+
+    #[test]
+    fn static_material_miss_returns_nil_without_caching_default() {
+        let api = static_api();
+        let id = api.load_material_source("res://materials/missing.pmat");
+
+        assert!(id.is_nil());
+        let state = api.state.lock().expect("resource api mutex poisoned");
+        assert!(state.material_by_source.is_empty());
+        assert!(state.material_data_by_id.is_empty());
+        assert!(state.queued_commands.is_empty());
+    }
+
+    #[test]
+    fn static_material_hit_keeps_cpu_data_while_gpu_create_is_pending() {
+        let api = static_api();
+        let id = api.load_material_source(KNOWN_SOURCE);
+
+        assert!(!id.is_nil());
+        assert_eq!(api.get_material_data(id), Some(KNOWN_MATERIAL.clone()));
+        assert!(!api.is_material_loaded(id));
+    }
 
     #[test]
     fn gltf_material_source_without_fragment_maps_to_mat_zero_alias() {

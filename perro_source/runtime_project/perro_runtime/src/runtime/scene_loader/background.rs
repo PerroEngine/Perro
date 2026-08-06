@@ -12,7 +12,8 @@
 //! and its own import cache instead of borrowing the runtime's.
 
 use super::{
-    ProviderMode, Scene, load_runtime_scene_from_disk, prepare, prepare_scene_with_loader_and_styles,
+    ProviderMode, Scene, load_runtime_scene_from_disk, prepare,
+    prepare_scene_with_loader_and_styles,
 };
 use crate::runtime_project::{StaticSceneLookup, StaticUiStyleLookup};
 use perro_ids::{parse_hashed_source_uri, string_to_u64};
@@ -51,7 +52,10 @@ impl BackgroundSceneContext {
             ProviderMode::Static => {
                 // DLC scenes are not in the static table; they parse from the
                 // mounted archive like dynamic ones.
-                match self.static_scene_lookup.filter(|_| !path.starts_with("dlc://")) {
+                match self
+                    .static_scene_lookup
+                    .filter(|_| !path.starts_with("dlc://"))
+                {
                     Some(lookup) => Ok(Arc::new(lookup(path_hash).clone())),
                     None => load_runtime_scene_from_disk(path).map(|(scene, _)| Arc::new(scene)),
                 }

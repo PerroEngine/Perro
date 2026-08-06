@@ -56,7 +56,8 @@ impl LocalizationAPI for RuntimeResourceApi {
                 .localization
                 .read()
                 .expect("resource api localization rwlock poisoned");
-            return Some(lookup(localization.current_locale, string_to_u64(key)));
+            let value = lookup(localization.current_locale, string_to_u64(key));
+            return (!value.is_empty()).then_some(value);
         }
         let localization = self
             .localization
@@ -71,7 +72,8 @@ impl LocalizationAPI for RuntimeResourceApi {
                 .localization
                 .read()
                 .expect("resource api localization rwlock poisoned");
-            return Some(lookup(localization.current_locale, key_hash));
+            let value = lookup(localization.current_locale, key_hash);
+            return (!value.is_empty()).then_some(value);
         }
         let localization = self
             .localization
@@ -82,7 +84,8 @@ impl LocalizationAPI for RuntimeResourceApi {
 
     fn localization_get_for_locale(&self, locale: Locale, key: &str) -> Option<&'static str> {
         if let Some(lookup) = self.static_localization_lookup {
-            return Some(lookup(locale, string_to_u64(key)));
+            let value = lookup(locale, string_to_u64(key));
+            return (!value.is_empty()).then_some(value);
         }
 
         let locale_code = locale.code().trim().to_ascii_lowercase();
@@ -105,7 +108,8 @@ impl LocalizationAPI for RuntimeResourceApi {
         key_hash: u64,
     ) -> Option<&'static str> {
         if let Some(lookup) = self.static_localization_lookup {
-            return Some(lookup(locale, key_hash));
+            let value = lookup(locale, key_hash);
+            return (!value.is_empty()).then_some(value);
         }
 
         let locale_code = locale.code().trim().to_ascii_lowercase();
@@ -376,6 +380,19 @@ mod tests {
         assert_eq!(
             api.localization_get("camera.init"),
             Some("Camera initialized")
+        );
+        assert_eq!(api.localization_get("missing.key"), None);
+        assert_eq!(
+            api.localization_get_by_hash(string_to_u64("missing.key")),
+            None
+        );
+        assert_eq!(
+            api.localization_get_for_locale(Locale::EN, "missing.key"),
+            None
+        );
+        assert_eq!(
+            api.localization_get_for_locale_by_hash(Locale::EN, string_to_u64("missing.key")),
+            None
         );
         assert!(api.localization_set_locale(Locale::ES));
         assert_eq!(

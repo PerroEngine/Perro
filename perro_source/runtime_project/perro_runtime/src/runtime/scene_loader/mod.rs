@@ -459,7 +459,8 @@ impl Runtime {
             Ok((scene, prepared)) => {
                 self.preloaded_scenes.insert(result.id, scene);
                 self.preloaded_prepared_scenes.insert(result.id, prepared);
-                self.preloaded_scene_paths.insert(result.path_hash, result.id);
+                self.preloaded_scene_paths
+                    .insert(result.path_hash, result.id);
                 self.preloaded_scene_reverse_paths
                     .insert(result.id, result.path);
             }

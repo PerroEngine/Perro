@@ -191,6 +191,7 @@ const DEV: &[FlagSpec] = &[
     value("--port"),
     switch("--headless"),
     switch("--demo"),
+    value("--sim"),
 ];
 const BENCH: &[FlagSpec] = &[
     value("--path"),
@@ -303,7 +304,7 @@ fn print_usage() {
         "  perro_cli dlc --name <dlc_name> [--path <project_dir>] # build one runtime-loadable DLC package"
     );
     eprintln!(
-        "  perro_cli dev [--path <project_dir>] [--scene res://path.scn] [--target native|web|android] [--headless] [--demo] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]      # build scripts + run dev runner, web server, or android app"
+        "  perro_cli dev [--path <project_dir>] [--scene res://path.scn] [--target native|web|android] [--headless] [--demo] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--sim igpu|low_end|half|potato|cores=N] [--host <addr>] [--port <num>]      # build scripts + run dev runner, web server, or android app"
     );
     eprintln!(
         "  perro_cli bench [--path <project_dir>] [--script <hash>] [--method <name>] [--var <name>] [-- <criterion_args>]    # criterion bench scripts"
@@ -370,6 +371,18 @@ fn parse_boot_scene_flag(args: &[String]) -> Result<Option<String>, String> {
         ));
     }
     Ok(Some(scene))
+}
+
+/// `--sim <spec>` perf-simulation override, forwarded to the runner as
+/// `PERRO_SIM`. Validated here so a typo fails before a build instead of
+/// launching a run that simulates nothing (see `perro_structs::devsim`).
+fn parse_sim_flag(args: &[String]) -> Result<Option<String>, String> {
+    let Some(raw) = parse_flag_value(args, "--sim") else {
+        return Ok(None);
+    };
+    let spec = raw.trim().to_string();
+    perro_structs::structs::devsim::validate_spec(&spec).map_err(|err| format!("`--sim` {err}"))?;
+    Ok(Some(spec))
 }
 
 fn parse_optional_flag_value(args: &[String], flag: &str) -> Option<Option<String>> {

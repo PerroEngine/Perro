@@ -68,7 +68,7 @@ Build and run:
 ```powershell
 perro check [--path <project_dir>]
 perro test [--path <project_dir>] [-- <cargo_test_args>]
-perro dev [--path <project_dir>] [--scene res://path.scn] [--target native|web|android] [--headless] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]
+perro dev [--path <project_dir>] [--scene res://path.scn] [--target native|web|android] [--headless] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--sim <spec>] [--host <addr>] [--port <num>]
 perro build [--path <project_dir>] [--target native|web|android] [--triple <rust_target> | --universal-macos] [--headless] [--profile] [--console]
 perro targets [--host windows|linux|macos]
 perro dlc --name <dlc_name> [--path <project_dir>]
@@ -189,7 +189,7 @@ perro test --path D:\GameProjects\MyGame -- player_state_tests
 Command:
 
 ```powershell
-perro dev --path <project_dir> [--scene res://path.scn] [--target native|web|android] [--headless] [--demo] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]
+perro dev --path <project_dir> [--scene res://path.scn] [--target native|web|android] [--headless] [--demo] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--sim <spec>] [--host <addr>] [--port <num>]
 ```
 
 What it does:
@@ -211,6 +211,7 @@ Flags:
 - `--ui-profile`: enables native dev runner `ui_profile` feature.
 - `--release`: builds release dev target.
 - `--csv-profile [csv_name]`: writes native dev profile metrics CSV under `.output/profiling/`.
+- `--sim <spec>`: runs the dev runner as a weaker machine than this one, for profiling. Forwarded to the runner as `PERRO_SIM`. Native only; a bad spec fails before the build. See [Perf Simulation](#perf-simulation).
 - `--host <addr>`: web target only. Static server bind host. Default `127.0.0.1`.
 - `--port <num>`: web target only. Static server bind port. Default `8000`.
 
@@ -712,6 +713,47 @@ What it does:
 ## Profiling
 
 Use these commands to record memory samples or produce flamegraphs from the dev runner.
+
+### Perf Simulation
+
+Answers "how does this run on a machine weaker than mine?" without a second machine.
+
+```powershell
+perro dev --path <project_dir> --sim igpu
+perro dev --path <project_dir> --sim half --timings
+perro dev --path <project_dir> --sim "igpu,cores=2"
+```
+
+Sets `PERRO_SIM` on the dev runner. Set the env var directly for a shipped build or a bench run:
+
+```powershell
+$env:PERRO_SIM = "low_end"
+```
+
+Presets:
+
+| Preset | GPU | Cores |
+| --- | --- | --- |
+| `off` | machine default | all |
+| `igpu` | integrated tier + request the `LowPower` adapter | all |
+| `low_end` | integrated tier | 4 |
+| `half` | integrated tier | half this machine's |
+| `potato` | integrated tier + `LowPower` adapter + 720p scene cap | 2 |
+
+Tokens, comma separated, later wins: `cores=N`, `gpu=off|constrained|igpu`, `pixels=WxH`. `--sim "half,gpu=off"` cuts cores only; `--sim "cores=4"` skips the GPU tier entirely.
+
+What each axis really does:
+
+- GPU: flips the same low-end quality policy an integrated adapter already trips - 1080p scene cap, MSAA off with FXAA swapped in, SSAO low, small shadow atlas, memory-usage allocator hints. `igpu`/`potato` also request the `LowPower` adapter, so a hybrid laptop runs on its real integrated GPU. It does not slow the silicon down: a discrete card still renders that tier fast. Use it to check the quality tier and its CPU-side cost, not to predict an iGPU's frame time.
+- CPU: caps the shared worker pool and every parallel work split to N threads. A real core-count cut, not an injected stall, so parallel scaling and single-thread bottlenecks show up honestly. Per-core clock speed is unchanged.
+
+The runner prints one line at startup when a sim is on:
+
+```text
+[perro][sim] PERF SIM ON gpu=(igpu) cores=(4/16) max_scene_pixels=(default) -- timings are NOT this machine
+```
+
+Check that line before trusting any timing CSV: a forgotten `PERRO_SIM` in your shell poisons every later measurement.
 
 ### `bench`
 

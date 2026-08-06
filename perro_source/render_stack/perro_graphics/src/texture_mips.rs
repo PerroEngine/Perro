@@ -1,9 +1,11 @@
 use core::sync::atomic::{AtomicU64, Ordering};
-use perro_structs::TextureFilterMode;
-pub(crate) use perro_graphics_assets::mip::{RgbaMipLevel, downsample_rgba_into, rgba_mip_level_count};
 #[cfg(test)]
 pub(crate) use perro_graphics_assets::mip::build_rgba_levels_for_filter;
 pub(crate) use perro_graphics_assets::mip::build_rgba_levels_for_filter_owned;
+pub(crate) use perro_graphics_assets::mip::{
+    RgbaMipLevel, downsample_rgba_into, rgba_mip_level_count,
+};
+use perro_structs::TextureFilterMode;
 
 fn write_rgba_mip_level(
     queue: &wgpu::Queue,
@@ -81,9 +83,9 @@ pub(crate) fn baked_mip_levels(
 
     let levels = perro_graphics_assets::decode_ptex_mip_levels(&bytes)?;
     let expected = rgba_mip_level_count(width, height).saturating_sub(1) as usize;
-    let first_matches = levels
-        .first()
-        .is_some_and(|level| level.width == (width / 2).max(1) && level.height == (height / 2).max(1));
+    let first_matches = levels.first().is_some_and(|level| {
+        level.width == (width / 2).max(1) && level.height == (height / 2).max(1)
+    });
     (levels.len() == expected && first_matches).then_some(levels)
 }
 

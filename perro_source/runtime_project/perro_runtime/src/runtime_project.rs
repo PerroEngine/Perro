@@ -28,7 +28,7 @@ pub enum ProviderMode {
 pub type StaticSceneLookup = fn(u64) -> &'static Scene;
 pub type StaticLocalizationLookup = fn(Locale, u64) -> &'static str;
 pub type StaticCsvLookup = fn(u64) -> &'static Csv;
-pub type StaticMaterialLookup = fn(u64) -> &'static Material3D;
+pub type StaticMaterialLookup = fn(u64) -> Option<&'static Material3D>;
 pub type StaticUiStyleLookup = fn(u64) -> &'static UiStyle;
 pub type StaticTilesetLookup = fn(u64) -> &'static [u8];
 pub type StaticParticleLookup = fn(u64) -> &'static ParticleProfile3D;

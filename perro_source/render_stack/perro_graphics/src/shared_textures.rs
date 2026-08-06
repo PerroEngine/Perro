@@ -509,7 +509,10 @@ mod tests {
                     .try_ensure_rgba(
                         &device,
                         &queue,
-                        key(&format!("res://budget{index}.png"), TextureFilterMode::Linear),
+                        key(
+                            &format!("res://budget{index}.png"),
+                            TextureFilterMode::Linear
+                        ),
                         TextureUpload::new(&rgba, dim, dim),
                     )
                     .is_some(),

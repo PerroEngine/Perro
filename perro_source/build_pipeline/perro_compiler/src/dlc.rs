@@ -180,7 +180,7 @@ fn write_dlc_pack_lib(
         "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_scene(path_hash: u64) -> *const Scene {\n    static_assets::scenes::lookup_scene(path_hash) as *const Scene\n}\n\n",
     );
     src.push_str(
-        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_material(path_hash: u64) -> *const Material3D {\n    static_assets::materials::lookup_material(path_hash) as *const Material3D\n}\n\n",
+        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_material(path_hash: u64) -> *const Material3D {\n    static_assets::materials::lookup_material(path_hash).map_or(core::ptr::null(), |material| material as *const Material3D)\n}\n\n",
     );
     src.push_str(
         "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_particle(path_hash: u64) -> *const ParticleProfile3D {\n    static_assets::particles::lookup_particle(path_hash) as *const ParticleProfile3D\n}\n\n",

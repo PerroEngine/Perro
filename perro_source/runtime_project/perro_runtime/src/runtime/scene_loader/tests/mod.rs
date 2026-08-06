@@ -583,13 +583,16 @@ fn loading_a_still_pending_preload_waits_instead_of_failing() {
     static WAIT_SCENE: OnceLock<perro_scene::Scene> = OnceLock::new();
     fn lookup(_path_hash: u64) -> &'static perro_scene::Scene {
         WAIT_SCENE.get_or_init(|| {
-            Parser::new("$root = @root
+            Parser::new(
+                "$root = @root
 
 [root]
 [Node]
 [/Node]
 [/root]
-").parse_scene()
+",
+            )
+            .parse_scene()
         })
     }
 
@@ -600,7 +603,9 @@ fn loading_a_still_pending_preload_waits_instead_of_failing() {
     runtime.project = Some(std::rc::Rc::new(project));
     runtime.provider_mode = crate::runtime_project::ProviderMode::Static;
 
-    let id = runtime.scene_preload(path).expect("preload hands back a handle");
+    let id = runtime
+        .scene_preload(path)
+        .expect("preload hands back a handle");
     let root = runtime
         .scene_load_preloaded(id)
         .expect("load waits for the in-flight preload");
