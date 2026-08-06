@@ -3,7 +3,6 @@ use perro_asset_formats::ptex::{
     FLAG_FORMAT_RGB8 as PTEX_FLAG_FORMAT_RGB8, FLAG_FORMAT_RGBA8 as PTEX_FLAG_FORMAT_RGBA8,
     FLAG_PAYLOAD_RAW as PTEX_FLAG_PAYLOAD_RAW, MAGIC as PTEX_MAGIC,
     MAX_COMPRESSED_BYTES as PTEX_MAX_COMPRESSED_BYTES, MAX_RAW_BYTES as PTEX_MAX_RAW_BYTES,
-    VERSION as PTEX_VERSION,
 };
 use perro_io::{decompress_zlib_limited, load_asset_cow};
 use std::{
@@ -618,12 +617,62 @@ fn expand_r8(pixels: &[u8], width: u32, height: u32) -> Vec<u8> {
     out
 }
 
-pub fn decode_ptex(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
-    if bytes.len() < 24 || &bytes[0..4] != PTEX_MAGIC {
+/// Parsed `.ptex` header plus the payload slices it points at.
+struct PtexHeader<'a> {
+    width: u32,
+    height: u32,
+    flags: u32,
+    raw_len: usize,
+    base_payload: &'a [u8],
+    /// Present only for v2 files carrying a baked chain.
+    mip: Option<PtexMipSection<'a>>,
+}
+
+struct PtexMipSection<'a> {
+    raw_len: usize,
+    payload: &'a [u8],
+}
+
+/// Packed bytes one level occupies for a pixel format.
+fn ptex_level_raw_len(flags: u32, width: u32, height: u32) -> Option<usize> {
+    let pixels = (width as usize).checked_mul(height as usize)?;
+    match flags & PTEX_FLAG_FORMAT_MASK {
+        PTEX_FLAG_FORMAT_RGBA8 => pixels.checked_mul(4),
+        PTEX_FLAG_FORMAT_RGB8 => pixels.checked_mul(3),
+        PTEX_FLAG_FORMAT_R8 => Some(pixels),
+        _ => None,
+    }
+}
+
+/// Expand a packed level to RGBA8.
+fn ptex_level_to_rgba(flags: u32, raw: Vec<u8>, pixel_count: usize) -> Option<Vec<u8>> {
+    match flags & PTEX_FLAG_FORMAT_MASK {
+        PTEX_FLAG_FORMAT_RGBA8 => Some(raw),
+        PTEX_FLAG_FORMAT_RGB8 => {
+            let mut out = Vec::with_capacity(pixel_count * 4);
+            for px in raw.chunks_exact(3) {
+                out.extend_from_slice(&[px[0], px[1], px[2], 255]);
+            }
+            Some(out)
+        }
+        PTEX_FLAG_FORMAT_R8 => {
+            let mut out = Vec::with_capacity(pixel_count * 4);
+            for &v in &raw {
+                out.extend_from_slice(&[v, v, v, 255]);
+            }
+            Some(out)
+        }
+        _ => None,
+    }
+}
+
+fn parse_ptex_header(bytes: &[u8]) -> Option<PtexHeader<'_>> {
+    if bytes.len() < perro_asset_formats::ptex::HEADER_LEN_V1 || &bytes[0..4] != PTEX_MAGIC {
         return None;
     }
     let version = u32::from_le_bytes(bytes[4..8].try_into().ok()?);
-    if version != PTEX_VERSION {
+    let header_len = perro_asset_formats::ptex::header_len(version)?;
+    if bytes.len() < header_len {
         return None;
     }
     let width = u32::from_le_bytes(bytes[8..12].try_into().ok()?);
@@ -632,47 +681,98 @@ pub fn decode_ptex(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
         return None;
     }
     let flags = u32::from_le_bytes(bytes[16..20].try_into().ok()?);
-    let raw_len = u32::from_le_bytes(bytes[20..24].try_into().ok()?);
-    if flags & !(PTEX_FLAG_FORMAT_MASK | PTEX_FLAG_PAYLOAD_RAW) != 0 {
+    let raw_len = u32::from_le_bytes(bytes[20..24].try_into().ok()?) as usize;
+    let known_flags =
+        PTEX_FLAG_FORMAT_MASK | PTEX_FLAG_PAYLOAD_RAW | perro_asset_formats::ptex::FLAG_HAS_MIPS;
+    if flags & !known_flags != 0 {
         return None;
     }
-    let pixel_count = width.checked_mul(height)? as usize;
-    let expected_raw_len = match flags & PTEX_FLAG_FORMAT_MASK {
-        PTEX_FLAG_FORMAT_RGBA8 => pixel_count.checked_mul(4)?,
-        PTEX_FLAG_FORMAT_RGB8 => pixel_count.checked_mul(3)?,
-        PTEX_FLAG_FORMAT_R8 => pixel_count,
-        _ => return None,
-    };
-    if raw_len as usize != expected_raw_len {
-        return None;
-    }
-    if expected_raw_len > PTEX_MAX_RAW_BYTES {
-        return None;
-    }
-    let raw = decode_texture_payload(flags, &bytes[24..], expected_raw_len)?;
-    if raw.len() != expected_raw_len {
+    if raw_len != ptex_level_raw_len(flags, width, height)? || raw_len > PTEX_MAX_RAW_BYTES {
         return None;
     }
 
-    let rgba = match flags & PTEX_FLAG_FORMAT_MASK {
-        PTEX_FLAG_FORMAT_RGBA8 => raw,
-        PTEX_FLAG_FORMAT_RGB8 => {
-            let mut out = Vec::with_capacity(pixel_count * 4);
-            for px in raw.chunks_exact(3) {
-                out.extend_from_slice(&[px[0], px[1], px[2], 255]);
-            }
-            out
+    // v1 has no mip section and its base payload runs to the end.
+    if version == perro_asset_formats::ptex::VERSION_V1 {
+        if flags & perro_asset_formats::ptex::FLAG_HAS_MIPS != 0 {
+            return None;
         }
-        PTEX_FLAG_FORMAT_R8 => {
-            let mut out = Vec::with_capacity(pixel_count * 4);
-            for &v in &raw {
-                out.extend_from_slice(&[v, v, v, 255]);
-            }
-            out
-        }
-        _ => return None,
-    };
-    Some((rgba, width, height))
+        return Some(PtexHeader {
+            width,
+            height,
+            flags,
+            raw_len,
+            base_payload: &bytes[header_len..],
+            mip: None,
+        });
+    }
+
+    let base_payload_len = u32::from_le_bytes(bytes[24..28].try_into().ok()?) as usize;
+    let mip_raw_len = u32::from_le_bytes(bytes[28..32].try_into().ok()?) as usize;
+    let body = bytes.get(header_len..)?;
+    let base_payload = body.get(..base_payload_len)?;
+    let mip_payload = body.get(base_payload_len..)?;
+    let has_mips = flags & perro_asset_formats::ptex::FLAG_HAS_MIPS != 0;
+    if has_mips == (mip_raw_len == 0) {
+        return None;
+    }
+    if mip_raw_len > PTEX_MAX_RAW_BYTES {
+        return None;
+    }
+    Some(PtexHeader {
+        width,
+        height,
+        flags,
+        raw_len,
+        base_payload,
+        mip: has_mips.then_some(PtexMipSection {
+            raw_len: mip_raw_len,
+            payload: mip_payload,
+        }),
+    })
+}
+
+pub fn decode_ptex(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
+    let header = parse_ptex_header(bytes)?;
+    let raw = decode_texture_payload(header.flags, header.base_payload, header.raw_len)?;
+    if raw.len() != header.raw_len {
+        return None;
+    }
+    let pixel_count = header.width as usize * header.height as usize;
+    let rgba = ptex_level_to_rgba(header.flags, raw, pixel_count)?;
+    Some((rgba, header.width, header.height))
+}
+
+/// Baked mip levels 1..n, or `None` when the file carries none (v1, or a v2
+/// bake that skipped them). Decoding these never touches the base payload, so
+/// the base-only path pays nothing for their presence.
+pub fn decode_ptex_mip_levels(bytes: &[u8]) -> Option<Vec<crate::mip::RgbaMipLevel>> {
+    let header = parse_ptex_header(bytes)?;
+    let section = header.mip?;
+    let raw = decode_texture_payload(header.flags, section.payload, section.raw_len)?;
+    if raw.len() != section.raw_len {
+        return None;
+    }
+
+    let level_count = crate::mip::rgba_mip_level_count(header.width, header.height);
+    let mut levels = Vec::with_capacity(level_count.saturating_sub(1) as usize);
+    let (mut width, mut height) = (header.width, header.height);
+    let mut cursor = 0usize;
+    for _ in 1..level_count {
+        width = (width / 2).max(1);
+        height = (height / 2).max(1);
+        let level_len = ptex_level_raw_len(header.flags, width, height)?;
+        let packed = raw.get(cursor..cursor + level_len)?.to_vec();
+        cursor += level_len;
+        let rgba = ptex_level_to_rgba(header.flags, packed, width as usize * height as usize)?;
+        levels.push(crate::mip::RgbaMipLevel {
+            rgba,
+            width,
+            height,
+        });
+    }
+    // A short or long mip section means the file disagrees with the derived
+    // chain: refuse it rather than upload half a chain.
+    (cursor == raw.len()).then_some(levels)
 }
 
 fn decode_texture_payload(flags: u32, payload: &[u8], expected_raw_len: usize) -> Option<Vec<u8>> {

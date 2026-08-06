@@ -1,7 +1,7 @@
 //! Project image loading helpers for window icons and startup splash sizing.
 
 #[cfg(not(target_arch = "wasm32"))]
-use perro_asset_formats::ptex::{MAGIC as PTEX_MAGIC, VERSION as PTEX_VERSION};
+use perro_asset_formats::ptex::{MAGIC as PTEX_MAGIC, header_len as ptex_header_len};
 #[cfg(all(test, not(target_arch = "wasm32")))]
 use perro_graphics_assets::decode_image_rgba as decode_source_image_rgba;
 #[cfg(not(target_arch = "wasm32"))]
@@ -230,10 +230,10 @@ fn decode_ptex_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
     if bytes.len() < 16 || &bytes[0..4] != PTEX_MAGIC {
         return None;
     }
+    // Any readable version: width/height sit at the same offset in every
+    // layout, so icon/splash sizing does not care which one shipped.
     let version = u32::from_le_bytes(bytes[4..8].try_into().ok()?);
-    if version != PTEX_VERSION {
-        return None;
-    }
+    ptex_header_len(version)?;
     let width = u32::from_le_bytes(bytes[8..12].try_into().ok()?);
     let height = u32::from_le_bytes(bytes[12..16].try_into().ok()?);
     if width == 0 || height == 0 {
@@ -291,7 +291,7 @@ mod tests {
     }
 
     #[test]
-    fn decode_image_size_supports_ptex_v1() {
+    fn decode_image_size_supports_ptex_headers() {
         let raw = vec![1u8, 2, 3, 4];
         let compressed = perro_io::compress_zlib_best(&raw).expect("compress");
         let mut bytes = Vec::new();
@@ -304,6 +304,19 @@ mod tests {
         bytes.extend_from_slice(&compressed);
 
         assert_eq!(decode_image_size(&bytes), Some((1, 1)));
+
+        // v2 header, same dimensions offset.
+        let mut v2 = Vec::new();
+        v2.extend_from_slice(b"PTEX");
+        v2.extend_from_slice(&2u32.to_le_bytes());
+        v2.extend_from_slice(&1u32.to_le_bytes());
+        v2.extend_from_slice(&1u32.to_le_bytes());
+        v2.extend_from_slice(&0u32.to_le_bytes());
+        v2.extend_from_slice(&4u32.to_le_bytes());
+        v2.extend_from_slice(&(compressed.len() as u32).to_le_bytes());
+        v2.extend_from_slice(&0u32.to_le_bytes());
+        v2.extend_from_slice(&compressed);
+        assert_eq!(decode_image_size(&v2), Some((1, 1)));
     }
 
     #[test]

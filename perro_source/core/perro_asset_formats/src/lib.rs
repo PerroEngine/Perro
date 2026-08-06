@@ -57,14 +57,32 @@ pub mod pskel {
 pub mod ptex {
     pub const EXTENSION: &str = "ptex";
     pub const MAGIC: &[u8; 4] = b"PTEX";
-    pub const VERSION: u32 = 1;
+    /// v1: 24-byte header, base level only.
+    /// v2: 32-byte header, optional baked mip chain in its own payload.
+    pub const VERSION: u32 = 2;
+    pub const VERSION_V1: u32 = 1;
     pub const FLAG_FORMAT_MASK: u32 = 0b11;
     pub const FLAG_FORMAT_RGBA8: u32 = 0;
     pub const FLAG_FORMAT_RGB8: u32 = 1;
     pub const FLAG_FORMAT_R8: u32 = 2;
+    /// A baked mip chain follows the base payload (v2+).
+    pub const FLAG_HAS_MIPS: u32 = 1 << 30;
     pub const FLAG_PAYLOAD_RAW: u32 = 1 << 31;
     pub const MAX_RAW_BYTES: usize = 256 * 1024 * 1024;
     pub const MAX_COMPRESSED_BYTES: usize = 128 * 1024 * 1024;
+
+    pub const HEADER_LEN_V1: usize = 24;
+    pub const HEADER_LEN_V2: usize = 32;
+
+    /// Header length for a version, or `None` for versions this build cannot
+    /// read.
+    pub const fn header_len(version: u32) -> Option<usize> {
+        match version {
+            VERSION_V1 => Some(HEADER_LEN_V1),
+            VERSION => Some(HEADER_LEN_V2),
+            _ => None,
+        }
+    }
 }
 
 pub mod ptset {
@@ -133,16 +151,31 @@ pub mod source_ext {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn current_versions_are_v1() {
+    fn current_format_versions() {
         assert_eq!(super::archive::VERSION, 1);
         assert_eq!(super::dlc::REGISTRY_ABI_VERSION, 1);
         assert_eq!(super::pawdio::VERSION, 1);
         assert_eq!(super::pmesh::VERSION, 1);
         assert_eq!(super::pskel::VERSION, 1);
         assert_eq!(super::pskel::VERSION_2D, 1);
-        assert_eq!(super::ptex::VERSION, 1);
+        // v2 adds the baked mip chain; v1 files still decode.
+        assert_eq!(super::ptex::VERSION, 2);
         assert_eq!(super::ptset::VERSION, 1);
         assert_eq!(super::pnav::EXTENSION, "pnav");
+    }
+
+    #[test]
+    fn ptex_header_len_covers_readable_versions_only() {
+        assert_eq!(
+            super::ptex::header_len(super::ptex::VERSION_V1),
+            Some(super::ptex::HEADER_LEN_V1)
+        );
+        assert_eq!(
+            super::ptex::header_len(super::ptex::VERSION),
+            Some(super::ptex::HEADER_LEN_V2)
+        );
+        assert_eq!(super::ptex::header_len(0), None);
+        assert_eq!(super::ptex::header_len(super::ptex::VERSION + 1), None);
     }
 
     #[test]

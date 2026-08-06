@@ -7,12 +7,12 @@ use perro_asset_formats::{
     ptex::{
         EXTENSION as PTEX_EXTENSION, FLAG_FORMAT_MASK as PTEX_FLAG_FORMAT_MASK,
         FLAG_FORMAT_R8 as PTEX_FLAG_FORMAT_R8, FLAG_FORMAT_RGB8 as PTEX_FLAG_FORMAT_RGB8,
-        FLAG_FORMAT_RGBA8 as PTEX_FLAG_FORMAT_RGBA8, FLAG_PAYLOAD_RAW as PTEX_FLAG_PAYLOAD_RAW,
-        MAGIC as PTEX_MAGIC, VERSION as PTEX_VERSION,
+        FLAG_FORMAT_RGBA8 as PTEX_FLAG_FORMAT_RGBA8, FLAG_HAS_MIPS as PTEX_FLAG_HAS_MIPS,
+        FLAG_PAYLOAD_RAW as PTEX_FLAG_PAYLOAD_RAW, MAGIC as PTEX_MAGIC, VERSION as PTEX_VERSION,
     },
     source_ext,
 };
-use perro_graphics_assets::{SVG_RASTER_SCALE, decode_image_rgba};
+use perro_graphics_assets::{SVG_RASTER_SCALE, decode_image_rgba, mip::build_rgba_levels_for_filter};
 use perro_io::compress_zlib_best;
 use rayon::prelude::*;
 use std::{
@@ -48,7 +48,7 @@ pub fn generate_static_textures(
     // The SVG raster scale changes decoded output bytes without touching the
     // source file stat key, so it must live in the cache context: a future
     // scale change rebakes instead of serving stale rasters.
-    let context = format!("textures svg_scale={SVG_RASTER_SCALE}");
+    let context = format!("textures svg_scale={SVG_RASTER_SCALE} ptex_v{PTEX_VERSION}");
     let mut cache = SourceCache::open(&embedded_textures_dir, &context);
     let mut textures = Vec::<(String, String)>::with_capacity(texture_inputs.len());
     let mut baked_texture_uris = HashSet::<String>::new();
@@ -227,25 +227,74 @@ fn pack_texture_payload(raw_rgba: &[u8]) -> (u32, Vec<u8>) {
     }
 }
 
+/// Pack mip levels 1..n back-to-back in the base level's pixel format.
+///
+/// Baked here so the runtime never downsamples on the render thread. The chain
+/// uses the shared filter, so a baked file and a runtime-generated chain are
+/// byte-identical.
+fn pack_mip_chain(raw_rgba: &[u8], width: u32, height: u32, base_flags: u32) -> Vec<u8> {
+    let levels = build_rgba_levels_for_filter(
+        raw_rgba,
+        width,
+        height,
+        perro_structs::TextureFilterMode::LinearMipmap,
+    );
+    let mut packed = Vec::new();
+    for level in levels.iter().skip(1) {
+        match base_flags & PTEX_FLAG_FORMAT_MASK {
+            PTEX_FLAG_FORMAT_R8 => packed.extend(level.rgba.chunks_exact(4).map(|px| px[0])),
+            PTEX_FLAG_FORMAT_RGB8 => {
+                for px in level.rgba.chunks_exact(4) {
+                    packed.extend_from_slice(&px[..3]);
+                }
+            }
+            _ => packed.extend_from_slice(&level.rgba),
+        }
+    }
+    packed
+}
+
 fn encode_ptex(raw_rgba: &[u8], width: u32, height: u32) -> io::Result<Vec<u8>> {
-    let (mut flags, packed_raw) = pack_texture_payload(raw_rgba);
-    let compressed = compress_zlib_best(&packed_raw)?;
-    let payload: &[u8] = if compressed.len() < packed_raw.len() {
-        &compressed
+    let (format_flags, packed_raw) = pack_texture_payload(raw_rgba);
+    // Base and mips compress separately so a consumer that only needs the base
+    // level never inflates the chain.
+    let base_compressed = compress_zlib_best(&packed_raw)?;
+    let mut flags = format_flags;
+    let base_payload: &[u8] = if base_compressed.len() < packed_raw.len() {
+        &base_compressed
     } else {
         flags |= PTEX_FLAG_PAYLOAD_RAW;
         &packed_raw
     };
-    let mut ptex = Vec::with_capacity(24 + payload.len());
+
+    // One RAW flag covers both payloads, so the chain always uses whatever
+    // encoding the base settled on. A tiny texture can end up with a chain that
+    // compresses to slightly more than its raw bytes; that is a few dozen bytes
+    // and beats teaching the format two encodings.
+    let mip_raw = pack_mip_chain(raw_rgba, width, height, format_flags);
+    let mip_payload = if mip_raw.is_empty() {
+        Vec::new()
+    } else if flags & PTEX_FLAG_PAYLOAD_RAW != 0 {
+        mip_raw.clone()
+    } else {
+        compress_zlib_best(&mip_raw)?
+    };
+    let mip_raw_len = mip_raw.len();
+    if mip_raw_len > 0 {
+        flags |= PTEX_FLAG_HAS_MIPS;
+    }
+
+    let mut ptex = Vec::with_capacity(32 + base_payload.len() + mip_payload.len());
     ptex.extend_from_slice(PTEX_MAGIC);
     ptex.extend_from_slice(&PTEX_VERSION.to_le_bytes());
     ptex.extend_from_slice(&width.to_le_bytes());
     ptex.extend_from_slice(&height.to_le_bytes());
-    ptex.extend_from_slice(
-        &((flags & PTEX_FLAG_FORMAT_MASK) | (flags & PTEX_FLAG_PAYLOAD_RAW)).to_le_bytes(),
-    );
+    ptex.extend_from_slice(&flags.to_le_bytes());
     ptex.extend_from_slice(&(packed_raw.len() as u32).to_le_bytes());
-    ptex.extend_from_slice(payload);
+    ptex.extend_from_slice(&(base_payload.len() as u32).to_le_bytes());
+    ptex.extend_from_slice(&(mip_raw_len as u32).to_le_bytes());
+    ptex.extend_from_slice(base_payload);
+    ptex.extend_from_slice(&mip_payload);
     Ok(ptex)
 }
 
@@ -349,8 +398,59 @@ mod tests {
     }
 
     #[test]
-    fn ptex_current_version_is_v1() {
-        assert_eq!(PTEX_VERSION, 1);
+    fn ptex_current_version_is_v2() {
+        assert_eq!(PTEX_VERSION, 2);
+    }
+
+    #[test]
+    fn encoded_ptex_carries_a_decodable_mip_chain() {
+        use perro_graphics_assets::{decode_ptex, decode_ptex_mip_levels, mip};
+
+        // Non-uniform so the chain is not trivially constant.
+        let (w, h) = (8u32, 4u32);
+        let rgba = (0..(w * h) as usize)
+            .flat_map(|i| [(i * 7) as u8, (i * 13) as u8, (i * 29) as u8, 255])
+            .collect::<Vec<u8>>();
+
+        let ptex = super::encode_ptex(&rgba, w, h).expect("encode");
+        let (decoded, dw, dh) = decode_ptex(&ptex).expect("decode base");
+        assert_eq!((dw, dh), (w, h));
+        assert_eq!(decoded, rgba);
+
+        let baked = decode_ptex_mip_levels(&ptex).expect("decode mips");
+        let generated = mip::build_rgba_levels_for_filter(
+            &rgba,
+            w,
+            h,
+            perro_structs::TextureFilterMode::LinearMipmap,
+        );
+        assert_eq!(baked.len(), generated.len() - 1);
+        for (baked, generated) in baked.iter().zip(generated.iter().skip(1)) {
+            assert_eq!((baked.width, baked.height), (generated.width, generated.height));
+            assert_eq!(baked.rgba, generated.rgba, "baked chain must match runtime");
+        }
+    }
+
+    #[test]
+    fn ptex_v1_files_still_decode_without_mips() {
+        use perro_graphics_assets::{decode_ptex, decode_ptex_mip_levels};
+
+        let rgba = vec![9u8, 8, 7, 255, 6, 5, 4, 255];
+        use super::{PTEX_FLAG_PAYLOAD_RAW, PTEX_MAGIC};
+        let (flags, packed) = super::pack_texture_payload(&rgba);
+        let mut v1 = Vec::new();
+        v1.extend_from_slice(PTEX_MAGIC);
+        v1.extend_from_slice(&1u32.to_le_bytes());
+        v1.extend_from_slice(&2u32.to_le_bytes());
+        v1.extend_from_slice(&1u32.to_le_bytes());
+        v1.extend_from_slice(&(flags | PTEX_FLAG_PAYLOAD_RAW).to_le_bytes());
+        v1.extend_from_slice(&(packed.len() as u32).to_le_bytes());
+        v1.extend_from_slice(&packed);
+
+        let (decoded, w, h) = decode_ptex(&v1).expect("decode v1");
+        assert_eq!((w, h), (2, 1));
+        assert_eq!(decoded, rgba);
+        assert!(decode_ptex_mip_levels(&v1).is_none());
     }
 
     #[test]

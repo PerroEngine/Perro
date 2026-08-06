@@ -48,10 +48,27 @@ fn mutation_sweep(valid: &[u8], mut check: impl FnMut(&[u8])) {
     }
 }
 
+/// Current-version (v2) file with a base payload and no baked mip chain.
 fn ptex_bytes(payload: &[u8], flags: u32, raw_len: u32) -> Vec<u8> {
-    let mut out = Vec::with_capacity(24 + payload.len());
+    let mut out = Vec::with_capacity(32 + payload.len());
     out.extend_from_slice(PTEX_MAGIC);
     out.extend_from_slice(&PTEX_VERSION.to_le_bytes());
+    out.extend_from_slice(&2u32.to_le_bytes());
+    out.extend_from_slice(&2u32.to_le_bytes());
+    out.extend_from_slice(&flags.to_le_bytes());
+    out.extend_from_slice(&raw_len.to_le_bytes());
+    out.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(payload);
+    out
+}
+
+/// Legacy 24-byte-header file: shipped assets predate v2, so the mutation
+/// sweep has to cover the old layout too.
+fn ptex_bytes_v1(payload: &[u8], flags: u32, raw_len: u32) -> Vec<u8> {
+    let mut out = Vec::with_capacity(24 + payload.len());
+    out.extend_from_slice(PTEX_MAGIC);
+    out.extend_from_slice(&1u32.to_le_bytes());
     out.extend_from_slice(&2u32.to_le_bytes());
     out.extend_from_slice(&2u32.to_le_bytes());
     out.extend_from_slice(&flags.to_le_bytes());
@@ -77,6 +94,14 @@ fn ptex_raw_payload_survives_mutation_sweep() {
     let raw: Vec<u8> = (0u8..16).collect();
     let valid = ptex_bytes(&raw, FLAG_FORMAT_RGBA8 | PTEX_FLAG_PAYLOAD_RAW, 16);
     assert!(decode_ptex(&valid).is_some(), "baseline must decode");
+    mutation_sweep(&valid, check_ptex);
+}
+
+#[test]
+fn ptex_v1_payload_survives_mutation_sweep() {
+    let raw: Vec<u8> = (0u8..16).collect();
+    let valid = ptex_bytes_v1(&raw, FLAG_FORMAT_RGBA8 | PTEX_FLAG_PAYLOAD_RAW, 16);
+    assert!(decode_ptex(&valid).is_some(), "v1 baseline must decode");
     mutation_sweep(&valid, check_ptex);
 }
 
