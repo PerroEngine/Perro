@@ -69,6 +69,8 @@ pub(super) struct CachedMaterialTextureInput {
     pub(super) source: String,
     pub(super) filter: TextureFilterMode,
     pub(super) color_space: MaterialTextureColorSpace,
+    /// Static lookup for the baked mip chain; `None` falls back to generating.
+    pub(super) static_texture_lookup: Option<crate::backend::StaticTextureLookup>,
 }
 
 pub(super) fn material_shared_texture_key(
@@ -113,8 +115,18 @@ pub(super) fn create_cached_material_texture(
     input: CachedMaterialTextureInput,
 ) -> CachedMaterialTexture {
     let key = material_shared_texture_key(&input.source, input.color_space, input.filter);
-    let shared =
-        shared_textures.ensure_rgba(device, queue, key, &input.rgba, input.width, input.height);
+    let shared = shared_textures.ensure_rgba_from(
+        device,
+        queue,
+        key,
+        crate::shared_textures::TextureUpload::from_source(
+            &input.rgba,
+            input.width,
+            input.height,
+            input.source.as_str(),
+            input.static_texture_lookup,
+        ),
+    );
     cached_material_texture_from_shared(device, shared, input.source, input.filter)
 }
 
@@ -128,8 +140,18 @@ pub(super) fn try_create_cached_material_texture(
     input: CachedMaterialTextureInput,
 ) -> Option<CachedMaterialTexture> {
     let key = material_shared_texture_key(&input.source, input.color_space, input.filter);
-    let shared = shared_textures
-        .try_ensure_rgba(device, queue, key, &input.rgba, input.width, input.height)?;
+    let shared = shared_textures.try_ensure_rgba(
+        device,
+        queue,
+        key,
+        crate::shared_textures::TextureUpload::from_source(
+            &input.rgba,
+            input.width,
+            input.height,
+            input.source.as_str(),
+            input.static_texture_lookup,
+        ),
+    )?;
     Some(cached_material_texture_from_shared(
         device,
         shared,

@@ -47,16 +47,70 @@ std::thread_local! {
 /// and uploads it before the next level overwrites it. The full mip chain
 /// (~1.33x the base) is never materialized: peak extra CPU memory is the two
 /// scratch levels (base/4 + base/16). Mip count comes from the texture itself.
+/// Mip levels baked into the source `.ptex`, when it has them.
+///
+/// Skips the CPU downsample at the cost of inflating the chain payload (~1/3
+/// of the base). The pipeline bakes with the same filter as
+/// [`build_rgba_levels_for_filter`], so an adopted chain is identical to a
+/// generated one. Dimensions are checked against the texture actually being
+/// uploaded: a stale or mismatched bake falls back to generating.
+pub(crate) fn baked_mip_levels(
+    source: &str,
+    static_texture_lookup: Option<crate::backend::StaticTextureLookup>,
+    width: u32,
+    height: u32,
+) -> Option<Vec<RgbaMipLevel>> {
+    let bytes = match static_texture_lookup {
+        Some(lookup) => {
+            let hash = perro_ids::parse_hashed_source_uri(source)
+                .unwrap_or_else(|| perro_ids::string_to_u64(source));
+            let bytes = lookup(hash);
+            (!bytes.is_empty()).then_some(std::borrow::Cow::Borrowed(bytes))
+        }
+        None => None,
+    }
+    .or_else(|| {
+        // Disk / DLC `.ptex`: only these can carry a chain, so nothing else is
+        // worth a read.
+        if source.ends_with(".ptex") {
+            perro_io::load_asset_cow(source).ok()
+        } else {
+            None
+        }
+    })?;
+
+    let levels = perro_graphics_assets::decode_ptex_mip_levels(&bytes)?;
+    let expected = rgba_mip_level_count(width, height).saturating_sub(1) as usize;
+    let first_matches = levels
+        .first()
+        .is_some_and(|level| level.width == (width / 2).max(1) && level.height == (height / 2).max(1));
+    (levels.len() == expected && first_matches).then_some(levels)
+}
+
 pub(crate) fn write_rgba_texture_streaming(
     queue: &wgpu::Queue,
     texture: &wgpu::Texture,
     rgba: &[u8],
     width: u32,
     height: u32,
+    baked: Option<&[RgbaMipLevel]>,
 ) {
     write_texture_base_level(queue, texture, width, height, rgba);
     let mip_count = texture.mip_level_count();
     if mip_count <= 1 {
+        return;
+    }
+    if let Some(levels) = baked.filter(|levels| levels.len() as u32 + 1 == mip_count) {
+        for (index, level) in levels.iter().enumerate() {
+            write_rgba_mip_level(
+                queue,
+                texture,
+                index as u32 + 1,
+                &level.rgba,
+                level.width,
+                level.height,
+            );
+        }
         return;
     }
     MIP_STREAM_SCRATCH.with(|scratch| {

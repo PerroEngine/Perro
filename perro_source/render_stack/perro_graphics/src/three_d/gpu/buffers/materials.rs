@@ -116,6 +116,7 @@ impl Gpu3D {
                 source: "__fallback__".to_string(),
                 filter: self.texture_filter,
                 color_space: MaterialTextureColorSpace::Srgb,
+                static_texture_lookup: None,
             },
         );
         let neutral_normal = create_cached_material_texture(
@@ -129,6 +130,7 @@ impl Gpu3D {
                 source: "__normal_fallback__".to_string(),
                 filter: self.texture_filter,
                 color_space: MaterialTextureColorSpace::Linear,
+                static_texture_lookup: None,
             },
         );
         let custom_views = (0..CUSTOM_MATERIAL_IMAGE_COUNT)
@@ -355,6 +357,7 @@ impl Gpu3D {
                 source,
                 filter,
                 color_space,
+                static_texture_lookup,
             },
         ) else {
             return;
@@ -458,6 +461,7 @@ impl Gpu3D {
                 source: source.to_string(),
                 filter,
                 color_space: MaterialTextureColorSpace::Srgb,
+                static_texture_lookup,
             },
         ) else {
             return;

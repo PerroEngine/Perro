@@ -1043,9 +1043,13 @@ impl Gpu2D {
                     device,
                     queue,
                     key,
-                    &decoded.rgba,
-                    decoded.width,
-                    decoded.height,
+                    crate::shared_textures::TextureUpload::from_source(
+                        &decoded.rgba,
+                        decoded.width,
+                        decoded.height,
+                        source,
+                        static_texture_lookup,
+                    ),
                 ) else {
                     return false;
                 };

@@ -7,6 +7,7 @@
 //! hands out `Arc<SharedGpuTexture>` handles; consumers keep only their own
 //! samplers + bind groups (bind group layouts are per-pipeline).
 
+use crate::backend::StaticTextureLookup;
 use crate::texture_mips::{
     rgba_mip_level_count, write_rgba_texture_streaming, write_texture_base_level,
 };
@@ -94,6 +95,44 @@ pub(crate) struct SharedTextureStore {
     deferred_uploads: bool,
 }
 
+/// One texture upload request: the decoded base level plus where its mip chain
+/// can be adopted from.
+pub(crate) struct TextureUpload<'a> {
+    pub rgba: &'a [u8],
+    pub width: u32,
+    pub height: u32,
+    /// Asset the pixels came from, for adopting a baked `.ptex` chain. `None`
+    /// (runtime-created pixels, fallbacks) always generates.
+    pub mip_source: Option<(&'a str, Option<StaticTextureLookup>)>,
+}
+
+impl<'a> TextureUpload<'a> {
+    #[cfg(test)]
+    pub(crate) fn new(rgba: &'a [u8], width: u32, height: u32) -> Self {
+        Self {
+            rgba,
+            width,
+            height,
+            mip_source: None,
+        }
+    }
+
+    pub(crate) fn from_source(
+        rgba: &'a [u8],
+        width: u32,
+        height: u32,
+        source: &'a str,
+        lookup: Option<StaticTextureLookup>,
+    ) -> Self {
+        Self {
+            rgba,
+            width,
+            height,
+            mip_source: Some((source, lookup)),
+        }
+    }
+}
+
 /// Texel bytes one upload costs: base level, plus ~1/3 again when the key
 /// carries a mip chain (sum of the quarter-size levels).
 fn upload_cost_bytes(mips: bool, width: u32, height: u32) -> usize {
@@ -130,26 +169,25 @@ impl SharedTextureStore {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         key: SharedTextureKey,
-        rgba: &[u8],
-        width: u32,
-        height: u32,
+        upload: TextureUpload<'_>,
     ) -> Option<Arc<SharedGpuTexture>> {
         if let Some(existing) = self.get(&key) {
             return Some(existing);
         }
-        let cost = upload_cost_bytes(key.mips, width, height);
+        let cost = upload_cost_bytes(key.mips, upload.width, upload.height);
         if self.upload_bytes_this_frame > 0
             && self.upload_bytes_this_frame.saturating_add(cost) > UPLOAD_BUDGET_BYTES_PER_FRAME
         {
             self.deferred_uploads = true;
             return None;
         }
-        Some(self.ensure_rgba(device, queue, key, rgba, width, height))
+        Some(self.ensure_rgba_from(device, queue, key, upload))
     }
 
     /// Upload-or-reuse. On a hit the decoded bytes are ignored (the resident
     /// texture already holds them); on a miss the texture + mip chain (per
     /// `key.mips`) is created and written once.
+    #[cfg(test)]
     pub(crate) fn ensure_rgba(
         &mut self,
         device: &wgpu::Device,
@@ -159,9 +197,28 @@ impl SharedTextureStore {
         width: u32,
         height: u32,
     ) -> Arc<SharedGpuTexture> {
+        self.ensure_rgba_from(device, queue, key, TextureUpload::new(rgba, width, height))
+    }
+
+    /// `ensure_rgba` that can adopt the mip chain baked into the source
+    /// `.ptex` instead of downsampling on this thread. `mip_source` is only
+    /// consulted on a miss for a mipped key.
+    pub(crate) fn ensure_rgba_from(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        key: SharedTextureKey,
+        upload: TextureUpload<'_>,
+    ) -> Arc<SharedGpuTexture> {
         if let Some(existing) = self.get(&key) {
             return existing;
         }
+        let TextureUpload {
+            rgba,
+            width,
+            height,
+            mip_source,
+        } = upload;
         let width = width.max(1);
         let height = height.max(1);
         self.upload_bytes_this_frame = self
@@ -195,7 +252,24 @@ impl SharedTextureStore {
             // Streaming upload: base level straight from the borrowed slice,
             // mips generated level-by-level into reused scratch. The full mip
             // chain is never materialized on the CPU.
-            write_rgba_texture_streaming(queue, &texture, &rgba[..base_len], width, height);
+            // A baked chain skips the CPU downsample; without one the streaming
+            // path generates each level into reused scratch, so neither route
+            // materializes the whole chain.
+            let baked = if mip_level_count > 1 {
+                mip_source.and_then(|(source, lookup)| {
+                    crate::texture_mips::baked_mip_levels(source, lookup, width, height)
+                })
+            } else {
+                None
+            };
+            write_rgba_texture_streaming(
+                queue,
+                &texture,
+                &rgba[..base_len],
+                width,
+                height,
+                baked.as_deref(),
+            );
         } else {
             write_texture_base_level(queue, &texture, 1, 1, &[255, 255, 255, 255]);
         }
@@ -436,9 +510,7 @@ mod tests {
                         &device,
                         &queue,
                         key(&format!("res://budget{index}.png"), TextureFilterMode::Linear),
-                        &rgba,
-                        dim,
-                        dim,
+                        TextureUpload::new(&rgba, dim, dim),
                     )
                     .is_some(),
                 "upload {index} must fit the frame budget"
@@ -450,9 +522,7 @@ mod tests {
                     &device,
                     &queue,
                     key("res://budget_over.png", TextureFilterMode::Linear),
-                    &rgba,
-                    dim,
-                    dim,
+                    TextureUpload::new(&rgba, dim, dim),
                 )
                 .is_none()
         );
@@ -467,9 +537,7 @@ mod tests {
                     &device,
                     &queue,
                     key("res://budget_over.png", TextureFilterMode::Linear),
-                    &rgba,
-                    dim,
-                    dim,
+                    TextureUpload::new(&rgba, dim, dim),
                 )
                 .is_some()
         );
@@ -492,9 +560,7 @@ mod tests {
                     &device,
                     &queue,
                     key("res://huge.png", TextureFilterMode::Linear),
-                    &rgba,
-                    dim,
-                    dim,
+                    TextureUpload::new(&rgba, dim, dim),
                 )
                 .is_some(),
             "first upload of a frame always goes through"
