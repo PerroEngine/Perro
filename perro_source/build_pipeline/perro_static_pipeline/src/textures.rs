@@ -333,10 +333,15 @@ mod tests {
                 let start = Instant::now();
                 let out = compress(&packed).expect("compress");
                 let elapsed = start.elapsed();
+                let start = Instant::now();
+                let back = perro_io::decompress_zlib_limited(&out, packed.len()).expect("inflate");
+                let inflate = start.elapsed();
+                assert_eq!(back.len(), packed.len());
                 line.push_str(&format!(
-                    " | zlib {label} {:>7.1} ms {:>8.1} KiB",
+                    " | zlib {label} {:>7.1} ms {:>8.1} KiB (inflate {:>6.1} ms)",
                     elapsed.as_secs_f64() * 1000.0,
-                    out.len() as f64 / 1024.0
+                    out.len() as f64 / 1024.0,
+                    inflate.as_secs_f64() * 1000.0
                 ));
             }
             eprintln!("{line}");
