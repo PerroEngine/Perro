@@ -196,22 +196,30 @@ fn escape_str(input: &str) -> String {
 }
 
 fn pack_texture_payload(raw_rgba: &[u8]) -> (u32, Vec<u8>) {
-    let is_opaque = raw_rgba.chunks_exact(4).all(|px| px[3] == 255);
-    let is_gray_opaque = is_opaque
-        && raw_rgba
-            .chunks_exact(4)
-            .all(|px| px[0] == px[1] && px[1] == px[2]);
-
-    if is_gray_opaque {
-        let mut packed = Vec::with_capacity(raw_rgba.len() / 4);
-        for px in raw_rgba.chunks_exact(4) {
-            packed.push(px[0]);
+    // One classify pass instead of two: an opaque grayscale image used to be
+    // scanned twice before it was even written. Both answers fall out of the
+    // same walk, and the loop stops early once neither can still hold.
+    let mut is_opaque = true;
+    let mut is_gray = true;
+    for px in raw_rgba.chunks_exact(4) {
+        if px[3] != 255 {
+            // One transparent texel settles it: the payload stays RGBA8 and
+            // grayness cannot change that.
+            is_opaque = false;
+            break;
         }
+        is_gray &= px[0] == px[1] && px[1] == px[2];
+    }
+
+    if is_opaque && is_gray {
+        // Byte-strided gather; `extend` per pixel could not use the known
+        // output length.
+        let packed = raw_rgba.chunks_exact(4).map(|px| px[0]).collect::<Vec<u8>>();
         (PTEX_FLAG_FORMAT_R8, packed)
     } else if is_opaque {
-        let mut packed = Vec::with_capacity((raw_rgba.len() / 4) * 3);
-        for px in raw_rgba.chunks_exact(4) {
-            packed.extend_from_slice(&px[..3]);
+        let mut packed = vec![0u8; (raw_rgba.len() / 4) * 3];
+        for (dst, px) in packed.chunks_exact_mut(3).zip(raw_rgba.chunks_exact(4)) {
+            dst.copy_from_slice(&px[..3]);
         }
         (PTEX_FLAG_FORMAT_RGB8, packed)
     } else {
@@ -249,6 +257,91 @@ mod tests {
         fs,
         time::{SystemTime, UNIX_EPOCH},
     };
+
+    #[test]
+    fn pack_texture_payload_picks_narrowest_format() {
+        use super::{
+            PTEX_FLAG_FORMAT_R8, PTEX_FLAG_FORMAT_RGB8, PTEX_FLAG_FORMAT_RGBA8,
+            pack_texture_payload,
+        };
+
+        let gray = [7u8, 7, 7, 255, 9, 9, 9, 255];
+        assert_eq!(
+            pack_texture_payload(&gray),
+            (PTEX_FLAG_FORMAT_R8, vec![7, 9])
+        );
+
+        let color = [7u8, 8, 9, 255, 1, 2, 3, 255];
+        assert_eq!(
+            pack_texture_payload(&color),
+            (PTEX_FLAG_FORMAT_RGB8, vec![7, 8, 9, 1, 2, 3])
+        );
+
+        // Gray texels but one is transparent: alpha wins, nothing is dropped.
+        let gray_with_alpha = [7u8, 7, 7, 255, 9, 9, 9, 128];
+        assert_eq!(
+            pack_texture_payload(&gray_with_alpha),
+            (PTEX_FLAG_FORMAT_RGBA8, gray_with_alpha.to_vec())
+        );
+
+        // Transparency after a color texel must still reach RGBA8 (the early
+        // exit runs before grayness is fully known).
+        let color_then_alpha = [7u8, 8, 9, 255, 9, 9, 9, 0];
+        assert_eq!(
+            pack_texture_payload(&color_then_alpha),
+            (PTEX_FLAG_FORMAT_RGBA8, color_then_alpha.to_vec())
+        );
+    }
+
+    /// Where a texture cache miss actually spends its time: pack, then zlib.
+    /// Run with `--release --ignored --nocapture`.
+    #[test]
+    #[ignore = "bench probe; run with --release --ignored --nocapture"]
+    fn ptex_encode_stage_bench() {
+        use std::time::Instant;
+
+        if cfg!(debug_assertions) {
+            eprintln!("warn run this with --release for useful numbers");
+        }
+        for dim in [512usize, 1024, 2048] {
+            // Photographic-ish: smooth gradients plus banded detail, so neither
+            // trivially compressible nor incompressible.
+            let mut rgba = Vec::with_capacity(dim * dim * 4);
+            for y in 0..dim {
+                for x in 0..dim {
+                    let r = ((x * 255) / dim) as u8;
+                    let g = ((y * 255) / dim) as u8;
+                    let b = (((x ^ y) & 0xff) as u8).wrapping_add((x / 16) as u8);
+                    rgba.extend_from_slice(&[r, g, b, 255]);
+                }
+            }
+
+            let start = Instant::now();
+            let (_flags, packed) = super::pack_texture_payload(&rgba);
+            let pack = start.elapsed();
+
+            let mut line = format!(
+                "ptex {dim}x{dim}: pack {:>7.1} ms",
+                pack.as_secs_f64() * 1000.0
+            );
+            type Compressor = fn(&[u8]) -> std::io::Result<Vec<u8>>;
+            let variants: [(&str, Compressor); 2] = [
+                ("fast", perro_io::compress_zlib_fast),
+                ("best", perro_io::compress_zlib_best),
+            ];
+            for (label, compress) in variants {
+                let start = Instant::now();
+                let out = compress(&packed).expect("compress");
+                let elapsed = start.elapsed();
+                line.push_str(&format!(
+                    " | zlib {label} {:>7.1} ms {:>8.1} KiB",
+                    elapsed.as_secs_f64() * 1000.0,
+                    out.len() as f64 / 1024.0
+                ));
+            }
+            eprintln!("{line}");
+        }
+    }
 
     #[test]
     fn ptex_current_version_is_v1() {
