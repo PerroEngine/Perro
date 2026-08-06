@@ -521,11 +521,11 @@ fn loaded_scene_root_removes_hidden_owner_and_sibling_roots() {
     assert!(runtime.nodes.named_ids("sibling").next().is_none());
 }
 
-/// Background preload must not need the `Runtime` to resolve or prepare: the
-/// worker carries its own context. Static provider mode keeps the test to
-/// in-memory lookups (no shared project-root global, no disk).
+/// `preload` is background by default. The worker must not need the `Runtime`
+/// to resolve or prepare — it carries its own context. Static provider mode
+/// keeps the test to in-memory lookups (no shared project-root global, no disk).
 #[test]
-fn async_preload_lands_off_thread_and_loads_when_ready() {
+fn preload_lands_off_thread_and_loads_when_ready() {
     use std::sync::OnceLock;
 
     static BACKGROUND_SCENE: OnceLock<perro_scene::Scene> = OnceLock::new();
@@ -573,6 +573,42 @@ fn async_preload_lands_off_thread_and_loads_when_ready() {
     assert!(runtime.free_preloaded_scene_at_runtime(id));
 }
 
+/// Preload-then-load-in-the-same-frame must keep working now that preload is
+/// background: the load waits for the worker instead of failing.
+#[test]
+fn loading_a_still_pending_preload_waits_instead_of_failing() {
+    use perro_runtime_api::sub_apis::SceneAPI;
+    use std::sync::OnceLock;
+
+    static WAIT_SCENE: OnceLock<perro_scene::Scene> = OnceLock::new();
+    fn lookup(_path_hash: u64) -> &'static perro_scene::Scene {
+        WAIT_SCENE.get_or_init(|| {
+            Parser::new("$root = @root
+
+[root]
+[Node]
+[/Node]
+[/root]
+").parse_scene()
+        })
+    }
+
+    let path = "res://wait_preload.scn";
+    let mut project = RuntimeProject::new("Scene Test", ".");
+    project.static_scene_lookup = Some(lookup);
+    let mut runtime = Runtime::new();
+    runtime.project = Some(std::rc::Rc::new(project));
+    runtime.provider_mode = crate::runtime_project::ProviderMode::Static;
+
+    let id = runtime.scene_preload(path).expect("preload hands back a handle");
+    let root = runtime
+        .scene_load_preloaded(id)
+        .expect("load waits for the in-flight preload");
+    assert!(runtime.nodes.contains(root));
+    // One handle for the path either way: the wait adopts the in-flight id.
+    assert_eq!(runtime.scene_preload(path).expect("second preload"), id);
+}
+
 #[test]
 fn preload_compiles_once_and_spawns_distinct_instances() {
     let scene = Parser::new("$root = @root\n\n[root]\n[Node]\n[/Node]\n[/root]\n").parse_scene();
@@ -585,7 +621,7 @@ fn preload_compiles_once_and_spawns_distinct_instances() {
         .insert(path.to_string(), std::sync::Arc::new(scene));
 
     let id = runtime
-        .preload_scene_at_runtime(path)
+        .preload_scene_blocking_at_runtime(path)
         .expect("test or bench setup must succeed");
     assert_eq!(runtime.prepared_scene_cache.borrow().len(), 1);
     assert_eq!(runtime.preloaded_prepared_scenes.len(), 1);

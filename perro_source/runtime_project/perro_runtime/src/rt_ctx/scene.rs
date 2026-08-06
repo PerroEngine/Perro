@@ -42,9 +42,12 @@ impl SceneAPI for Runtime {
             .map_err(|err| err.to_string())
     }
 
+    /// Non-blocking: the handle comes back now and the scene loads on a
+    /// worker, same shape as mesh/material/texture loads. Poll
+    /// `scene_preload_ready`, or just call `scene_load_preloaded` and accept a
+    /// wait if the work has not finished yet.
     fn scene_preload_typed(&mut self, path: &str) -> LoadResult<PreloadedSceneID> {
-        self.preload_scene_at_runtime(path)
-            .map_err(LoadError::Legacy)
+        Ok(self.preload_scene_async_at_runtime_hashed(Self::scene_source_hash(path), path))
     }
 
     fn scene_preload_hashed(
@@ -61,16 +64,7 @@ impl SceneAPI for Runtime {
         path_hash: u64,
         path: &str,
     ) -> LoadResult<PreloadedSceneID> {
-        self.preload_scene_at_runtime_hashed(path_hash, path)
-            .map_err(LoadError::Legacy)
-    }
-
-    fn scene_preload_async(&mut self, path: &str) -> PreloadedSceneID {
-        self.preload_scene_async_at_runtime_hashed(Self::scene_source_hash(path), path)
-    }
-
-    fn scene_preload_async_hashed(&mut self, path_hash: u64, path: &str) -> PreloadedSceneID {
-        self.preload_scene_async_at_runtime_hashed(path_hash, path)
+        Ok(self.preload_scene_async_at_runtime_hashed(path_hash, path))
     }
 
     fn scene_preload_ready(&self, id: PreloadedSceneID) -> bool {
@@ -87,6 +81,13 @@ impl SceneAPI for Runtime {
     }
 
     fn scene_load_preloaded_typed(&mut self, id: PreloadedSceneID) -> LoadResult<NodeID> {
+        // Still on a worker: wait it out rather than failing. Loading right
+        // after preloading keeps working, it just costs what it always did.
+        if !self.preloaded_scenes.contains_key(&id)
+            && self.preloaded_scene_pending_at_runtime(id)
+        {
+            self.wait_for_preloaded_scene_at_runtime(id);
+        }
         if !self.preloaded_scenes.contains_key(&id) {
             return Err(LoadError::InvalidHandle {
                 kind: "preloaded scene",

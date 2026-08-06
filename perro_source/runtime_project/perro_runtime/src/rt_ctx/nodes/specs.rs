@@ -157,7 +157,11 @@ impl Runtime {
             return Vec::new();
         }
         for scene in &collection.scenes {
-            if self.preload_scene_at_runtime(scene.path.as_ref()).is_err() {
+            // Spawned in this same call, so it has to be ready on return.
+            if self
+                .preload_scene_blocking_at_runtime(scene.path.as_ref())
+                .is_err()
+            {
                 return Vec::new();
             }
         }
