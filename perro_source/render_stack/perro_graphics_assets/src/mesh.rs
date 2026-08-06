@@ -8,7 +8,7 @@ use perro_asset_formats::pmesh::{
     MAX_COMPRESSED_BYTES as PMESH_MAX_COMPRESSED_BYTES, MAX_RAW_BYTES as PMESH_MAX_RAW_BYTES,
     VERSION as PMESH_VERSION, VERSION_V2 as PMESH_VERSION_V2,
 };
-use perro_io::{decompress_zlib_limited, load_asset};
+use perro_io::{decompress_zlib_limited, load_asset_cow};
 use perro_meshlets::{
     DEFAULT_LOD_TARGET_RATIOS, LodSurfaceRange, LodVertex, pack_meshlets_from_positions,
 };
@@ -347,11 +347,11 @@ fn mesh3d_from_decoded(decoded: DecodedMesh) -> Mesh3D {
 fn load_mesh_from_asset_source(source: &str) -> Option<DecodedMesh> {
     let (path, fragment) = split_source_fragment(source);
     if path.ends_with(".pmesh") {
-        let bytes = load_asset(path).ok()?;
+        let bytes = load_asset_cow(path).ok()?;
         decode_pmesh(&bytes)
     } else if path.ends_with(".glb") || path.ends_with(".gltf") {
         let mesh_index = parse_fragment_index(fragment, "mesh").unwrap_or(0);
-        let bytes = load_asset(path).ok()?;
+        let bytes = load_asset_cow(path).ok()?;
         decode_gltf_mesh(&bytes, mesh_index as usize)
     } else {
         None

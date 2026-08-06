@@ -1,4 +1,4 @@
-use perro_io::load_asset;
+use perro_io::{load_asset, load_asset_cow};
 use perro_render_bridge::{
     CustomMaterial3D, CustomMaterialImage3D, CustomMaterialLighting3D, CustomMaterialParam3D,
     CustomMaterialParamValue3D, HandDrawnMaterial3D, MAX_VERTEX_MODIFIERS, Material3D,
@@ -64,7 +64,7 @@ pub fn load_from_bytes(bytes: &[u8]) -> Option<Material3D> {
 }
 
 fn load_gltf_material(path: &str, fragment: Option<&str>) -> Option<Material3D> {
-    let bytes = load_asset(path).ok()?;
+    let bytes = load_asset_cow(path).ok()?;
     load_gltf_material_from_bytes(&bytes, fragment)
 }
 

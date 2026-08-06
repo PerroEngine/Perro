@@ -11,7 +11,7 @@ use perro_asset_formats::pskel::{
     VERSION_2D as PSKEL_VERSION_2D,
 };
 use perro_ids::{parse_hashed_source_uri, string_to_u64};
-use perro_io::{decompress_zlib, load_asset};
+use perro_io::{decompress_zlib, load_asset, load_asset_cow};
 use perro_nodes::{skeleton_2d::Bone2D, skeleton_3d::Bone3D};
 use perro_resource_api::sub_apis::SkeletonAPI;
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
@@ -255,7 +255,7 @@ fn skeleton_source_hash(source: &str) -> u64 {
 
 fn load_bones_3d_dynamic(source: &str) -> Option<Vec<Bone3D>> {
     if source.ends_with(".pskel") || source.ends_with(".pskel3d") {
-        let bytes = load_asset(source).ok()?;
+        let bytes = load_asset_cow(source).ok()?;
         if bytes.starts_with(PSKEL_MAGIC) {
             return decode_pskel(&bytes).ok();
         }
@@ -266,7 +266,7 @@ fn load_bones_3d_dynamic(source: &str) -> Option<Vec<Bone3D>> {
     }
 
     if let Some((base_path, skin_index)) = split_gltf_skin_source(source) {
-        let bytes = load_asset(base_path).ok()?;
+        let bytes = load_asset_cow(base_path).ok()?;
         return load_bones_from_gltf(&bytes, skin_index).ok();
     }
 

@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     cell::RefCell,
     collections::HashMap,
     fs::{self, File},
@@ -506,7 +507,9 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
         Some(ProjectRoot::PerroAssets { .. }) => {
             if let Some(stripped) = path.strip_prefix("res://") {
                 if is_static_binary_path(stripped) {
-                    ResolvedPath::StaticBinary(format!("res://{}", stripped))
+                    // `path` already reads `res://<stripped>`: rebuilding it costs
+                    // a format pass for an identical string.
+                    ResolvedPath::StaticBinary(path.to_string())
                 } else {
                     ResolvedPath::PerroAssets(format!("res/{}", stripped))
                 }
@@ -518,10 +521,57 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
     }
 }
 
-/// Load an asset fully into memory
+/// Load an asset fully into memory.
+///
+/// Prefer [`load_asset_cow`] when the caller only reads the bytes: static
+/// builds hand back the embedded slice instead of copying it.
 pub fn load_asset(path: &str) -> io::Result<Vec<u8>> {
+    load_asset_cow(path).map(Cow::into_owned)
+}
+
+/// Load an asset, borrowing embedded bytes when the build embeds them.
+///
+/// Static (release) builds keep every binary asset in `.rodata`, so the copy
+/// [`load_asset`] makes is pure waste for read-only consumers. Disk, archive
+/// and compressed-font sources still return owned bytes.
+pub fn load_asset_cow(path: &str) -> io::Result<Cow<'static, [u8]>> {
     validate_virtual_asset_path(path)?;
-    match resolve_path(path) {
+    // Static-binary fast path: no resolved-path String, no root Arc bump, and
+    // one lock acquisition instead of two.
+    if let Some(result) = try_static_binary_slice(path) {
+        return result;
+    }
+    load_resolved(resolve_path(path)).map(Cow::Owned)
+}
+
+/// Borrow embedded bytes for `res://` static-binary assets, or `None` when the
+/// slow resolve path owns the lookup (disk root, archive entry, demo filter).
+fn try_static_binary_slice(path: &str) -> Option<io::Result<Cow<'static, [u8]>>> {
+    let relative = path.strip_prefix("res://")?;
+    if !is_static_binary_path(relative) {
+        return None;
+    }
+    let lookups = {
+        let state = PROJECT_ASSET_STATE
+            .read()
+            .expect("required value must be present");
+        if state.demo {
+            // Let `resolve_path` own exclusion so the error text stays single-sourced.
+            return None;
+        }
+        match state.root.as_deref() {
+            Some(ProjectRoot::PerroAssets {
+                static_resource_lookups,
+                ..
+            }) => *static_resource_lookups,
+            _ => return None,
+        }
+    };
+    Some(static_resource_slice(lookups, path))
+}
+
+fn load_resolved(resolved: ResolvedPath) -> io::Result<Vec<u8>> {
+    match resolved {
         ResolvedPath::Excluded(path) => Err(io::Error::new(
             io::ErrorKind::NotFound,
             format!("asset `{path}` excluded from demo"),
@@ -705,6 +755,18 @@ pub fn decode_static_font(bytes: &[u8]) -> io::Result<Vec<u8>> {
     if !bytes.starts_with(b"PFONT") {
         return Ok(bytes.to_vec());
     }
+    decode_packed_font(bytes)
+}
+
+/// `decode_static_font` that keeps uncompressed font bytes borrowed.
+fn decode_static_font_cow(bytes: &'static [u8]) -> io::Result<Cow<'static, [u8]>> {
+    if !bytes.starts_with(b"PFONT") {
+        return Ok(Cow::Borrowed(bytes));
+    }
+    decode_packed_font(bytes).map(Cow::Owned)
+}
+
+fn decode_packed_font(bytes: &[u8]) -> io::Result<Vec<u8>> {
     let raw_len = u32::from_le_bytes(
         bytes
             .get(5..9)
@@ -758,6 +820,13 @@ fn path_extension(path: &str) -> &str {
 }
 
 fn load_static_resource_binary(lookups: StaticResourceLookups, path: &str) -> io::Result<Vec<u8>> {
+    static_resource_slice(lookups, path).map(Cow::into_owned)
+}
+
+fn static_resource_slice(
+    lookups: StaticResourceLookups,
+    path: &str,
+) -> io::Result<Cow<'static, [u8]>> {
     let hash = perro_ids::string_to_u64(path);
     let ext = path_extension(path);
 
@@ -797,9 +866,9 @@ fn load_static_resource_binary(lookups: StaticResourceLookups, path: &str) -> io
         ));
     }
     if ext_in(ext, &FONT_EXTS) {
-        return decode_static_font(bytes);
+        return decode_static_font_cow(bytes);
     }
-    Ok(bytes.to_vec())
+    Ok(Cow::Borrowed(bytes))
 }
 
 fn is_static_binary_path(path: &str) -> bool {

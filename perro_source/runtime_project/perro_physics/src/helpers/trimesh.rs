@@ -92,7 +92,7 @@ pub fn load_trimesh_from_source(
         0
     };
 
-    let bytes = load_asset(path).ok()?;
+    let bytes = load_asset_cow(path).ok()?;
     if path.ends_with(".pmesh") {
         let loaded = decode_pmesh_trimesh(&bytes, sx, sy, sz)?;
         let simplified = simplify_trimesh_data(loaded.0, loaded.1)?;

@@ -36,7 +36,7 @@ impl NavMeshAPI for RuntimeResourceApi {
         {
             return id;
         }
-        let Ok(bytes) = perro_io::load_asset(source.as_ref()) else {
+        let Ok(bytes) = perro_io::load_asset_cow(source.as_ref()) else {
             return NavMeshID::nil();
         };
         let Ok(navmesh) = parse_pnav_resource_bytes(&bytes) else {

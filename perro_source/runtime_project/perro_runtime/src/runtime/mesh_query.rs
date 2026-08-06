@@ -843,7 +843,7 @@ impl Runtime {
             if loaded.is_none() {
                 let (path, fragment) = split_source_fragment(source);
                 let mesh_index = parse_fragment_index(fragment, "mesh").unwrap_or(0);
-                let bytes = perro_io::load_asset(path).ok()?;
+                let bytes = perro_io::load_asset_cow(path).ok()?;
                 if path.ends_with(".glb") || path.ends_with(".gltf") {
                     loaded = decode_gltf_query_mesh(&bytes, mesh_index);
                 } else if path.ends_with(".pmesh") {

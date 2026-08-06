@@ -5,7 +5,7 @@ use perro_asset_formats::ptex::{
     MAX_COMPRESSED_BYTES as PTEX_MAX_COMPRESSED_BYTES, MAX_RAW_BYTES as PTEX_MAX_RAW_BYTES,
     VERSION as PTEX_VERSION,
 };
-use perro_io::{decompress_zlib_limited, load_asset};
+use perro_io::{decompress_zlib_limited, load_asset_cow};
 use std::{
     collections::HashMap,
     hash::{Hash, Hasher},
@@ -78,7 +78,7 @@ pub fn load_texture_rgba(source: &str) -> Option<(Vec<u8>, u32, u32)> {
         return decode_gltf_texture(path, texture_index as usize);
     }
 
-    let bytes = load_asset(source).ok()?;
+    let bytes = load_asset_cow(source).ok()?;
     if source.ends_with(".ptex") {
         return decode_ptex(&bytes);
     }
@@ -99,7 +99,7 @@ pub fn load_texture_rgba_arc(source: &str) -> Option<(Arc<[u8]>, u32, u32)> {
             .map(|(rgba, width, height)| (rgba.into(), width, height));
     }
 
-    let bytes = load_asset(source).ok()?;
+    let bytes = load_asset_cow(source).ok()?;
     if source.ends_with(".ptex") {
         return decode_ptex(&bytes).map(|(rgba, width, height)| (rgba.into(), width, height));
     }
@@ -532,7 +532,7 @@ fn size_component(value: f32) -> Option<u32> {
 }
 
 pub fn decode_gltf_texture(source_path: &str, texture_index: usize) -> Option<(Vec<u8>, u32, u32)> {
-    let bytes = load_asset(source_path).ok()?;
+    let bytes = load_asset_cow(source_path).ok()?;
     // this runs once per material texture slot on the same .glb, so decode
     // ONLY the target image; import_slice would re-decode every embedded
     // image on each call.

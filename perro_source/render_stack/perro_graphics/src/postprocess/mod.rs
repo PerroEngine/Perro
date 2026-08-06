@@ -4,7 +4,7 @@ use crate::backend::{StaticShaderLookup, StaticTextureLookup};
 use crate::postprocess::shaders::{build_post_shader, create_builtin_shader_module};
 use bytemuck::{Pod, Zeroable};
 use perro_graphics_assets::{decode_image_rgba, decode_ptex};
-use perro_io::load_asset;
+use perro_io::{load_asset, load_asset_cow};
 use perro_render_bridge::{Camera3DState, CameraProjectionState};
 use perro_structs::{CustomPostParam, CustomPostParamValue, PostProcessEffect};
 use std::collections::HashMap;

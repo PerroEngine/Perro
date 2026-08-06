@@ -362,7 +362,7 @@ fn decode_texture_source_rgba_gated(
     // plain image/ptex/svg file: read the encoded bytes first (IO outside the
     // gate), then decode under a permit. decode_image_rgba_arc sniffs PTEX
     // magic and svg content just like load_texture_rgba does.
-    let bytes = perro_io::load_asset(source).ok()?;
+    let bytes = perro_io::load_asset_cow(source).ok()?;
     let _permit = DecodePermit::acquire();
     let (rgba, width, height) = decode_image_rgba_arc(&bytes)?;
     Some(DecodedTextureRgba {

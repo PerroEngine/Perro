@@ -1,5 +1,7 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use perro_io::asset_io::{ProjectRoot, StaticResourceLookups, load_asset, set_project_root};
+use perro_io::asset_io::{
+    ProjectRoot, StaticResourceLookups, load_asset, load_asset_cow, set_project_root,
+};
 
 const EMPTY_ARCHIVE: &[u8] = &[
     b'P', b'R', b'A', b'1', 1, 0, 0, 0, 0, 0, 0, 0, 20, 0, 0, 0, 0, 0, 0, 0,
@@ -213,6 +215,27 @@ fn bench_static_asset_load(c: &mut Criterion) {
     c.bench_function("audio_load_static_vec", |b| {
         b.iter(|| {
             black_box(load_asset(black_box(AUDIO_PATH)).expect("test setup/result must succeed"))
+        })
+    });
+
+    // Borrowed variants: same resolve work, no per-load copy of the embedded blob.
+    c.bench_function("texture_load_static_cow", |b| {
+        b.iter(|| {
+            black_box(
+                load_asset_cow(black_box(TEXTURE_PATH)).expect("test setup/result must succeed"),
+            )
+        })
+    });
+    c.bench_function("mesh_load_static_cow", |b| {
+        b.iter(|| {
+            black_box(load_asset_cow(black_box(MESH_PATH)).expect("test setup/result must succeed"))
+        })
+    });
+    c.bench_function("audio_load_static_cow", |b| {
+        b.iter(|| {
+            black_box(
+                load_asset_cow(black_box(AUDIO_PATH)).expect("test setup/result must succeed"),
+            )
         })
     });
 }

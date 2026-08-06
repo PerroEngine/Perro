@@ -248,7 +248,7 @@ pub(super) fn load_post_texture_rgba(
             return decode_image_rgba(bytes);
         }
     }
-    let bytes = load_asset(source).ok()?;
+    let bytes = load_asset_cow(source).ok()?;
     decode_image_rgba(&bytes)
 }
 
