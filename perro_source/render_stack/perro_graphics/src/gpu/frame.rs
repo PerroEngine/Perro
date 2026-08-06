@@ -4,6 +4,9 @@ impl Gpu {
     pub fn render(&mut self, frame: RenderFrame<'_>) -> RenderGpuTiming {
         let total_start = Instant::now();
         let mut timing = RenderGpuTiming::default();
+        // Fresh texture-upload budget per frame: a reveal burst spreads over
+        // frames instead of paying every write + mip chain in this one.
+        self.shared_textures.begin_frame_uploads();
         self.poll_camera_image_saves();
         if let Some(timer) = self.gpu_timer.as_mut() {
             timer.poll(&self.device);

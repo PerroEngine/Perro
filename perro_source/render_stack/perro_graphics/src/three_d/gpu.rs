@@ -215,7 +215,7 @@ use texture_cache::{
     CachedMaterialTexture, CachedMaterialTextureInput, MaterialTextureColorSpace,
     cached_material_texture_from_shared, create_cached_material_texture,
     create_external_material_texture, create_material_texture_bind_group,
-    material_shared_texture_key,
+    material_shared_texture_key, try_create_cached_material_texture,
 };
 
 #[path = "gpu/asset_bridge.rs"]

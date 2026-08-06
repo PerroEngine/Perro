@@ -104,6 +104,8 @@ pub(super) fn cached_material_texture_from_shared(
     }
 }
 
+/// Unbudgeted upload. Reserved for the tiny fallback textures every material
+/// binds against: deferring those would leave slots with nothing to sample.
 pub(super) fn create_cached_material_texture(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -114,6 +116,26 @@ pub(super) fn create_cached_material_texture(
     let shared =
         shared_textures.ensure_rgba(device, queue, key, &input.rgba, input.width, input.height);
     cached_material_texture_from_shared(device, shared, input.source, input.filter)
+}
+
+/// `create_cached_material_texture` under the per-frame upload budget. `None`
+/// means the slot keeps its current binding (the fallback on a first load) and
+/// retries next frame.
+pub(super) fn try_create_cached_material_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    shared_textures: &mut SharedTextureStore,
+    input: CachedMaterialTextureInput,
+) -> Option<CachedMaterialTexture> {
+    let key = material_shared_texture_key(&input.source, input.color_space, input.filter);
+    let shared = shared_textures
+        .try_ensure_rgba(device, queue, key, &input.rgba, input.width, input.height)?;
+    Some(cached_material_texture_from_shared(
+        device,
+        shared,
+        input.source,
+        input.filter,
+    ))
 }
 
 pub(super) fn create_external_material_texture(

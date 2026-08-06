@@ -1037,14 +1037,19 @@ impl Gpu2D {
                         &redecoded
                     }
                 };
-                shared_textures.ensure_rgba(
+                // Over the frame's upload budget: leave the sprite untextured
+                // this frame (same path as a not-yet-decoded source) + retry.
+                let Some(shared) = shared_textures.try_ensure_rgba(
                     device,
                     queue,
                     key,
                     &decoded.rgba,
                     decoded.width,
                     decoded.height,
-                )
+                ) else {
+                    return false;
+                };
+                shared
             }
         };
         let view = shared.view.clone();

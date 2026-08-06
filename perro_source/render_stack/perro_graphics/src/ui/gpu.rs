@@ -1421,14 +1421,19 @@ impl GpuUi {
                         &redecoded
                     }
                 };
-                shared_textures.ensure_rgba(
+                // Over the frame's upload budget: skip this image for now, the
+                // next frame retries (same path as a source that failed decode).
+                let Some(shared) = shared_textures.try_ensure_rgba(
                     device,
                     queue,
                     key,
                     &decoded.rgba,
                     decoded.width,
                     decoded.height,
-                )
+                ) else {
+                    return false;
+                };
+                shared
             }
         };
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {

@@ -18,6 +18,16 @@ use std::sync::Arc;
 /// before the periodic sweep evicts it.
 const SHARED_TEXTURE_EVICT_SWEEPS: u32 = 2;
 
+/// Texel bytes (base level + generated mips) one frame may upload before the
+/// store defers further first-time uploads to later frames.
+///
+/// Decode and file IO already fan out across the rayon pool, but every decoded
+/// texture still pays its `write_texture` + CPU mip chain on the render thread
+/// at first use. A scene that reveals hundreds of textures at once paid that
+/// whole burst in one frame; the budget spreads it while leaving normal loads
+/// (a handful of textures, or one big one) same-frame.
+const UPLOAD_BUDGET_BYTES_PER_FRAME: usize = 32 * 1024 * 1024;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum SharedTextureColorSpace {
     Srgb,
@@ -80,11 +90,61 @@ struct SharedTextureSlot {
 #[derive(Default)]
 pub(crate) struct SharedTextureStore {
     entries: AHashMap<SharedTextureKey, SharedTextureSlot>,
+    upload_bytes_this_frame: usize,
+    deferred_uploads: bool,
+}
+
+/// Texel bytes one upload costs: base level, plus ~1/3 again when the key
+/// carries a mip chain (sum of the quarter-size levels).
+fn upload_cost_bytes(mips: bool, width: u32, height: u32) -> usize {
+    let base = width.max(1) as usize * height.max(1) as usize * 4;
+    if mips { base + base / 3 } else { base }
 }
 
 impl SharedTextureStore {
     pub(crate) fn get(&self, key: &SharedTextureKey) -> Option<Arc<SharedGpuTexture>> {
         self.entries.get(key).map(|slot| slot.texture.clone())
+    }
+
+    /// Reset the per-frame upload budget. Called once per rendered frame.
+    pub(crate) fn begin_frame_uploads(&mut self) {
+        self.upload_bytes_this_frame = 0;
+        self.deferred_uploads = false;
+    }
+
+    /// Whether an upload was pushed to a later frame, so the caller keeps the
+    /// frame pump awake until the backlog drains (an otherwise-static scene
+    /// would never ask for the frame that finishes its textures).
+    pub(crate) fn deferred_uploads_pending(&self) -> bool {
+        self.deferred_uploads
+    }
+
+    /// [`Self::ensure_rgba`] under the per-frame upload budget: `None` means
+    /// "not this frame", and the caller falls through its existing
+    /// texture-not-ready path and retries next frame.
+    ///
+    /// The first upload of a frame always goes through, so one texture larger
+    /// than the whole budget can never stall forever.
+    pub(crate) fn try_ensure_rgba(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        key: SharedTextureKey,
+        rgba: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Option<Arc<SharedGpuTexture>> {
+        if let Some(existing) = self.get(&key) {
+            return Some(existing);
+        }
+        let cost = upload_cost_bytes(key.mips, width, height);
+        if self.upload_bytes_this_frame > 0
+            && self.upload_bytes_this_frame.saturating_add(cost) > UPLOAD_BUDGET_BYTES_PER_FRAME
+        {
+            self.deferred_uploads = true;
+            return None;
+        }
+        Some(self.ensure_rgba(device, queue, key, rgba, width, height))
     }
 
     /// Upload-or-reuse. On a hit the decoded bytes are ignored (the resident
@@ -104,6 +164,9 @@ impl SharedTextureStore {
         }
         let width = width.max(1);
         let height = height.max(1);
+        self.upload_bytes_this_frame = self
+            .upload_bytes_this_frame
+            .saturating_add(upload_cost_bytes(key.mips, width, height));
         let base_len = width as usize * height as usize * 4;
         let valid = rgba.len() >= base_len;
         // Mip contents depend only on the mips bit (mag/min/mip filtering lives
@@ -352,6 +415,91 @@ mod tests {
         assert!(store.get(&held_key).is_some());
         assert!(store.get(&dropped_key).is_none());
         drop(held);
+    }
+
+    #[test]
+    fn upload_budget_defers_after_first_frame_burst() {
+        let Some((device, queue)) = test_device() else {
+            eprintln!("skip shared texture test: no wgpu adapter");
+            return;
+        };
+        let mut store = SharedTextureStore::default();
+        // 2048^2 rgba = 16 MiB base; two fit the 32 MiB frame budget, the third
+        // (mips push each past 16 MiB) does not.
+        let dim = 2048u32;
+        let rgba = vec![0u8; dim as usize * dim as usize * 4];
+        store.begin_frame_uploads();
+        for index in 0..2 {
+            assert!(
+                store
+                    .try_ensure_rgba(
+                        &device,
+                        &queue,
+                        key(&format!("res://budget{index}.png"), TextureFilterMode::Linear),
+                        &rgba,
+                        dim,
+                        dim,
+                    )
+                    .is_some(),
+                "upload {index} must fit the frame budget"
+            );
+        }
+        assert!(
+            store
+                .try_ensure_rgba(
+                    &device,
+                    &queue,
+                    key("res://budget_over.png", TextureFilterMode::Linear),
+                    &rgba,
+                    dim,
+                    dim,
+                )
+                .is_none()
+        );
+        assert!(store.deferred_uploads_pending());
+
+        // Next frame resets the budget, so the deferred upload lands.
+        store.begin_frame_uploads();
+        assert!(!store.deferred_uploads_pending());
+        assert!(
+            store
+                .try_ensure_rgba(
+                    &device,
+                    &queue,
+                    key("res://budget_over.png", TextureFilterMode::Linear),
+                    &rgba,
+                    dim,
+                    dim,
+                )
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn upload_budget_never_stalls_a_single_oversized_texture() {
+        let Some((device, queue)) = test_device() else {
+            eprintln!("skip shared texture test: no wgpu adapter");
+            return;
+        };
+        let mut store = SharedTextureStore::default();
+        // 4096^2 rgba = 64 MiB: bigger than the whole frame budget on its own.
+        let dim = 4096u32;
+        let rgba = vec![0u8; dim as usize * dim as usize * 4];
+        store.begin_frame_uploads();
+        assert!(
+            store
+                .try_ensure_rgba(
+                    &device,
+                    &queue,
+                    key("res://huge.png", TextureFilterMode::Linear),
+                    &rgba,
+                    dim,
+                    dim,
+                )
+                .is_some(),
+            "first upload of a frame always goes through"
+        );
+        assert!(!store.deferred_uploads_pending());
     }
 
     #[test]

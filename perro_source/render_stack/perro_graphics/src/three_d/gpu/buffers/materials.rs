@@ -344,7 +344,7 @@ impl Gpu3D {
             self.evict_material_texture_bind_groups_for_slot(slot);
             return;
         };
-        let cached = create_cached_material_texture(
+        let Some(cached) = try_create_cached_material_texture(
             device,
             queue,
             shared_textures,
@@ -356,7 +356,9 @@ impl Gpu3D {
                 filter,
                 color_space,
             },
-        );
+        ) else {
+            return;
+        };
         self.material_textures.insert(slot, cached);
         self.evict_material_texture_bind_groups_for_slot(slot);
     }
@@ -443,7 +445,9 @@ impl Gpu3D {
                 self.evict_material_texture_bind_groups_for_slot(slot);
                 return;
             };
-        let cached = create_cached_material_texture(
+        // Over the frame's upload budget: keep the current binding + retry next
+        // frame instead of paying every reveal-burst upload in this one.
+        let Some(cached) = try_create_cached_material_texture(
             device,
             queue,
             shared_textures,
@@ -455,7 +459,9 @@ impl Gpu3D {
                 filter,
                 color_space: MaterialTextureColorSpace::Srgb,
             },
-        );
+        ) else {
+            return;
+        };
         self.material_textures.insert(slot, cached);
         self.evict_material_texture_bind_groups_for_slot(slot);
     }

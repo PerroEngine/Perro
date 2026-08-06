@@ -43,6 +43,14 @@ impl Gpu {
         self.three_d.is_some()
     }
 
+    /// Whether the last frame pushed a shared-texture upload to a later frame.
+    /// The frame pump must stay awake while this holds or an otherwise-static
+    /// scene never asks for the frame that finishes its textures.
+    #[inline]
+    pub fn shared_texture_uploads_deferred(&self) -> bool {
+        self.shared_textures.deferred_uploads_pending()
+    }
+
     /// Monotonic count of pipeline sets the main 3D world has compiled, from
     /// both the warm queue and lazy first-draw misses. Callers diff it across a
     /// frame; camera-stream worlds are deliberately excluded (they stay lazy by
