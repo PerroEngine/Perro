@@ -19,7 +19,7 @@ use std::fs;
 use std::io::{self, Write};
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
+use std::sync::Arc;
 #[cfg(feature = "profile")]
 use std::time::{Duration, Instant};
 
@@ -183,7 +183,7 @@ impl Runtime {
         &self,
         path_hash: u64,
         path: &str,
-    ) -> Result<Rc<Scene>, String> {
+    ) -> Result<Arc<Scene>, String> {
         if let Some(id) = self.preloaded_scene_paths.get(&path_hash).copied()
             && let Some(scene) = self.preloaded_scenes.get(&id)
         {
@@ -199,7 +199,7 @@ impl Runtime {
                     .project()
                     .and_then(|project| project.static_scene_lookup);
                 if let Some(lookup) = static_lookup {
-                    Ok(Rc::new(lookup(path_hash).clone()))
+                    Ok(Arc::new(lookup(path_hash).clone()))
                 } else {
                     self.get_or_load_dynamic_scene_cached(path)
                 }
@@ -207,19 +207,19 @@ impl Runtime {
         }
     }
 
-    fn get_or_load_dynamic_scene_cached(&self, path: &str) -> Result<Rc<Scene>, String> {
+    fn get_or_load_dynamic_scene_cached(&self, path: &str) -> Result<Arc<Scene>, String> {
         if let Some(scene) = self.scene_cache.borrow_mut().get(path) {
             return Ok(scene);
         }
         let (scene, _) = load_runtime_scene_from_disk(path)?;
-        let scene = Rc::new(scene);
+        let scene = Arc::new(scene);
         self.scene_cache
             .borrow_mut()
             .insert(path.to_string(), scene.clone());
         Ok(scene)
     }
 
-    fn resolve_scene_by_path(&self, path: &str) -> Result<Rc<Scene>, String> {
+    fn resolve_scene_by_path(&self, path: &str) -> Result<Arc<Scene>, String> {
         self.resolve_scene_by_hash_and_path(Self::source_hash(path), path)
     }
 
@@ -287,7 +287,7 @@ impl Runtime {
     fn prepare_scene_with_project_styles(
         &self,
         scene: &Scene,
-        load_scene: &dyn Fn(&str) -> Result<Rc<Scene>, String>,
+        load_scene: &dyn Fn(&str) -> Result<Arc<Scene>, String>,
     ) -> Result<prepare::PreparedScene, String> {
         let static_ui_style_lookup = self
             .project()
@@ -299,11 +299,11 @@ impl Runtime {
         &self,
         path: &str,
         scene: &Scene,
-    ) -> Result<Rc<prepare::PreparedScene>, String> {
+    ) -> Result<Arc<prepare::PreparedScene>, String> {
         if let Some(prepared) = self.prepared_scene_cache.borrow_mut().get(path) {
             return Ok(prepared);
         }
-        let prepared = Rc::new(
+        let prepared = Arc::new(
             self.prepare_scene_with_project_styles(scene, &|import_path| {
                 self.resolve_scene_by_path(import_path)
             })?,
@@ -649,7 +649,7 @@ impl Runtime {
                 }
                 let prepared = self.prepare_scene_with_project_styles(&runtime_scene, &|path| {
                     let (scene, _) = load_runtime_scene_from_disk(path)?;
-                    Ok(Rc::new(scene))
+                    Ok(Arc::new(scene))
                 })?;
                 #[cfg(feature = "profile")]
                 let node_insert_start = Instant::now();
@@ -689,7 +689,7 @@ impl Runtime {
                     let prepared =
                         self.prepare_scene_with_project_styles(&runtime_scene, &|path| {
                             let (scene, _) = load_runtime_scene_from_disk(path)?;
-                            Ok(Rc::new(scene))
+                            Ok(Arc::new(scene))
                         })?;
                     #[cfg(feature = "profile")]
                     let node_insert_start = Instant::now();

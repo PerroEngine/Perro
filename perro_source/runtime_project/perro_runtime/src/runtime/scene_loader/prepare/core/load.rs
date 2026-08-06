@@ -127,14 +127,14 @@ pub(super) fn resolve_scene_value_dlc_self(
 #[cfg(test)]
 pub(in super::super) fn prepare_scene_with_loader(
     scene: &Scene,
-    load_scene: &dyn Fn(&str) -> Result<Rc<Scene>, String>,
+    load_scene: &dyn Fn(&str) -> Result<Arc<Scene>, String>,
 ) -> Result<PreparedScene, String> {
     prepare_scene_with_loader_and_styles(scene, load_scene, None)
 }
 
 pub(in super::super) fn prepare_scene_with_loader_and_styles(
     scene: &Scene,
-    load_scene: &dyn Fn(&str) -> Result<Rc<Scene>, String>,
+    load_scene: &dyn Fn(&str) -> Result<Arc<Scene>, String>,
     static_ui_style_lookup: Option<StaticUiStyleLookup>,
 ) -> Result<PreparedScene, String> {
     let mut include_stack = HashSet::new();
@@ -149,7 +149,7 @@ pub(in super::super) fn prepare_scene_with_loader_and_styles(
 pub(super) fn prepare_scene_with_stack(
     scene: &Scene,
     include_stack: &mut HashSet<String>,
-    load_scene: &dyn Fn(&str) -> Result<Rc<Scene>, String>,
+    load_scene: &dyn Fn(&str) -> Result<Arc<Scene>, String>,
     static_ui_style_lookup: Option<StaticUiStyleLookup>,
 ) -> Result<PreparedScene, String> {
     if scene.nodes.iter().all(|entry| entry.root_of.is_none()) {

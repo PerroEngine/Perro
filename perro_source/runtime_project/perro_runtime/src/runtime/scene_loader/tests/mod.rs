@@ -300,7 +300,7 @@ fn initial_route_scene_uses_match_or_root_fallback() {
         ],
     };
     let mut runtime = Runtime::new();
-    runtime.project = Some(Rc::new(project));
+    runtime.project = Some(std::rc::Rc::new(project));
 
     assert_eq!(
         runtime.initial_route_scene_for_href(Some("/docs?x=1#y")),
@@ -360,7 +360,7 @@ fn apply_route_change_swaps_scene_root() {
     };
     project.static_scene_lookup = Some(test_lookup);
     let mut runtime = Runtime::new();
-    runtime.project = Some(Rc::new(project));
+    runtime.project = Some(std::rc::Rc::new(project));
     runtime.provider_mode = ProviderMode::Static;
 
     runtime.active_route_root = Some(runtime.load_scene_at_runtime("100").expect("load home"));
@@ -407,7 +407,7 @@ fn failed_route_change_keeps_current_scene_and_route() {
     };
     project.static_scene_lookup = Some(test_lookup);
     let mut runtime = Runtime::new();
-    runtime.project = Some(Rc::new(project));
+    runtime.project = Some(std::rc::Rc::new(project));
     runtime.provider_mode = ProviderMode::Static;
 
     let home = runtime.load_scene_at_runtime("100").expect("load home");
@@ -507,7 +507,7 @@ fn loaded_scene_root_removes_hidden_owner_and_sibling_roots() {
         )
         .parse_scene();
     let mut runtime = Runtime::new();
-    runtime.project = Some(Rc::new(RuntimeProject::new("Scene Test", ".")));
+    runtime.project = Some(std::rc::Rc::new(RuntimeProject::new("Scene Test", ".")));
 
     let root = runtime
         .load_scene_doc_at_runtime(scene)
@@ -526,11 +526,11 @@ fn preload_compiles_once_and_spawns_distinct_instances() {
     let scene = Parser::new("$root = @root\n\n[root]\n[Node]\n[/Node]\n[/root]\n").parse_scene();
     let path = "res://cached_spawn.scn";
     let mut runtime = Runtime::new();
-    runtime.project = Some(Rc::new(RuntimeProject::new("Scene Test", ".")));
+    runtime.project = Some(std::rc::Rc::new(RuntimeProject::new("Scene Test", ".")));
     runtime
         .scene_cache
         .borrow_mut()
-        .insert(path.to_string(), Rc::new(scene));
+        .insert(path.to_string(), std::sync::Arc::new(scene));
 
     let id = runtime
         .preload_scene_at_runtime(path)
@@ -668,7 +668,7 @@ fn static_boot_root_of_loads_dlc_scene_from_mount() {
     project.static_scene_lookup = Some(test_lookup);
 
     let mut runtime = Runtime::new();
-    runtime.project = Some(Rc::new(project));
+    runtime.project = Some(std::rc::Rc::new(project));
     runtime.provider_mode = ProviderMode::Static;
 
     let result = runtime.load_boot_scene();

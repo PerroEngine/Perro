@@ -5,7 +5,7 @@ pub(super) struct PrepareSceneCtx<'a> {
     pub(super) scripts: &'a mut Vec<PendingScript>,
     pub(super) next_key: &'a mut u32,
     pub(super) include_stack: &'a mut HashSet<String>,
-    pub(super) load_scene: &'a dyn Fn(&str) -> Result<Rc<Scene>, String>,
+    pub(super) load_scene: &'a dyn Fn(&str) -> Result<Arc<Scene>, String>,
     pub(super) static_ui_style_lookup: Option<StaticUiStyleLookup>,
     pub(super) scratch: ScenePrepareScratch,
 }

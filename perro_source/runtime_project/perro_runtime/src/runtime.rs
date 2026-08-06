@@ -157,7 +157,7 @@ pub(crate) const SCENE_CACHE_MAX_ENTRIES: usize = 32;
 /// ([`SCENE_CACHE_MAX_ENTRIES`]). `get` touches recency, so scenes cycled
 /// through repeatedly (demo hub) stay resident while one-off loads age out.
 pub(crate) struct ScenePathLruCache<T> {
-    map: AHashMap<String, Rc<T>>,
+    map: AHashMap<String, Arc<T>>,
     /// LRU order, most-recently-used at the back.
     order: std::collections::VecDeque<String>,
 }
@@ -172,13 +172,13 @@ impl<T> Default for ScenePathLruCache<T> {
 }
 
 impl<T> ScenePathLruCache<T> {
-    pub(crate) fn get(&mut self, path: &str) -> Option<Rc<T>> {
+    pub(crate) fn get(&mut self, path: &str) -> Option<Arc<T>> {
         let value = self.map.get(path).cloned()?;
         self.touch(path);
         Some(value)
     }
 
-    pub(crate) fn insert(&mut self, path: String, value: Rc<T>) {
+    pub(crate) fn insert(&mut self, path: String, value: Arc<T>) {
         if self.map.insert(path.clone(), value).is_some() {
             self.touch(&path);
         } else {
@@ -192,7 +192,7 @@ impl<T> ScenePathLruCache<T> {
         }
     }
 
-    pub(crate) fn remove(&mut self, path: &str) -> Option<Rc<T>> {
+    pub(crate) fn remove(&mut self, path: &str) -> Option<Arc<T>> {
         let removed = self.map.remove(path)?;
         if let Some(index) = self.order.iter().position(|entry| entry == path) {
             self.order.remove(index);
@@ -268,9 +268,9 @@ pub struct Runtime {
     pub(crate) scene_cache: RefCell<ScenePathLruCache<Scene>>,
     pub(crate) prepared_scene_cache:
         RefCell<ScenePathLruCache<scene_loader::prepare::PreparedScene>>,
-    pub(crate) preloaded_scenes: AHashMap<PreloadedSceneID, Rc<Scene>>,
+    pub(crate) preloaded_scenes: AHashMap<PreloadedSceneID, Arc<Scene>>,
     pub(crate) preloaded_prepared_scenes:
-        AHashMap<PreloadedSceneID, Rc<scene_loader::prepare::PreparedScene>>,
+        AHashMap<PreloadedSceneID, Arc<scene_loader::prepare::PreparedScene>>,
     pub(crate) preloaded_scene_paths: AHashMap<u64, PreloadedSceneID>,
     pub(crate) preloaded_scene_reverse_paths: AHashMap<PreloadedSceneID, String>,
     pub(crate) next_preloaded_scene_id: u64,

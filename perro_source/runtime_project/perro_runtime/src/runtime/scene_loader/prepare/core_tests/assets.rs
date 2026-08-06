@@ -27,7 +27,7 @@ mod assets {
         .parse_scene();
 
         let prepared = prepare_scene_with_loader(&host, &|path| match path {
-            "res://base.scn" => Ok(std::rc::Rc::new(base.clone())),
+            "res://base.scn" => Ok(std::sync::Arc::new(base.clone())),
             _ => Err(format!("unknown scene path `{path}`")),
         })
         .expect("prepare scene");
