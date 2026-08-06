@@ -213,7 +213,7 @@ impl Gpu {
             shadow_spot = shadow_spot.min(1024);
             shadow_point = shadow_point.min(512);
             eprintln!(
-                "[perro][gfx] low-memory policy=on max_scene=1080p max_msaa=2 ssao=low shadow_atlas={shadow_ray}/{shadow_spot}/{shadow_point}"
+                "[perro][gfx] low-memory policy=on max_scene=1080p msaa=off ssao=low shadow_atlas={shadow_ray}/{shadow_spot}/{shadow_point}"
             );
         }
         crate::three_d::gpu::set_default_shadow_map_sizes(shadow_ray, shadow_spot, shadow_point);
@@ -356,13 +356,25 @@ impl Gpu {
 
         let mut max_supported_sample_count =
             max_supported_msaa_sample_count(&adapter, render_format);
+        // Integrated/virtual adapters are bandwidth-bound, and MSAA is the
+        // worst thing to spend that bandwidth on: it multiplies color + depth
+        // traffic in every pass, pays a resolve, AND locks out the cheap post
+        // AA (FXAA/SMAA/TAA only run at sample_count 1). Drop it to 1 there and
+        // substitute FXAA, which costs a fraction of a ms at 1080p. Only when
+        // no other post AA was requested, so the frame never runs two.
+        let msaa_traded_for_fxaa = constrained_adapter
+            && normalize_sample_count(cfg.smoothing_samples) > 1
+            && !cfg.fxaa
+            && !cfg.smaa
+            && !cfg.taa;
         if constrained_adapter {
-            max_supported_sample_count = max_supported_sample_count.min(2);
+            max_supported_sample_count = 1;
         }
         let sample_count = clamp_supported_sample_count(
             normalize_sample_count(cfg.smoothing_samples),
             max_supported_sample_count,
         );
+        let fxaa_requested = cfg.fxaa || msaa_traded_for_fxaa;
         perro_structs::structs::boot_log::mark("gpu: msaa caps query");
         let msaa_color = create_msaa_color_target(
             &device,
@@ -377,7 +389,7 @@ impl Gpu {
         let mut present = PresentProcessor::new(&device, surface_view_format);
         perro_structs::structs::boot_log::mark("gpu: present processor");
         present.set_output_size(width, height);
-        present.set_fxaa_active(cfg.fxaa && sample_count == 1);
+        present.set_fxaa_active(fxaa_requested && sample_count == 1);
         present.set_smaa_active(cfg.smaa && sample_count == 1);
         present.set_taa_active(cfg.taa && sample_count == 1);
         let camera_stream_tonemap = CameraStreamTonemap::new(&device, render_format);
@@ -407,7 +419,7 @@ impl Gpu {
             max_supported_sample_count,
             sample_count_3d_target: normalize_sample_count(cfg.smoothing_samples_3d),
             sample_count_3d_applied: cfg.smoothing_samples_3d == cfg.smoothing_samples,
-            fxaa_requested: cfg.fxaa,
+            fxaa_requested,
             smaa_requested: cfg.smaa,
             taa_requested: cfg.taa,
             taa_frame_index: 0,
