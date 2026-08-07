@@ -257,18 +257,39 @@ pub fn compile_scripts_with_profile(
     compile_scripts_with_profile_and_demo(project_root, profile, false)
 }
 
-pub fn compile_scripts_with_profile_and_demo(
+/// Runs only the script codegen half: manifest repair + `res/` -> `.perro/scripts/src`.
+///
+/// `perro dev` needs this split out because it builds `scripts` and `dev_runner`
+/// in one cargo invocation, so that both link the same engine units.
+pub fn sync_scripts_for_build(
     project_root: &Path,
-    profile: ScriptsBuildProfile,
     demo: bool,
 ) -> Result<Vec<String>, CompilerError> {
     ensure_source_overrides(project_root)?;
     let cfg = perro_project::load_project_toml_with_demo(project_root, demo)
         .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
-    let copied = {
-        let _exclude_guard = perro_io::walkdir::push_path_exclusions(cfg.demo.relative_patterns());
-        sync_scripts(project_root)?
-    };
+    let _exclude_guard = perro_io::walkdir::push_path_exclusions(cfg.demo.relative_patterns());
+    sync_scripts(project_root)
+}
+
+/// Builds the per-DLC script dylibs. Those crates sit outside the `.perro`
+/// workspace, so they stay a separate cargo invocation.
+pub fn compile_dlc_scripts(
+    project_root: &Path,
+    profile: ScriptsBuildProfile,
+    steam_enabled: bool,
+) -> Result<(), CompilerError> {
+    compile_all_dlc_scripts_with_profile(project_root, profile, steam_enabled)
+}
+
+pub fn compile_scripts_with_profile_and_demo(
+    project_root: &Path,
+    profile: ScriptsBuildProfile,
+    demo: bool,
+) -> Result<Vec<String>, CompilerError> {
+    let copied = sync_scripts_for_build(project_root, demo)?;
+    let cfg = perro_project::load_project_toml_with_demo(project_root, demo)
+        .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
     let scripts_crate = project_root.join(".perro").join("scripts");
     let target_dir = project_root.join("target");
 

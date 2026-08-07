@@ -11,8 +11,8 @@ use crate::{
 };
 use perro_compiler::{
     ProjectBuildOptions, ProjectBuildTarget, ScriptsBuildProfile, WebOutputDir, compile_dlc_bundle,
-    compile_project_bundle, compile_scripts_with_profile, compile_scripts_with_profile_and_demo,
-    compile_universal_macos_project_bundle, sync_scripts,
+    compile_project_bundle, compile_scripts_with_profile, compile_universal_macos_project_bundle,
+    sync_scripts,
 };
 use perro_project::{ensure_source_overrides, load_project_toml_with_demo};
 use perro_scene::Parser;
@@ -256,12 +256,33 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
     update_project_vscode_linked_projects(&project_dir)?;
 
-    let dev_runner_dir = project_dir.join(".perro").join("dev_runner");
+    let workspace_dir = project_dir.join(".perro");
     let target_dir = project_dir.join("target");
-    log_step("Building Dev Runner");
+
+    // Script codegen must land before cargo reads the crate.
+    log_step("Syncing Scripts");
+    perro_compiler::sync_scripts_for_build(&project_dir, demo).map_err(|err| {
+        format!(
+            "scripts pipeline failed for {}: {err}",
+            project_dir.display()
+        )
+    })?;
+
+    // One invocation for both roots. The runner and the scripts dylib are then
+    // resolved together, so they always link the same engine units -- building
+    // them separately let the two drift apart whenever engine source changed.
+    // It also lets cargo overlap them instead of running two serial builds.
+    log_step("Building Dev Runner + Scripts");
 
     let mut build_cmd = Command::new("cargo");
-    build_cmd.arg("build").env("CARGO_TARGET_DIR", &target_dir);
+    build_cmd
+        .arg("build")
+        .arg("-p")
+        .arg("perro_dev_runner")
+        .arg("-p")
+        .arg("scripts")
+        .env("CARGO_TARGET_DIR", &target_dir)
+        .current_dir(&workspace_dir);
     if demo {
         build_cmd.env("PERRO_DEMO", "1");
     }
@@ -271,60 +292,58 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     if release {
         build_cmd.arg("--release");
     }
-    build_cmd.current_dir(&dev_runner_dir);
-    let mut features = Vec::new();
+    // Multi-package selection requires `package/feature` form.
+    let mut features = vec!["scripts/dynamic-scripts".to_string()];
+    if demo {
+        features.push("scripts/perro-demo".to_string());
+    }
     if headless {
-        features.push("headless");
+        features.push("perro_dev_runner/headless".to_string());
     }
     if timings {
-        features.push("timings");
+        features.push("perro_dev_runner/timings".to_string());
     }
     if profile {
         features.push(if headless {
-            "headless_profile"
+            "perro_dev_runner/headless_profile".to_string()
         } else {
-            "profile"
+            "perro_dev_runner/profile".to_string()
         });
     }
     if ui_profile {
-        features.push("ui_profile");
+        features.push("perro_dev_runner/ui_profile".to_string());
     }
     if project_cfg.steam.enabled {
+        features.push("scripts/steamworks".to_string());
         features.push(if headless {
-            "headless_steamworks"
+            "perro_dev_runner/headless_steamworks".to_string()
         } else {
-            "steamworks"
+            "perro_dev_runner/steamworks".to_string()
         });
     }
-    if !features.is_empty() {
-        build_cmd.arg("--features").arg(features.join(","));
-    }
+    build_cmd.arg("--features").arg(features.join(","));
     let build_status = build_cmd.status().map_err(|err| {
         format!(
-            "failed to build project dev runner from {}: {err}",
-            dev_runner_dir.display()
+            "failed to build dev runner + scripts from {}: {err}",
+            workspace_dir.display()
         )
     })?;
 
     if !build_status.success() {
         return Err(format!(
-            "project dev runner build failed with exit code {:?}",
+            "dev runner + scripts build failed with exit code {:?}",
             build_status.code()
         ));
     }
-    log_done("Dev Runner Built");
+    log_done("Dev Runner + Scripts Built");
 
-    // Build scripts after the runner so both use the runner's final engine build identity.
-    log_step("Building Scripts");
-    compile_scripts_with_profile_and_demo(&project_dir, ScriptsBuildProfile::Debug, demo).map_err(
-        |err| {
-            format!(
-                "scripts pipeline failed for {}: {err}",
-                project_dir.display()
-            )
-        },
-    )?;
-    log_done("Scripts Built");
+    // DLC script crates live outside the `.perro` workspace.
+    perro_compiler::compile_dlc_scripts(
+        &project_dir,
+        ScriptsBuildProfile::Debug,
+        project_cfg.steam.enabled,
+    )
+    .map_err(|err| format!("dlc scripts pipeline failed for {}: {err}", project_dir.display()))?;
 
     let launch_dir = prepare_dev_runner_launch_dir(&project_dir, "debug")
         .map_err(|err| format!("failed to prepare dev runner launch directory: {err}"))?;
@@ -407,12 +426,17 @@ fn prepare_dev_runner_launch_path(launch_dir: &Path, runner_path: &Path) -> io::
             .file_name()
             .unwrap_or_else(|| std::ffi::OsStr::new("perro_dev_runner")),
     );
-    fs::copy(runner_path, &launch_path)?;
+    link_or_copy(runner_path, &launch_path)?;
     Ok(launch_path)
 }
 
+/// How many previous launch dirs to keep. Each holds a full runner exe copy, so
+/// an ungated `runs/` grows by tens of MB per `perro dev`.
+const DEV_RUNNER_RUNS_KEPT: usize = 3;
+
 fn prepare_dev_runner_launch_dir(project_dir: &Path, profile_dir: &str) -> io::Result<PathBuf> {
     let runs_dir = project_dir.join(".perro").join("dev_runner").join("runs");
+    prune_dev_runner_runs(&runs_dir, DEV_RUNNER_RUNS_KEPT);
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -420,6 +444,45 @@ fn prepare_dev_runner_launch_dir(project_dir: &Path, profile_dir: &str) -> io::R
     let launch_dir = runs_dir.join(format!("{profile_dir}-{}-{stamp}", std::process::id()));
     fs::create_dir_all(&launch_dir)?;
     Ok(launch_dir)
+}
+
+/// Drops all but the newest `keep` launch dirs. Best-effort: a dir belonging to a
+/// still-running `perro dev` holds a file lock on Windows, and failing to remove
+/// it must not fail the launch.
+fn prune_dev_runner_runs(runs_dir: &Path, keep: usize) {
+    let Ok(entries) = fs::read_dir(runs_dir) else {
+        return;
+    };
+    let mut dirs: Vec<(SystemTime, PathBuf)> = entries
+        .flatten()
+        .filter(|entry| entry.file_type().map(|t| t.is_dir()).unwrap_or(false))
+        .map(|entry| {
+            let modified = entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .unwrap_or(UNIX_EPOCH);
+            (modified, entry.path())
+        })
+        .collect();
+    if dirs.len() <= keep {
+        return;
+    }
+    dirs.sort_by_key(|(modified, _)| std::cmp::Reverse(*modified));
+    for (_, path) in dirs.into_iter().skip(keep) {
+        let _ = fs::remove_dir_all(&path);
+    }
+}
+
+/// Hard-links `source` into `target`, falling back to a copy. The runner exe is
+/// ~32 MB and is byte-identical to the build output on every launch.
+fn link_or_copy(source: &Path, target: &Path) -> io::Result<()> {
+    if target.exists() {
+        fs::remove_file(target)?;
+    }
+    match fs::hard_link(source, target) {
+        Ok(()) => Ok(()),
+        Err(_) => fs::copy(source, target).map(|_| ()),
+    }
 }
 
 fn stage_dev_runner_scripts(
@@ -432,7 +495,7 @@ fn stage_dev_runner_scripts(
         .join(profile_dir)
         .join(scripts_dylib_name());
     let target = launch_dir.join(scripts_dylib_name());
-    fs::copy(source, &target)?;
+    link_or_copy(&source, &target)?;
     Ok(target)
 }
 

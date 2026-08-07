@@ -26,11 +26,9 @@ pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
         .join("dev_runner")
         .join("src")
         .join("main.rs");
-    let scripts_cargo_config = project_root
-        .join(".perro")
-        .join("scripts")
-        .join(".cargo")
-        .join("config.toml");
+    let perro_dir = project_root.join(".perro");
+    let workspace_manifest = perro_dir.join("Cargo.toml");
+    let workspace_cargo_config = perro_dir.join(".cargo").join("config.toml");
     let scripts_lib = project_root
         .join(".perro")
         .join("scripts")
@@ -53,12 +51,91 @@ pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
     ensure_dev_runner_manifest_deps(&dev_runner_manifest)?;
     ensure_project_manifest_icon_build_support(&dev_runner_manifest)?;
     ensure_dev_runner_manifest_features(&dev_runner_manifest)?;
-    ensure_dev_runner_manifest_profile_debug(&dev_runner_manifest)?;
     ensure_scripts_manifest_rust_analyzer_cfg(&scripts_manifest)?;
+    // `dev_runner` + `scripts` share one workspace so a single cargo resolve links
+    // both against the same engine units. Members must not carry `[workspace]`,
+    // `[profile.*]` or `[patch.crates-io]` of their own -- cargo rejects or silently
+    // ignores those in a member, and a stale one is what used to fork the build.
+    migrate_member_manifest_to_workspace(&scripts_manifest)?;
+    migrate_member_manifest_to_workspace(&dev_runner_manifest)?;
+    ensure_workspace_manifest(&workspace_manifest, &[&dev_runner_manifest, &scripts_manifest])?;
+    ensure_workspace_target_dir_config(&workspace_cargo_config)?;
+    remove_stale_member_build_files(&perro_dir)?;
+    // `project` is excluded from the workspace (it owns the ship `[profile.release]`),
+    // so it still needs its own patch block.
     ensure_patch_block_in_manifest(&project_manifest)?;
-    ensure_patch_block_in_manifest(&scripts_manifest)?;
-    ensure_patch_block_in_manifest(&dev_runner_manifest)?;
-    ensure_scripts_target_dir_config(&scripts_cargo_config)?;
+    Ok(())
+}
+
+/// Strips the sections a workspace member is not allowed to own.
+fn migrate_member_manifest_to_workspace(path: &Path) -> std::io::Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+    let src = fs::read_to_string(path)?;
+    let stripped = strip_toml_sections(&src, &["workspace", "profile", "patch"]);
+    let out = format!("{}\n", stripped.trim_end());
+    if src == out {
+        return Ok(());
+    }
+    write_if_changed(path, &out)
+}
+
+fn ensure_workspace_manifest(
+    path: &Path,
+    member_manifests: &[&Path],
+) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let base = if path.exists() {
+        let src = fs::read_to_string(path)?;
+        // Keep any hand-edits outside the patch block; regenerate the patch block.
+        strip_patch_crates_io(&src)
+    } else {
+        default_perro_workspace_toml()
+    };
+    let overrides = source_overrides_block_for_workspace(path, member_manifests);
+    let mut out = base.trim_end().to_string();
+    if !overrides.is_empty() {
+        out.push_str("\n\n");
+        out.push_str(&overrides);
+    }
+    out.push('\n');
+    write_if_changed(path, &out)
+}
+
+fn ensure_workspace_target_dir_config(path: &Path) -> std::io::Result<()> {
+    if path.exists() {
+        return Ok(());
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, default_perro_workspace_cargo_config_toml())
+}
+
+/// Removes per-member build files that the workspace root now owns. A leftover
+/// `scripts/.cargo/config.toml` points at the old `../../target`, and a leftover
+/// member `Cargo.lock` shadows the workspace lock.
+fn remove_stale_member_build_files(perro_dir: &Path) -> std::io::Result<()> {
+    for member in ["scripts", "dev_runner"] {
+        let member_dir = perro_dir.join(member);
+        let cargo_config = member_dir.join(".cargo").join("config.toml");
+        if cargo_config.exists() {
+            fs::remove_file(&cargo_config)?;
+            let cargo_dir = member_dir.join(".cargo");
+            // Only prune the directory when nothing else lives there.
+            let empty = matches!(cargo_dir.read_dir().map(|mut d| d.next().is_none()), Ok(true));
+            if empty {
+                fs::remove_dir(&cargo_dir)?;
+            }
+        }
+        let lock = member_dir.join("Cargo.lock");
+        if lock.exists() {
+            fs::remove_file(&lock)?;
+        }
+    }
     Ok(())
 }
 
@@ -167,16 +244,6 @@ fn ensure_scripts_manifest_user_deps(
     let rendered = toml::to_string(&scripts_value)
         .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
     write_if_changed(scripts_manifest, &rendered)
-}
-
-fn ensure_scripts_target_dir_config(path: &Path) -> std::io::Result<()> {
-    if path.exists() {
-        return Ok(());
-    }
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(path, default_scripts_cargo_config_toml())
 }
 
 fn ensure_project_target_dir_config(path: &Path) -> std::io::Result<()> {
@@ -816,122 +883,6 @@ fn ensure_dev_runner_manifest_features(path: &Path) -> std::io::Result<()> {
     write_if_changed(path, &rendered)
 }
 
-fn ensure_dev_runner_manifest_profile_debug(path: &Path) -> std::io::Result<()> {
-    if !path.exists() {
-        return Ok(());
-    }
-
-    let src = fs::read_to_string(path)?;
-    let Ok(mut value) = parse_toml_document_value(src) else {
-        return Ok(());
-    };
-    let Some(root) = value.as_table_mut() else {
-        return Ok(());
-    };
-
-    let profile = root
-        .entry("profile")
-        .or_insert_with(|| Value::Table(Default::default()));
-    let Some(profile_table) = profile.as_table_mut() else {
-        return Ok(());
-    };
-    let mut changed = false;
-
-    {
-        let release = profile_table
-            .entry("release")
-            .or_insert_with(|| Value::Table(Default::default()));
-        let Some(release_table) = release.as_table_mut() else {
-            return Ok(());
-        };
-        if !release_table.contains_key("debug") {
-            release_table.insert("debug".to_string(), Value::Boolean(true));
-            changed = true;
-        }
-    }
-
-    {
-        let dev = profile_table
-            .entry("dev")
-            .or_insert_with(|| Value::Table(Default::default()));
-        let Some(dev_table) = dev.as_table_mut() else {
-            return Ok(());
-        };
-        if !dev_table.contains_key("opt-level") {
-            dev_table.insert("opt-level".to_string(), Value::Integer(1));
-            changed = true;
-        }
-
-        let dev_package = dev_table
-            .entry("package")
-            .or_insert_with(|| Value::Table(Default::default()));
-        let Some(dev_package_table) = dev_package.as_table_mut() else {
-            return Ok(());
-        };
-        changed |= ensure_dev_package_opt_level(dev_package_table, "perro_runtime");
-        changed |= ensure_dev_package_opt_level(dev_package_table, "perro_app");
-        changed |= ensure_dev_package_opt_level(dev_package_table, "perro_graphics");
-        changed |= ensure_dev_package_opt_level(dev_package_table, "perro_physics");
-        changed |= ensure_dev_package_opt_level(dev_package_table, "rapier2d");
-        changed |= ensure_dev_package_opt_level(dev_package_table, "rapier3d");
-        changed |= ensure_dev_package_opt_level(dev_package_table, "parry2d");
-        changed |= ensure_dev_package_opt_level(dev_package_table, "parry3d");
-        changed |= ensure_dev_package_fast_checks(dev_package_table, "perro_runtime");
-        changed |= ensure_dev_package_fast_checks(dev_package_table, "perro_physics");
-        changed |= ensure_dev_package_fast_checks(dev_package_table, "rapier2d");
-        changed |= ensure_dev_package_fast_checks(dev_package_table, "rapier3d");
-        changed |= ensure_dev_package_fast_checks(dev_package_table, "parry2d");
-        changed |= ensure_dev_package_fast_checks(dev_package_table, "parry3d");
-    }
-
-    if !changed {
-        return Ok(());
-    }
-
-    let rendered = toml::to_string(&value)
-        .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
-    write_if_changed(path, &rendered)
-}
-
-fn ensure_dev_package_opt_level(
-    dev_package_table: &mut toml::map::Map<String, Value>,
-    crate_name: &str,
-) -> bool {
-    let package = dev_package_table
-        .entry(crate_name.to_string())
-        .or_insert_with(|| Value::Table(Default::default()));
-    let Some(package_table) = package.as_table_mut() else {
-        return false;
-    };
-    if package_table.contains_key("opt-level") {
-        return false;
-    }
-    package_table.insert("opt-level".to_string(), Value::Integer(3));
-    true
-}
-
-fn ensure_dev_package_fast_checks(
-    dev_package_table: &mut toml::map::Map<String, Value>,
-    crate_name: &str,
-) -> bool {
-    let package = dev_package_table
-        .entry(crate_name.to_string())
-        .or_insert_with(|| Value::Table(Default::default()));
-    let Some(package_table) = package.as_table_mut() else {
-        return false;
-    };
-    let mut changed = false;
-    if !package_table.contains_key("debug-assertions") {
-        package_table.insert("debug-assertions".to_string(), Value::Boolean(false));
-        changed = true;
-    }
-    if !package_table.contains_key("overflow-checks") {
-        package_table.insert("overflow-checks".to_string(), Value::Boolean(false));
-        changed = true;
-    }
-    changed
-}
-
 fn manifest_dir_for(manifest_path: &Path) -> PathBuf {
     manifest_path
         .parent()
@@ -1078,6 +1029,97 @@ fn strip_patch_crates_io(src: &str) -> String {
         }
     }
     out
+}
+
+/// Drops every TOML section whose first path segment matches `first_segments`.
+///
+/// Line-based on purpose: these manifests are hand-editable and round-tripping
+/// them through `toml::to_string` would reorder and reflow the whole file.
+fn strip_toml_sections(src: &str, first_segments: &[&str]) -> String {
+    let mut out = String::new();
+    let mut in_stripped = false;
+
+    for line in src.lines() {
+        let trimmed = line.trim();
+        let is_header = trimmed.starts_with('[') && trimmed.ends_with(']');
+        if is_header {
+            let head = toml_header_first_segment(trimmed);
+            in_stripped = first_segments.iter().any(|seg| *seg == head);
+        }
+        if !in_stripped {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+/// `[profile.dev.package."*"]` -> `profile`, `[[bin]]` -> `bin`.
+fn toml_header_first_segment(header: &str) -> String {
+    let inner = header
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .trim();
+    let mut out = String::new();
+    let mut in_quotes = false;
+    let mut quote_char = '"';
+    for ch in inner.chars() {
+        match ch {
+            '"' | '\'' if !in_quotes => {
+                in_quotes = true;
+                quote_char = ch;
+            }
+            c if in_quotes && c == quote_char => in_quotes = false,
+            '.' if !in_quotes => break,
+            c if !in_quotes => out.push(c),
+            _ => {}
+        }
+    }
+    out.trim().to_string()
+}
+
+/// Union of every engine crate reachable from the workspace members, rendered
+/// relative to the workspace root. Members must not carry their own patch block.
+fn source_overrides_block_for_workspace(
+    workspace_path: &Path,
+    member_manifests: &[&Path],
+) -> String {
+    let engine_root = engine_root_dir();
+    let workspace_dir = manifest_dir_for(workspace_path);
+
+    let mut crates = BTreeSet::new();
+    let mut visited = BTreeSet::new();
+    for manifest in member_manifests {
+        let Ok(src) = fs::read_to_string(manifest) else {
+            continue;
+        };
+        if let Some(direct) = direct_perro_deps_from_manifest(&src) {
+            crates.extend(direct);
+        }
+        collect_perro_deps_from_local_path_deps(manifest, &src, &mut crates, &mut visited);
+    }
+    expand_transitive_perro_deps(&engine_root, &mut crates);
+    if crates.is_empty() {
+        return String::new();
+    }
+
+    let mut ordered_crates: Vec<_> = crates.into_iter().collect();
+    ordered_crates.sort_by(|a, b| {
+        let ka = crate_group_sort_key(a);
+        let kb = crate_group_sort_key(b);
+        ka.cmp(&kb).then_with(|| a.cmp(b))
+    });
+
+    let mut lines = Vec::new();
+    lines.push("[patch.crates-io]".to_string());
+    for crate_name in ordered_crates {
+        let Some(rel_crate_path) = crate_workspace_rel_path(&crate_name) else {
+            continue;
+        };
+        let path = rel_path(&workspace_dir, &engine_root.join(rel_crate_path));
+        lines.push(format!("{crate_name} = {{ path = \"{path}\" }}"));
+    }
+    lines.join("\n")
 }
 
 fn source_overrides_block_for_manifest(manifest_path: &Path, manifest_src: &str) -> String {

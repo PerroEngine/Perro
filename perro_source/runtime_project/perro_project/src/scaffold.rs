@@ -86,7 +86,7 @@ pub fn ensure_build_crates_scaffold(root: &Path, project_name: &str) -> std::io:
     let scripts_crate = perro_dir.join("scripts");
     let dev_runner_crate = perro_dir.join("dev_runner");
     let project_cargo_config = project_crate.join(".cargo");
-    let scripts_cargo_config = scripts_crate.join(".cargo");
+    let perro_cargo_config = perro_dir.join(".cargo");
     let project_src = project_crate.join("src");
     let project_static_src = project_src.join("static");
     let project_embedded = project_crate.join("embedded");
@@ -97,8 +97,8 @@ pub fn ensure_build_crates_scaffold(root: &Path, project_name: &str) -> std::io:
     fs::create_dir_all(&project_static_src)?;
     fs::create_dir_all(&project_embedded)?;
     fs::create_dir_all(&project_cargo_config)?;
+    fs::create_dir_all(&perro_cargo_config)?;
     fs::create_dir_all(&scripts_src)?;
-    fs::create_dir_all(&scripts_cargo_config)?;
     fs::create_dir_all(&dev_runner_src)?;
 
     let crate_name = crate_name_from_project_name(project_name);
@@ -116,8 +116,12 @@ pub fn ensure_build_crates_scaffold(root: &Path, project_name: &str) -> std::io:
         &default_project_cargo_config_toml(),
     )?;
     write_if_missing(
-        scripts_cargo_config.join("config.toml"),
-        &default_scripts_cargo_config_toml(),
+        perro_dir.join("Cargo.toml"),
+        &default_perro_workspace_toml(),
+    )?;
+    write_if_missing(
+        perro_cargo_config.join("config.toml"),
+        &default_perro_workspace_cargo_config_toml(),
     )?;
     write_if_missing(
         dev_runner_crate.join("Cargo.toml"),

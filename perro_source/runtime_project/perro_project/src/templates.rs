@@ -930,108 +930,31 @@ fn embed_windows_icon() -> Result<(), String> {
     .to_string()
 }
 
-fn default_scripts_crate_toml() -> String {
+/// Workspace root for `.perro/`.
+///
+/// `dev_runner` + `scripts` are members so a single `cargo build -p ... -p ...`
+/// resolves them together: cargo then tracks freshness for both and links them
+/// against the *same* engine units, which is what keeps the dylib ABI in sync
+/// with the host. `project` (ship path) and `dlc/*` keep their own manifests --
+/// they own a conflicting `[profile.release]` and never take part in the dev loop.
+fn default_perro_workspace_toml() -> String {
     r#"[workspace]
-
-[package]
-name = "scripts"
-version = "0.1.0"
-edition = "2024"
-
-[lib]
-crate-type = ["cdylib", "rlib"]
-
-[dependencies]
-perro_api = "0.1.0"
-perro_runtime = "0.1.0"
-
-[features]
-dynamic-scripts = []
-perro-demo = []
-perro-spec = ["perro_api/spec"]
-steamworks = ["perro_api/steamworks", "perro_runtime/steamworks"]
+members = ["dev_runner", "scripts"]
+exclude = ["project", "dlc"]
+resolver = "3"
 
 [profile.dev]
 opt-level = 0
 incremental = true
 codegen-units = 256
 lto = false
-debug = false
+debug = "line-tables-only"
 strip = "none"
 overflow-checks = false
-panic = "abort"
 
 [profile.dev.package."*"]
 opt-level = 2
-incremental = true
 codegen-units = 64
-debug = false
-strip = "none"
-overflow-checks = false
-
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(rust_analyzer)"] }
-"#
-    .to_string()
-}
-
-fn default_scripts_cargo_config_toml() -> String {
-    r#"[build]
-target-dir = "../../target"
-"#
-    .to_string()
-}
-
-fn default_project_cargo_config_toml() -> String {
-    r#"[build]
-target-dir = "../../target"
-"#
-    .to_string()
-}
-
-fn default_dev_runner_crate_toml() -> String {
-    r#"[workspace]
-
-[package]
-name = "perro_dev_runner"
-version = "0.1.0"
-edition = "2024"
-build = "build.rs"
-
-[dependencies]
-perro_app = { version = "0.1.0", optional = true }
-perro_headless = { version = "0.1.0", optional = true }
-perro_project = "0.1.0"
-
-[features]
-default = ["app"]
-app = ["dep:perro_app"]
-timings = ["perro_app/fps"]
-headless = ["dep:perro_headless"]
-headless_profile = ["perro_headless/profile"]
-headless_steamworks = ["perro_headless/steamworks"]
-profile = ["perro_app/profile"]
-ui_profile = ["perro_app/ui_profile"]
-mem_profile = ["perro_app/mem_profile"]
-steamworks = ["perro_app/steamworks"]
-
-[target.'cfg(target_os = "windows")'.build-dependencies]
-winresource = "0.1.20"
-perro_api = "0.1.0"
-toml = "0.8.23"
-image = { version = "0.25.9", default-features = false, features = ["png", "jpeg", "gif", "bmp", "tga", "webp", "ico"] }
-resvg = "0.47.0"
-
-[profile.dev]
-opt-level = 1
-
-[profile.dev.package.perro_runtime]
-opt-level = 3
-debug-assertions = false
-overflow-checks = false
-
-[profile.dev.package.perro_app]
-opt-level = 3
 
 [profile.dev.package.perro_graphics]
 opt-level = 3
@@ -1063,6 +986,79 @@ overflow-checks = false
 
 [profile.release]
 debug = true
+"#
+    .to_string()
+}
+
+fn default_perro_workspace_cargo_config_toml() -> String {
+    r#"[build]
+target-dir = "../target"
+"#
+    .to_string()
+}
+
+fn default_scripts_crate_toml() -> String {
+    r#"[package]
+name = "scripts"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+perro_api = "0.1.0"
+perro_runtime = "0.1.0"
+
+[features]
+dynamic-scripts = []
+perro-demo = []
+perro-spec = ["perro_api/spec"]
+steamworks = ["perro_api/steamworks", "perro_runtime/steamworks"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(rust_analyzer)"] }
+"#
+    .to_string()
+}
+
+fn default_project_cargo_config_toml() -> String {
+    r#"[build]
+target-dir = "../../target"
+"#
+    .to_string()
+}
+
+fn default_dev_runner_crate_toml() -> String {
+    r#"[package]
+name = "perro_dev_runner"
+version = "0.1.0"
+edition = "2024"
+build = "build.rs"
+
+[dependencies]
+perro_app = { version = "0.1.0", optional = true }
+perro_headless = { version = "0.1.0", optional = true }
+perro_project = "0.1.0"
+
+[features]
+default = ["app"]
+app = ["dep:perro_app"]
+timings = ["perro_app/fps"]
+headless = ["dep:perro_headless"]
+headless_profile = ["perro_headless/profile"]
+headless_steamworks = ["perro_headless/steamworks"]
+profile = ["perro_app/profile"]
+ui_profile = ["perro_app/ui_profile"]
+mem_profile = ["perro_app/mem_profile"]
+steamworks = ["perro_app/steamworks"]
+
+[target.'cfg(target_os = "windows")'.build-dependencies]
+winresource = "0.1.20"
+perro_api = "0.1.0"
+toml = "0.8.23"
+image = { version = "0.25.9", default-features = false, features = ["png", "jpeg", "gif", "bmp", "tga", "webp", "ico"] }
+resvg = "0.47.0"
 "#
     .to_string()
 }

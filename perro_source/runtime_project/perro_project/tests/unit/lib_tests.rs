@@ -1336,11 +1336,9 @@ fn ensure_source_overrides_repairs_dev_runner_features() {
     src = src
         .replace("timings = [\"perro_app/fps\"]\n", "")
         .replace("ui_profile = [\"perro_app/ui_profile\"]\n", "")
-        .replace("mem_profile = [\"perro_app/mem_profile\"]\n", "")
-        .replace(
-            "\n[profile.dev.package.perro_physics]\nopt-level = 3\ndebug-assertions = false\noverflow-checks = false\n",
-            "\n",
-        );
+        .replace("mem_profile = [\"perro_app/mem_profile\"]\n", "");
+    // A pre-workspace project carried its own `[workspace]` + `[profile.*]`.
+    src.push_str("\n[workspace]\n\n[profile.dev]\nopt-level = 1\n");
     fs::write(&manifest, src).expect("write stale dev runner manifest");
 
     ensure_source_overrides(&root).expect("overrides");
@@ -1356,9 +1354,23 @@ fn ensure_source_overrides_repairs_dev_runner_features() {
     assert!(repaired.contains("[target.'cfg(target_os = \"windows\")'.build-dependencies.image]"));
     assert!(repaired.contains("version = \"0.25.9\""));
     assert!(repaired.contains("resvg = \"0.47.0\""));
-    assert!(repaired.contains("[profile.dev.package.perro_physics]"));
-    assert!(repaired.contains("debug-assertions = false"));
-    assert!(repaired.contains("overflow-checks = false"));
+    // Members must not own workspace/profile/patch sections any more.
+    assert!(!repaired.contains("[workspace]"));
+    assert!(!repaired.contains("[profile."));
+    assert!(!repaired.contains("[patch.crates-io]"));
+
+    // The workspace root owns them instead.
+    let workspace = fs::read_to_string(root.join(".perro").join("Cargo.toml"))
+        .expect("read workspace manifest");
+    assert!(workspace.contains("members = [\"dev_runner\", \"scripts\"]"));
+    assert!(workspace.contains("exclude = [\"project\", \"dlc\"]"));
+    assert!(workspace.contains("[profile.dev.package.perro_physics]"));
+    assert!(workspace.contains("[profile.dev.package.perro_graphics]"));
+    assert!(workspace.contains("debug-assertions = false"));
+    assert!(workspace.contains("overflow-checks = false"));
+    assert!(workspace.contains("[patch.crates-io]"));
+    // A single panic strategy across the dlopen boundary.
+    assert!(!workspace.contains("panic = \"abort\""));
 
     let before = fs::metadata(&manifest)
         .and_then(|meta| meta.modified())
