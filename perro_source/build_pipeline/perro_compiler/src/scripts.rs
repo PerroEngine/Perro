@@ -755,7 +755,10 @@ fn read_extra_script_deps(project_root: &Path) -> Result<Vec<String>, CompilerEr
         return Ok(Vec::new());
     }
     let src = fs::read_to_string(&deps_toml)?;
-    let parsed = src.parse::<toml::Value>().map_err(|err| {
+    // Parse as a document (`Table`), not a bare `Value`: a `Value` parse rejects
+    // anything that is not a single value, so the default scaffolded `deps.toml`
+    // -- which opens with a comment -- failed here and broke `perro dlc`.
+    let parsed = src.parse::<toml::Table>().map_err(|err| {
         CompilerError::SceneParse(format!("failed to parse {}: {err}", deps_toml.display()))
     })?;
     let Some(table) = parsed.get("dependencies").and_then(toml::Value::as_table) else {

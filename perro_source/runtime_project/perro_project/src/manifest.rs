@@ -116,9 +116,12 @@ fn ensure_workspace_target_dir_config(path: &Path) -> std::io::Result<()> {
 }
 
 /// Removes per-member build files that the workspace root now owns. A leftover
-/// `scripts/.cargo/config.toml` points at the old `../../target`, and a leftover
-/// member `Cargo.lock` shadows the workspace lock.
+/// `scripts/.cargo/config.toml` points at the old `../../target`, a leftover
+/// member `Cargo.lock` shadows the workspace lock, and a leftover per-member
+/// `target/` is a stale private build cache -- everything under `.perro` shares
+/// `<project>/target`. Those add up fast: 35 GB across one machine's projects.
 fn remove_stale_member_build_files(perro_dir: &Path) -> std::io::Result<()> {
+    remove_nested_target_dirs(perro_dir);
     for member in ["scripts", "dev_runner"] {
         let member_dir = perro_dir.join(member);
         let cargo_config = member_dir.join(".cargo").join("config.toml");
@@ -137,6 +140,36 @@ fn remove_stale_member_build_files(perro_dir: &Path) -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+/// Deletes any `target/` directory nested under `.perro`.
+///
+/// Every generated crate is pointed at the shared `<project>/target` via
+/// `.perro/.cargo/config.toml`, so a nested one is always a leftover from an
+/// older layout or from a bare `cargo` run before that config existed.
+/// Best-effort: a locked directory must not fail the build.
+fn remove_nested_target_dirs(perro_dir: &Path) {
+    fn walk(dir: &Path, depth: usize) {
+        // `.perro/<crate>/target` and `.perro/dlc/<name>/<crate>/target`.
+        if depth > 4 {
+            return;
+        }
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            if path.file_name().is_some_and(|name| name == "target") {
+                let _ = fs::remove_dir_all(&path);
+                continue;
+            }
+            walk(&path, depth + 1);
+        }
+    }
+    walk(perro_dir, 0);
 }
 
 fn ensure_scripts_crate_sync(path: &Path) -> std::io::Result<()> {
