@@ -13,8 +13,18 @@ fn validate_dlc_name(dlc_name: &str) -> Result<(), CompilerError> {
 pub fn sync_scripts(project_root: &Path) -> Result<Vec<String>, CompilerError> {
     let res_dir = project_root.join("res");
     let scripts_src = project_root.join(".perro").join("scripts").join("src");
+    let t0 = std::time::Instant::now();
     let scene_vars = collect_project_scene_var_index(project_root);
-    sync_scripts_from_source(&res_dir, &scripts_src, "res://", &scene_vars)
+    let t1 = std::time::Instant::now();
+    let out = sync_scripts_from_source(&res_dir, &scripts_src, "res://", &scene_vars);
+    if std::env::var_os("PERRO_DEV_TIMING").is_some() {
+        eprintln!(
+            "  sync detail: cache miss -- scene_var_index {:.0}ms, transpile+write {:.0}ms",
+            t1.duration_since(t0).as_secs_f64() * 1000.0,
+            t1.elapsed().as_secs_f64() * 1000.0
+        );
+    }
+    out
 }
 
 pub fn sync_dlc_scripts(project_root: &Path, dlc_name: &str) -> Result<Vec<String>, CompilerError> {
@@ -266,10 +276,40 @@ pub fn sync_scripts_for_build(
     demo: bool,
 ) -> Result<Vec<String>, CompilerError> {
     ensure_source_overrides(project_root)?;
+    sync_scripts_after_overrides(project_root, demo)
+}
+
+/// Same as [`sync_scripts_for_build`] without the manifest repair.
+///
+/// `perro dev` already runs `ensure_source_overrides` before loading
+/// `project.toml`, and it is not cheap (~120ms); doing it again here made every
+/// dev launch pay for it twice.
+pub fn sync_scripts_after_overrides(
+    project_root: &Path,
+    demo: bool,
+) -> Result<Vec<String>, CompilerError> {
     let cfg = perro_project::load_project_toml_with_demo(project_root, demo)
         .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
     let _exclude_guard = perro_io::walkdir::push_path_exclusions(cfg.demo.relative_patterns());
-    sync_scripts(project_root)
+
+    // Cached on input stats plus a fingerprint of this binary, so an engine
+    // change always forces a re-sync. See `sync_cache.rs`.
+    let scripts_src = project_root.join(".perro").join("scripts").join("src");
+    let cache = SyncCache::probe(project_root, demo);
+    if let Some(cache) = &cache
+        && let Some(copied) = cache.hit(&scripts_src)
+    {
+        if std::env::var_os("PERRO_DEV_TIMING").is_some() {
+            eprintln!("  sync detail: cache hit, codegen skipped");
+        }
+        return Ok(copied);
+    }
+
+    let copied = sync_scripts(project_root)?;
+    if let Some(cache) = cache {
+        cache.store(&copied);
+    }
+    Ok(copied)
 }
 
 /// Builds the per-DLC script dylibs. Those crates sit outside the `.perro`

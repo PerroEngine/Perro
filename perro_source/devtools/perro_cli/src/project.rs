@@ -264,7 +264,7 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
 
     // Script codegen must land before cargo reads the crate.
     log_step("Syncing Scripts");
-    perro_compiler::sync_scripts_for_build(&project_dir, demo).map_err(|err| {
+    perro_compiler::sync_scripts_after_overrides(&project_dir, demo).map_err(|err| {
         format!(
             "scripts pipeline failed for {}: {err}",
             project_dir.display()
