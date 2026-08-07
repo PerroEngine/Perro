@@ -230,8 +230,10 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
     let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
+    let mut phase = DevPhaseTimer::new();
     ensure_source_overrides(&project_dir)
         .map_err(|err| format!("failed to sync generated project crates: {err}"))?;
+    phase.mark("ensure_source_overrides");
     let project_cfg = load_project_toml_with_demo(&project_dir, demo)
         .map_err(|err| format!("failed to load project.toml: {err}"))?;
     let profiling_dir = ensure_profiling_output_dir(&project_dir)?;
@@ -255,6 +257,7 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     }
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
     update_project_vscode_linked_projects(&project_dir)?;
+    phase.mark("vscode+config");
 
     let workspace_dir = project_dir.join(".perro");
     let target_dir = project_dir.join("target");
@@ -267,6 +270,7 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
             project_dir.display()
         )
     })?;
+    phase.mark("sync_scripts (codegen)");
 
     // One invocation for both roots. The runner and the scripts dylib are then
     // resolved together, so they always link the same engine units -- building
@@ -336,6 +340,7 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
         ));
     }
     log_done("Dev Runner + Scripts Built");
+    phase.mark("cargo build");
 
     // DLC script crates live outside the `.perro` workspace.
     perro_compiler::compile_dlc_scripts(
@@ -354,6 +359,7 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
         .map_err(|err| format!("failed to prepare dev runner launch directory: {err}"))?;
     let scripts_path = stage_dev_runner_scripts(&project_dir, &launch_dir, "debug")
         .map_err(|err| format!("failed to stage scripts dylib for dev runner: {err}"))?;
+    phase.mark("stage launch dir");
 
     let profile_dir = if release { "release" } else { "debug" };
     let runner_path = if cfg!(target_os = "windows") {
@@ -372,6 +378,7 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
         })?;
         copy_steam_runtime_library(&target_dir, profile_dir, launch_dir)?;
     }
+    phase.mark("pre-launch total");
     log_note("Running Dev Runner");
 
     let mut run_cmd = Command::new(&runner_path);
@@ -442,6 +449,41 @@ fn prepare_dev_runner_launch_path(launch_dir: &Path, runner_path: &Path) -> io::
 /// Runs that share an unchanged runner exe are hard-linked and cost ~nothing;
 /// only dirs spanning an actual rebuild hold their own copy.
 const DEV_RUNNER_RUNS_KEPT: usize = 8;
+
+/// Phase timer for `perro dev`, enabled with `PERRO_DEV_TIMING=1`.
+///
+/// The cargo lines only report compile time; everything else on the way to a
+/// window (manifest repair, script codegen, dylib staging, runtime boot) was
+/// invisible. This attributes the wall clock between them.
+struct DevPhaseTimer {
+    enabled: bool,
+    start: std::time::Instant,
+    last: std::time::Instant,
+}
+
+impl DevPhaseTimer {
+    fn new() -> Self {
+        let now = std::time::Instant::now();
+        Self {
+            enabled: env::var_os("PERRO_DEV_TIMING").is_some(),
+            start: now,
+            last: now,
+        }
+    }
+
+    fn mark(&mut self, label: &str) {
+        if !self.enabled {
+            return;
+        }
+        let now = std::time::Instant::now();
+        eprintln!(
+            "perro dev timing: {label} {:.0}ms (total {:.0}ms)",
+            now.duration_since(self.last).as_secs_f64() * 1000.0,
+            now.duration_since(self.start).as_secs_f64() * 1000.0,
+        );
+        self.last = now;
+    }
+}
 
 fn prepare_dev_runner_launch_dir(project_dir: &Path, profile_dir: &str) -> io::Result<PathBuf> {
     let runs_dir = project_dir.join(".perro").join("dev_runner").join("runs");
