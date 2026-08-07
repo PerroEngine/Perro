@@ -958,18 +958,68 @@ fn set_dep_optional(deps: &mut toml::map::Map<String, Value>, name: &str) -> boo
     true
 }
 
+/// Default engine version requirement when the local crate cannot be read.
+const ENGINE_FALLBACK_VERSION: &str = "0.1.0";
+
+/// Emits `{ version = "x.y.z", path = "..." }`.
+///
+/// The version requirement is what makes the generated manifest valid without
+/// the engine checkout: cargo prefers `path` when it resolves, and falls back to
+/// the registry release when the path is gone (or the `[patch.crates-io]` block
+/// is dropped). Path-only specs pinned every project to a local source tree.
 fn local_perro_dep_spec(
     manifest_dir: &Path,
     engine_root: &Path,
     crate_name: &str,
 ) -> Option<Value> {
     let rel_crate_path = crate_workspace_rel_path(crate_name)?;
+    let crate_dir = engine_root.join(rel_crate_path);
     let mut spec = toml::value::Table::new();
     spec.insert(
-        "path".to_string(),
-        Value::String(rel_path(manifest_dir, &engine_root.join(rel_crate_path))),
+        "version".to_string(),
+        Value::String(
+            engine_crate_version(&crate_dir)
+                .unwrap_or_else(|| ENGINE_FALLBACK_VERSION.to_string()),
+        ),
     );
+    if crate_dir.join("Cargo.toml").is_file() {
+        spec.insert(
+            "path".to_string(),
+            Value::String(rel_path(manifest_dir, &crate_dir)),
+        );
+    }
     Some(Value::Table(spec))
+}
+
+/// Reads `package.version` from an engine crate so the generated dep pins the
+/// version actually being built against, not a hardcoded guess.
+///
+/// Engine crates declare `version.workspace = true`, so the literal lives in the
+/// engine root's `[workspace.package]`. Resolving it here is what makes a single
+/// version bump propagate into every generated project manifest.
+fn engine_crate_version(crate_dir: &Path) -> Option<String> {
+    let src = fs::read_to_string(crate_dir.join("Cargo.toml")).ok()?;
+    let value = parse_toml_document_value(src).ok()?;
+    let version = value.get("package")?.get("version")?;
+    if let Some(literal) = version.as_str() {
+        return Some(literal.to_string());
+    }
+    if version.get("workspace").and_then(Value::as_bool) == Some(true) {
+        return engine_workspace_version();
+    }
+    None
+}
+
+/// `[workspace.package] version` from the engine root manifest.
+fn engine_workspace_version() -> Option<String> {
+    let src = fs::read_to_string(engine_root_dir().join("Cargo.toml")).ok()?;
+    let value = parse_toml_document_value(src).ok()?;
+    value
+        .get("workspace")?
+        .get("package")?
+        .get("version")?
+        .as_str()
+        .map(str::to_string)
 }
 
 fn ensure_scripts_manifest_rust_analyzer_cfg(path: &Path) -> std::io::Result<()> {
@@ -1110,15 +1160,29 @@ fn source_overrides_block_for_workspace(
         ka.cmp(&kb).then_with(|| a.cmp(b))
     });
 
+    render_patch_block(&workspace_dir, &engine_root, &ordered_crates)
+}
+
+/// Renders `[patch.crates-io]` over the engine crates that actually exist on
+/// disk. With no engine checkout the block is empty and the version
+/// requirements in `[dependencies]` resolve from the registry instead.
+fn render_patch_block(manifest_dir: &Path, engine_root: &Path, crates: &[String]) -> String {
     let mut lines = Vec::new();
-    lines.push("[patch.crates-io]".to_string());
-    for crate_name in ordered_crates {
-        let Some(rel_crate_path) = crate_workspace_rel_path(&crate_name) else {
+    for crate_name in crates {
+        let Some(rel_crate_path) = crate_workspace_rel_path(crate_name) else {
             continue;
         };
-        let path = rel_path(&workspace_dir, &engine_root.join(rel_crate_path));
+        let crate_dir = engine_root.join(rel_crate_path);
+        if !crate_dir.join("Cargo.toml").is_file() {
+            continue;
+        }
+        let path = rel_path(manifest_dir, &crate_dir);
         lines.push(format!("{crate_name} = {{ path = \"{path}\" }}"));
     }
+    if lines.is_empty() {
+        return String::new();
+    }
+    lines.insert(0, "[patch.crates-io]".to_string());
     lines.join("\n")
 }
 
@@ -1143,16 +1207,7 @@ fn source_overrides_block_for_manifest(manifest_path: &Path, manifest_src: &str)
         ka.cmp(&kb).then_with(|| a.cmp(b))
     });
 
-    let mut lines = Vec::new();
-    lines.push("[patch.crates-io]".to_string());
-    for crate_name in ordered_crates {
-        let Some(rel_crate_path) = crate_workspace_rel_path(&crate_name) else {
-            continue;
-        };
-        let path = rel_path(&manifest_dir, &engine_root.join(rel_crate_path));
-        lines.push(format!("{crate_name} = {{ path = \"{path}\" }}"));
-    }
-    lines.join("\n")
+    render_patch_block(&manifest_dir, &engine_root, &ordered_crates)
 }
 
 fn collect_perro_deps_from_local_path_deps(

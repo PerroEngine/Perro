@@ -10,6 +10,7 @@ mod project;
 mod scaffold;
 mod script_tests;
 mod targets;
+mod version;
 mod vscode;
 
 use bench::bench_command;
@@ -79,6 +80,7 @@ fn main() {
             "test" => test_command(&args, &cwd),
             "build" => project_command(&args, &cwd),
             "targets" => targets_command(&args),
+            "version" => version::version_command(&args),
             "dlc" => dlc_command(&args, &cwd),
             "dev" => dev_command(&args, &cwd),
             "bench" => bench_command(&args, &cwd),
@@ -208,6 +210,7 @@ const SPEC: &[FlagSpec] = &[value("--path"), value("--scene"), value("--target-f
 const FLAMEGRAPH: &[FlagSpec] = &[value("--path"), switch("--profile"), switch("--root")];
 const FORMAT: &[FlagSpec] = &[value("--path"), switch("--dedup")];
 const TARGETS: &[FlagSpec] = &[value("--host")];
+const VERSION: &[FlagSpec] = &[value("--set")];
 
 fn command_schema(command: &str) -> Option<&'static [FlagSpec]> {
     match command {
@@ -220,6 +223,7 @@ fn command_schema(command: &str) -> Option<&'static [FlagSpec]> {
         "install" => Some(INSTALL),
         "build" => Some(BUILD),
         "targets" => Some(TARGETS),
+        "version" => Some(VERSION),
         "dlc" => Some(DLC),
         "dev" => Some(DEV),
         "bench" => Some(BENCH),
@@ -328,6 +332,9 @@ fn print_usage() {
         "  perro_cli clippy [--path <project_dir>]   # cargo clippy for .rs under project res"
     );
     eprintln!("  perro_cli clean [--path <project_dir>]    # remove project target/");
+    eprintln!(
+        "  perro_cli version [--set <x.y.z>]         # show or bump the engine version everywhere"
+    );
     eprintln!(
         "  perro_cli install                          # add `perro` source-mode command in shell profile"
     );

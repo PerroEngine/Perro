@@ -343,7 +343,12 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
         ScriptsBuildProfile::Debug,
         project_cfg.steam.enabled,
     )
-    .map_err(|err| format!("dlc scripts pipeline failed for {}: {err}", project_dir.display()))?;
+    .map_err(|err| {
+        format!(
+            "dlc scripts pipeline failed for {}: {err}",
+            project_dir.display()
+        )
+    })?;
 
     let launch_dir = prepare_dev_runner_launch_dir(&project_dir, "debug")
         .map_err(|err| format!("failed to prepare dev runner launch directory: {err}"))?;

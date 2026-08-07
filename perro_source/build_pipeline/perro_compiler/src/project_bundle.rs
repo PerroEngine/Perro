@@ -399,8 +399,52 @@ fn export_project_binary(
     if steam_enabled {
         let _ = copy_steam_runtime_library(&artifact_dir, &output_dir, native_target)?;
     }
-    println!("exported project binary: {}", output_bin.display());
+    print_exported_binary(&output_bin);
     Ok(())
+}
+
+fn print_exported_binary(path: &Path) {
+    let display = friendly_path(path);
+    if std::io::IsTerminal::is_terminal(&std::io::stdout()) {
+        let directory = path.parent().unwrap_or(path);
+        println!(
+            "exported project binary: \x1b]8;;{}\x1b\\{}\x1b]8;;\x1b\\",
+            file_uri(directory),
+            display
+        );
+    } else {
+        println!("exported project binary: {display}");
+    }
+}
+
+fn friendly_path(path: &Path) -> String {
+    let raw = path.to_string_lossy();
+    if let Some(rest) = raw.strip_prefix("\\\\?\\UNC\\") {
+        format!("\\\\{rest}")
+    } else {
+        raw.strip_prefix("\\\\?\\").unwrap_or(&raw).to_string()
+    }
+}
+
+fn file_uri(path: &Path) -> String {
+    let path = friendly_path(path).replace('\\', "/");
+    let mut encoded = String::with_capacity(path.len());
+    for byte in path.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b':' | b'-' | b'.' | b'_' | b'~') {
+            encoded.push(char::from(byte));
+        } else {
+            use std::fmt::Write as _;
+            write!(encoded, "%{byte:02X}").expect("write to String");
+        }
+    }
+
+    if encoded.starts_with("//") {
+        format!("file:{encoded}")
+    } else if encoded.starts_with('/') {
+        format!("file://{encoded}")
+    } else {
+        format!("file:///{encoded}")
+    }
 }
 
 fn export_universal_macos_binary(

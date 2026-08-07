@@ -1,6 +1,6 @@
 [package]
 name = "perro_cli"
-version = "0.1.0"
+version.workspace = true
 description = "Command-line tools for Perro game projects"
 edition.workspace = true
 rust-version.workspace = true

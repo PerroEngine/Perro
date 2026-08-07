@@ -1,6 +1,6 @@
 [package]
 name = "perro_scripting"
-version = "0.1.0"
+version.workspace = true
 description = "Scripting API for the Perro game engine"
 edition.workspace = true
 rust-version.workspace = true

@@ -113,6 +113,10 @@ resolver = "3"
 unwrap_used = "deny"
 
 [workspace.package]
+# Single source of truth for the engine version. Every `perro_*` crate inherits
+# it via `version.workspace = true`; `perro_cli version --set X.Y.Z` bumps this
+# and the `[workspace.dependencies]` requirements below together.
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.85.0"
 license = "Apache-2.0"
