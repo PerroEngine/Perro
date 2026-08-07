@@ -435,20 +435,38 @@ fn prepare_dev_runner_launch_path(launch_dir: &Path, runner_path: &Path) -> io::
     Ok(launch_path)
 }
 
-/// How many previous launch dirs to keep. Each holds a full runner exe copy, so
-/// an ungated `runs/` grows by tens of MB per `perro dev`.
-const DEV_RUNNER_RUNS_KEPT: usize = 3;
+/// How many previous launch dirs to keep.
+///
+/// Enough to keep a few builds side by side for comparison, bounded so `runs/`
+/// cannot grow without limit -- it reached 103 dirs / 3.2 GB in one project.
+/// Runs that share an unchanged runner exe are hard-linked and cost ~nothing;
+/// only dirs spanning an actual rebuild hold their own copy.
+const DEV_RUNNER_RUNS_KEPT: usize = 8;
 
 fn prepare_dev_runner_launch_dir(project_dir: &Path, profile_dir: &str) -> io::Result<PathBuf> {
     let runs_dir = project_dir.join(".perro").join("dev_runner").join("runs");
-    prune_dev_runner_runs(&runs_dir, DEV_RUNNER_RUNS_KEPT);
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
     let launch_dir = runs_dir.join(format!("{profile_dir}-{}-{stamp}", std::process::id()));
     fs::create_dir_all(&launch_dir)?;
+    // Prune after creating this run so the steady state is exactly
+    // `DEV_RUNNER_RUNS_KEPT`. The new dir is the newest, so it is always kept --
+    // as are any dirs a concurrent `perro dev` just made.
+    spawn_dev_runner_runs_prune(&runs_dir, DEV_RUNNER_RUNS_KEPT);
     Ok(launch_dir)
+}
+
+/// Runs the prune on a detached thread so deleting gigabytes never delays the
+/// launch. The thread is not joined: `perro dev` then blocks on the game for far
+/// longer than the sweep takes, and anything it misses is retried next launch.
+fn spawn_dev_runner_runs_prune(runs_dir: &Path, keep: usize) {
+    let runs_dir = runs_dir.to_path_buf();
+    thread::Builder::new()
+        .name("perro-runs-prune".to_string())
+        .spawn(move || prune_dev_runner_runs(&runs_dir, keep))
+        .ok();
 }
 
 /// Drops all but the newest `keep` launch dirs. Best-effort: a dir belonging to a
