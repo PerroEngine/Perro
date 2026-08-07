@@ -519,7 +519,7 @@ target_sdk_version = 35
 
 [target.'cfg(target_os = "windows")'.build-dependencies]
 winresource = "0.1.20"
-perro_api = "0.1.0"
+perro_builtin_assets = "0.1.0"
 toml = "0.8.23"
 image = {{ version = "0.25.9", default-features = false, features = ["png", "jpeg", "gif", "bmp", "tga", "webp", "ico"] }}
 resvg = "0.47.0"
@@ -669,7 +669,7 @@ fn embed_windows_icon() -> Result<(), String> {
 
     fn builtin_icon_source_path(out_dir: &Path) -> Result<PathBuf, String> {
         let out = out_dir.join("perro_builtin_logo.svg");
-        fs::write(&out, perro_api::builtin_assets::PERRO_LOGO_SVG)
+        fs::write(&out, perro_builtin_assets::PERRO_LOGO_SVG)
             .map_err(|e| format!("failed to write builtin perro icon `{}`: {e}", out.display()))?;
         Ok(out)
     }
@@ -1055,7 +1055,7 @@ steamworks = ["perro_app/steamworks"]
 
 [target.'cfg(target_os = "windows")'.build-dependencies]
 winresource = "0.1.20"
-perro_api = "0.1.0"
+perro_builtin_assets = "0.1.0"
 toml = "0.8.23"
 image = { version = "0.25.9", default-features = false, features = ["png", "jpeg", "gif", "bmp", "tga", "webp", "ico"] }
 resvg = "0.47.0"

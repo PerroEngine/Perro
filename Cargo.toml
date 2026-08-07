@@ -9,6 +9,7 @@ members = [
     "perro_source/core/perro_particle_math",
     "perro_source/core/perro_builtin_meshes",
     "perro_source/core/perro_asset_formats",
+    "perro_source/core/perro_builtin_assets",
     "perro_source/core/perro_csv",
 
     "perro_source/runtime_project/perro_runtime",
@@ -65,6 +66,7 @@ default-members = [
     "perro_source/core/perro_particle_math",
     "perro_source/core/perro_builtin_meshes",
     "perro_source/core/perro_asset_formats",
+    "perro_source/core/perro_builtin_assets",
     "perro_source/core/perro_csv",
 
     "perro_source/runtime_project/perro_runtime",
@@ -139,6 +141,7 @@ perro_compiler = { version = "0.1.0", path = "perro_source/build_pipeline/perro_
 perro_static_pipeline = { version = "0.1.0", path = "perro_source/build_pipeline/perro_static_pipeline" }
 perro_animation = { version = "0.1.0", path = "perro_source/core/perro_animation" }
 perro_asset_formats = { version = "0.1.0", path = "perro_source/core/perro_asset_formats" }
+perro_builtin_assets = { version = "0.1.0", path = "perro_source/core/perro_builtin_assets" }
 perro_builtin_meshes = { version = "0.1.0", path = "perro_source/core/perro_builtin_meshes" }
 perro_csv = { version = "0.1.0", path = "perro_source/core/perro_csv" }
 perro_ids = { version = "0.1.0", path = "perro_source/core/perro_ids" }

@@ -4489,6 +4489,7 @@ dependencies = [
 name = "perro_api"
 version = "0.1.0"
 dependencies = [
+ "perro_builtin_assets",
  "perro_csv",
  "perro_ids",
  "perro_input_api",
@@ -4556,6 +4557,10 @@ dependencies = [
  "perro_asset_formats",
  "rayon",
 ]
+
+[[package]]
+name = "perro_builtin_assets"
+version = "0.1.0"
 
 [[package]]
 name = "perro_builtin_meshes"
@@ -4627,6 +4632,7 @@ dependencies = [
  "half",
  "naga",
  "perro_asset_formats",
+ "perro_builtin_assets",
  "perro_builtin_meshes",
  "perro_graphics_assets",
  "perro_ids",
@@ -4655,6 +4661,7 @@ dependencies = [
  "gltf",
  "image",
  "perro_asset_formats",
+ "perro_builtin_assets",
  "perro_ids",
  "perro_io",
  "perro_meshlets",

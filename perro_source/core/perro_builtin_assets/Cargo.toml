@@ -1,0 +1,12 @@
+[package]
+name = "perro_builtin_assets"
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+# Deliberately dependency-free. Build scripts embed the fallback icon from here,
+# and pulling this out of `perro_api` kept ~165 crates out of every generated
+# project's host build graph.
+[dependencies]

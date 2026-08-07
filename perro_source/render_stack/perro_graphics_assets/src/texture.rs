@@ -953,7 +953,7 @@ mod tests {
     #[test]
     #[ignore = "bench probe; run with --release --ignored --nocapture"]
     fn bench_svg_decode_release_probe() {
-        let svg = include_bytes!("../../../api_modules/perro_api/src/assets/perro.svg");
+        let svg = perro_builtin_assets::PERRO_LOGO_SVG;
 
         clear_svg_caches();
         let start = Instant::now();

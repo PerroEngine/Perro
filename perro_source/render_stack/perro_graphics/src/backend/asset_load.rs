@@ -249,9 +249,7 @@ pub(crate) fn decode_texture_source_rgba(
     let (rgba, width, height): (Arc<[u8]>, u32, u32) = if source == "__default__" {
         (Arc::from(&[255u8, 255, 255, 255][..]), 1, 1)
     } else if source == "__perro_builtin_logo_svg__" {
-        decode_image_rgba_arc(include_bytes!(
-            "../../../../api_modules/perro_api/src/assets/perro.svg"
-        ))?
+        decode_image_rgba_arc(perro_builtin_assets::PERRO_LOGO_SVG)?
     } else if let Some(lookup) = static_texture_lookup {
         let source_hash = perro_ids::parse_hashed_source_uri(source)
             .unwrap_or_else(|| perro_ids::string_to_u64(source));

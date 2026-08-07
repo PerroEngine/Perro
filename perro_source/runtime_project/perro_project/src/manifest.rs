@@ -425,7 +425,15 @@ fn ensure_project_manifest_icon_build_support(path: &Path) -> std::io::Result<()
     }
     let manifest_dir = manifest_dir_for(path);
     let engine_root = engine_root_dir();
-    changed |= ensure_local_perro_dep(build_deps_table, &manifest_dir, &engine_root, "perro_api");
+    // Only the fallback logo bytes are needed here; `perro_api` would drag its
+    // whole graph (~165 crates) into the host build.
+    changed |= build_deps_table.remove("perro_api").is_some();
+    changed |= ensure_local_perro_dep(
+        build_deps_table,
+        &manifest_dir,
+        &engine_root,
+        "perro_builtin_assets",
+    );
     if build_deps_table.get("toml").and_then(Value::as_str) != Some("0.8.23") {
         build_deps_table.insert("toml".to_string(), Value::String("0.8.23".to_string()));
         changed = true;
@@ -1312,6 +1320,7 @@ fn crate_workspace_rel_path(crate_name: &str) -> Option<&'static str> {
         "perro_variant" => Some("perro_source/core/perro_variant"),
         "perro_particle_math" => Some("perro_source/core/perro_particle_math"),
         "perro_csv" => Some("perro_source/core/perro_csv"),
+        "perro_builtin_assets" => Some("perro_source/core/perro_builtin_assets"),
         "perro_runtime" => Some("perro_source/runtime_project/perro_runtime"),
         "perro_headless" => Some("perro_source/runtime_project/perro_headless"),
         "perro_internal_updates" => Some("perro_source/runtime_project/perro_internal_updates"),

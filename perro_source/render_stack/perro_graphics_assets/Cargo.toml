@@ -7,6 +7,7 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+perro_builtin_assets.workspace = true
 ahash = "0.8.12"
 bytemuck = { version = "1.24.0", features = ["derive"] }
 gltf.workspace = true
