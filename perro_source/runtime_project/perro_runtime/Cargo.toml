@@ -7,6 +7,12 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+# `image` reaches this graph through several paths (arboard, resvg, the icon
+# build-dep). zune-jpeg calls `zune_core::log::warn!` in expression position, so
+# without `zune-core/log` those macros expand to nothing and it fails to compile.
+# Declared here because perro_runtime is in every configuration, headless included.
+zune-core = { version = "0.5.1", features = ["log"] }
+
 gltf.workspace = true
 ahash = "0.8"
 glam = "0.31.0"

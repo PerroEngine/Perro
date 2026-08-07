@@ -12,6 +12,10 @@ ahash = "0.8.12"
 bytemuck = { version = "1.24.0", features = ["derive"] }
 gltf.workspace = true
 image = { version = "0.25.8", default-features = false, features = ["png", "jpeg", "webp", "bmp", "tga", "ico"] }
+# zune-jpeg (via image/resvg) calls `zune_core::log::warn!` in expression
+# position; without `zune-core/log` those macros expand to nothing and the crate
+# fails to compile. Enabling the feature here unifies it on for the whole graph.
+zune-core = { version = "0.5.1", features = ["log"] }
 resvg = "0.47.0"
 
 perro_asset_formats.workspace = true

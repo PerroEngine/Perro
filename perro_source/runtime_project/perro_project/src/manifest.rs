@@ -434,6 +434,18 @@ fn ensure_project_manifest_icon_build_support(path: &Path) -> std::io::Result<()
         &engine_root,
         "perro_builtin_assets",
     );
+    // zune-jpeg (via image/resvg) needs `zune-core/log`; without it its `warn!`
+    // calls expand to nothing in expression position and the crate fails to build.
+    if !build_deps_table.contains_key("zune-core") {
+        let mut zune = toml::value::Table::new();
+        zune.insert("version".to_string(), Value::String("0.5.1".to_string()));
+        zune.insert(
+            "features".to_string(),
+            Value::Array(vec![Value::String("log".to_string())]),
+        );
+        build_deps_table.insert("zune-core".to_string(), Value::Table(zune));
+        changed = true;
+    }
     if build_deps_table.get("toml").and_then(Value::as_str) != Some("0.8.23") {
         build_deps_table.insert("toml".to_string(), Value::String("0.8.23".to_string()));
         changed = true;

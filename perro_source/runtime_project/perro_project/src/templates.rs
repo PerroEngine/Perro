@@ -523,6 +523,9 @@ perro_builtin_assets = "0.1.0"
 toml = "0.8.23"
 image = {{ version = "0.25.9", default-features = false, features = ["png", "jpeg", "gif", "bmp", "tga", "webp", "ico"] }}
 resvg = "0.47.0"
+# zune-jpeg (via image/resvg) needs `zune-core/log`, else its `warn!` calls
+# expand to nothing in expression position and it fails to compile.
+zune-core = {{ version = "0.5.1", features = ["log"] }}
 
 [profile.release]
 opt-level = 3
@@ -1059,6 +1062,9 @@ perro_builtin_assets = "0.1.0"
 toml = "0.8.23"
 image = { version = "0.25.9", default-features = false, features = ["png", "jpeg", "gif", "bmp", "tga", "webp", "ico"] }
 resvg = "0.47.0"
+# zune-jpeg (via image/resvg) needs `zune-core/log`, else its `warn!` calls
+# expand to nothing in expression position and it fails to compile.
+zune-core = { version = "0.5.1", features = ["log"] }
 "#
     .to_string()
 }
