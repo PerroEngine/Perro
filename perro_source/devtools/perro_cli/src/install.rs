@@ -29,11 +29,14 @@ function perro {{\n\
     $cliExe = Join-Path $targetDir \"debug\\perro_cli.exe\"\n\
     $runRoot = Join-Path ([System.IO.Path]::GetTempPath()) \"perro_cli_runs\"\n\
     New-Item -ItemType Directory -Force -Path $runRoot | Out-Null\n\
-    Get-ChildItem -Path $runRoot -Directory -ErrorAction SilentlyContinue | Where-Object {{ $_.LastWriteTimeUtc -lt (Get-Date).ToUniversalTime().AddDays(-1) }} | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue\n\
-    $runDir = Join-Path $runRoot (\"$PID-\" + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())\n\
-    New-Item -ItemType Directory -Force -Path $runDir | Out-Null\n\
+    Get-ChildItem -Path $runRoot -Directory -ErrorAction SilentlyContinue | Where-Object {{ $_.LastWriteTimeUtc -lt (Get-Date).ToUniversalTime().AddDays(-7) }} | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue\n\
+    $stamp = Get-Item -LiteralPath $cliExe\n\
+    $runDir = Join-Path $runRoot (\"build-\" + $stamp.Length + \"-\" + $stamp.LastWriteTimeUtc.Ticks)\n\
     $runExe = Join-Path $runDir \"perro_cli.exe\"\n\
-    Copy-Item -LiteralPath $cliExe -Destination $runExe -Force\n\
+    if (-not (Test-Path -LiteralPath $runExe)) {{\n\
+        New-Item -ItemType Directory -Force -Path $runDir | Out-Null\n\
+        Copy-Item -LiteralPath $cliExe -Destination $runExe -Force\n\
+    }}\n\
     & $runExe @Args\n\
 }}\n\
 {PROFILE_SNIPPET_END}\n"
@@ -61,10 +64,14 @@ perro() {{\n\
     target_dir=${{CARGO_TARGET_DIR:-$root/target}}\n\
     run_root=${{TMPDIR:-/tmp}}/perro_cli_runs\n\
     mkdir -p \"$run_root\" || return\n\
-    find \"$run_root\" -mindepth 1 -maxdepth 1 -type d -mtime +1 -exec rm -rf {{}} + 2>/dev/null\n\
-    run_dir=\"$run_root/$$-$(date +%s%3N 2>/dev/null || date +%s)\"\n\
-    mkdir -p \"$run_dir\" || return\n\
-    cp \"$target_dir/debug/perro_cli\" \"$run_dir/perro_cli\" || return\n\
+    find \"$run_root\" -mindepth 1 -maxdepth 1 -type d -mtime +7 -exec rm -rf {{}} + 2>/dev/null\n\
+    src_exe=\"$target_dir/debug/perro_cli\"\n\
+    stamp=$(stat -c \"%s-%Y\" \"$src_exe\" 2>/dev/null || stat -f \"%z-%m\" \"$src_exe\")\n\
+    run_dir=\"$run_root/build-$stamp\"\n\
+    if [ ! -x \"$run_dir/perro_cli\" ]; then\n\
+        mkdir -p \"$run_dir\" || return\n\
+        cp \"$src_exe\" \"$run_dir/perro_cli\" || return\n\
+    fi\n\
     \"$run_dir/perro_cli\" \"$@\"\n\
 }}\n\
 {PROFILE_SNIPPET_END}\n"

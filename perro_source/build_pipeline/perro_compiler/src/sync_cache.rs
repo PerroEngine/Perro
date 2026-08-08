@@ -20,6 +20,16 @@
 //
 // Everything else fails closed: an unreadable sidecar, an unreadable exe, a
 // version bump, a missing output, or any I/O error is a miss, not a hit.
+//
+// # The fingerprint must be stable across runs of the same build
+//
+// This keys on the running exe's (len, mtime), so any launcher that re-copies
+// the binary per invocation would give it a new mtime every time and the cache
+// would never hit -- correct, but useless. The source-mode `perro` shell
+// function in `install.rs` therefore content-addresses its run directory
+// (`build-<len>-<mtime>`) and copies once per build rather than once per run.
+// Keep those two in step: a launcher that copies per run silently disables this
+// cache (it will not go stale, it will just never pay off).
 
 use std::time::UNIX_EPOCH;
 
