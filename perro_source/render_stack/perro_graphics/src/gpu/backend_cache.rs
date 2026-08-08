@@ -22,11 +22,7 @@ const CACHE_FILE: &str = "gpu_backend";
 const CACHE_VERSION: u32 = 1;
 
 fn cache_path() -> Option<PathBuf> {
-    Some(
-        perro_io::dirs::cache_dir()?
-            .join("perro")
-            .join(CACHE_FILE),
-    )
+    Some(perro_io::dirs::cache_dir()?.join("perro").join(CACHE_FILE))
 }
 
 /// Serialized backend name. Only the variants wgpu can select natively.

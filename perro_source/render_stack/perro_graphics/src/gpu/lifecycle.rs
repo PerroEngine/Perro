@@ -232,12 +232,14 @@ impl Gpu {
             };
             let instance = wgpu::Instance::new(descriptor);
             if let Ok(surface) = instance.create_surface(window.clone())
-                && let Ok(adapter) = instance.request_adapter(&wgpu::RequestAdapterOptions {
-                    apply_limit_buckets: false,
-                    power_preference,
-                    compatible_surface: Some(&surface),
-                    force_fallback_adapter: false,
-                }).await
+                && let Ok(adapter) = instance
+                    .request_adapter(&wgpu::RequestAdapterOptions {
+                        apply_limit_buckets: false,
+                        power_preference,
+                        compatible_surface: Some(&surface),
+                        force_fallback_adapter: false,
+                    })
+                    .await
             {
                 cached_hit = Some((instance, surface, adapter));
             } else {

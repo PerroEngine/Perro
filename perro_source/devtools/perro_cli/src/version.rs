@@ -286,7 +286,6 @@ perro_ids = { version = "0.1.0", path = "perro_source/core/perro_ids" }
 serde = { version = "1.0.228", features = ["derive"] }
 "#;
 
-
     const LOCK: &str = r#"version = 4
 
 [[package]]
@@ -311,7 +310,10 @@ version = "0.1.0"
             locked_package_version(LOCK, "perro_runtime").as_deref(),
             Some("0.1.0")
         );
-        assert_eq!(locked_package_version(LOCK, "ahash").as_deref(), Some("0.8.12"));
+        assert_eq!(
+            locked_package_version(LOCK, "ahash").as_deref(),
+            Some("0.8.12")
+        );
         assert_eq!(locked_package_version(LOCK, "not_present"), None);
     }
 
@@ -349,10 +351,12 @@ version = \"9.9.9\"
         std::fs::create_dir_all(&perro).expect("dir");
         std::fs::write(
             perro.join("Cargo.lock"),
-            format!("[[package]]
+            format!(
+                "[[package]]
 name = \"perro_runtime\"
 version = \"{CLI_ENGINE_VERSION}\"
-"),
+"
+            ),
         )
         .expect("lock");
         assert!(ensure_engine_version_match(&dir).is_ok());
