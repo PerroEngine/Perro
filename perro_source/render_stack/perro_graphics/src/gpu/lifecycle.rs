@@ -211,33 +211,70 @@ impl Gpu {
         perro_structs::structs::boot_log::mark("gpu: enter");
         // Keep DX12/Vulkan selectable in shipped builds. Instance::default()
         // enables both compiled backends but does not apply WGPU_BACKEND.
-        let instance =
-            wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle().with_env());
-        perro_structs::structs::boot_log::mark("gpu: wgpu instance");
-        let surface = instance
-            .create_surface(window.clone())
-            .map_err(|err| format!("surface create fail: {err}"))?;
-
         // `PERRO_SIM` dev perf simulation. Reuses the constrained-adapter
         // policy below instead of adding a second low-end path, so a simulated
         // run exercises the exact code a real iGPU ships through.
         let sim = perro_structs::structs::devsim::profile();
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                apply_limit_buckets: false,
-                power_preference: match cfg.power_preference {
-                    _ if sim.prefer_low_power => wgpu::PowerPreference::LowPower,
-                    crate::PowerPreference::HighPerformance => {
-                        wgpu::PowerPreference::HighPerformance
-                    }
-                    crate::PowerPreference::LowPower => wgpu::PowerPreference::LowPower,
-                },
-                compatible_surface: Some(&surface),
-                force_fallback_adapter: false,
-            })
-            .await
-            .map_err(|err| format!("GPU adapter request fail: {err}"))?;
-        perro_structs::structs::boot_log::mark("gpu: adapter");
+        let power_preference = match cfg.power_preference {
+            _ if sim.prefer_low_power => wgpu::PowerPreference::LowPower,
+            crate::PowerPreference::HighPerformance => wgpu::PowerPreference::HighPerformance,
+            crate::PowerPreference::LowPower => wgpu::PowerPreference::LowPower,
+        };
+        // Enumerating every compiled backend costs ~450ms on a Windows box with
+        // both DX12 and Vulkan drivers, and the loser's adapters are discarded.
+        // Replay the backend the last full enumeration picked; anything short of
+        // a clean hit falls through to that full enumeration below.
+        let mut cached_hit = None;
+        if let Some(backends) = super::backend_cache::cached_backends() {
+            let descriptor = wgpu::InstanceDescriptor {
+                backends,
+                ..wgpu::InstanceDescriptor::new_without_display_handle()
+            };
+            let instance = wgpu::Instance::new(descriptor);
+            if let Ok(surface) = instance.create_surface(window.clone())
+                && let Ok(adapter) = instance.request_adapter(&wgpu::RequestAdapterOptions {
+                    apply_limit_buckets: false,
+                    power_preference,
+                    compatible_surface: Some(&surface),
+                    force_fallback_adapter: false,
+                }).await
+            {
+                cached_hit = Some((instance, surface, adapter));
+            } else {
+                // Driver removed, hardware swapped: stop trusting this entry.
+                super::backend_cache::clear();
+            }
+        }
+
+        let (instance, surface, adapter) = match cached_hit {
+            Some(hit) => {
+                perro_structs::structs::boot_log::mark("gpu: wgpu instance (cached backend)");
+                perro_structs::structs::boot_log::mark("gpu: adapter (cached backend)");
+                hit
+            }
+            None => {
+                let instance = wgpu::Instance::new(
+                    wgpu::InstanceDescriptor::new_without_display_handle().with_env(),
+                );
+                perro_structs::structs::boot_log::mark("gpu: wgpu instance");
+                let surface = instance
+                    .create_surface(window.clone())
+                    .map_err(|err| format!("surface create fail: {err}"))?;
+                let adapter = instance
+                    .request_adapter(&wgpu::RequestAdapterOptions {
+                        apply_limit_buckets: false,
+                        power_preference,
+                        compatible_surface: Some(&surface),
+                        force_fallback_adapter: false,
+                    })
+                    .await
+                    .map_err(|err| format!("GPU adapter request fail: {err}"))?;
+                perro_structs::structs::boot_log::mark("gpu: adapter");
+                super::backend_cache::store_backend(adapter.get_info().backend);
+                (instance, surface, adapter)
+            }
+        };
+        let _ = &instance;
         let adapter_info = adapter.get_info();
         // A simulated low-end run takes the memory-hint path too: the hint is
         // part of what makes an iGPU behave like an iGPU.

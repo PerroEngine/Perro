@@ -1380,6 +1380,7 @@ pub struct RenderGpuTiming {
     pub presented: bool,
 }
 
+mod backend_cache;
 mod frame;
 mod lifecycle;
 mod textures;
