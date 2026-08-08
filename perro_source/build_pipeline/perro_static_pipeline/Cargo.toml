@@ -3,6 +3,10 @@ name = "perro_static_pipeline"
 version.workspace = true
 edition = "2024"
 
+# zune-core = feature-unification only dep; no direct use. kp it.
+[package.metadata.cargo-machete]
+ignored = ["zune-core"]
+
 [lints]
 workspace = true
 
