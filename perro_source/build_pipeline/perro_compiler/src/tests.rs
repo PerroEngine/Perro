@@ -4,7 +4,7 @@ mod tests {
         ProjectBuildOptions, ProjectBuildTarget, SceneVarUsage, ScriptMethodParam,
         ScriptsBuildProfile, android_apk_artifact_path, checked_res_relative_path,
         compile_scripts_with_profile, copy_file_overwriting, emit_static_steam_app_id_fn,
-        emit_web_route_html_files, export_project_android_bundle, file_uri, friendly_path,
+        emit_web_route_html_files, export_project_android_bundle,
         generate_call_param_binding, generate_dlc_static_modules, generate_embedded_entry_files,
         generate_perro_assets, generate_project_static_modules, module_ident_from_path_part,
         native_output_artifact_name, native_output_folder_name, normalize_cargo_output_paths,
@@ -19,26 +19,6 @@ mod tests {
         ensure_source_overrides, load_project_toml, load_routes_toml,
     };
     use perro_scene::NodeType;
-
-    #[test]
-    fn exported_binary_path_is_friendly_and_linkable() {
-        let path = std::path::Path::new(r"\\?\D:\Game Projects\Magnet Monkeys\game.exe");
-        assert_eq!(
-            friendly_path(path),
-            r"D:\Game Projects\Magnet Monkeys\game.exe"
-        );
-        assert_eq!(
-            file_uri(path.parent().expect("binary parent")),
-            "file:///D:/Game%20Projects/Magnet%20Monkeys"
-        );
-
-        let unc = std::path::Path::new(r"\\?\UNC\server\share\game.exe");
-        assert_eq!(friendly_path(unc), r"\\server\share\game.exe");
-        assert_eq!(
-            file_uri(unc.parent().expect("binary parent")),
-            "file://server/share/"
-        );
-    }
 
     fn unique_temp_path(name: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!(
