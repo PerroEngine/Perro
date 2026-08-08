@@ -233,6 +233,9 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let mut phase = DevPhaseTimer::new();
     ensure_source_overrides(&project_dir)
         .map_err(|err| format!("failed to sync generated project crates: {err}"))?;
+    // The CLI emits the script glue, the project links the engine; a version
+    // split between the two fails inside the dylib rather than at build time.
+    crate::version::ensure_engine_version_match(&project_dir)?;
     phase.mark("ensure_source_overrides");
     let project_cfg = load_project_toml_with_demo(&project_dir, demo)
         .map_err(|err| format!("failed to load project.toml: {err}"))?;
@@ -999,6 +1002,9 @@ pub(crate) fn project_command(args: &[String], cwd: &Path) -> Result<(), String>
     let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
     update_project_vscode_linked_projects(&project_dir)?;
+    // Matters more here than in `dev`: a shipped bundle with mismatched glue and
+    // engine crashes on a player's machine, not on this one.
+    crate::version::ensure_engine_version_match(&project_dir)?;
     log_step("Building Project Bundle");
     let options = ProjectBuildOptions::new(profile, console)
         .with_headless(headless)

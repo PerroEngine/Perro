@@ -1,4 +1,5 @@
 use crate::{log_done, log_note, log_step, parse_flag_value, workspace_root};
+use std::env;
 use std::fs;
 use std::path::Path;
 
@@ -92,6 +93,72 @@ fn collect_manifests(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
             out.push(path);
         }
     }
+}
+
+/// Engine version this CLI was built from. `perro_cli` inherits
+/// `[workspace.package] version`, so it is the engine version by construction.
+pub(crate) const CLI_ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Escape hatch for a deliberate mismatch.
+const VERSION_MISMATCH_OVERRIDE: &str = "PERRO_ALLOW_VERSION_MISMATCH";
+
+/// Fails when the engine the project will link differs from the engine this CLI
+/// was built from.
+///
+/// The CLI generates the script glue; the project links the engine. If those two
+/// come from different engine versions the glue can target an API the runtime no
+/// longer has, and the failure surfaces as a crash inside the loaded dylib
+/// rather than a build error.
+///
+/// Checks the resolved version in `.perro/Cargo.lock`, not the requirement in
+/// the manifest: `version = "0.1.0"` is a caret range, so the manifest cannot
+/// say what actually gets linked. No lock yet (first run) means nothing to
+/// check.
+pub(crate) fn ensure_engine_version_match(project_dir: &Path) -> Result<(), String> {
+    if env::var_os(VERSION_MISMATCH_OVERRIDE).is_some() {
+        return Ok(());
+    }
+    let lock = project_dir.join(".perro").join("Cargo.lock");
+    let Ok(text) = fs::read_to_string(&lock) else {
+        return Ok(());
+    };
+    let Some(linked) = locked_package_version(&text, "perro_runtime") else {
+        return Ok(());
+    };
+    if linked == CLI_ENGINE_VERSION {
+        return Ok(());
+    }
+    Err(format!(
+        "engine version mismatch: this `perro` CLI was built from engine {CLI_ENGINE_VERSION}, \
+         but {} resolves perro_runtime {linked}.\n\
+         The CLI generates the script glue and the project links the engine, so mismatched \
+         versions can crash inside the scripts dylib instead of failing to build.\n\
+         Rebuild/reinstall `perro` from engine {linked}, or align the project's engine version \
+         with `perro version --set {CLI_ENGINE_VERSION}`.\n\
+         Set {VERSION_MISMATCH_OVERRIDE}=1 to proceed anyway.",
+        lock.display()
+    ))
+}
+
+/// Reads `version` for a `[[package]]` entry from a Cargo lockfile.
+fn locked_package_version(lock: &str, package: &str) -> Option<String> {
+    let needle = format!("name = \"{package}\"");
+    let mut in_entry = false;
+    for line in lock.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[[package]]" {
+            in_entry = false;
+            continue;
+        }
+        if trimmed == needle {
+            in_entry = true;
+            continue;
+        }
+        if in_entry && let Some(rest) = trimmed.strip_prefix("version = ") {
+            return Some(rest.trim().trim_matches('"').to_string());
+        }
+    }
+    None
 }
 
 fn validate_semver(raw: &str) -> Result<String, String> {
@@ -219,6 +286,78 @@ perro_ids = { version = "0.1.0", path = "perro_source/core/perro_ids" }
 serde = { version = "1.0.228", features = ["derive"] }
 "#;
 
+
+    const LOCK: &str = r#"version = 4
+
+[[package]]
+name = "ahash"
+version = "0.8.12"
+
+[[package]]
+name = "perro_runtime"
+version = "0.1.0"
+dependencies = [
+ "ahash",
+]
+
+[[package]]
+name = "perro_ui"
+version = "0.1.0"
+"#;
+
+    #[test]
+    fn reads_locked_version_for_the_right_package() {
+        assert_eq!(
+            locked_package_version(LOCK, "perro_runtime").as_deref(),
+            Some("0.1.0")
+        );
+        assert_eq!(locked_package_version(LOCK, "ahash").as_deref(), Some("0.8.12"));
+        assert_eq!(locked_package_version(LOCK, "not_present"), None);
+    }
+
+    #[test]
+    fn no_lock_is_not_a_mismatch() {
+        let dir = std::env::temp_dir().join("perro_version_guard_nolock");
+        std::fs::create_dir_all(&dir).expect("dir");
+        assert!(ensure_engine_version_match(&dir).is_ok());
+        std::fs::remove_dir_all(dir).expect("cleanup");
+    }
+
+    #[test]
+    fn mismatched_lock_is_rejected() {
+        let dir = std::env::temp_dir().join("perro_version_guard_mismatch");
+        let perro = dir.join(".perro");
+        std::fs::create_dir_all(&perro).expect("dir");
+        std::fs::write(
+            perro.join("Cargo.lock"),
+            "[[package]]
+name = \"perro_runtime\"
+version = \"9.9.9\"
+",
+        )
+        .expect("lock");
+        let err = ensure_engine_version_match(&dir).expect_err("mismatch must fail");
+        assert!(err.contains("engine version mismatch"));
+        assert!(err.contains("9.9.9"));
+        std::fs::remove_dir_all(dir).expect("cleanup");
+    }
+
+    #[test]
+    fn matching_lock_passes() {
+        let dir = std::env::temp_dir().join("perro_version_guard_match");
+        let perro = dir.join(".perro");
+        std::fs::create_dir_all(&perro).expect("dir");
+        std::fs::write(
+            perro.join("Cargo.lock"),
+            format!("[[package]]
+name = \"perro_runtime\"
+version = \"{CLI_ENGINE_VERSION}\"
+"),
+        )
+        .expect("lock");
+        assert!(ensure_engine_version_match(&dir).is_ok());
+        std::fs::remove_dir_all(dir).expect("cleanup");
+    }
     #[test]
     fn reads_workspace_package_version() {
         assert_eq!(workspace_package_version(SAMPLE).as_deref(), Some("0.1.0"));
