@@ -36,25 +36,28 @@ mod tests {
     fn release_paths_use_project_identity() {
         let root = std::path::Path::new(r"C:\Magnet Monkeys\Games\BozoSort");
         let mut flags = Vec::new();
-        append_private_path_remaps(&mut flags, root, "BozoSort");
+        append_private_path_remaps(&mut flags, root);
 
         assert!(flags.iter().any(|flag| {
             flag == &format!(
                 "--remap-path-prefix={}={}",
                 root.display(),
-                "BozoSort/src"
+                "s"
             )
         }));
-        assert!(flags.iter().any(|flag| flag.ends_with("=BozoSort/src/deps")));
-        assert!(flags.iter().any(|flag| flag.ends_with("=BozoSort/src/rust")));
+        assert!(flags.iter().any(|flag| flag.ends_with("=d")));
+        assert!(flags.iter().any(|flag| flag.ends_with("=r")));
+        assert!(flags.iter().any(|flag| {
+            flag.contains("../../../../res=") && flag.ends_with("=s")
+        }));
         assert!(flags.iter().all(|flag| !flag.contains("=Magnet Monkeys")));
         let user = flags
             .iter()
-            .position(|flag| flag.ends_with("=BozoSort/src/user"))
+            .position(|flag| flag.ends_with("=u"))
             .expect("user remap");
         let deps = flags
             .iter()
-            .position(|flag| flag.ends_with("=BozoSort/src/deps"))
+            .position(|flag| flag.ends_with("=d"))
             .expect("Cargo remap");
         assert!(user < deps, "specific Cargo remap must win");
     }
@@ -73,7 +76,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(contains_utf16le_ascii_case_insensitive(&utf16, private));
         assert!(!contains_ascii_case_insensitive(
-            b"BozoSort/src/player.rs",
+            b"s/player.rs",
             private.as_bytes()
         ));
     }

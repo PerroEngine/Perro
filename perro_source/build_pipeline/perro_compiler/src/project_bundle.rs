@@ -238,7 +238,7 @@ fn build_project_crate(
         .current_dir(&project_crate);
     let mut rustflags = inherited_rustflags();
     if options.release {
-        append_private_path_remaps(&mut rustflags, project_root, project_name);
+        append_private_path_remaps(&mut rustflags, project_root);
     }
     if options.target == ProjectBuildTarget::Web {
         cmd.arg("build")
@@ -381,8 +381,7 @@ fn inherited_rustflags() -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn append_private_path_remaps(flags: &mut Vec<String>, project_root: &Path, project_name: &str) {
-    let logical_root = format!("{project_name}/src");
+fn append_private_path_remaps(flags: &mut Vec<String>, project_root: &Path) {
     let project_root = project_root
         .canonicalize()
         .unwrap_or_else(|_| project_root.to_path_buf());
@@ -390,38 +389,80 @@ fn append_private_path_remaps(flags: &mut Vec<String>, project_root: &Path, proj
     // rustc applies the last matching remap. Add broad roots first, followed by
     // tool roots, project root, and generated source roots.
     if let Some(user_root) = user_home() {
-        push_path_remap(flags, &user_root, &format!("{logical_root}/user"));
+        push_path_remap(flags, &user_root, "u");
     }
 
     // Local engine checkouts sit outside normal Cargo home paths.
     if let Some(engine_root) = engine_source_root() {
-        push_path_remap(flags, &engine_root, &format!("{logical_root}/engine"));
+        push_path_remap(flags, &engine_root, "e");
     }
 
-    for (env_name, fallback_dir, logical) in [
-        ("CARGO_HOME", ".cargo", "deps"),
-        ("RUSTUP_HOME", ".rustup", "rust"),
-    ] {
-        if let Some(path) = tool_home(env_name, fallback_dir) {
-            push_path_remap(flags, &path, &format!("{logical_root}/{logical}"));
+    if let Some(cargo_home) = tool_home("CARGO_HOME", ".cargo") {
+        push_path_remap(flags, &cargo_home, "d");
+        append_cargo_source_remaps(flags, &cargo_home, "d");
+    }
+    if let Some(rustup_home) = tool_home("RUSTUP_HOME", ".rustup") {
+        push_path_remap(flags, &rustup_home, "r");
+        append_rust_source_remaps(flags, &rustup_home, "r");
+    }
+
+    let project_src = "s";
+    push_path_remap(flags, &project_root, &project_src);
+    push_path_remap(flags, &project_root.join(".perro/project"), &project_src);
+    let scripts_root = project_root.join(".perro/scripts/src/scripts");
+    push_path_remap(flags, &scripts_root, &project_src);
+    append_project_res_remaps(flags, &scripts_root, &project_src);
+}
+
+fn append_cargo_source_remaps(flags: &mut Vec<String>, cargo_home: &Path, logical: &str) {
+    if let Ok(registries) = fs::read_dir(cargo_home.join("registry/src")) {
+        for registry in registries.flatten().filter(|entry| entry.path().is_dir()) {
+            push_path_remap(flags, &registry.path(), logical);
         }
     }
+    if let Ok(repositories) = fs::read_dir(cargo_home.join("git/checkouts")) {
+        for repository in repositories.flatten().filter(|entry| entry.path().is_dir()) {
+            if let Ok(checkouts) = fs::read_dir(repository.path()) {
+                for checkout in checkouts.flatten().filter(|entry| entry.path().is_dir()) {
+                    push_path_remap(flags, &checkout.path(), logical);
+                }
+            }
+        }
+    }
+}
 
-    push_path_remap(flags, &project_root, &logical_root);
-    push_path_remap(flags, &project_root.join(".perro/project"), &logical_root);
-    push_path_remap(
-        flags,
-        &project_root.join(".perro/scripts/src/scripts"),
-        &logical_root,
-    );
+fn append_rust_source_remaps(flags: &mut Vec<String>, rustup_home: &Path, logical: &str) {
+    let Ok(toolchains) = fs::read_dir(rustup_home.join("toolchains")) else {
+        return;
+    };
+    for toolchain in toolchains.flatten().filter(|entry| entry.path().is_dir()) {
+        let library = toolchain
+            .path()
+            .join("lib/rustlib/src/rust/library");
+        if library.is_dir() {
+            push_path_remap(flags, &library, logical);
+        }
+    }
+}
+
+fn append_project_res_remaps(flags: &mut Vec<String>, scripts_root: &Path, logical: &str) {
+    for root in path_prefix_spellings(scripts_root) {
+        push_raw_path_remap(flags, format!(r"{root}\../../../../res"), logical);
+        push_raw_path_remap(flags, format!("{root}/../../../../res"), logical);
+        push_raw_path_remap(flags, format!(r"{root}\..\..\..\..\res"), logical);
+    }
+}
+
+fn push_raw_path_remap(flags: &mut Vec<String>, physical: String, logical: &str) {
+    let flag = format!("--remap-path-prefix={physical}={logical}");
+    if !flags.contains(&flag) {
+        flags.push(flag);
+    }
 }
 
 fn push_path_remap(flags: &mut Vec<String>, physical: &Path, logical: &str) {
     for physical in path_prefix_spellings(physical) {
-        let flag = format!("--remap-path-prefix={physical}={logical}");
-        if !flags.contains(&flag) {
-            flags.push(flag);
-        }
+        push_raw_path_remap(flags, physical, logical);
     }
 }
 
