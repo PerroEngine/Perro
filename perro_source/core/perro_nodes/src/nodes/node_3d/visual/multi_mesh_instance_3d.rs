@@ -1,4 +1,7 @@
-use crate::mesh_instance_3d::{LODOptions, MeshBlendOptions, MeshSurfaceBinding};
+use crate::mesh_instance_3d::{
+    LODOptions, MaterialParamOverride, MaterialParamOverrideValue, MeshBlendOptions,
+    MeshSurfaceBinding,
+};
 use crate::node_3d::Node3D;
 use perro_ids::MeshID;
 use perro_structs::{Quaternion, Transform3D, Vector3};
@@ -77,6 +80,49 @@ impl MultiMeshInstance3D {
             cast_shadows: true,
             receive_shadows: true,
         }
+    }
+
+    /// Sets one per-surface material param override.
+    ///
+    /// The node keeps its own value for `name` while still sharing the base
+    /// material, so a crowd of nodes can each drive a param without a material
+    /// (and bind group) per node. Overwrites an existing override of the same
+    /// name; returns true when the stored value actually changed.
+    pub fn set_surface_param_override(
+        &mut self,
+        surface_index: usize,
+        name: &str,
+        value: MaterialParamOverrideValue,
+    ) -> bool {
+        let surface = self.ensure_surface_mut(surface_index);
+        if let Some(existing) = surface
+            .overrides
+            .iter_mut()
+            .find(|entry| entry.name == name)
+        {
+            if existing.value == value {
+                return false;
+            }
+            existing.value = value;
+            return true;
+        }
+        surface.overrides.push(MaterialParamOverride {
+            name: std::borrow::Cow::Owned(name.to_string()),
+            value,
+        });
+        true
+    }
+
+    /// Drops a per-surface override so the surface falls back to the material's
+    /// own value. Returns true when one was removed.
+    pub fn clear_surface_param_override(&mut self, surface_index: usize, name: &str) -> bool {
+        if self.surfaces.len() <= surface_index {
+            return false;
+        }
+        let overrides = &mut self.surfaces[surface_index].overrides;
+        let before = overrides.len();
+        overrides.retain(|entry| entry.name != name);
+        overrides.len() != before
     }
 
     pub fn ensure_surface_mut(&mut self, surface_index: usize) -> &mut MeshSurfaceBinding {

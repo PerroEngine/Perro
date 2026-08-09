@@ -110,15 +110,14 @@ impl BenchSceneSpawner {
                 )
             })
             .collect();
-        let material = perro_render_bridge::Material3D::Custom(
-            perro_render_bridge::CustomMaterial3D {
+        let material =
+            perro_render_bridge::Material3D::Custom(perro_render_bridge::CustomMaterial3D {
                 shader_path: "res://shaders/bench.wgsl".into(),
                 params: params.into(),
                 images: Vec::new().into(),
                 lighting: perro_render_bridge::CustomMaterialLighting3D::Standard,
                 surface: Default::default(),
-            },
-        );
+            });
         self.0.resource_api.create_material(material).as_u64()
     }
 

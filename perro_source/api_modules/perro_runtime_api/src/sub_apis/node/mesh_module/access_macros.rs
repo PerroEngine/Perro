@@ -843,3 +843,53 @@ macro_rules! node_collection {
         __collection
     }};
 }
+
+/// Sets one per-surface material param override on a mesh node.
+///
+/// Each node keeps its own value while still sharing the base material, so a
+/// crowd can drive a param without a material per node. For a value shared by
+/// every user of a material, set it on the material instead
+/// (`set_material_param!`).
+///
+/// Usage:
+/// - `set_node_material_param!(ctx, MeshInstance3D, id, "glow", 0.7)` (surface 0)
+/// - `set_node_material_param!(ctx, MultiMeshInstance3D, id, 1, "glow", 0.7)`
+///
+/// Returns `Option<bool>`: `None` if the node is missing or not that type,
+/// `Some(false)` if the value was already set.
+#[macro_export]
+macro_rules! set_node_material_param {
+    ($ctx:expr, $node_ty:ty, $id:expr, $surface:expr, $name:expr, $value:expr) => {
+        $crate::with_node_mut!($ctx, $node_ty, $id, |__node| {
+            __node.set_surface_param_override($surface, $name, ::core::convert::Into::into($value))
+        })
+    };
+    ($ctx:expr, $node_ty:ty, $id:expr, $name:expr, $value:expr) => {
+        $crate::set_node_material_param!($ctx, $node_ty, $id, 0usize, $name, $value)
+    };
+    ($($invalid:tt)*) => {
+        compile_error!(
+            "invalid set_node_material_param! call; use: set_node_material_param!(ctx, ConcreteType, node_id, [surface,] \"name\", value)"
+        )
+    };
+}
+
+/// Drops a per-surface override so the surface falls back to the material value.
+///
+/// Usage: `clear_node_material_param!(ctx, MeshInstance3D, id, [surface,] "glow")`.
+#[macro_export]
+macro_rules! clear_node_material_param {
+    ($ctx:expr, $node_ty:ty, $id:expr, $surface:expr, $name:expr) => {
+        $crate::with_node_mut!($ctx, $node_ty, $id, |__node| {
+            __node.clear_surface_param_override($surface, $name)
+        })
+    };
+    ($ctx:expr, $node_ty:ty, $id:expr, $name:expr) => {
+        $crate::clear_node_material_param!($ctx, $node_ty, $id, 0usize, $name)
+    };
+    ($($invalid:tt)*) => {
+        compile_error!(
+            "invalid clear_node_material_param! call; use: clear_node_material_param!(ctx, ConcreteType, node_id, [surface,] \"name\")"
+        )
+    };
+}
