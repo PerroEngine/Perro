@@ -78,6 +78,11 @@ mic-jack = ["perro_pawdio/mic-jack"]
 steamworks = ["dep:perro_steamworks", "perro_steamworks/steamworks-runtime"]
 
 [[bench]]
+name = "material_params"
+harness = false
+required-features = ["bench"]
+
+[[bench]]
 name = "audio_propagation"
 harness = false
 

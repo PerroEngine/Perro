@@ -98,6 +98,62 @@ impl BenchSceneSpawner {
         }));
     }
 
+    /// Creates a custom material carrying `param_count` params, as a script
+    /// would via `create_material`.
+    pub fn bench_create_custom_material(&mut self, param_count: usize) -> u64 {
+        use perro_resource_api::sub_apis::MaterialAPI;
+        let params: Vec<perro_render_bridge::CustomMaterialParam3D> = (0..param_count)
+            .map(|i| {
+                perro_render_bridge::CustomMaterialParam3D::named(
+                    format!("param_{i}"),
+                    perro_structs::ConstParamValue::F32(0.0),
+                )
+            })
+            .collect();
+        let material = perro_render_bridge::Material3D::Custom(
+            perro_render_bridge::CustomMaterial3D {
+                shader_path: "res://shaders/bench.wgsl".into(),
+                params: params.into(),
+                images: Vec::new().into(),
+                lighting: perro_render_bridge::CustomMaterialLighting3D::Standard,
+                surface: Default::default(),
+            },
+        );
+        self.0.resource_api.create_material(material).as_u64()
+    }
+
+    /// The read-modify-write cycle a script performs to animate one param:
+    /// `get_material_data` (deep clone) -> mutate -> `write_material_data`.
+    ///
+    /// Returns the number of writes that reported success, so the optimizer
+    /// cannot elide the calls.
+    pub fn bench_material_param_write_cycle(&mut self, raw_id: u64, writes: usize) -> usize {
+        use perro_resource_api::sub_apis::MaterialAPI;
+        let id = perro_ids::MaterialID::from_u64(raw_id);
+        let mut ok = 0usize;
+        for i in 0..writes {
+            let Some(mut material) = self.0.resource_api.get_material_data(id) else {
+                continue;
+            };
+            if let perro_render_bridge::Material3D::Custom(custom) = &mut material {
+                let params = custom.params.to_mut();
+                if let Some(first) = params.first_mut() {
+                    first.value = perro_structs::ConstParamValue::F32(i as f32);
+                }
+            }
+            ok += usize::from(self.0.resource_api.write_material_data(id, material));
+        }
+        ok
+    }
+
+    /// Drains queued render commands the way a frame boundary would, so a
+    /// write-cycle bench does not just grow the queue forever.
+    pub fn bench_drain_queued_commands(&mut self) -> usize {
+        let mut out = Vec::new();
+        self.0.resource_api.drain_commands(&mut out);
+        out.len()
+    }
+
     pub fn spawn_uncompiled(&mut self, scene: &Scene) -> Result<usize, String> {
         let prepared = prepare_scene_with_loader_and_styles(
             scene,
