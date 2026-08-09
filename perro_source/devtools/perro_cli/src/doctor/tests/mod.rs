@@ -71,6 +71,47 @@ fn script_ref_missing_warns_and_existing_ref_stays_clean() {
 }
 
 #[test]
+fn script_ref_skips_format_prefixes_and_test_bodies() {
+    let project = temp_project();
+    fs::create_dir_all(project.join("res/scripts")).expect("test setup/result must succeed");
+    let source = project.join("res/scripts/main.rs");
+    fs::write(
+        &source,
+        r#"
+            fn hair_path(index: u8) -> String {
+                format!("res://avatar/hair/Hair{index}.glb")
+            }
+
+            #[cfg(test)]
+            mod tests {
+                #[test]
+                fn builds_path() {
+                    assert_eq!(hair_path(2), "res://avatar/hair/Hair2.glb");
+                }
+            }
+            "#,
+    )
+    .expect("test setup/result must succeed");
+
+    let mut report = ValidationReport::default();
+    validate_script_warnings(&project, &mut report).expect("test setup/result must succeed");
+
+    // The format! literal is only a prefix and can never resolve on its own; the assertion
+    // inside #[cfg(test)] is a shape check, not a load site. Neither is a real missing ref.
+    assert_eq!(report.errors, 0);
+    assert_eq!(
+        report
+            .messages
+            .iter()
+            .filter(|m| m.contains("script ref missing"))
+            .count(),
+        0,
+        "unexpected ref warnings: {:?}",
+        report.messages
+    );
+}
+
+#[test]
 fn doctor_ignores_scene_refs_in_comments() {
     let project = temp_project();
     fs::create_dir_all(project.join("res")).expect("test setup/result must succeed");

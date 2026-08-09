@@ -1042,6 +1042,7 @@ fn is_node_id_type_for_doctor(ty: &str) -> bool {
 
 fn extract_aggressive_virtual_refs(text: &str) -> Vec<TextRef> {
     let mut refs = Vec::new();
+    let test_regions = test_region_ranges(text);
     let mut i = 0usize;
     while i < text.len() {
         let rest = &text[i..];
@@ -1054,14 +1055,24 @@ fn extract_aggressive_virtual_refs(text: &str) -> Vec<TextRef> {
         };
         let start = i + rel;
         let mut end = start;
+        let mut delim = None;
         for (offset, ch) in text[start..].char_indices() {
             if is_virtual_ref_delim(ch) {
+                delim = Some(ch);
                 break;
             }
             end = start + offset + ch.len_utf8();
         }
         let raw = trim_virtual_ref_tail(&text[start..end]);
-        if !raw.is_empty() {
+        // A ref cut short by `{` is a format-string prefix, e.g.
+        // `format!("res://.../Hair{index}.glb")`. The literal part can never resolve on its
+        // own, so checking it only ever produces a false "missing" for a path that is fine.
+        let is_format_prefix = delim == Some('{');
+        // Test bodies assert on path *shapes*; they are not load sites.
+        let in_test = test_regions
+            .iter()
+            .any(|(begin, finish)| start >= *begin && start < *finish);
+        if !raw.is_empty() && !is_format_prefix && !in_test {
             refs.push(TextRef {
                 raw: raw.to_string(),
                 line: line_number_at(text, start),
@@ -1070,6 +1081,38 @@ fn extract_aggressive_virtual_refs(text: &str) -> Vec<TextRef> {
         i = end.max(start + 1);
     }
     refs
+}
+
+/// Byte ranges of `#[cfg(test)]` items, so refs inside them can be skipped.
+fn test_region_ranges(text: &str) -> Vec<(usize, usize)> {
+    const MARKER: &str = "#[cfg(test)]";
+    let mut ranges = Vec::new();
+    let mut i = 0usize;
+    while let Some(rel) = text[i..].find(MARKER) {
+        let start = i + rel;
+        let Some(brace_rel) = text[start..].find('{') else {
+            break;
+        };
+        let open = start + brace_rel;
+        let mut depth = 0i32;
+        let mut end = text.len();
+        for (offset, ch) in text[open..].char_indices() {
+            match ch {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = open + offset + 1;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        ranges.push((start, end));
+        i = end.max(start + MARKER.len());
+    }
+    ranges
 }
 
 fn is_virtual_ref_delim(ch: char) -> bool {
