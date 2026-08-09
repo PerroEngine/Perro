@@ -9,6 +9,7 @@
 | Practical Example | [Practical Example](#practical-example) |
 | Reference     | [Reference](#reference)         |
 | 3D Mesh Flips | [3D Mesh Flips](#3d-mesh-flips) |
+| Material Param Overrides | [Material Param Overrides](#material-param-overrides) |
 
 ## Purpose
 
@@ -586,6 +587,45 @@ Behavior notes:
 - `MeshInstance3D` and `MultiMeshInstance3D` share the same field names.
 - For skinned meshes, flip mirrors the rendered skinned result at the mesh node level.
 - `CollisionShape3D` also accepts these fields, but mesh render flip does not affect collision shape flip.
+
+## Material Param Overrides
+
+`MeshInstance3D` and `MultiMeshInstance3D` can hold their own value for a custom
+shader param while still sharing the base material. The node keeps the override;
+the material is untouched, so no extra material, bind group, or uniform is
+created per node.
+
+```rust
+// Surface 0 by default.
+set_node_material_param!(ctx, MeshInstance3D, id, "glow", 0.7);
+
+// Explicit surface index.
+set_node_material_param!(ctx, MultiMeshInstance3D, id, 1, "glow", 0.7);
+
+// Fall back to the material's own value.
+clear_node_material_param!(ctx, MeshInstance3D, id, "glow");
+```
+
+Values accept `f32`, `i32`, `bool`, `[f32; 2]`, `[f32; 3]`, and `[f32; 4]`.
+
+Both macros return `Option<bool>`: `None` when the node is missing or is not that
+type, `Some(false)` when the stored value did not change. Overrides are keyed by
+name, so setting the same name again replaces it rather than appending, and
+re-asserting a value costs nothing. That makes these safe to call every frame.
+
+### Choosing Node Override Or Material Param
+
+| Situation | Use |
+| --- | --- |
+| One value shared by every surface using the material | [`set_material_param!`](contexts/resource_modules/materials.md#set_material_param) |
+| A value that differs per node, over a shared material | `set_node_material_param!` |
+| A value that differs per instance inside one multimesh | Neither yet; overrides are per surface, not per instance |
+
+Do not give each node its own material just to vary one number. That is a
+material, bind group, and uniform per node; an override is none of those.
+
+Scene files can author the same overrides, so a script override and a `.scn`
+override target the same slot.
 
 ## 3D Blend Shapes
 

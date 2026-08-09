@@ -16,6 +16,7 @@
 | `create` | [`create`](#create) |
 | `get_data` | [`get_data`](#get_data) |
 | `write` | [`write`](#write) |
+| `set_param` | [`set_param`](#set_param) |
 | `is_loaded` | [`is_loaded`](#is_loaded) |
 | `reserve` | [`reserve`](#reserve) |
 | `reserve_hashed` | [`reserve_hashed`](#reserve_hashed) |
@@ -27,6 +28,7 @@
 | `material_create` | [`material_create`](#material_create) |
 | `material_get_data` | [`material_get_data`](#material_get_data) |
 | `material_write` | [`material_write`](#material_write) |
+| `set_material_param` | [`set_material_param`](#set_material_param) |
 | `material_is_loaded` | [`material_is_loaded`](#material_is_loaded) |
 
 ## Purpose
@@ -40,6 +42,7 @@
 - Building materials in code: `material_create!(ctx.res, Material3D::default())` for a fully runtime-defined surface (unlit, toon, standard, or custom shader).
 - Swapping a skin: `material_load!(ctx.res, "res://materials/gold.pmat")` and assign the returned `MaterialID`.
 - Decoding downloaded materials: `create_from_bytes` for engine `PMAT` text or glTF/GLB material index 0.
+- Animating a shader value every frame: `set_material_param!(ctx.res, id, "glow", value)`. Never `get_data` + `write` for this; that round trip clones every param on the material, so a one-value change costs time proportional to the param count, every frame.
 - Preloading and memory control: `material_reserve!` to pin, `material_is_loaded!` to poll, `material_drop!` to free.
 
 ## Ownership And Choice
@@ -155,6 +158,20 @@ methods!({
 | Returns | `bool` |
 | Use when | Overwriting an existing material, for example to recolor a surface. |
 | Fails when / edge behavior | Returns `false` when the ID is unknown or the data is invalid. |
+
+### `set_param`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Materials()` |
+| Signature | `pub fn set_param(&self, id: MaterialID, name: &str, value: impl Into<ConstParamValue>) -> bool` |
+| Params | `id: MaterialID, name: &str, value: f32 / i32 / bool / [f32; 2] / [f32; 3] / [f32; 4]` |
+| Returns | `bool` |
+| Use when | Changing one custom-shader param, especially every frame. Cost does not grow with how many params the material has. |
+| Fails when / edge behavior | Returns `false` for a nil or unknown ID, a non-custom material, or a name the material does not define. Writing the value it already holds returns `true` and queues nothing, so re-asserting a param each frame is free. |
+
+Changes every surface using this material. For a value that differs per node, see
+[Material Param Overrides](../../nodes.md#material-param-overrides).
 
 ### `is_loaded`
 
@@ -276,6 +293,22 @@ methods!({
 | Returns | `bool` |
 | Use when | Macro form of `write`. |
 | Fails when / edge behavior | Returns `false` when the ID is unknown or the data is invalid. |
+
+### `set_material_param`
+
+| Field | Detail |
+| --- | --- |
+| Access | macro |
+| Signature | `set_material_param!(ctx.res, id, name, value)` |
+| Params | `ctx.res, id, name, value` |
+| Returns | `bool` |
+| Use when | Macro form of `set_param`. The per-frame path for animating a custom-shader value. |
+| Fails when / edge behavior | Returns `false` for a nil or unknown ID, a non-custom material, or an undefined param name. |
+
+```rust
+// Pulse a custom shader's glow, every frame, on every surface using this material.
+set_material_param!(ctx.res, self.material, "glow", (ctx.time.elapsed()).sin() * 0.5 + 0.5);
+```
 
 ### `material_is_loaded`
 

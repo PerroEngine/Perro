@@ -8,6 +8,7 @@
 | Use Cases | [Use Cases](#use-cases) |
 | Example | [Example](#example) |
 | Reference | [Reference](#reference) |
+| Live Params | [Live Params](#live-params) |
 
 ## Purpose
 
@@ -300,6 +301,42 @@ uses green for roughness and blue for metallic. Occlusion uses red. Normal maps 
 space with `normal_scale` applied to X/Y. Emissive texture color multiplies
 `emissive_factor`. These rules match on regular mesh and dense multimesh draws.
 
+## Live Params
+
+Changing a custom shader param does not rebuild anything. Only a shape change --
+shader path, images, lighting, or surface -- recompiles a pipeline. Param values
+are free of that, so they are the intended channel for anything animated.
+
+Use the narrow setters. Do not read the material back to change one value:
+
+```rust
+// Every surface using this material.
+set_material_param!(ctx.res, mat, "glow", 0.7);
+
+// Just this node, still sharing the material.
+set_node_material_param!(ctx, MeshInstance3D, id, "glow", 0.7);
+```
+
+`Materials().get_data()` clones the whole material, including every param, so the
+`get_data` -> mutate -> `write` round trip costs time proportional to the param
+count -- paid again every frame. The narrow setters send only the changed value
+and are flat in the param count:
+
+| Path | 1 param | 8 params | 32 params | 128 params |
+| --- | --- | --- | --- | --- |
+| `get_data` + `write` | 600 ns | 1.24 us | 2.64 us | 9.18 us |
+| `set_param` | ~200 ns | ~200 ns | ~200 ns | ~200 ns |
+
+Per write, measured by `cargo bench -p perro_runtime --features bench --bench
+material_params`. At 2048 writes per frame the round trip costs 19.2 ms on a
+128-param material -- past a 60 fps frame -- against 0.44 ms for `set_param`.
+
+Writing the value a param already holds queues nothing, so re-asserting state
+every frame is free and there is no need to track what changed.
+
+Overrides are per surface, not per instance. A crowd where every instance of one
+multimesh needs its own value is not covered by either setter yet.
+
 ## Static Builds
 
 Static builds bake supported material sources into generated lookup data.
@@ -323,5 +360,6 @@ See [Performance + Flexibility Philosophy](../project/performance_philosophy.md)
 - set `output = "final"` for exact shader output.
 - legacy `lighting = "raw"` remains valid.
 - custom material parameter order binds shader indices: `custom_f_param(in, 0u)` reads the first param.
+- per-frame param changes belong in `set_material_param!` / `set_node_material_param!`, never `get_data` + `write`.
 - custom param names are metadata for humans and tooling; order controls shader access.
 - vertex modifiers affect rendering, depth, and shadows; physics and navigation meshes stay unchanged.

@@ -3,7 +3,7 @@ use perro_nodes::{
     WaterIdleMode, WaterPhysicsSample, WaterShape, WaterSurfaceParams, water_impact_strength,
     water_physics_sample_or_idle,
 };
-use perro_structs::Vector2;
+use perro_structs::{Vector2, WaterQuality};
 use rayon::prelude::*;
 
 const WATER_FORCE_PAR_BODY_THRESHOLD: usize = 512;
@@ -110,10 +110,21 @@ fn build_bins(waters: impl Iterator<Item = (f32, f32)> + Clone) -> (Vec<Vec<usiz
     (bins, min_x, inv_cell_width)
 }
 
+/// Sim density is a single `quality` knob now; the sweep still reads as a grid
+/// resolution, so map the old side lengths onto the nearest quality tier.
+fn quality_for_resolution(resolution: u32) -> WaterQuality {
+    match resolution {
+        0..=64 => WaterQuality::Low,
+        65..=96 => WaterQuality::Medium,
+        97..=160 => WaterQuality::High,
+        _ => WaterQuality::Ultra,
+    }
+}
+
 fn water_surface(resolution: u32) -> WaterSurfaceParams {
     let mut surface = WaterSurfaceParams {
         shape: WaterShape::rect(Vector2::new(128.0, 128.0)),
-        resolution: [resolution, resolution],
+        quality: quality_for_resolution(resolution),
         idle_mode: WaterIdleMode::Chop,
         ..Default::default()
     };
