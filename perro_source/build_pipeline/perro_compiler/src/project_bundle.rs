@@ -116,6 +116,7 @@ pub fn compile_project_bundle(
     build_project_crate(
         project_root,
         options,
+        &cfg.name,
         cfg.steam.enabled,
         cfg.metadata.version.as_deref(),
     )?;
@@ -226,6 +227,7 @@ fn sweep_unknown_embedded_entries(project_root: &Path) -> Result<(), CompilerErr
 fn build_project_crate(
     project_root: &Path,
     options: ProjectBuildOptions,
+    project_name: &str,
     steam_enabled: bool,
     version: Option<&str>,
 ) -> Result<(), CompilerError> {
@@ -234,18 +236,17 @@ fn build_project_crate(
     let mut cmd = Command::new("cargo");
     cmd.env("CARGO_TARGET_DIR", &target_dir)
         .current_dir(&project_crate);
+    let mut rustflags = inherited_rustflags();
+    if options.release {
+        append_private_path_remaps(&mut rustflags, project_root, project_name);
+    }
     if options.target == ProjectBuildTarget::Web {
         cmd.arg("build")
             .arg("--lib")
             .arg("--target")
             .arg("wasm32-unknown-unknown");
-        cmd.env(
-            "RUSTFLAGS",
-            append_rustflag(
-                env::var_os("RUSTFLAGS"),
-                "--cfg getrandom_backend=\"wasm_js\"",
-            ),
-        );
+        rustflags.push("--cfg".to_string());
+        rustflags.push("getrandom_backend=\"wasm_js\"".to_string());
     } else if options.target == ProjectBuildTarget::Android {
         cmd.arg("apk")
             .arg("build")
@@ -263,10 +264,12 @@ fn build_project_crate(
         cmd.arg("--release");
     }
     if options.target == ProjectBuildTarget::Native && !options.console && !options.headless {
-        cmd.env(
-            "RUSTFLAGS",
-            append_rustflag(env::var_os("RUSTFLAGS"), "--cfg perro_no_console"),
-        );
+        rustflags.push("--cfg".to_string());
+        rustflags.push("perro_no_console".to_string());
+    }
+    if !rustflags.is_empty() {
+        cmd.env("CARGO_ENCODED_RUSTFLAGS", rustflags.join("\u{1f}"));
+        cmd.env_remove("RUSTFLAGS");
     }
     if let Some(sdk_root) = options.android_sdk_root {
         cmd.env("ANDROID_SDK_ROOT", sdk_root)
@@ -324,6 +327,7 @@ fn build_project_crate(
             project_root,
             &target_dir,
             options.release,
+            project_name,
             steam_enabled,
             version,
             options.native_target,
@@ -357,19 +361,106 @@ fn validate_native_target_triple(target: &str) -> Result<(), CompilerError> {
     }
 }
 
-fn append_rustflag(existing: Option<std::ffi::OsString>, flag: &str) -> std::ffi::OsString {
-    let mut out = existing.unwrap_or_default();
-    if !out.is_empty() {
-        out.push(" ");
+fn inherited_rustflags() -> Vec<String> {
+    if let Some(encoded) = env::var_os("CARGO_ENCODED_RUSTFLAGS") {
+        return encoded
+            .to_string_lossy()
+            .split('\u{1f}')
+            .filter(|flag| !flag.is_empty())
+            .map(str::to_string)
+            .collect();
     }
-    out.push(flag);
-    out
+    env::var_os("RUSTFLAGS")
+        .map(|flags| {
+            flags
+                .to_string_lossy()
+                .split_whitespace()
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn append_private_path_remaps(flags: &mut Vec<String>, project_root: &Path, project_name: &str) {
+    let logical_root = format!("{project_name}/src");
+    let project_root = project_root
+        .canonicalize()
+        .unwrap_or_else(|_| project_root.to_path_buf());
+
+    // rustc applies the last matching remap. Add broad roots first, followed by
+    // tool roots, project root, and generated source roots.
+    if let Some(user_root) = user_home() {
+        push_path_remap(flags, &user_root, &format!("{logical_root}/user"));
+    }
+
+    // Local engine checkouts sit outside normal Cargo home paths.
+    if let Some(engine_root) = engine_source_root() {
+        push_path_remap(flags, &engine_root, &format!("{logical_root}/engine"));
+    }
+
+    for (env_name, fallback_dir, logical) in [
+        ("CARGO_HOME", ".cargo", "deps"),
+        ("RUSTUP_HOME", ".rustup", "rust"),
+    ] {
+        if let Some(path) = tool_home(env_name, fallback_dir) {
+            push_path_remap(flags, &path, &format!("{logical_root}/{logical}"));
+        }
+    }
+
+    push_path_remap(flags, &project_root, &logical_root);
+    push_path_remap(flags, &project_root.join(".perro/project"), &logical_root);
+    push_path_remap(
+        flags,
+        &project_root.join(".perro/scripts/src/scripts"),
+        &logical_root,
+    );
+}
+
+fn push_path_remap(flags: &mut Vec<String>, physical: &Path, logical: &str) {
+    for physical in path_prefix_spellings(physical) {
+        let flag = format!("--remap-path-prefix={physical}={logical}");
+        if !flags.contains(&flag) {
+            flags.push(flag);
+        }
+    }
+}
+
+fn path_prefix_spellings(path: &Path) -> Vec<String> {
+    let raw = path.to_string_lossy();
+    if raw.is_empty() {
+        return Vec::new();
+    }
+    let plain = raw.strip_prefix(r"\\?\").unwrap_or(&raw);
+    let mut values = vec![plain.to_string(), plain.replace('\\', "/")];
+    values.sort();
+    values.dedup();
+    values
+}
+
+fn tool_home(env_name: &str, fallback_dir: &str) -> Option<PathBuf> {
+    env::var_os(env_name)
+        .map(PathBuf::from)
+        .or_else(|| user_home().map(|home| home.join(fallback_dir)))
+}
+
+fn user_home() -> Option<PathBuf> {
+    env::var_os("USERPROFILE")
+        .or_else(|| env::var_os("HOME"))
+        .map(PathBuf::from)
+}
+
+fn engine_source_root() -> Option<PathBuf> {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .find(|path| path.join("perro_source").is_dir())
+        .map(Path::to_path_buf)
 }
 
 fn export_project_binary(
     project_root: &Path,
     target_dir: &Path,
     release: bool,
+    project_name: &str,
     steam_enabled: bool,
     version: Option<&str>,
     native_target: Option<&str>,
@@ -386,6 +477,9 @@ fn export_project_binary(
             built_bin.display()
         )));
     }
+    if release {
+        verify_no_private_build_paths(&built_bin, project_root, project_name)?;
+    }
 
     let output_dir = project_root
         .join(".output")
@@ -401,6 +495,79 @@ fn export_project_binary(
     }
     print_exported_binary(&output_bin);
     Ok(())
+}
+
+fn verify_no_private_build_paths(
+    binary: &Path,
+    project_root: &Path,
+    project_name: &str,
+) -> Result<(), CompilerError> {
+    let bytes = fs::read(binary)?;
+    let mut roots = vec![project_root.to_path_buf()];
+    if let Ok(canonical) = project_root.canonicalize() {
+        roots.push(canonical);
+    }
+    for (env_name, fallback_dir) in [("CARGO_HOME", ".cargo"), ("RUSTUP_HOME", ".rustup")] {
+        if let Some(path) = tool_home(env_name, fallback_dir) {
+            roots.push(path);
+        }
+    }
+    if let Some(path) = engine_source_root() {
+        roots.push(path);
+    }
+    if let Some(path) = user_home() {
+        roots.push(path);
+    }
+
+    let mut needles = roots
+        .iter()
+        .flat_map(|root| path_prefix_spellings(root))
+        .collect::<Vec<_>>();
+    needles.extend([
+        ".cargo/registry/src".to_string(),
+        ".cargo\\registry\\src".to_string(),
+        ".rustup/toolchains".to_string(),
+        ".rustup\\toolchains".to_string(),
+        ".perro/project".to_string(),
+        ".perro\\project".to_string(),
+        ".perro/scripts/src".to_string(),
+        ".perro\\scripts\\src".to_string(),
+    ]);
+    needles.sort_by_key(|needle| std::cmp::Reverse(needle.len()));
+    needles.dedup();
+
+    for needle in needles {
+        if needle.is_empty() || needle == project_name {
+            continue;
+        }
+        if contains_ascii_case_insensitive(&bytes, needle.as_bytes())
+            || contains_utf16le_ascii_case_insensitive(&bytes, &needle)
+        {
+            return Err(CompilerError::SceneParse(format!(
+                "release binary privacy check failed: private build path `{needle}` remains in {}",
+                binary.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn contains_ascii_case_insensitive(haystack: &[u8], needle: &[u8]) -> bool {
+    !needle.is_empty()
+        && haystack.windows(needle.len()).any(|window| {
+            window
+                .iter()
+                .zip(needle)
+                .all(|(left, right)| left.eq_ignore_ascii_case(right))
+        })
+}
+
+fn contains_utf16le_ascii_case_insensitive(haystack: &[u8], needle: &str) -> bool {
+    let encoded = needle
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .collect::<Vec<_>>();
+    contains_ascii_case_insensitive(haystack, &encoded)
 }
 
 fn print_exported_binary(path: &Path) {

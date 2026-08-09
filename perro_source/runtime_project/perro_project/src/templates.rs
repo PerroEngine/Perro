@@ -1178,10 +1178,6 @@ fn project_root() -> std::path::PathBuf {
             return exe_dir.to_path_buf();
         }
     }
-    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
-    if root.join("project.toml").exists() {
-        return root.canonicalize().unwrap_or(root);
-    }
     std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
 }
 

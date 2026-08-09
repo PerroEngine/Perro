@@ -2,9 +2,10 @@
 mod tests {
     use super::{
         ProjectBuildOptions, ProjectBuildTarget, SceneVarUsage, ScriptMethodParam,
-        ScriptsBuildProfile, android_apk_artifact_path, checked_res_relative_path,
-        compile_scripts_with_profile, copy_file_overwriting, emit_static_steam_app_id_fn,
-        emit_web_route_html_files, export_project_android_bundle,
+        ScriptsBuildProfile, android_apk_artifact_path, append_private_path_remaps,
+        checked_res_relative_path, compile_scripts_with_profile, contains_ascii_case_insensitive,
+        contains_utf16le_ascii_case_insensitive, copy_file_overwriting,
+        emit_static_steam_app_id_fn, emit_web_route_html_files, export_project_android_bundle,
         generate_call_param_binding, generate_dlc_static_modules, generate_embedded_entry_files,
         generate_perro_assets, generate_project_static_modules, module_ident_from_path_part,
         native_output_artifact_name, native_output_folder_name, normalize_cargo_output_paths,
@@ -29,6 +30,52 @@ mod tests {
                 .expect("system clock")
                 .as_nanos()
         ))
+    }
+
+    #[test]
+    fn release_paths_use_project_identity() {
+        let root = std::path::Path::new(r"C:\Magnet Monkeys\Games\BozoSort");
+        let mut flags = Vec::new();
+        append_private_path_remaps(&mut flags, root, "BozoSort");
+
+        assert!(flags.iter().any(|flag| {
+            flag == &format!(
+                "--remap-path-prefix={}={}",
+                root.display(),
+                "BozoSort/src"
+            )
+        }));
+        assert!(flags.iter().any(|flag| flag.ends_with("=BozoSort/src/deps")));
+        assert!(flags.iter().any(|flag| flag.ends_with("=BozoSort/src/rust")));
+        assert!(flags.iter().all(|flag| !flag.contains("=Magnet Monkeys")));
+        let user = flags
+            .iter()
+            .position(|flag| flag.ends_with("=BozoSort/src/user"))
+            .expect("user remap");
+        let deps = flags
+            .iter()
+            .position(|flag| flag.ends_with("=BozoSort/src/deps"))
+            .expect("Cargo remap");
+        assert!(user < deps, "specific Cargo remap must win");
+    }
+
+    #[test]
+    fn release_path_scan_catches_ascii_and_utf16() {
+        let private = r"C:\Users\Builder\.cargo\registry\src";
+        assert!(contains_ascii_case_insensitive(
+            private.to_ascii_uppercase().as_bytes(),
+            private.as_bytes()
+        ));
+
+        let utf16 = private
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>();
+        assert!(contains_utf16le_ascii_case_insensitive(&utf16, private));
+        assert!(!contains_ascii_case_insensitive(
+            b"BozoSort/src/player.rs",
+            private.as_bytes()
+        ));
     }
 
     fn assert_methods_emitted(transpiled: &str, expected_method_names: &[&str]) {

@@ -598,10 +598,6 @@ pub fn project_root() -> std::path::PathBuf {{\n\
             return exe_dir.to_path_buf();\n\
         }}\n\
     }}\n\
-    let root = std::path::PathBuf::from(env!(\"CARGO_MANIFEST_DIR\")).join(\"..\").join(\"..\");\n\
-    if root.join(\"project.toml\").exists() {{\n\
-        return root.canonicalize().unwrap_or(root);\n\
-    }}\n\
     std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(\".\"))\n\
 }}\n\n\
 #[cfg(all(not(target_os = \"android\"), not(target_arch = \"wasm32\")))]\n\
