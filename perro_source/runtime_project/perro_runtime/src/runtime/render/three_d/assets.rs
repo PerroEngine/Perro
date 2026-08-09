@@ -147,7 +147,7 @@ impl Runtime {
                     .iter()
                     .map(|ovr| MaterialParamOverride3D {
                         name: ovr.name.clone(),
-                        value: ovr.value.clone(),
+                        value: ovr.value,
                     })
                     .collect::<Vec<_>>()
                     .into(),

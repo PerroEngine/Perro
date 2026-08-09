@@ -12,6 +12,22 @@ pub trait MaterialAPI {
     fn create_material_from_bytes(&self, bytes: &[u8]) -> MaterialID;
     fn get_material_data(&self, id: MaterialID) -> Option<Material3D>;
     fn write_material_data(&self, id: MaterialID, material: Material3D) -> bool;
+    /// Sets one custom-shader param by name, without reading the material back.
+    ///
+    /// `write_material_data` is a whole-material round trip: the caller clones
+    /// every param to change one, so animating a param costs O(param count) per
+    /// frame. This mutates in place and queues only the delta, so it stays O(1)
+    /// no matter how many params the material carries.
+    ///
+    /// Returns false for a nil/unknown id, a non-custom material, or a name the
+    /// material does not define. Params cannot alter the compiled pipeline, so
+    /// this never triggers a shader rebuild.
+    fn set_material_param(
+        &self,
+        id: MaterialID,
+        name: &str,
+        value: perro_structs::ConstParamValue,
+    ) -> bool;
     fn is_material_loaded(&self, id: MaterialID) -> bool;
     fn reserve_material_source_hashed(&self, source_hash: u64, source: Option<&str>) -> MaterialID;
     fn reserve_material_id(&self, id: MaterialID) -> bool;
@@ -119,6 +135,18 @@ impl<'res, R: MaterialAPI + ?Sized> MaterialModule<'res, R> {
         self.api.write_material_data(id, material)
     }
 
+    /// Sets one custom-shader param by name. O(1) in the param count, unlike
+    /// the `get_data` -> mutate -> `write` round trip.
+    #[inline]
+    pub fn set_param(
+        &self,
+        id: MaterialID,
+        name: &str,
+        value: impl Into<perro_structs::ConstParamValue>,
+    ) -> bool {
+        self.api.set_material_param(id, name, value.into())
+    }
+
     #[inline]
     pub fn is_loaded(&self, id: MaterialID) -> bool {
         self.api.is_material_loaded(id)
@@ -214,5 +242,20 @@ macro_rules! material_write {
 macro_rules! material_is_loaded {
     ($res:expr, $id:expr) => {
         $res.Materials().is_loaded($id)
+    };
+}
+
+/// Sets one custom-shader param on a material.
+///
+/// ```ignore
+/// set_material_param!(res, mat, "glow", 0.7);
+/// ```
+///
+/// Prefer this over `Materials().get_data()` + `write()` for anything animated:
+/// the round trip clones every param to change one, this stays O(1).
+#[macro_export]
+macro_rules! set_material_param {
+    ($res:expr, $id:expr, $name:expr, $value:expr) => {
+        $res.Materials().set_param($id, $name, $value)
     };
 }

@@ -612,7 +612,7 @@ fn test_const_param_value_variant_round_trips() {
     ] {
         assert_eq!(
             value.to_variant().parse::<ConstParamValue>(),
-            Ok(value.clone()),
+            Ok(value),
             "{value:?}"
         );
     }

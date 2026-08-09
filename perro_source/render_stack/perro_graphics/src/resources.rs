@@ -1091,6 +1091,40 @@ impl ResourceStore {
     }
 
     #[inline]
+    /// Applies one custom-shader param in place.
+    ///
+    /// Params cannot alter a compiled pipeline, so unlike [`set_material_data`]
+    /// this needs no shape comparison and never invalidates pipeline caches.
+    ///
+    /// [`set_material_data`]: Self::set_material_data
+    pub fn set_material_param(
+        &mut self,
+        id: MaterialID,
+        name: &str,
+        value: perro_structs::ConstParamValue,
+    ) -> bool {
+        let Some(material) = self.material_by.get_mut(&id) else {
+            return false;
+        };
+        let Material3D::Custom(custom) = Arc::make_mut(material) else {
+            return false;
+        };
+        let Some(param) = custom
+            .params
+            .to_mut()
+            .iter_mut()
+            .find(|param| param.name.as_deref() == Some(name))
+        else {
+            return false;
+        };
+        if param.value == value {
+            return false;
+        }
+        param.value = value;
+        self.material_revision = self.material_revision.wrapping_add(1);
+        true
+    }
+
     pub fn set_material_data(
         &mut self,
         id: MaterialID,

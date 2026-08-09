@@ -545,6 +545,15 @@ impl PerroGraphics {
                             self.events.push(RenderEvent::MaterialLoaded { id });
                         }
                     }
+                    ResourceCommand::WriteMaterialParam { id, name, value } => {
+                        // No shape check and no pipeline warm: a param value
+                        // cannot change the compiled pipeline, which is the
+                        // whole point of this command existing next to
+                        // WriteMaterialData.
+                        if self.resources.set_material_param(id, &name, value) {
+                            self.retained_draws_cache_revision = u64::MAX;
+                        }
+                    }
                     ResourceCommand::SetMeshReserved { id, reserved } => {
                         self.resources.set_mesh_reserved(id, reserved);
                     }

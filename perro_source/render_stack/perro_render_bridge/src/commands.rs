@@ -133,6 +133,15 @@ pub enum ResourceCommand {
         id: MaterialID,
         material: Arc<Material3D>,
     },
+    /// One custom-shader param value. Carries only the delta, so the runtime's
+    /// material Arc stays uniquely held and its in-place update needs no clone.
+    /// Params never alter a compiled pipeline, so this skips the shape check
+    /// `WriteMaterialData` has to perform.
+    WriteMaterialParam {
+        id: MaterialID,
+        name: Arc<str>,
+        value: perro_structs::ConstParamValue,
+    },
     SetMeshReserved {
         id: MeshID,
         reserved: bool,

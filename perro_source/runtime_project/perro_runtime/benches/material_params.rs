@@ -46,5 +46,32 @@ fn bench_param_write_cycle(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_param_write_cycle);
+/// Same sweep through the narrow setter, to show the param-count term go away.
+fn bench_set_param(c: &mut Criterion) {
+    let mut group = c.benchmark_group("material_set_param");
+    group.measurement_time(Duration::from_secs(5));
+
+    for param_count in PARAM_COUNTS {
+        for writes in WRITES_PER_FRAME {
+            group.throughput(Throughput::Elements(writes as u64));
+            group.bench_with_input(
+                BenchmarkId::new(format!("params_{param_count}"), writes),
+                &(param_count, writes),
+                |b, &(param_count, writes)| {
+                    let mut spawner = BenchSceneSpawner::new();
+                    let id = spawner.bench_create_custom_material(param_count);
+                    let _ = spawner.bench_drain_queued_commands();
+                    b.iter(|| {
+                        let ok = spawner.bench_material_set_param(black_box(id), writes);
+                        let drained = spawner.bench_drain_queued_commands();
+                        black_box((ok, drained))
+                    });
+                },
+            );
+        }
+    }
+    group.finish();
+}
+
+criterion_group!(benches, bench_param_write_cycle, bench_set_param);
 criterion_main!(benches);

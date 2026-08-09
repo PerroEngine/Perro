@@ -146,6 +146,22 @@ impl BenchSceneSpawner {
         ok
     }
 
+    /// The narrow path: `set_material_param` mutates in place and queues only
+    /// the delta, so cost should not track param count.
+    pub fn bench_material_set_param(&mut self, raw_id: u64, writes: usize) -> usize {
+        use perro_resource_api::sub_apis::MaterialAPI;
+        let id = perro_ids::MaterialID::from_u64(raw_id);
+        let mut ok = 0usize;
+        for i in 0..writes {
+            ok += usize::from(self.0.resource_api.set_material_param(
+                id,
+                "param_0",
+                perro_structs::ConstParamValue::F32(i as f32),
+            ));
+        }
+        ok
+    }
+
     /// Drains queued render commands the way a frame boundary would, so a
     /// write-cycle bench does not just grow the queue forever.
     pub fn bench_drain_queued_commands(&mut self) -> usize {

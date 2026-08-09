@@ -112,6 +112,51 @@ impl MaterialAPI for RuntimeResourceApi {
         true
     }
 
+    fn set_material_param(
+        &self,
+        id: MaterialID,
+        name: &str,
+        value: perro_structs::ConstParamValue,
+    ) -> bool {
+        if id.is_nil() {
+            return false;
+        }
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        let Some(material) = state.material_data_by_id.get_mut(&id) else {
+            return false;
+        };
+        // The queued command below carries only the delta, never this Arc, so
+        // after a frame drains this handle is unique and `make_mut` is a no-op
+        // rather than a full material clone. That is what keeps the write O(1)
+        // in the number of params.
+        let Material3D::Custom(custom) = Arc::make_mut(material) else {
+            return false;
+        };
+        let Some(param) = custom
+            .params
+            .to_mut()
+            .iter_mut()
+            .find(|param| param.name.as_deref() == Some(name))
+        else {
+            return false;
+        };
+        if param.value == value {
+            // Scripts re-assert params every frame; skipping no-op writes keeps
+            // the command queue proportional to actual change.
+            return true;
+        }
+        param.value = value;
+        state.material_write_pending_by_id.insert(id);
+        state.queued_commands.push(RenderCommand::Resource(Box::new(
+            ResourceCommand::WriteMaterialParam {
+                id,
+                name: Arc::from(name),
+                value,
+            },
+        )));
+        true
+    }
+
     fn is_material_loaded(&self, id: MaterialID) -> bool {
         if id.is_nil() {
             return false;
