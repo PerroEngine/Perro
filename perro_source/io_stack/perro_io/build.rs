@@ -1,6 +1,6 @@
 use std::{env, fs, path::PathBuf};
 
-const SIZES: [usize; 5] = [32, 128, 512, 2048, 4096];
+const SIZES: [usize; 7] = [8, 9, 32, 128, 512, 2048, 4096];
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
@@ -20,10 +20,22 @@ fn generated_code() -> String {
         rows.sort_unstable_by_key(|(key, _)| *key);
 
         code.push_str(&format!(
-            "static STATIC_TABLE_{size}: [(u64, u32); {size}] = [\n"
+            "static AOS_TABLE_{size}: [(u64, u32); {size}] = [\n"
         ));
         for (key, value) in &rows {
             code.push_str(&format!("    ({key:#018x}, {value}),\n"));
+        }
+        code.push_str("];\n\n");
+
+        code.push_str(&format!("static SOA_HASHES_{size}: [u64; {size}] = [\n"));
+        for (key, _) in &rows {
+            code.push_str(&format!("    {key:#018x},\n"));
+        }
+        code.push_str("];\n\n");
+
+        code.push_str(&format!("static SOA_VALUES_{size}: [u32; {size}] = [\n"));
+        for (_, value) in &rows {
+            code.push_str(&format!("    {value},\n"));
         }
         code.push_str("];\n\n");
 
@@ -47,6 +59,19 @@ fn generated_code() -> String {
             code.push_str(&format!("        {key:#018x} => Some({index}),\n"));
         }
         code.push_str("        _ => None,\n    }\n}\n\n");
+
+        code.push_str(&format!(
+            "#[inline(never)]\nfn aos_lookup_{size}(key: u64) -> Option<u32> {{\n    let mut lo = 0usize;\n    let mut hi = AOS_TABLE_{size}.len();\n    while lo < hi {{\n        let mid = lo + ((hi - lo) / 2);\n        let entry = AOS_TABLE_{size}[mid];\n        if key < entry.0 {{\n            hi = mid;\n        }} else if key > entry.0 {{\n            lo = mid + 1;\n        }} else {{\n            return Some(entry.1);\n        }}\n    }}\n    None\n}}\n\n"
+        ));
+        code.push_str(&format!(
+            "#[inline(never)]\nfn soa_lookup_{size}(key: u64) -> Option<u32> {{\n    let mut lo = 0usize;\n    let mut hi = SOA_HASHES_{size}.len();\n    while lo < hi {{\n        let mid = lo + ((hi - lo) / 2);\n        let hash = SOA_HASHES_{size}[mid];\n        if key < hash {{\n            hi = mid;\n        }} else if key > hash {{\n            lo = mid + 1;\n        }} else {{\n            return Some(SOA_VALUES_{size}[mid]);\n        }}\n    }}\n    None\n}}\n\n"
+        ));
+        code.push_str(&format!(
+            "#[inline(never)]\nfn soa_slice_lookup_{size}(key: u64) -> Option<u32> {{\n    SOA_HASHES_{size}.binary_search(&key).ok().map(|index| SOA_VALUES_{size}[index])\n}}\n\n"
+        ));
+        code.push_str(&format!(
+            "#[inline(never)]\nfn soa_lower_bound_lookup_{size}(key: u64) -> Option<u32> {{\n    let mut lo = 0usize;\n    let mut hi = SOA_HASHES_{size}.len();\n    while lo < hi {{\n        let mid = lo + ((hi - lo) / 2);\n        if SOA_HASHES_{size}[mid] < key {{\n            lo = mid + 1;\n        }} else {{\n            hi = mid;\n        }}\n    }}\n    if lo < SOA_HASHES_{size}.len() && SOA_HASHES_{size}[lo] == key {{\n        Some(SOA_VALUES_{size}[lo])\n    }} else {{\n        None\n    }}\n}}\n\n"
+        ));
     }
 
     code

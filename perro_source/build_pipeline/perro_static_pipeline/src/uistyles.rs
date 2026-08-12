@@ -85,8 +85,7 @@ pub fn generate_static_ui_styles(
     write_static_lookup_fn(
         &mut out,
         "lookup_ui_style",
-        "UI_STYLE_TABLE",
-        "UiStyleEntry",
+        "UI_STYLE",
         "&'static UiStyle",
         "&EMPTY_UI_STYLE",
         &lookup_entries,

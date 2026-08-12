@@ -326,6 +326,12 @@ impl InputSnapshot {
 
     // ---- Gamepad input ----
 
+    /// Set whether a gamepad slot is live.
+    #[inline]
+    pub fn set_gamepad_connected(&mut self, index: usize, connected: bool) {
+        self.gamepad_mut(index).set_connected(connected);
+    }
+
     /// Apply a gamepad button transition and refresh affected actions.
     #[inline]
     pub fn set_gamepad_button_state(&mut self, index: usize, button: GamepadButton, is_down: bool) {
@@ -373,6 +379,12 @@ impl InputSnapshot {
         let state = self.joycon_mut(index);
         state.set_side(side);
         self.refresh_all_action_states();
+    }
+
+    /// Set the Joy-Con hardware generation.
+    #[inline]
+    pub fn set_joycon_generation(&mut self, index: usize, generation: JoyConGeneration) {
+        self.joycon_mut(index).set_generation(generation);
     }
 
     /// Set Joy-Con connection state.

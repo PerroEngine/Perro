@@ -5,6 +5,7 @@ use perro_input_api::{GamepadAxis, GamepadButton};
 
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 trait GamepadSink {
+    fn set_gamepad_connected(&mut self, index: usize, connected: bool);
     fn set_gamepad_button_state(&mut self, index: usize, button: GamepadButton, is_down: bool);
     fn set_gamepad_axis(&mut self, index: usize, axis: GamepadAxis, value: f32);
     fn set_gamepad_gyro(&mut self, index: usize, x: f32, y: f32, z: f32);
@@ -14,6 +15,10 @@ trait GamepadSink {
 
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 impl<B: GraphicsBackend> GamepadSink for App<B> {
+    fn set_gamepad_connected(&mut self, index: usize, connected: bool) {
+        App::set_gamepad_connected(self, index, connected);
+    }
+
     fn set_gamepad_button_state(&mut self, index: usize, button: GamepadButton, is_down: bool) {
         App::set_gamepad_button_state(self, index, button, is_down);
     }
@@ -41,8 +46,33 @@ mod backend {
     use gilrs::ff::{BaseEffect, BaseEffectType, Effect, EffectBuilder, Repeat, Replay, Ticks};
     use gilrs::{Axis, Button, EventType, GamepadId, Gilrs};
     use perro_input_api::{GamepadAxis, GamepadButton, GamepadIndex};
+    #[cfg(target_os = "windows")]
+    use rusty_xinput::XInputHandle;
+    use std::cell::RefCell;
     use std::collections::{HashMap, HashSet};
     use std::sync::OnceLock;
+
+    thread_local! {
+        static PREINIT_GILRS: RefCell<Option<Gilrs>> = const { RefCell::new(None) };
+    }
+
+    pub(super) fn preinit() {
+        PREINIT_GILRS.with(|slot| {
+            if slot.borrow().is_none() {
+                match Gilrs::new() {
+                    Ok(gilrs) => {
+                        let count = gilrs
+                            .gamepads()
+                            .filter(|(_, gamepad)| gamepad.is_connected())
+                            .count();
+                        eprintln!("[gamepad] backend preinit connected={count}");
+                        *slot.borrow_mut() = Some(gilrs);
+                    }
+                    Err(err) => eprintln!("[gamepad][error] backend preinit failed: {err}"),
+                }
+            }
+        });
+    }
 
     const ALL_BUTTONS: [GamepadButton; GamepadButton::COUNT] = [
         GamepadButton::Bottom,
@@ -77,7 +107,6 @@ mod backend {
     const JOYCON_1_LEFT_PID: u16 = 0x2006;
     const JOYCON_1_RIGHT_PID: u16 = 0x2007;
     const STATE_SYNC_INTERVAL_FRAMES: u32 = 4;
-    const IDLE_POLL_INTERVAL_FRAMES: u32 = 8;
     const RUMBLE_PLAY_FOR_MS: u32 = 120;
 
     #[derive(Default)]
@@ -94,7 +123,12 @@ mod backend {
         rumble_effects: HashMap<usize, Effect>,
         sync_ids: Vec<GamepadId>,
         state_sync_frame_counter: u32,
-        idle_poll_frame_counter: u32,
+        gilrs_init_warned: bool,
+        backend_ready_logged: bool,
+        #[cfg(target_os = "windows")]
+        xinput: Option<XInputHandle>,
+        #[cfg(target_os = "windows")]
+        xinput_connected: [bool; 4],
     }
 
     impl GamepadBackend {
@@ -105,23 +139,16 @@ mod backend {
                 return;
             };
 
-            // When no non-JoyCon gamepad is active, throttle gilrs polling.
-            // This keeps hot-loop overhead low for KBM-only projects while still
-            // discovering new controllers quickly.
-            if self.uuid_in_use.is_empty() {
-                self.idle_poll_frame_counter = self.idle_poll_frame_counter.wrapping_add(1);
-                if !self
-                    .idle_poll_frame_counter
-                    .is_multiple_of(IDLE_POLL_INTERVAL_FRAMES)
-                {
-                    self.gilrs = Some(gilrs);
-                    return;
-                }
-            }
-
+            // Poll every frame even while empty. Hotplug is an event-driven path,
+            // so delaying this poll also delays gilrs' live device-table update.
             while let Some(event) = gilrs.next_event() {
                 self.handle_event(app, &gilrs, event);
             }
+
+            // `gilrs` does not guarantee a Connected event for every controller
+            // that was already present when the backend started. Scan after the
+            // event drain so the live connection flags are current.
+            self.discover_connected(app, &gilrs);
 
             // Some controllers/drivers (notably on Windows) can miss or coalesce
             // button events. Keep a periodic sync as a safety net, but avoid
@@ -135,6 +162,9 @@ mod backend {
                 self.sync_buttons(app, &gilrs);
                 self.sync_axes(app, &gilrs);
             }
+
+            #[cfg(target_os = "windows")]
+            self.poll_xinput(app);
 
             self.gilrs = Some(gilrs);
         }
@@ -231,8 +261,53 @@ mod backend {
             if self.gilrs.is_some() {
                 return;
             }
-            if let Ok(gilrs) = Gilrs::new() {
+            if let Some(gilrs) = PREINIT_GILRS.with(|slot| slot.borrow_mut().take()) {
+                self.log_backend_ready(&gilrs);
                 self.gilrs = Some(gilrs);
+                return;
+            }
+            match Gilrs::new() {
+                Ok(gilrs) => {
+                    self.log_backend_ready(&gilrs);
+                    self.gilrs = Some(gilrs);
+                }
+                Err(err) => {
+                    if !self.gilrs_init_warned {
+                        eprintln!("[gamepad][error] backend init failed: {err}");
+                        self.gilrs_init_warned = true;
+                    }
+                }
+            }
+        }
+
+        fn log_backend_ready(&mut self, gilrs: &Gilrs) {
+            if self.backend_ready_logged {
+                return;
+            }
+            let count = gilrs
+                .gamepads()
+                .filter(|(_, gamepad)| gamepad.is_connected())
+                .count();
+            eprintln!("[gamepad] backend ready connected={count}");
+            self.backend_ready_logged = true;
+        }
+
+        fn discover_connected<S: GamepadSink>(&mut self, app: &mut S, gilrs: &Gilrs) {
+            let ids: Vec<_> = gilrs
+                .gamepads()
+                .filter_map(|(id, gamepad)| {
+                    (gamepad.is_connected() && !is_joycon(&gamepad)).then_some(id)
+                })
+                .collect();
+            for id in ids {
+                if self.id_to_uuid.contains_key(&id) {
+                    continue;
+                }
+                if let Some(index) = self.assign_index_if_unique(gilrs, id) {
+                    log_gamepad_connected(gilrs, id, index);
+                    clear_gamepad(app, index);
+                    app.set_gamepad_connected(index, true);
+                }
             }
         }
 
@@ -252,6 +327,7 @@ mod backend {
                     if let Some(index) = self.assign_index_if_unique(gilrs, id) {
                         log_gamepad_connected(gilrs, id, index);
                         clear_gamepad(app, index);
+                        app.set_gamepad_connected(index, true);
                     }
                 }
                 EventType::Disconnected => {
@@ -262,6 +338,7 @@ mod backend {
                     self.handle_disconnect(app, id);
                     if let Some(index) = disconnected_index {
                         self.stop_rumble(index);
+                        app.set_gamepad_connected(index, false);
                     }
                     self.down_masks.remove(&id);
                     if let Some(uuid) = self.id_to_uuid.remove(&id) {
@@ -498,6 +575,77 @@ mod backend {
             }
         }
 
+        #[cfg(target_os = "windows")]
+        fn poll_xinput<S: GamepadSink>(&mut self, app: &mut S) {
+            if self.xinput.is_none() {
+                self.xinput = XInputHandle::load_default().ok();
+            }
+            let Some(handle) = self.xinput.as_ref() else {
+                return;
+            };
+            let states: Vec<_> = (0..4_u32)
+                .map(|slot| (slot as usize, handle.get_state(slot).ok()))
+                .collect();
+
+            for (slot, state) in states {
+                let index = self.xinput_app_index(slot);
+                let Some(state) = state else {
+                    if self.xinput_connected[slot] {
+                        clear_gamepad(app, index);
+                        app.set_gamepad_connected(index, false);
+                        eprintln!("[gamepad][xinput] disconnected slot={slot} index={index}");
+                    }
+                    self.xinput_connected[slot] = false;
+                    continue;
+                };
+
+                if !self.xinput_connected[slot] {
+                    app.set_gamepad_connected(index, true);
+                    eprintln!("[gamepad][xinput] connected slot={slot} index={index}");
+                }
+                self.xinput_connected[slot] = true;
+                let pad = state.raw.Gamepad;
+                let buttons = pad.wButtons;
+                for (button, mask) in [
+                    (GamepadButton::DpadUp, 0x0001),
+                    (GamepadButton::DpadDown, 0x0002),
+                    (GamepadButton::DpadLeft, 0x0004),
+                    (GamepadButton::DpadRight, 0x0008),
+                    (GamepadButton::Start, 0x0010),
+                    (GamepadButton::Select, 0x0020),
+                    (GamepadButton::L3, 0x0040),
+                    (GamepadButton::R3, 0x0080),
+                    (GamepadButton::L1, 0x0100),
+                    (GamepadButton::R1, 0x0200),
+                    (GamepadButton::Bottom, 0x1000),
+                    (GamepadButton::Right, 0x2000),
+                    (GamepadButton::Left, 0x4000),
+                    (GamepadButton::Top, 0x8000),
+                ] {
+                    app.set_gamepad_button_state(index, button, buttons & mask != 0);
+                }
+                let lt = pad.bLeftTrigger as f32 / u8::MAX as f32;
+                let rt = pad.bRightTrigger as f32 / u8::MAX as f32;
+                app.set_gamepad_button_state(index, GamepadButton::L2, lt > 0.5);
+                app.set_gamepad_button_state(index, GamepadButton::R2, rt > 0.5);
+                app.set_gamepad_axis(index, GamepadAxis::LeftTrigger, lt);
+                app.set_gamepad_axis(index, GamepadAxis::RightTrigger, rt);
+                app.set_gamepad_axis(index, GamepadAxis::LeftStickX, normalize_i16(pad.sThumbLX));
+                app.set_gamepad_axis(index, GamepadAxis::LeftStickY, normalize_i16(pad.sThumbLY));
+                app.set_gamepad_axis(index, GamepadAxis::RightStickX, normalize_i16(pad.sThumbRX));
+                app.set_gamepad_axis(index, GamepadAxis::RightStickY, normalize_i16(pad.sThumbRY));
+            }
+        }
+
+        #[cfg(target_os = "windows")]
+        fn xinput_app_index(&self, slot: usize) -> usize {
+            self.id_to_uuid
+                .iter()
+                .find(|(id, _)| usize::from(**id) == slot)
+                .and_then(|(_, uuid)| self.uuid_to_index.get(uuid).copied())
+                .unwrap_or(slot)
+        }
+
         fn log_raw_like_state(&self, gilrs: &Gilrs, id: GamepadId, reason: &str) {
             if !raw_dump_enabled() {
                 return;
@@ -620,6 +768,15 @@ mod backend {
         app.set_gamepad_accel(index, 0.0, 0.0, 0.0);
     }
 
+    #[cfg(target_os = "windows")]
+    fn normalize_i16(value: i16) -> f32 {
+        if value >= 0 {
+            value as f32 / i16::MAX as f32
+        } else {
+            value as f32 / 32768.0
+        }
+    }
+
     fn log_gamepad_connected(gilrs: &Gilrs, id: GamepadId, index: usize) {
         let gp = gilrs.gamepad(id);
         let name = gp.name();
@@ -668,6 +825,8 @@ mod backend {
     #[derive(Default)]
     pub struct GamepadBackend;
 
+    pub(super) fn preinit() {}
+
     impl GamepadBackend {
         pub fn begin_frame<S>(&mut self, _app: &mut S) {}
 
@@ -676,6 +835,10 @@ mod backend {
             out.clear();
         }
     }
+}
+
+pub(crate) fn preinit() {
+    backend::preinit();
 }
 
 #[cfg(feature = "steamworks")]
@@ -688,8 +851,7 @@ struct SteamFallbackBackend {
 #[cfg(feature = "steamworks")]
 impl SteamFallbackBackend {
     fn begin_frame<B: GraphicsBackend>(&mut self, app: &mut App<B>, native_indices: &[usize]) {
-        let native_present = !native_indices.is_empty();
-        let gamepads = match perro_steamworks::input::fallback_gamepads(native_present) {
+        let gamepads = match perro_steamworks::input::fallback_gamepads(native_indices.len()) {
             Ok(gamepads) => gamepads,
             Err(perro_steamworks::SteamError::Disabled) => {
                 self.clear_all(app, native_indices);
@@ -801,6 +963,7 @@ fn write_steam_gamepad<B: GraphicsBackend>(
     index: usize,
     gamepad: &perro_steamworks::input::FallbackGamepad,
 ) {
+    app.set_gamepad_connected(index, true);
     for (button, down) in STEAM_BUTTONS.into_iter().zip(gamepad.buttons) {
         app.set_gamepad_button_state(index, button, down);
     }
@@ -823,6 +986,7 @@ fn write_steam_gamepad<B: GraphicsBackend>(
 
 #[cfg(feature = "steamworks")]
 fn clear_steam_gamepad<B: GraphicsBackend>(app: &mut App<B>, index: usize) {
+    app.set_gamepad_connected(index, false);
     for button in STEAM_BUTTONS {
         app.set_gamepad_button_state(index, button, false);
     }

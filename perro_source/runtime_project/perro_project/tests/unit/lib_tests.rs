@@ -560,6 +560,26 @@ input = "fallback"
 }
 
 #[test]
+fn parse_project_toml_defaults_steam_input_to_fallback() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+aspect_ratio = "16:9"
+
+[steam]
+enabled = true
+app_id = 123456
+"#;
+
+    let parsed = parse_project_toml(toml).expect("failed to parse project.toml");
+    assert_eq!(parsed.steam.input_mode, SteamInputMode::Fallback);
+}
+
+#[test]
 fn parse_project_toml_rejects_enabled_steam_without_app_id() {
     let toml = r#"
 [project]

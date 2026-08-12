@@ -99,8 +99,7 @@ pub fn generate_static_animations(
     write_static_lookup_fn(
         &mut lookup,
         "lookup_animation",
-        "ANIMATION_TABLE",
-        "AnimationEntry",
+        "ANIMATION",
         "&'static AnimationClip",
         "&EMPTY_ANIMATION_CLIP",
         &lookup_entries,

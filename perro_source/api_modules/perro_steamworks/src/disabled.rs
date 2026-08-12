@@ -38,7 +38,7 @@ pub mod app {
     }
 
     pub fn init_from_config(enabled: bool, app_id: Option<u32>) -> Result<(), SteamError> {
-        init_from_config_with_input(enabled, app_id, super::input::SteamInputMode::Off)
+        init_from_config_with_input(enabled, app_id, super::input::SteamInputMode::Fallback)
     }
 
     pub fn init_from_config_with_input(
@@ -372,9 +372,9 @@ pub mod input {
 
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
     pub enum SteamInputMode {
-        #[default]
         Off,
         Metadata,
+        #[default]
         Fallback,
         Actions,
     }
@@ -499,7 +499,7 @@ pub mod input {
     }
 
     pub fn fallback_gamepads(
-        _native_gamepad_present: bool,
+        _native_gamepad_count: usize,
     ) -> Result<Vec<FallbackGamepad>, SteamError> {
         disabled()
     }
@@ -681,6 +681,9 @@ pub mod lobbies {
         disabled()
     }
     pub fn get_owner(_lobby: LobbyID) -> Result<SteamID, SteamError> {
+        disabled()
+    }
+    pub fn set_owner(_lobby: LobbyID, _owner: SteamID) -> Result<(), SteamError> {
         disabled()
     }
     pub fn get_info(_lobby: LobbyID) -> Result<LobbyInfo, SteamError> {

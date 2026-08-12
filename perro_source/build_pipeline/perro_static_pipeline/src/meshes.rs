@@ -273,8 +273,7 @@ pub fn generate_static_meshes(
     write_static_lookup_fn(
         &mut out,
         "lookup_mesh",
-        "MESH_TABLE",
-        "MeshEntry",
+        "MESH",
         "&'static [u8]",
         "EMPTY_MESH",
         &lookup_entries,

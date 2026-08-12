@@ -693,7 +693,7 @@ fn parse_steam_input_mode(
     table: &toml::map::Map<String, Value>,
 ) -> Result<SteamInputMode, ProjectError> {
     let Some(value) = table.get("input") else {
-        return Ok(SteamInputMode::Off);
+        return Ok(SteamInputMode::Fallback);
     };
     let raw = value
         .as_str()

@@ -91,7 +91,10 @@ Their node data, keys, parent/child relationships, and authored refs are already
 Runtime loading still prepares and merges nodes into the live runtime and attaches scripts, but it avoids scene text IO and scene parsing first.
 
 Baked assets are exposed through generated lookup functions.
-Those functions use a `u64` path hash and a Rust `match`, for example `lookup_scene(path_hash)`.
+Those functions use a `u64` path hash, for example `lookup_scene(path_hash)`.
+At most eight entries -> Rust `match`.
+Larger lookups -> binary search sorted `u64` hash array -> read same slot from parallel value array.
+Split arrays -> denser hot search data without allocation or runtime initialization.
 For supported static assets, runtime can ask the correct lookup directly instead of searching inside an archive.
 
 Exported builds also include `assets.perro`.
@@ -110,7 +113,7 @@ There are two separate costs:
 In dev, getting data usually means file IO.
 Then Perro may parse source formats, build binary/runtime resource data, or prepare scene data.
 
-In static export, getting supported baked data is usually a `u64` hash `match`.
+In static export, getting supported baked data uses a small `u64` hash `match` or a binary search over dense hashes.
 In this local snapshot, static hash lookup is ~6.55 ns to ~8.36 ns.
 After that, Perro either uses already-prepared Rust data, such as static scene/material/style data, or decodes compact baked bytes such as `PTEX`, `PMESH`, `PTSET`, `PSKEL`, or `PAWDIO`.
 
@@ -125,7 +128,7 @@ For a tiny 1-node scene, static prepare is ~1.2 us.
 | Step             | Dev dynamic path                              | Release static path                                                                           |
 | ---------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | Find asset       | Resolve path under project `res/`             | Hash path to `u64`                                                                            |
-| Get data         | File IO from disk                             | Generated `match` lookup: ~6.55 ns to ~8.36 ns in snapshot                                    |
+| Get data         | File IO from disk                             | Generated hash lookup: ~6.55 ns to ~8.36 ns in snapshot                                       |
 | Scene format     | `.scn` text                                   | Already-baked Rust `Scene` data                                                               |
 | Scene work       | Read text, parse, prepare: 512 nodes ~1.58 ms | Prepare baked `Scene`: 512 nodes ~344 us                                                      |
 | Resource format  | Source file or dynamic runtime format         | Baked Rust data or compact binary bytes                                                       |
@@ -173,7 +176,11 @@ Commands:
 ```powershell
 cargo bench -p perro_runtime --bench scene_loading --features bench -- --sample-size 10 --warm-up-time 1 --measurement-time 2
 cargo bench -p perro_io --bench static_asset_load -- --sample-size 10 --warm-up-time 1 --measurement-time 2
+cargo bench -p perro_io --bench static_lookup_scale -- --sample-size 10 --warm-up-time 1 --measurement-time 2
 ```
+
+`static_lookup_scale` compares old array-of-structs loop, parallel-array loop, slice binary search, lower-bound loop, and generated `match` across small and large tables.
+Generated resource lookup keeps handwritten loop -> stable Rust slice binary search unavailable from `const fn`.
 
 Scene load comparison:
 

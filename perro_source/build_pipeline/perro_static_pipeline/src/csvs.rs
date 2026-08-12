@@ -94,8 +94,7 @@ pub fn generate_static_csvs(project_root: &Path) -> Result<(), StaticPipelineErr
     write_static_lookup_fn(
         &mut out,
         "lookup_csv",
-        "CSV_TABLE",
-        "CsvEntry",
+        "CSV",
         "&'static Csv",
         "&EMPTY_CSV",
         &lookup_entries,

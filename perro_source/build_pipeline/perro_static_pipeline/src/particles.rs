@@ -90,8 +90,7 @@ pub fn generate_static_particles(
     write_static_lookup_fn(
         &mut out,
         "lookup_particle",
-        "PARTICLE_TABLE",
-        "ParticleEntry",
+        "PARTICLE",
         "&'static ParticleProfile3D",
         "&EMPTY_PARTICLE",
         &lookup_entries,

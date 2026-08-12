@@ -126,8 +126,7 @@ pub fn generate_static_materials(
     write_static_lookup_fn(
         &mut out,
         "lookup_material",
-        "MATERIAL_TABLE",
-        "MaterialEntry",
+        "MATERIAL",
         "Option<&'static Material3D>",
         "None",
         &lookup_entries,

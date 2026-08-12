@@ -169,9 +169,9 @@ pub struct LocalizationConfig {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SteamInputMode {
-    #[default]
     Off,
     Metadata,
+    #[default]
     Fallback,
     Actions,
 }
@@ -409,7 +409,7 @@ impl StaticProjectConfig {
             localization_default_locale: "en",
             steam_enabled: false,
             steam_app_id: None,
-            steam_input_mode: SteamInputMode::Off,
+            steam_input_mode: SteamInputMode::Fallback,
         }
     }
 

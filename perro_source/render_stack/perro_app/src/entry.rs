@@ -209,6 +209,7 @@ pub fn create_app_from_project<B: GraphicsBackend>(
     project: RuntimeProject,
     provider_mode: ProviderMode,
 ) -> App<B> {
+    crate::input::preinit_gamepads();
     App::new(
         create_runtime_from_project(project, provider_mode),
         graphics,
@@ -413,6 +414,7 @@ pub fn run_dev_project_from_path(
     default_name: &str,
 ) -> Result<AppExitResult, RunProjectError> {
     crate::boot_log::start();
+    crate::input::preinit_gamepads();
     // B4 any rayon use: the worker-count cap only applies to a pool that has
     // not been built yet.
     crate::devsim::init();
@@ -641,6 +643,7 @@ pub fn run_static_embedded_project(
     input: StaticEmbeddedProject<'_>,
 ) -> Result<AppExitResult, RunProjectError> {
     crate::boot_log::start();
+    crate::input::preinit_gamepads();
     crate::devsim::init();
     clear_steam_fossilize_application_filter(input.steam.enabled);
     let _ = perro_web::init_router();

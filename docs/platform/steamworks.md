@@ -92,7 +92,7 @@ When Steam cfg disabled, Steam calls return `Err(steam::SteamError::Disabled)`.
 
 - `"off"`: no Steam Input init; keep native Perro input only.
 - `"metadata"`: init Steam Input for controller type/glyph/origin/motion metadata, but action reads stay disabled.
-- `"fallback"`: route Steam-only controllers into Perro `GamepadState`; keep natively supported controllers on Perro input.
+- `"fallback"`: default; keep native controllers first, then merge Steam controllers not covered by native input into Perro `GamepadState`.
 - `"actions"`: init Steam Input and allow Steam Input action reads.
 
 Use `"off"`, `"metadata"`, or `"fallback"` when Joy-Con / Joy-Con 2 stay on Perro custom input.
@@ -248,25 +248,26 @@ See [Runtime Bytes Resources](../resources/runtime_bytes.md).
 
 ## Steam Input
 
-Steam Input is opt-in through `[steam].input`.
+Steam Input defaults to fallback merge when `[steam]` is enabled. Set
+`input = "off"` to use native Perro input only.
 
 Perro supports four modes:
 
 | Value | Init Steam Input | Action reads | Use |
 | --- | --- | --- | --- |
-| `"off"` | no | no | Default; Steam does not own controller input. |
+| `"off"` | no | no | Native Perro controller input only. |
 | `"metadata"` | yes | no | Read connected Steam controller metadata, glyphs, origins, and motion. |
-| `"fallback"` | yes | yes | Feed unsupported Steam controllers into normal Perro gamepad slots. |
+| `"fallback"` | yes | yes | Default; merge controllers not covered by native input into normal Perro gamepad slots. |
 | `"actions"` | yes | yes | Use Steam Input action sets and action data. |
 
-Joy-Con and Joy-Con 2 custom input should use `"off"`, `"metadata"`, or `"fallback"`.
-That keeps `ctx.ipt.JoyCons()` as the gameplay source.
+`ctx.ipt.JoyCons()` always uses Perro native Joy-Con / Joy-Con 2 input.
+Fallback never mirrors Steam Joy-Con types into normal gamepad slots.
 
 Fallback policy:
 
-- Keep Xbox, PlayStation, Switch Pro, Steam Deck, Apple MFi, Android, and all Joy-Con types native.
-- Use Steam Controller, generic, and unknown types only when no native gamepad is present.
-- Use Steam mobile touch even when a native gamepad is present.
+- Count native gamepads first; use matching Steam controllers only beyond that native coverage.
+- Never merge Steam Joy-Con pair/single types; Perro native Joy-Con input owns them.
+- Use Steam mobile touch even when native gamepads are present.
 - Merge fallback data into `ctx.ipt.Gamepads()` and normal gamepad actions.
 - Move a fallback pad to a free gamepad slot if a native pad claims its old slot.
 

@@ -47,9 +47,9 @@ pub type InputSourceMode = steamworks_sys::EInputSourceMode;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum SteamInputMode {
-    #[default]
     Off,
     Metadata,
+    #[default]
     Fallback,
     Actions,
 }
@@ -177,27 +177,44 @@ fn fallback_actions() -> &'static Mutex<Option<FallbackActions>> {
     ACTIONS.get_or_init(|| Mutex::new(None))
 }
 
-pub const fn fallback_eligible(input_type: InputType, native_gamepad_present: bool) -> bool {
-    match input_type {
-        InputType::MobileTouch => true,
-        InputType::SteamController | InputType::Unknown | InputType::GenericGamepad => {
-            !native_gamepad_present
+fn fallback_selection(input_types: &[InputType], native_gamepad_count: usize) -> Vec<bool> {
+    let mut selected = vec![false; input_types.len()];
+    let mut native_left = native_gamepad_count;
+
+    // Match clear native controller types first. Steam-only/generic types use
+    // any native coverage left after that. Extra Steam pads fill free slots.
+    for native_likely in [true, false] {
+        for (index, input_type) in input_types.iter().copied().enumerate() {
+            if input_type_is_joycon(input_type) || input_type == InputType::MobileTouch {
+                selected[index] = input_type == InputType::MobileTouch;
+                continue;
+            }
+            let is_native_likely = matches!(
+                input_type,
+                InputType::XBox360Controller
+                    | InputType::XBoxOneController
+                    | InputType::PS3Controller
+                    | InputType::PS4Controller
+                    | InputType::PS5Controller
+                    | InputType::SwitchProController
+                    | InputType::SteamDeckController
+                    | InputType::AppleMFiController
+                    | InputType::AndroidController
+            );
+            if is_native_likely != native_likely {
+                continue;
+            }
+            if native_left > 0 {
+                native_left -= 1;
+            } else {
+                selected[index] = true;
+            }
         }
-        InputType::XBox360Controller
-        | InputType::XBoxOneController
-        | InputType::PS3Controller
-        | InputType::PS4Controller
-        | InputType::PS5Controller
-        | InputType::SwitchProController
-        | InputType::SwitchJoyConPair
-        | InputType::SwitchJoyConSingle
-        | InputType::SteamDeckController
-        | InputType::AppleMFiController
-        | InputType::AndroidController => false,
     }
+    selected
 }
 
-pub fn fallback_gamepads(native_gamepad_present: bool) -> Result<Vec<FallbackGamepad>, SteamError> {
+pub fn fallback_gamepads(native_gamepad_count: usize) -> Result<Vec<FallbackGamepad>, SteamError> {
     if mode()? != SteamInputMode::Fallback {
         return Err(SteamError::Disabled);
     }
@@ -218,10 +235,22 @@ pub fn fallback_gamepads(native_gamepad_present: bool) -> Result<Vec<FallbackGam
             return Err(SteamError::CallFailed("input.fallback_action_set"));
         }
 
+        let controllers: Vec<_> = input
+            .get_connected_controllers()
+            .into_iter()
+            .map(|handle| {
+                let input_type: InputType = input.get_input_type_for_handle(handle).into();
+                (handle, input_type)
+            })
+            .collect();
+        let input_types: Vec<_> = controllers
+            .iter()
+            .map(|(_, input_type)| *input_type)
+            .collect();
+        let selected = fallback_selection(&input_types, native_gamepad_count);
         let mut gamepads = Vec::new();
-        for handle in input.get_connected_controllers() {
-            let input_type: InputType = input.get_input_type_for_handle(handle).into();
-            if !fallback_eligible(input_type, native_gamepad_present) {
+        for ((handle, input_type), selected) in controllers.into_iter().zip(selected) {
+            if !selected {
                 continue;
             }
             input.activate_action_set_handle(handle, actions.set);
@@ -511,32 +540,37 @@ pub fn shutdown() -> Result<(), SteamError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{InputType, fallback_eligible};
+    use super::{InputType, fallback_selection};
 
     #[test]
-    fn fallback_keeps_native_controller_types_native() {
-        for input_type in [
+    fn fallback_uses_steam_when_native_misses_all_pads() {
+        let types = [
             InputType::XBox360Controller,
-            InputType::XBoxOneController,
             InputType::PS4Controller,
-            InputType::PS5Controller,
-            InputType::SwitchProController,
+            InputType::SteamController,
+            InputType::GenericGamepad,
             InputType::SwitchJoyConPair,
             InputType::SwitchJoyConSingle,
-            InputType::SteamDeckController,
-        ] {
-            assert!(!fallback_eligible(input_type, false));
-        }
+        ];
+        assert_eq!(
+            fallback_selection(&types, 0),
+            [true, true, true, true, false, false]
+        );
     }
 
     #[test]
-    fn fallback_uses_steam_only_when_native_misses_pad() {
-        assert!(fallback_eligible(InputType::SteamController, false));
-        assert!(fallback_eligible(InputType::GenericGamepad, false));
-        assert!(fallback_eligible(InputType::Unknown, false));
-        assert!(!fallback_eligible(InputType::SteamController, true));
-        assert!(!fallback_eligible(InputType::GenericGamepad, true));
-        assert!(!fallback_eligible(InputType::Unknown, true));
-        assert!(fallback_eligible(InputType::MobileTouch, true));
+    fn fallback_merges_only_steam_pads_not_covered_by_native() {
+        let types = [
+            InputType::SteamController,
+            InputType::XBoxOneController,
+            InputType::GenericGamepad,
+            InputType::MobileTouch,
+            InputType::SwitchJoyConSingle,
+        ];
+        assert_eq!(
+            fallback_selection(&types, 1),
+            [true, false, true, true, false]
+        );
+        assert_eq!(fallback_selection(&types[..3], 3), [false, false, false]);
     }
 }

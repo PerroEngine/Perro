@@ -91,8 +91,7 @@ pub fn generate_static_shaders(
     write_static_lookup_fn(
         &mut out,
         "lookup_shader",
-        "SHADER_TABLE",
-        "ShaderEntry",
+        "SHADER",
         "&'static str",
         "EMPTY_SHADER",
         &lookup_entries,

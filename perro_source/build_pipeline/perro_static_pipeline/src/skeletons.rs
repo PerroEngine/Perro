@@ -242,8 +242,7 @@ pub fn generate_static_skeletons(
     write_static_lookup_fn(
         &mut out,
         "lookup_skeleton",
-        "SKELETON_TABLE",
-        "SkeletonEntry",
+        "SKELETON",
         "&'static [u8]",
         "EMPTY_SKELETON",
         &lookup_entries,

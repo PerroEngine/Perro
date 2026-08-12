@@ -138,8 +138,7 @@ pub fn generate_static_audios(
     write_static_lookup_fn(
         &mut out,
         "lookup_audio",
-        "AUDIO_TABLE",
-        "AudioEntry",
+        "AUDIO",
         "&'static [u8]",
         "EMPTY_AUDIO",
         &lookup_entries,

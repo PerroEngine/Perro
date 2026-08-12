@@ -1,11 +1,11 @@
 use crate::{
     action_cancel_rebind, action_down, action_is_rebinding, action_pressed, action_rebind_result,
-    action_released, action_start_rebind, mouse_mode, mouse_set_mode,
+    action_released, action_start_rebind, joycon_generation, mouse_mode, mouse_set_mode,
 };
 
 use super::{
     GamepadButton, InputAction, InputBinding, InputMap, InputSnapshot, InputWindow, JoyConButton,
-    KeyCode, MouseButton, MouseMode, action_hash,
+    JoyConGeneration, KeyCode, MouseButton, MouseMode, action_hash,
 };
 
 #[test]
@@ -197,4 +197,13 @@ fn live_rebind_macros_queue_query_and_report() {
     action_cancel_rebind!(&window);
     input.apply_queued_commands();
     assert!(!action_is_rebinding!(InputWindow::new(&input)));
+}
+
+#[test]
+fn joycon_generation_roundtrips_through_state_and_macro() {
+    let mut input = InputSnapshot::new();
+    input.set_joycon_generation(0, JoyConGeneration::Two);
+    let window = InputWindow::new(&input);
+    assert_eq!(joycon_generation!(&window, 0), JoyConGeneration::Two);
+    assert_eq!(joycon_generation!(&window, 9), JoyConGeneration::One);
 }

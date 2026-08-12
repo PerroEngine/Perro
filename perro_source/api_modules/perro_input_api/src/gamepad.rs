@@ -75,6 +75,7 @@ impl GamepadAxis {
 
 #[derive(Clone, Debug)]
 pub struct GamepadState {
+    connected: bool,
     buttons_down: [u64; GamepadState::BUTTON_WORDS],
     buttons_pressed: [u64; GamepadState::BUTTON_WORDS],
     buttons_released: [u64; GamepadState::BUTTON_WORDS],
@@ -88,6 +89,7 @@ impl GamepadState {
 
     pub fn new() -> Self {
         Self {
+            connected: false,
             buttons_down: [0; GamepadState::BUTTON_WORDS],
             buttons_pressed: [0; GamepadState::BUTTON_WORDS],
             buttons_released: [0; GamepadState::BUTTON_WORDS],
@@ -101,6 +103,16 @@ impl GamepadState {
     pub fn begin_frame(&mut self) {
         self.buttons_pressed.fill(0);
         self.buttons_released.fill(0);
+    }
+
+    #[inline(always)]
+    pub fn set_connected(&mut self, connected: bool) {
+        self.connected = connected;
+    }
+
+    #[inline(always)]
+    pub fn connected(&self) -> bool {
+        self.connected
     }
 
     #[inline(always)]
@@ -222,6 +234,15 @@ macro_rules! gamepad_get {
     ($ipt:expr, $index:expr) => {{
         let gp = $ipt.Gamepads();
         gp.get($index)
+    }};
+}
+
+#[macro_export]
+/// Return whether a gamepad slot is live.
+macro_rules! gamepad_connected {
+    ($ipt:expr, $index:expr) => {{
+        let gp = $ipt.Gamepads();
+        gp.get($index).map(|gp| gp.connected()).unwrap_or(false)
     }};
 }
 

@@ -292,8 +292,7 @@ pub(crate) fn write_hash_const(out: &mut String, name: &str, value: &str) {
 pub(crate) fn write_static_lookup_fn(
     out: &mut String,
     fn_name: &str,
-    table_name: &str,
-    entry_type: &str,
+    table_prefix: &str,
     value_type: &str,
     empty_expr: &str,
     entries: &[(u64, String, String)],
@@ -325,21 +324,27 @@ pub(crate) fn write_static_lookup_fn(
         return;
     }
 
-    let _ = writeln!(
-        out,
-        "#[derive(Clone, Copy)]\nstruct {entry_type} {{ hash: u64, value: {value_type} }}\n"
-    );
-    let _ = writeln!(out, "static {table_name}: &[{entry_type}] = &[");
     let mut sorted = entries
         .iter()
         .map(|(hash, hash_name, value_expr)| (*hash, hash_name, value_expr))
         .collect::<Vec<_>>();
-    sorted.sort_by_key(|(hash, _, _)| *hash);
-    for (_, hash_name, value_expr) in sorted {
-        let _ = writeln!(
-            out,
-            "    {entry_type} {{ hash: {hash_name}, value: {value_expr} }},"
-        );
+    sorted.sort_unstable_by_key(|(hash, _, _)| *hash);
+
+    let hashes_name = format!("{table_prefix}_HASHES");
+    let values_name = format!("{table_prefix}_VALUES");
+    let entry_count = sorted.len();
+    out.push_str("// Split hashes -> dense hot search data; values keep same index.\n");
+    let _ = writeln!(out, "static {hashes_name}: [u64; {entry_count}] = [");
+    for (_, hash_name, _) in &sorted {
+        let _ = writeln!(out, "    {hash_name},");
+    }
+    out.push_str("];\n\n");
+    let _ = writeln!(
+        out,
+        "static {values_name}: [{value_type}; {entry_count}] = ["
+    );
+    for (_, _, value_expr) in &sorted {
+        let _ = writeln!(out, "    {value_expr},");
     }
     out.push_str("];\n\n");
     let _ = writeln!(
@@ -347,16 +352,16 @@ pub(crate) fn write_static_lookup_fn(
         "pub const fn {fn_name}(path_hash: u64) -> {value_type} {{"
     );
     let _ = writeln!(out, "    let mut lo = 0usize;");
-    let _ = writeln!(out, "    let mut hi = {table_name}.len();");
+    let _ = writeln!(out, "    let mut hi = {hashes_name}.len();");
     out.push_str("    while lo < hi {\n");
-    out.push_str("        let mid = (lo + hi) / 2;\n");
-    let _ = writeln!(out, "        let entry = &{table_name}[mid];");
-    out.push_str("        if path_hash < entry.hash {\n");
+    out.push_str("        let mid = lo + ((hi - lo) / 2);\n");
+    let _ = writeln!(out, "        let hash = {hashes_name}[mid];");
+    out.push_str("        if path_hash < hash {\n");
     out.push_str("            hi = mid;\n");
-    out.push_str("        } else if path_hash > entry.hash {\n");
+    out.push_str("        } else if path_hash > hash {\n");
     out.push_str("            lo = mid + 1;\n");
     out.push_str("        } else {\n");
-    out.push_str("            return entry.value;\n");
+    let _ = writeln!(out, "            return {values_name}[mid];");
     out.push_str("        }\n");
     out.push_str("    }\n");
     let _ = writeln!(out, "    {empty_expr}");
@@ -393,7 +398,7 @@ mod tests {
     use super::{
         StaticPipelineOverrides, begin_static_asset_inventory, current_overrides,
         push_static_pipeline_overrides, record_static_assets, set_static_pipeline_overrides,
-        take_static_asset_inventory,
+        take_static_asset_inventory, write_static_lookup_fn,
     };
     use perro_animation::{AnimationClip, AnimationTreeAsset};
     use perro_nodes::NodeType;
@@ -411,6 +416,60 @@ mod tests {
         time::{Duration, Instant},
     };
 
+    #[test]
+    fn static_lookup_emits_sorted_parallel_arrays() {
+        let entries = vec![
+            (30, "HASH_C".to_string(), "VALUE_C".to_string()),
+            (10, "HASH_A".to_string(), "VALUE_A".to_string()),
+            (90, "HASH_I".to_string(), "VALUE_I".to_string()),
+            (20, "HASH_B".to_string(), "VALUE_B".to_string()),
+            (80, "HASH_H".to_string(), "VALUE_H".to_string()),
+            (40, "HASH_D".to_string(), "VALUE_D".to_string()),
+            (70, "HASH_G".to_string(), "VALUE_G".to_string()),
+            (50, "HASH_E".to_string(), "VALUE_E".to_string()),
+            (60, "HASH_F".to_string(), "VALUE_F".to_string()),
+        ];
+        let mut out = String::new();
+
+        write_static_lookup_fn(&mut out, "lookup_test", "TEST", "u32", "0", &entries);
+
+        let hashes = out.find("static TEST_HASHES").expect("hash array");
+        let values = out.find("static TEST_VALUES").expect("value array");
+        assert!(hashes < values);
+        assert!(out.contains(
+            "static TEST_HASHES: [u64; 9] = [\n    HASH_A,\n    HASH_B,\n    HASH_C,\n    HASH_D,\n    HASH_E,\n    HASH_F,\n    HASH_G,\n    HASH_H,\n    HASH_I,\n];"
+        ));
+        assert!(out.contains(
+            "static TEST_VALUES: [u32; 9] = [\n    VALUE_A,\n    VALUE_B,\n    VALUE_C,\n    VALUE_D,\n    VALUE_E,\n    VALUE_F,\n    VALUE_G,\n    VALUE_H,\n    VALUE_I,\n];"
+        ));
+        assert!(!out.contains("const _:"));
+        assert!(out.contains("let hash = TEST_HASHES[mid];"));
+        assert!(out.contains("return TEST_VALUES[mid];"));
+        assert!(!out.contains("struct TestEntry"));
+        assert!(!out.contains("TEST_TABLE"));
+    }
+
+    #[test]
+    fn static_lookup_keeps_small_match() {
+        let entries = vec![(1, "HASH_A".to_string(), "VALUE_A".to_string())];
+        let mut out = String::new();
+
+        write_static_lookup_fn(&mut out, "lookup_test", "TEST", "u32", "0", &entries);
+
+        assert!(out.contains("match path_hash"));
+        assert!(!out.contains("TEST_HASHES"));
+    }
+
+    #[test]
+    fn static_lookup_empty_returns_miss() {
+        let mut out = String::new();
+
+        write_static_lookup_fn(&mut out, "lookup_test", "TEST", "u32", "7", &[]);
+
+        assert!(out.contains("pub const fn lookup_test(_path_hash: u64) -> u32"));
+        assert!(out.contains("    7\n"));
+        assert!(!out.contains("TEST_HASHES"));
+    }
     const ITEM_COUNT: usize = 16;
     const ITERATIONS: usize = 20_000;
 

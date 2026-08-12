@@ -24,7 +24,7 @@ pub(crate) fn reset_for_tests() {
 }
 
 pub fn init_from_config(enabled: bool, app_id: Option<u32>) -> Result<(), SteamError> {
-    init_from_config_with_input(enabled, app_id, SteamInputMode::Off)
+    init_from_config_with_input(enabled, app_id, SteamInputMode::Fallback)
 }
 
 pub fn init_from_config_with_input(

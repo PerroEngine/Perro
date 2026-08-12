@@ -131,6 +131,31 @@ pub fn get_owner(lobby: LobbyID) -> Result<SteamID, SteamError> {
     app::with_client(|client| Ok(client.matchmaking().lobby_owner(lobby.into()).into()))
 }
 
+/// Transfer lobby ownership to another current lobby member.
+///
+/// Steam only accepts this call from the current owner. A successful transfer
+/// produces the normal lobby-data callback for every member.
+pub fn set_owner(lobby: LobbyID, owner: SteamID) -> Result<(), SteamError> {
+    app::with_client(|_| {
+        let matchmaking = unsafe { steamworks_sys::SteamAPI_SteamMatchmaking_v009() };
+        if matchmaking.is_null() {
+            return Err(SteamError::CallFailed("matchmaking.set_lobby_owner"));
+        }
+        let changed = unsafe {
+            steamworks_sys::SteamAPI_ISteamMatchmaking_SetLobbyOwner(
+                matchmaking,
+                lobby.get_id(),
+                owner.get_id(),
+            )
+        };
+        if changed {
+            Ok(())
+        } else {
+            Err(SteamError::CallFailed("matchmaking.set_lobby_owner"))
+        }
+    })
+}
+
 pub fn get_info(lobby: LobbyID) -> Result<LobbyInfo, SteamError> {
     app::with_client(|client| {
         let matchmaking = client.matchmaking();

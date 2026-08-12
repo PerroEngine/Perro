@@ -33,8 +33,10 @@ memory-stats = "1.2.0"
 ctrlc = "3.4"
 hidapi = "2.6.3"
 btleplug = "0.11.8"
-gilrs = "0.11"
 tokio = { version = "1.48.0", features = ["rt", "time"] }
+
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+gilrs = "0.11"
 
 [features]
 fps = []
@@ -49,6 +51,10 @@ steamworks = [
 ]
 
 [target.'cfg(target_os = "windows")'.dependencies]
+# WGI sees Bluetooth Xbox pads and receives Windows hotplug callbacks.
+# Keep rusty-xinput below as an independent fallback for XInput-only pads.
+gilrs = "0.11"
+rusty-xinput = "1.3"
 winit = { version = "0.30.12", default-features = false, features = ["rwh_06"] }
 # matches windows-sys version winit already pulls in transitively; used only for
 # timeBeginPeriod/timeEndPeriod (raise OS timer resolution for frame pacing).

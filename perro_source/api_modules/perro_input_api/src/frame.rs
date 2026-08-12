@@ -1,6 +1,6 @@
 use crate::{
-    GamepadAxis, GamepadButton, InputSnapshot, JoyConButton, JoyConSide, KeyCode, MouseButton,
-    MouseMode, PlayerBinding,
+    GamepadAxis, GamepadButton, InputSnapshot, JoyConButton, JoyConGeneration, JoyConSide, KeyCode,
+    MouseButton, MouseMode, PlayerBinding,
 };
 use perro_structs::SignedUnitVector2;
 use std::collections::VecDeque;
@@ -32,6 +32,10 @@ pub enum InputEvent {
     ViewportSize {
         width: u32,
         height: u32,
+    },
+    GamepadConnected {
+        index: usize,
+        connected: bool,
     },
     GamepadButton {
         index: usize,
@@ -67,6 +71,10 @@ pub enum InputEvent {
     JoyConSide {
         index: usize,
         side: JoyConSide,
+    },
+    JoyConGeneration {
+        index: usize,
+        generation: JoyConGeneration,
     },
     JoyConConnected {
         index: usize,
@@ -204,6 +212,9 @@ fn apply_event(snapshot: &mut InputSnapshot, event: &InputEvent) {
         InputEvent::MousePosition { x, y } => snapshot.set_mouse_position(*x, *y),
         InputEvent::MouseMode(mode) => snapshot.set_mouse_mode_state(*mode),
         InputEvent::ViewportSize { width, height } => snapshot.set_viewport_size(*width, *height),
+        InputEvent::GamepadConnected { index, connected } => {
+            snapshot.set_gamepad_connected(*index, *connected)
+        }
         InputEvent::GamepadButton {
             index,
             button,
@@ -223,6 +234,9 @@ fn apply_event(snapshot: &mut InputSnapshot, event: &InputEvent) {
         } => snapshot.set_joycon_button_state(*index, *button, *is_down),
         InputEvent::JoyConStick { index, stick } => snapshot.set_joycon_stick_unit(*index, *stick),
         InputEvent::JoyConSide { index, side } => snapshot.set_joycon_side(*index, *side),
+        InputEvent::JoyConGeneration { index, generation } => {
+            snapshot.set_joycon_generation(*index, *generation)
+        }
         InputEvent::JoyConConnected { index, connected } => {
             snapshot.set_joycon_connected(*index, *connected)
         }

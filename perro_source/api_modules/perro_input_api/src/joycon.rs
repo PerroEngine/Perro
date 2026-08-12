@@ -80,9 +80,17 @@ pub struct JoyConMouseSensor {
     pub distance: f32,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum JoyConGeneration {
+    #[default]
+    One,
+    Two,
+}
+
 #[derive(Clone, Debug)]
 pub struct JoyConState {
     side: JoyConSide,
+    generation: JoyConGeneration,
     buttons_down: [u64; JoyConState::BUTTON_WORDS],
     buttons_pressed: [u64; JoyConState::BUTTON_WORDS],
     buttons_released: [u64; JoyConState::BUTTON_WORDS],
@@ -103,6 +111,7 @@ impl JoyConState {
     pub fn new(side: JoyConSide) -> Self {
         Self {
             side,
+            generation: JoyConGeneration::One,
             buttons_down: [0; JoyConState::BUTTON_WORDS],
             buttons_pressed: [0; JoyConState::BUTTON_WORDS],
             buttons_released: [0; JoyConState::BUTTON_WORDS],
@@ -121,6 +130,16 @@ impl JoyConState {
     #[inline(always)]
     pub fn side(&self) -> JoyConSide {
         self.side
+    }
+
+    #[inline(always)]
+    pub fn generation(&self) -> JoyConGeneration {
+        self.generation
+    }
+
+    #[inline(always)]
+    pub fn set_generation(&mut self, generation: JoyConGeneration) {
+        self.generation = generation;
     }
 
     #[inline(always)]
@@ -410,6 +429,15 @@ macro_rules! joycon_stick {
         jc.get($index)
             .map(|jc| jc.stick())
             .unwrap_or($crate::__structs::Vector2::new(0.0, 0.0))
+    }};
+}
+
+#[macro_export]
+/// Return the hardware generation reported by the Joy-Con backend.
+macro_rules! joycon_generation {
+    ($ipt:expr, $index:expr) => {{
+        let jc = $ipt.JoyCons();
+        jc.get($index).map(|jc| jc.generation()).unwrap_or_default()
     }};
 }
 

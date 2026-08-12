@@ -110,7 +110,7 @@ default_locale = "en"
 [steam]
 enabled = false
 app_id = 480
-input = "off"
+input = "fallback"
 
 [web]
 title = "My Game"
@@ -368,12 +368,13 @@ input = "off"
 | --------- | ------ | ------- | --------------------------------- |
 | `enabled` | bool   | `false` | Steamworks on/off                 |
 | `app_id`  | int    | none    | need when enabled                 |
-| `input`   | string | `"off"` | Steam Input mode: off/metadata/fallback/actions; fallback fills normal gamepad slots only when native input misses a pad |
+| `input`   | string | `"fallback"` | Steam Input mode: off/metadata/fallback/actions; fallback merges pads not covered by native input |
 
 `app_id` must fit `u32`.
 
 Use `input = "off"` to keep native Perro input only.
 Use `input = "metadata"` to read Steam controller type/glyph/origin data without Steam Input action reads.
+Use `input = "fallback"` to keep native pads first and fill uncovered gamepad slots from Steam Input.
 Use `input = "actions"` only when the game opts into Steam Input action maps.
 
 ## Web

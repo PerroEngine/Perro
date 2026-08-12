@@ -137,8 +137,7 @@ pub fn generate_static_collision_trimeshes(
     write_static_lookup_fn(
         &mut out,
         "lookup_collision_trimesh",
-        "COLLISION_TRIMESH_TABLE",
-        "CollisionTrimeshEntry",
+        "COLLISION_TRIMESH",
         "&'static [u8]",
         "EMPTY_COLLISION_TRIMESH",
         &lookup_entries,

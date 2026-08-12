@@ -80,8 +80,7 @@ pub fn generate_static_navmeshes(
     write_static_lookup_fn(
         &mut out,
         "lookup_navmesh",
-        "NAVMESH_TABLE",
-        "NavMeshEntry",
+        "NAVMESH",
         "&'static [u8]",
         "EMPTY_NAVMESH",
         &lookup_entries,

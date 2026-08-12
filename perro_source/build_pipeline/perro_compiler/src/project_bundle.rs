@@ -326,12 +326,10 @@ fn build_project_crate(
         ProjectBuildTarget::Native => export_project_binary(
             project_root,
             &target_dir,
-            options.release,
             project_name,
             steam_enabled,
             version,
-            options.native_target,
-            options.demo,
+            options,
         )?,
         ProjectBuildTarget::Web => export_project_web_bundle(project_root, &target_dir, options)?,
         ProjectBuildTarget::Android => export_project_android_bundle(
@@ -407,11 +405,12 @@ fn append_private_path_remaps(flags: &mut Vec<String>, project_root: &Path) {
     }
 
     let project_src = "s";
-    push_path_remap(flags, &project_root, &project_src);
-    push_path_remap(flags, &project_root.join(".perro/project"), &project_src);
-    let scripts_root = project_root.join(".perro/scripts/src/scripts");
-    push_path_remap(flags, &scripts_root, &project_src);
-    append_project_res_remaps(flags, &scripts_root, &project_src);
+    push_path_remap(flags, &project_root, project_src);
+    push_path_remap(flags, &project_root.join(".perro/project"), project_src);
+    let generated_scripts_root = project_root.join(".perro/scripts/src");
+    push_path_remap(flags, &generated_scripts_root, project_src);
+    let scripts_root = generated_scripts_root.join("scripts");
+    append_project_res_remaps(flags, &scripts_root, project_src);
 }
 
 fn append_cargo_source_remaps(flags: &mut Vec<String>, cargo_home: &Path, logical: &str) {
@@ -500,16 +499,16 @@ fn engine_source_root() -> Option<PathBuf> {
 fn export_project_binary(
     project_root: &Path,
     target_dir: &Path,
-    release: bool,
     project_name: &str,
     steam_enabled: bool,
     version: Option<&str>,
-    native_target: Option<&str>,
-    demo: bool,
+    options: ProjectBuildOptions,
 ) -> Result<(), CompilerError> {
+    let native_target = options.native_target;
     let package_bin_name = read_project_package_name(project_root)?;
-    let output_bin_name = read_project_output_binary_name(project_root, &package_bin_name, demo)?;
-    let profile_dir = if release { "release" } else { "debug" };
+    let output_bin_name =
+        read_project_output_binary_name(project_root, &package_bin_name, options.demo)?;
+    let profile_dir = if options.release { "release" } else { "debug" };
     let artifact_dir = native_artifact_dir(target_dir, profile_dir, native_target);
     let built_bin = artifact_dir.join(target_binary_name(&package_bin_name, native_target));
     if !built_bin.exists() {
@@ -518,7 +517,7 @@ fn export_project_binary(
             built_bin.display()
         )));
     }
-    if release {
+    if options.release {
         verify_no_private_build_paths(&built_bin, project_root, project_name)?;
     }
 
@@ -985,3 +984,24 @@ pub(crate) use web::*;
 #[path = "project_bundle/codegen.rs"]
 mod codegen;
 pub(crate) use codegen::*;
+
+#[cfg(test)]
+mod project_bundle_tests {
+    use super::*;
+
+    #[test]
+    fn private_path_remaps_cover_all_generated_script_dirs() {
+        let project_root = std::env::temp_dir().join("perro-private-remap-test-missing");
+        let project_root = project_root
+            .canonicalize()
+            .unwrap_or(project_root);
+        let generated_scripts_root = project_root.join(".perro/scripts/src");
+        let mut flags = Vec::new();
+
+        append_private_path_remaps(&mut flags, &project_root);
+
+        for physical in path_prefix_spellings(&generated_scripts_root) {
+            assert!(flags.contains(&format!("--remap-path-prefix={physical}=s")));
+        }
+    }
+}

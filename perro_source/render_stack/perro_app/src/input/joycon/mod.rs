@@ -2,8 +2,8 @@ use crate::App;
 use perro_graphics::GraphicsBackend;
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 use perro_input_api::{
-    JoyConButton, JoyConIndicatorRequest, JoyConRumbleRequest, JoyConSide, PlayerBinding,
-    SignedUnitVector2,
+    JoyConButton, JoyConGeneration, JoyConIndicatorRequest, JoyConRumbleRequest, JoyConSide,
+    PlayerBinding, SignedUnitVector2,
 };
 
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
@@ -12,6 +12,7 @@ trait JoyConSink {
     fn set_joycon_stick(&mut self, index: usize, x: f32, y: f32);
     fn set_joycon_stick_unit(&mut self, index: usize, stick: SignedUnitVector2);
     fn set_joycon_side(&mut self, index: usize, side: JoyConSide);
+    fn set_joycon_generation(&mut self, index: usize, generation: JoyConGeneration);
     fn set_joycon_connected(&mut self, index: usize, connected: bool);
     fn set_joycon_calibrated(&mut self, index: usize, calibrated: bool);
     fn set_joycon_calibration_in_progress(&mut self, index: usize, in_progress: bool);
@@ -39,6 +40,9 @@ impl<B: GraphicsBackend> JoyConSink for App<B> {
     }
     fn set_joycon_side(&mut self, index: usize, side: JoyConSide) {
         App::set_joycon_side(self, index, side);
+    }
+    fn set_joycon_generation(&mut self, index: usize, generation: JoyConGeneration) {
+        App::set_joycon_generation(self, index, generation);
     }
     fn set_joycon_connected(&mut self, index: usize, connected: bool) {
         App::set_joycon_connected(self, index, connected);
@@ -128,8 +132,10 @@ mod backend {
 
     const REPORT_LEN: usize = 64;
     const SCAN_INTERVAL: Duration = Duration::from_secs(2);
+    const BLE_RESTART_INTERVAL: Duration = Duration::from_secs(2);
     const READ_TIMEOUT: Duration = Duration::from_millis(8);
     const BLE_DISCOVERY_POLL: TokioDuration = TokioDuration::from_millis(20);
+    const BLE_SCAN_RESTART_INTERVAL: TokioDuration = TokioDuration::from_secs(2);
     const BLE_CHAR_DISCOVERY_RETRIES: u32 = 4;
     const BLE_CHAR_DISCOVERY_DELAY: TokioDuration = TokioDuration::from_millis(10);
     const IMU_ZERO_STUCK_THRESHOLD: Duration = Duration::from_millis(600);
@@ -220,6 +226,7 @@ mod backend {
         Connected {
             index: usize,
             side: JoyConSide,
+            generation: JoyConGeneration,
             serial: String,
             device_key: String,
         },
@@ -233,6 +240,12 @@ mod backend {
         Disconnected {
             index: usize,
         },
+        HidWorkerStopped {
+            key: String,
+            index: usize,
+            token: u64,
+        },
+        BleWorkerStopped,
     }
 
     #[derive(Clone, Copy)]
@@ -288,6 +301,7 @@ mod backend {
     #[derive(Debug)]
     struct DeviceHandle {
         stop: Arc<AtomicBool>,
+        token: u64,
     }
 
     #[derive(Default)]
@@ -311,6 +325,8 @@ mod backend {
         last_scan: Option<Instant>,
         ble_started: bool,
         ble_stop: Option<Arc<AtomicBool>>,
+        last_ble_start: Option<Instant>,
+        next_hid_worker_token: u64,
     }
 
     const ALL_BUTTONS: [JoyConButton; JoyConButton::COUNT] = [
@@ -330,6 +346,7 @@ mod backend {
     impl JoyConBackend {
         pub(super) fn begin_frame<S: JoyConSink>(&mut self, app: &mut S) {
             self.ensure_channel();
+            self.start_ble_worker_if_needed();
             self.scan_if_needed(app);
             self.consume_calibration_requests(app);
             self.sync_player_binding_lamps(app);
@@ -344,11 +361,16 @@ mod backend {
             let (tx, rx) = mpsc::channel();
             self.tx = Some(tx);
             self.rx = Some(rx);
-            self.start_ble_worker_if_needed();
         }
 
         fn start_ble_worker_if_needed(&mut self) {
             if self.ble_started {
+                return;
+            }
+            if self
+                .last_ble_start
+                .is_some_and(|started| started.elapsed() < BLE_RESTART_INTERVAL)
+            {
                 return;
             }
             let Some(tx) = self.tx.clone() else {
@@ -358,6 +380,7 @@ mod backend {
             spawn_ble_manager_thread(tx, Arc::clone(&self.slots), Arc::clone(&stop));
             self.ble_stop = Some(stop);
             self.ble_started = true;
+            self.last_ble_start = Some(Instant::now());
         }
 
         fn scan_if_needed<S: JoyConSink>(&mut self, app: &mut S) {
@@ -390,11 +413,15 @@ mod backend {
                     _ => continue,
                 };
 
-                let Some(serial) = dev.serial_number() else {
-                    continue;
-                };
-                let serial = serial.to_string();
-                let slot_key = format!("hid:{serial}");
+                let device_path = dev.path().to_owned();
+                let device_serial = dev.serial_number().map(str::to_owned);
+                let serial = device_serial
+                    .clone()
+                    .unwrap_or_else(|| device_path.to_string_lossy().into_owned());
+                let slot_key = device_serial
+                    .as_deref()
+                    .map(|serial| format!("hid:{serial}"))
+                    .unwrap_or_else(|| format!("hid-path:{}", device_path.to_string_lossy()));
                 self.scan_connected_keys.insert(slot_key.clone());
 
                 if self.devices.contains_key(&slot_key) {
@@ -407,12 +434,13 @@ mod backend {
                     tx.send(JoyConEvent::Connected {
                         index,
                         side,
+                        generation: JoyConGeneration::One,
                         serial: serial.clone(),
                         device_key: slot_key.clone(),
                     })
                     .ok()
                 });
-                self.spawn_device_thread(slot_key, serial, pid, side, index);
+                self.spawn_device_thread(slot_key, device_serial, device_path, pid, side, index);
             }
 
             // Remove disconnected devices
@@ -439,7 +467,8 @@ mod backend {
         fn spawn_device_thread(
             &mut self,
             slot_key: String,
-            serial: String,
+            device_serial: Option<String>,
+            device_path: std::ffi::CString,
             pid: u16,
             side: JoyConSide,
             index: usize,
@@ -451,77 +480,86 @@ mod backend {
 
             let stop = Arc::new(AtomicBool::new(false));
             let stop_thread = Arc::clone(&stop);
-            let serial_thread = serial;
+            let token = self.next_hid_worker_token;
+            self.next_hid_worker_token = self.next_hid_worker_token.wrapping_add(1);
+            let slot_key_thread = slot_key.clone();
 
             thread::spawn(move || {
-                let Ok(api) = HidApi::new() else {
-                    return;
-                };
+                if let Ok(api) = HidApi::new() {
+                    let device = match device_serial.as_deref() {
+                        Some(serial) => api.open_serial(joycon1::JOYCON_VENDOR_ID, pid, serial),
+                        None => api.open_path(&device_path),
+                    };
+                    if let Ok(device) = device {
+                        let _ = joycon1::enable_sensors(&device);
+                        let mut zero_started_at: Option<Instant> = None;
+                        let mut last_enable_retry = Instant::now() - IMU_ENABLE_RETRY_COOLDOWN;
+                        let mut buffer = [0u8; REPORT_LEN];
+                        let mut packet_number: u8 = 0;
 
-                let Ok(device) = api.open_serial(joycon1::JOYCON_VENDOR_ID, pid, &serial_thread)
-                else {
-                    return;
-                };
-
-                let _ = joycon1::enable_sensors(&device);
-                let mut zero_started_at: Option<Instant> = None;
-                let mut last_enable_retry = Instant::now() - IMU_ENABLE_RETRY_COOLDOWN;
-                let mut buffer = [0u8; REPORT_LEN];
-                let mut packet_number: u8 = 0;
-
-                while !stop_thread.load(Ordering::Relaxed) {
-                    while let Ok(cmd) = cmd_rx.try_recv() {
-                        match cmd {
-                            DeviceCommand::SetPlayerLamp { pattern } => {
-                                let _ = joycon1::send_hid_subcommand_with_rumble(
-                                    &device,
-                                    &mut packet_number,
-                                    joycon1::JOYCON_SUBCMD_SET_PLAYER_LAMP,
-                                    pattern,
-                                );
-                            }
-                            DeviceCommand::SetRumble { .. } => {}
-                        }
-                    }
-                    match device.read_timeout(&mut buffer, READ_TIMEOUT.as_millis() as i32) {
-                        Ok(size) if size > 0 => {
-                            let data = &buffer[..size];
-                            if let Some(payload) = joycon1::decode_report_hid(data, side) {
-                                if shared::imu_is_zero(payload.gyro, payload.accel) {
-                                    let zero_start =
-                                        zero_started_at.get_or_insert_with(Instant::now);
-                                    if zero_start.elapsed() >= IMU_ZERO_STUCK_THRESHOLD
-                                        && last_enable_retry.elapsed() >= IMU_ENABLE_RETRY_COOLDOWN
-                                    {
-                                        eprintln!(
-                                            "[joycon] imu stuck at zero index={} side={:?}, retrying sensor enable",
-                                            index, side
+                        while !stop_thread.load(Ordering::Relaxed) {
+                            while let Ok(cmd) = cmd_rx.try_recv() {
+                                match cmd {
+                                    DeviceCommand::SetPlayerLamp { pattern } => {
+                                        let _ = joycon1::send_hid_subcommand_with_rumble(
+                                            &device,
+                                            &mut packet_number,
+                                            joycon1::JOYCON_SUBCMD_SET_PLAYER_LAMP,
+                                            pattern,
                                         );
-                                        let _ = joycon1::enable_sensors(&device);
-                                        last_enable_retry = Instant::now();
                                     }
-                                } else {
-                                    zero_started_at = None;
+                                    DeviceCommand::SetRumble { .. } => {}
                                 }
-                                let _ = tx.send(JoyConEvent::Report {
-                                    index,
-                                    side,
-                                    data: payload,
-                                    source: JoyConReportSource::Hid,
-                                    raw_report: raw_dump_enabled()
-                                        .then(|| RawJoyConReport::new(data))
-                                        .flatten(),
-                                });
+                            }
+                            match device.read_timeout(&mut buffer, READ_TIMEOUT.as_millis() as i32)
+                            {
+                                Ok(size) if size > 0 => {
+                                    let data = &buffer[..size];
+                                    if let Some(payload) = joycon1::decode_report_hid(data, side) {
+                                        if shared::imu_is_zero(payload.gyro, payload.accel) {
+                                            let zero_start =
+                                                zero_started_at.get_or_insert_with(Instant::now);
+                                            if zero_start.elapsed() >= IMU_ZERO_STUCK_THRESHOLD
+                                                && last_enable_retry.elapsed()
+                                                    >= IMU_ENABLE_RETRY_COOLDOWN
+                                            {
+                                                eprintln!(
+                                                    "[joycon] imu stuck at zero index={} side={:?}, retrying sensor enable",
+                                                    index, side
+                                                );
+                                                let _ = joycon1::enable_sensors(&device);
+                                                last_enable_retry = Instant::now();
+                                            }
+                                        } else {
+                                            zero_started_at = None;
+                                        }
+                                        let _ = tx.send(JoyConEvent::Report {
+                                            index,
+                                            side,
+                                            data: payload,
+                                            source: JoyConReportSource::Hid,
+                                            raw_report: raw_dump_enabled()
+                                                .then(|| RawJoyConReport::new(data))
+                                                .flatten(),
+                                        });
+                                    }
+                                }
+                                _ => {}
                             }
                         }
-                        _ => {}
                     }
                 }
 
                 let _ = tx.send(JoyConEvent::Disconnected { index });
+                let _ = tx.send(JoyConEvent::HidWorkerStopped {
+                    key: slot_key_thread,
+                    index,
+                    token,
+                });
             });
 
-            self.devices.insert(slot_key.clone(), DeviceHandle { stop });
+            self.devices
+                .insert(slot_key.clone(), DeviceHandle { stop, token });
             self.output_txs.insert(slot_key, cmd_tx);
         }
 
@@ -548,10 +586,11 @@ mod backend {
                 JoyConEvent::Connected {
                     index,
                     side,
+                    generation,
                     serial,
                     device_key,
                 } => {
-                    self.on_connected(app, index, side, serial, device_key);
+                    self.on_connected(app, index, side, generation, serial, device_key);
                 }
                 JoyConEvent::Report {
                     index,
@@ -583,6 +622,23 @@ mod backend {
                     self.last_buttons.retain(|(idx, _), _| *idx != index);
                     self.connected.retain(|(idx, _), _| *idx != index);
                     self.last_player_lamp.remove(&index);
+                }
+                JoyConEvent::HidWorkerStopped { key, index, token } => {
+                    if self
+                        .devices
+                        .get(&key)
+                        .is_some_and(|handle| handle.token == token)
+                    {
+                        self.devices.remove(&key);
+                        self.output_txs.remove(&key);
+                        if release_slot(&self.slots, &key) == Some(index) {
+                            clear_joycon_index(app, index);
+                        }
+                    }
+                }
+                JoyConEvent::BleWorkerStopped => {
+                    self.ble_started = false;
+                    self.ble_stop = None;
                 }
             }
         }
@@ -691,6 +747,7 @@ mod backend {
             app: &mut S,
             index: usize,
             side: JoyConSide,
+            generation: JoyConGeneration,
             serial: String,
             device_key: String,
         ) {
@@ -741,6 +798,7 @@ mod backend {
                 },
             );
             app.set_joycon_side(index, side);
+            app.set_joycon_generation(index, generation);
             app.set_joycon_connected(index, true);
             app.set_joycon_calibration_in_progress(index, false);
             app.set_joycon_calibrated(index, status == CalibrationStatus::Calibrated);
@@ -793,7 +851,9 @@ mod backend {
         stop: Arc<AtomicBool>,
     ) {
         thread::spawn(move || {
+            let stopped_tx = tx.clone();
             let Ok(rt) = Builder::new_current_thread().enable_all().build() else {
+                let _ = stopped_tx.send(JoyConEvent::BleWorkerStopped);
                 return;
             };
             rt.block_on(async move {
@@ -814,7 +874,12 @@ mod backend {
                 let mut known: HashSet<String> = HashSet::new();
 
                 let _ = adapter.start_scan(ScanFilter::default()).await;
+                let mut last_scan_start = TokioInstant::now();
                 while !stop.load(Ordering::Relaxed) {
+                    if last_scan_start.elapsed() >= BLE_SCAN_RESTART_INTERVAL {
+                        let _ = adapter.start_scan(ScanFilter::default()).await;
+                        last_scan_start = TokioInstant::now();
+                    }
                     if let Ok(sl) = slots.try_lock() {
                         known.retain(|k| sl.assigned.contains_key(k));
                     }
@@ -966,6 +1031,7 @@ mod backend {
                         let _ = tx.send(JoyConEvent::Connected {
                             index,
                             side,
+                            generation: JoyConGeneration::Two,
                             serial: serial.clone(),
                             device_key: key.clone(),
                         });
@@ -1096,6 +1162,7 @@ mod backend {
                     }
                 }
             });
+            let _ = stopped_tx.send(JoyConEvent::BleWorkerStopped);
         });
     }
 

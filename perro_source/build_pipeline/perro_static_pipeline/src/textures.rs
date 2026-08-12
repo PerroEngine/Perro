@@ -164,8 +164,7 @@ pub fn generate_static_textures(
     write_static_lookup_fn(
         &mut out,
         "lookup_texture",
-        "TEXTURE_TABLE",
-        "TextureEntry",
+        "TEXTURE",
         "&'static [u8]",
         "EMPTY_TEXTURE",
         &lookup_entries,

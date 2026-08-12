@@ -92,8 +92,7 @@ pub fn generate_static_scenes(
     write_static_lookup_fn(
         &mut lookup,
         "lookup_scene",
-        "SCENE_TABLE",
-        "SceneEntry",
+        "SCENE",
         "&'static Scene",
         "&EMPTY_SCENE",
         &lookup_entries,

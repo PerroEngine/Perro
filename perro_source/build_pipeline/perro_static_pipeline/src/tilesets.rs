@@ -87,8 +87,7 @@ pub fn generate_static_tilesets(
     write_static_lookup_fn(
         &mut out,
         "lookup_tileset",
-        "TILESET_TABLE",
-        "TilesetEntry",
+        "TILESET",
         "&'static [u8]",
         "EMPTY_TILESET",
         &lookup_entries,

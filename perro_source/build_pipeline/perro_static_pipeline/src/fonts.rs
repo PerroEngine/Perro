@@ -71,8 +71,7 @@ pub fn generate_static_fonts(
     write_static_lookup_fn(
         &mut out,
         "lookup_font",
-        "FONT_TABLE",
-        "FontEntry",
+        "FONT",
         "&'static [u8]",
         "EMPTY_FONT",
         &entries,

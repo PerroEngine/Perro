@@ -346,6 +346,11 @@ impl<B: GraphicsBackend> App<B> {
     }
 
     #[inline]
+    pub fn set_gamepad_connected(&mut self, index: usize, connected: bool) {
+        self.runtime.set_gamepad_connected(index, connected);
+    }
+
+    #[inline]
     pub fn set_gamepad_button_state(&mut self, index: usize, button: GamepadButton, is_down: bool) {
         self.runtime
             .set_gamepad_button_state(index, button, is_down);
@@ -388,6 +393,15 @@ impl<B: GraphicsBackend> App<B> {
     #[inline]
     pub fn set_joycon_side(&mut self, index: usize, side: perro_input_api::JoyConSide) {
         self.runtime.set_joycon_side(index, side);
+    }
+
+    #[inline]
+    pub fn set_joycon_generation(
+        &mut self,
+        index: usize,
+        generation: perro_input_api::JoyConGeneration,
+    ) {
+        self.runtime.set_joycon_generation(index, generation);
     }
 
     #[inline]

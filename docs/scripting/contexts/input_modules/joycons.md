@@ -163,7 +163,8 @@ lifecycle!({
 ## Macros
 
 For a missing slot, button reads return `false`, side/state reads return `None`,
-stick reads return `Vector2::ZERO`, and gyro/accel reads return `Vector3::ZERO`.
+generation returns `JoyConGeneration::One`, stick reads return `Vector2::ZERO`,
+and gyro/accel reads return `Vector3::ZERO`.
 Command macros queue work only when an input command buffer exists.
 
 | Macro | Signature | Returns |
@@ -171,6 +172,7 @@ Command macros queue work only when an input command buffer exists.
 | `joycon_list!` | `joycon_list!(ctx.ipt)` | `&[JoyConState]` |
 | `joycon_get!` | `joycon_get!(ctx.ipt, 0)` | `Option<&JoyConState>` |
 | `joycon_side!` | `joycon_side!(ctx.ipt, 0)` | `Option<JoyConSide>` |
+| `joycon_generation!` | `joycon_generation!(ctx.ipt, 0)` | `JoyConGeneration::One` or `JoyConGeneration::Two` |
 | `joycon_down!` | `joycon_down!(ctx.ipt, 0, JoyConButton::Top)` | `bool` |
 | `joycon_pressed!` | `joycon_pressed!(ctx.ipt, 0, JoyConButton::Top)` | `bool` |
 | `joycon_released!` | `joycon_released!(ctx.ipt, 0, JoyConButton::Top)` | `bool` |

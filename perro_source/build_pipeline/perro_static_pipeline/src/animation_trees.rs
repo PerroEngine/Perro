@@ -68,8 +68,7 @@ pub fn generate_static_animation_trees(
     write_static_lookup_fn(
         &mut lookup,
         "lookup_animation_tree",
-        "ANIMATION_TREE_TABLE",
-        "AnimationTreeEntry",
+        "ANIMATION_TREE",
         "&'static AnimationTreeAsset",
         "&EMPTY_ANIMATION_TREE",
         &lookup_entries,
