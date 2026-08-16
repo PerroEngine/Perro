@@ -219,6 +219,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     frame_delta.as_secs_f32(),
                     effective_fixed_step,
                     self.fixed_accumulator,
+                    max_catchup_steps(self.fixed_step_cost_seconds, effective_fixed_step),
                 );
                 fixed_steps = plan.steps;
                 fixed_step_seconds = plan.step_seconds;

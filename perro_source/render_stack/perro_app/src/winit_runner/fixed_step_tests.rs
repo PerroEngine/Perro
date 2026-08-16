@@ -1,11 +1,14 @@
-use super::{MAX_FIXED_STEPS_PER_FRAME, StartupSplashState, plan_fixed_steps};
+use super::{
+    MAX_FIXED_STEPS_PER_FRAME, MIN_FIXED_STEPS_PER_FRAME, StartupSplashState, max_catchup_steps,
+    plan_fixed_steps,
+};
 use std::time::Instant;
 #[cfg(not(target_arch = "wasm32"))]
 use winit::dpi::PhysicalSize;
 
 #[test]
 fn fixed_step_plan_caps_large_delta() {
-    let plan = plan_fixed_steps(1.0, 1.0 / 60.0, 0.0);
+    let plan = plan_fixed_steps(1.0, 1.0 / 60.0, 0.0, MAX_FIXED_STEPS_PER_FRAME);
     assert_eq!(plan.steps, MAX_FIXED_STEPS_PER_FRAME);
     assert!(plan.dropped_catchup);
     assert!(plan.accumulator_after < 1.0 / 60.0);
@@ -15,7 +18,7 @@ fn fixed_step_plan_caps_large_delta() {
 fn fixed_step_plan_keeps_substep_remainder() {
     let step = 1.0 / 60.0;
     let start = step * 0.5;
-    let plan = plan_fixed_steps(step * 2.25, step, start);
+    let plan = plan_fixed_steps(step * 2.25, step, start, MAX_FIXED_STEPS_PER_FRAME);
     assert_eq!(plan.steps, 2);
     assert!(!plan.dropped_catchup);
     assert!((plan.accumulator_after - (step * 0.75)).abs() < 1e-6);
@@ -25,10 +28,68 @@ fn fixed_step_plan_keeps_substep_remainder() {
 fn fixed_step_plan_drops_full_catchup_but_keeps_fractional_progress() {
     let step = 1.0 / 60.0;
     let start = step * 0.25;
-    let plan = plan_fixed_steps(step * 20.0, step, start);
+    let plan = plan_fixed_steps(step * 20.0, step, start, MAX_FIXED_STEPS_PER_FRAME);
     assert_eq!(plan.steps, MAX_FIXED_STEPS_PER_FRAME);
     assert!(plan.dropped_catchup);
     assert!(plan.accumulator_after < step);
+}
+
+#[test]
+fn catchup_budget_tracks_measured_headroom() {
+    let step = 1.0 / 60.0;
+    // Cheap steps -> spend the headroom catching up.
+    assert_eq!(
+        max_catchup_steps(step / 8.0, step),
+        MAX_FIXED_STEPS_PER_FRAME
+    );
+    assert_eq!(max_catchup_steps(step / 4.0, step), 4);
+    // A step that costs about what it buys cannot catch up at all: hold the
+    // floor rather than spiral.
+    assert_eq!(max_catchup_steps(step, step), MIN_FIXED_STEPS_PER_FRAME);
+    assert_eq!(
+        max_catchup_steps(step * 4.0, step),
+        MIN_FIXED_STEPS_PER_FRAME
+    );
+    // Unmeasured / degenerate inputs stay safe.
+    assert_eq!(max_catchup_steps(0.0, step), MAX_FIXED_STEPS_PER_FRAME);
+    assert_eq!(max_catchup_steps(f32::NAN, step), MAX_FIXED_STEPS_PER_FRAME);
+    assert_eq!(max_catchup_steps(step, 0.0), MIN_FIXED_STEPS_PER_FRAME);
+}
+
+#[test]
+fn a_host_with_headroom_holds_real_time_at_low_fps() {
+    // 15fps render, 60Hz fixed, steps costing a quarter of what they buy.
+    // Real time needs 60 steps/sec; the old flat cap of 2 gave 30 and the sim
+    // silently ran at half speed.
+    let step = 1.0 / 60.0;
+    let frame = 1.0 / 15.0;
+    let budget = max_catchup_steps(step / 4.0, step);
+    let mut accumulator = 0.0;
+    let mut steps = 0u32;
+    for _ in 0..15 {
+        let plan = plan_fixed_steps(frame, step, accumulator, budget);
+        accumulator = plan.accumulator_after;
+        steps += plan.steps;
+    }
+    assert_eq!(steps, 60, "one wall second must simulate one second");
+}
+
+#[test]
+fn an_overloaded_host_falls_behind_instead_of_spiralling() {
+    // Steps cost more wall time than they buy: catching up is impossible.
+    let step = 1.0 / 60.0;
+    let frame = 1.0 / 15.0;
+    let budget = max_catchup_steps(step * 2.0, step);
+    let mut accumulator = 0.0;
+    let mut steps = 0u32;
+    for _ in 0..15 {
+        let plan = plan_fixed_steps(frame, step, accumulator, budget);
+        accumulator = plan.accumulator_after;
+        steps += plan.steps;
+    }
+    // Bounded work per frame, and the debt is discarded rather than compounding.
+    assert_eq!(steps, 15);
+    assert!(accumulator < step);
 }
 
 #[test]

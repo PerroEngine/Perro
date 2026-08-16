@@ -94,7 +94,9 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     frame_delta.as_secs_f32(),
                     effective_fixed_step,
                     self.fixed_accumulator,
+                    max_catchup_steps(self.fixed_step_cost_seconds, effective_fixed_step),
                 );
+                let steps_start = Instant::now();
                 fixed_steps = plan.steps;
                 fixed_step_seconds = plan.step_seconds;
                 fixed_catchup_dropped = plan.dropped_catchup;
@@ -125,6 +127,17 @@ impl<B: GraphicsBackend> RunnerState<B> {
                         self.app.fixed_update_runtime(effective_fixed_step);
                         runtime_update_duration += update_start.elapsed();
                     }
+                }
+                // Rolling cost per step. Smoothed so one hitchy frame does not
+                // slam the catch-up budget shut, but responsive enough to open
+                // it back up as soon as the machine has headroom again.
+                if plan.steps > 0 {
+                    let measured = steps_start.elapsed().as_secs_f32() / plan.steps as f32;
+                    self.fixed_step_cost_seconds = if self.fixed_step_cost_seconds > 0.0 {
+                        self.fixed_step_cost_seconds * 0.8 + measured * 0.2
+                    } else {
+                        measured
+                    };
                 }
                 self.fixed_accumulator = plan.accumulator_after;
                 self.app.set_physics_render_alpha(

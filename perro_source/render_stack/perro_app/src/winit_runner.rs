@@ -55,7 +55,13 @@ use startup_splash::{
 use crate::frame_pacing::{FramePacer, project_frame_rate_cap};
 
 const DEFAULT_FIXED_TIMESTEP: Option<f32> = None;
-const MAX_FIXED_STEPS_PER_FRAME: u32 = 2;
+// Hard ceiling on catch-up steps in one frame. The real limiter is
+// `max_catchup_steps` below; this only bounds the worst case. At a 60Hz fixed
+// step 8 covers a host rendering as low as 7.5fps.
+const MAX_FIXED_STEPS_PER_FRAME: u32 = 8;
+// Floor: always advance the sim at least this much per frame, even when a step
+// costs more wall time than it buys. Below this the runner would stall.
+const MIN_FIXED_STEPS_PER_FRAME: u32 = 1;
 const MAX_FRAME_DELTA_SECONDS: f32 = 0.250;
 const LOG_INTERVAL_SECONDS: f32 = 3.0;
 #[cfg(not(any(feature = "profile_heavy", feature = "ui_profile", feature = "fps")))]
@@ -160,20 +166,50 @@ struct FixedStepPlan {
     dropped_catchup: bool,
 }
 
+// How many fixed steps this frame may run, given what one step actually costs.
+//
+// A step that costs `c` wall seconds buys `fixed_timestep` seconds of sim, so
+// the headroom ratio is `fixed_timestep / c`. Above 1 the machine simulates
+// faster than real time and can work down accumulated debt; at or below 1 it
+// cannot, and forcing more steps is exactly the death spiral -- each extra step
+// costs more wall time than it recovers, so the debt grows without bound.
+//
+// So: spend real headroom on catch-up, and when there is none, fall back to the
+// floor and let the sim run behind. Running behind shows up as slow motion, but
+// it is bounded and recovers as soon as load drops. A spiral does not.
+#[inline]
+fn max_catchup_steps(step_cost_seconds: f32, fixed_timestep: f32) -> u32 {
+    if fixed_timestep <= 0.0 {
+        return MIN_FIXED_STEPS_PER_FRAME;
+    }
+    // No measurement yet (first frames): allow full catch-up; the cost estimate
+    // lands next frame.
+    if !step_cost_seconds.is_finite() || step_cost_seconds <= 0.0 {
+        return MAX_FIXED_STEPS_PER_FRAME;
+    }
+    let headroom = fixed_timestep / step_cost_seconds;
+    if !headroom.is_finite() || headroom < 1.0 {
+        return MIN_FIXED_STEPS_PER_FRAME;
+    }
+    (headroom as u32).clamp(MIN_FIXED_STEPS_PER_FRAME, MAX_FIXED_STEPS_PER_FRAME)
+}
+
 #[inline]
 fn plan_fixed_steps(
     frame_delta_seconds: f32,
     fixed_timestep: f32,
     accumulator: f32,
+    max_steps: u32,
 ) -> FixedStepPlan {
+    let max_steps = max_steps.clamp(MIN_FIXED_STEPS_PER_FRAME, MAX_FIXED_STEPS_PER_FRAME);
     let mut next_accumulator =
         accumulator + frame_delta_seconds.clamp(0.0, MAX_FRAME_DELTA_SECONDS);
     let mut steps = 0u32;
-    while next_accumulator >= fixed_timestep && steps < MAX_FIXED_STEPS_PER_FRAME {
+    while next_accumulator >= fixed_timestep && steps < max_steps {
         next_accumulator -= fixed_timestep;
         steps += 1;
     }
-    let dropped_catchup = steps == MAX_FIXED_STEPS_PER_FRAME && next_accumulator >= fixed_timestep;
+    let dropped_catchup = steps == max_steps && next_accumulator >= fixed_timestep;
     if dropped_catchup {
         next_accumulator %= fixed_timestep;
     }
@@ -899,6 +935,10 @@ struct RunnerState<B: GraphicsBackend> {
     batch_heavy: BatchHeavyStats,
     fixed_timestep: Option<f32>,
     fixed_accumulator: f32,
+    // Rolling estimate of what one fixed step costs in wall time. Drives
+    // `max_catchup_steps`, so catch-up scales with measured headroom instead of
+    // a flat constant. 0 = not measured yet.
+    fixed_step_cost_seconds: f32,
     pacer: FramePacer,
     frame_index: u64,
     fps_window_start: Instant,

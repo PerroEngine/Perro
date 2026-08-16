@@ -35,6 +35,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             window_visible: false,
             fixed_timestep: normalized_fixed_timestep,
             fixed_accumulator: 0.0,
+            fixed_step_cost_seconds: 0.0,
             pacer: FramePacer::new(frame_rate_cap, vsync_enabled),
             last_frame_start: now,
             last_frame_end: now,
