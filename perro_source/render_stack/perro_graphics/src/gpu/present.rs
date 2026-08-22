@@ -2323,9 +2323,15 @@ mod tests {
         // must reproduce what the blit wrote to the swapchain: same rgb,
         // opaque alpha.
         assert!(TAA_WGSL.contains("fn taa_resolve(in: VsOut) -> vec4<f32> {"));
-        assert!(TAA_WGSL.contains(
-            "fn fs_main(in: VsOut) -> @location(0) vec4<f32> {\n    return taa_resolve(in);"
-        ));
+        let fs_main_uses_shared_resolve = |source: &str| {
+            source.lines().collect::<Vec<_>>().windows(2).any(|lines| {
+                lines[0] == "fn fs_main(in: VsOut) -> @location(0) vec4<f32> {"
+                    && lines[1].trim() == "return taa_resolve(in);"
+            })
+        };
+        assert!(fs_main_uses_shared_resolve(TAA_WGSL));
+        let crlf_source = TAA_WGSL.lines().collect::<Vec<_>>().join("\r\n");
+        assert!(fs_main_uses_shared_resolve(&crlf_source));
         assert!(TAA_WGSL.contains("@location(0) history: vec4<f32>"));
         assert!(TAA_WGSL.contains("@location(1) present: vec4<f32>"));
         assert!(TAA_WGSL.contains("out.present = vec4<f32>(resolved.rgb, 1.0);"));

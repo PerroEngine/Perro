@@ -114,7 +114,16 @@ impl<B: GraphicsBackend> RunnerState<B> {
     }
 
     pub(super) fn show_window_after_present(&mut self, presented: bool) {
-        if self.window_visible || !presented {
+        if !presented {
+            return;
+        }
+        #[cfg(target_arch = "wasm32")]
+        if let Some(document) = web_sys::window().and_then(|window| window.document())
+            && let Some(root) = document.document_element()
+        {
+            let _ = root.set_attribute("data-perro-frame", "ready");
+        }
+        if self.window_visible {
             return;
         }
         let Some(window) = self.window.as_ref().cloned() else {
@@ -387,6 +396,22 @@ impl<B: GraphicsBackend> RunnerState<B> {
     }
 
     pub(super) fn apply_frame_control_flow(&self, event_loop: &ActiveEventLoop, now: Instant) {
+        // A browser event loop shares its thread with the host page. Never use
+        // Poll there: even the short native busy-poll tail can starve an
+        // embedded page. Browser timers are precise enough for this path, so
+        // sleep until the exact frame deadline.
+        #[cfg(target_arch = "wasm32")]
+        {
+            let wake_at = self
+                .pacer
+                .deadline()
+                .filter(|deadline| *deadline > now)
+                .unwrap_or_else(|| now + Duration::from_millis(16));
+            event_loop.set_control_flow(ControlFlow::WaitUntil(wake_at));
+            return;
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
         if let Some(deadline) = self.pacer.deadline()
             && deadline > now
         {
