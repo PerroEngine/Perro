@@ -10,7 +10,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     }
     var base_sample = vec4<f32>(1.0);
     if /*__PERRO_STD_BASE_TEXTURE__*/ material.has_base_color_texture {
-        base_sample = textureSample(material_base_color_tex, material_sampler, sample_uv);
+        base_sample = perro_sample_material_tex(material_base_color_tex, material_sampler, sample_uv);
     }
     let base_color = color * base_sample;
     if style_tag == 0u {

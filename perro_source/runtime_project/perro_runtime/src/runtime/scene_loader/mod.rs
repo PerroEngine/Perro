@@ -496,19 +496,18 @@ impl Runtime {
     }
 
     /// Single-threaded fallback: wasm has no pool, so the work runs now and
-    /// posts to the same channel, keeping the poll path identical.
+    /// installs inline. This also avoids `recv_timeout`, whose std timer is not
+    /// implemented by the wasm target.
     #[cfg(target_arch = "wasm32")]
     fn spawn_scene_preload(&mut self, id: PreloadedSceneID, path_hash: u64, path: String) {
         let context = self.background_scene_context();
         let prepared = context.load_and_prepare(path.as_str());
-        let _ = self
-            .scene_preload_tx
-            .send(background::BackgroundPreloadResult {
-                id,
-                path_hash,
-                path,
-                prepared,
-            });
+        self.install_preload_result(background::BackgroundPreloadResult {
+            id,
+            path_hash,
+            path,
+            prepared,
+        });
     }
 
     /// Install finished background preloads. Runs once per update tick.
@@ -551,6 +550,10 @@ impl Runtime {
     /// Falls back to loading inline when the worker never reports, so a lost
     /// job degrades to the old synchronous cost instead of hanging.
     pub(crate) fn wait_for_preloaded_scene_at_runtime(&mut self, id: PreloadedSceneID) -> bool {
+        #[cfg(target_arch = "wasm32")]
+        self.poll_async_scene_preloads();
+
+        #[cfg(not(target_arch = "wasm32"))]
         while self.pending_preloads.contains_key(&id) {
             match self
                 .scene_preload_rx
@@ -757,8 +760,11 @@ impl Runtime {
             })
             .map_err(|err| format!("failed to set project asset root: {err}"))?;
         }
+        perro_structs::structs::boot_log::mark("runtime_project_root_ready");
         self.reload_dlc_mounts()?;
+        perro_structs::structs::boot_log::mark("runtime_dlc_ready");
         self.resource_api.initialize_localization();
+        perro_structs::structs::boot_log::mark("runtime_localization_ready");
 
         let mut existing_script_ids = Vec::new();
         self.scripts.append_instance_ids(&mut existing_script_ids);
@@ -866,6 +872,7 @@ impl Runtime {
         self.script_runtime.script_libraries.clear();
         self.active_route_href = None;
         self.active_route_root = None;
+        perro_structs::structs::boot_log::mark("runtime_scene_state_cleared");
         let mode_label;
         #[cfg(feature = "profile")]
         let mut source_load: Option<Duration> = None;
@@ -903,12 +910,15 @@ impl Runtime {
                 if let Some(lookup) = static_lookup {
                     let scene = lookup(boot_scene_hash);
                     mode_label = "static";
+                    perro_structs::structs::boot_log::mark("runtime_scene_lookup_ready");
                     let prepared = self.prepare_scene_with_project_styles(scene, &|path| {
                         self.resolve_scene_by_path(path)
                     })?;
+                    perro_structs::structs::boot_log::mark("runtime_scene_prepared");
                     #[cfg(feature = "profile")]
                     let node_insert_start = Instant::now();
                     merged = merge_prepared_scene(self, prepared)?;
+                    perro_structs::structs::boot_log::mark("runtime_scene_merged");
                     #[cfg(feature = "profile")]
                     {
                         node_insert = Some(node_insert_start.elapsed());

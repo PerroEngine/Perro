@@ -1034,10 +1034,9 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
 
     #[test]
     fn unlit_material_samples_base_color_texture() {
-        assert!(
-            regular::MATERIAL_UNLIT_WGSL
-                .contains("textureSample(material_base_color_tex, material_sampler, in.uv)")
-        );
+        assert!(regular::MATERIAL_UNLIT_WGSL.contains(
+            "perro_sample_material_tex(material_base_color_tex, material_sampler, in.uv)"
+        ));
         assert!(regular::MATERIAL_UNLIT_WGSL.contains("color * base_sample"));
         assert!(regular::MATERIAL_UNLIT_WGSL.contains("perro_unlit("));
     }
@@ -1047,8 +1046,12 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
         let wgsl = regular::MATERIAL_STANDARD_WGSL;
         assert!(wgsl.contains("roughness * mr.g"));
         assert!(wgsl.contains("metallic * mr.b"));
-        assert!(wgsl.contains("textureSample(custom_image_tex_2, material_sampler, in.uv).r"));
-        assert!(wgsl.contains("lit_emissive *= textureSample(custom_image_tex_3"));
+        assert!(
+            wgsl.contains(
+                "perro_sample_material_tex(custom_image_tex_2, material_sampler, in.uv).r"
+            )
+        );
+        assert!(wgsl.contains("lit_emissive *= perro_sample_material_tex(custom_image_tex_3"));
 
         let prelude = regular::prelude_rigid_wgsl();
         assert!(prelude.contains("fn perro_fallback_tangent"));
@@ -1064,8 +1067,8 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
         assert!(wgsl.contains("roughness *= metallic_roughness.g"));
         assert!(wgsl.contains("metallic *= metallic_roughness.b"));
         assert!(wgsl.contains("fn perro_apply_multimesh_normal_map"));
-        assert!(wgsl.contains("let sampled_ao = textureSample(custom_image_tex_2"));
-        assert!(wgsl.contains("lit_emissive *= textureSample(custom_image_tex_3"));
+        assert!(wgsl.contains("let sampled_ao = perro_sample_material_tex(custom_image_tex_2"));
+        assert!(wgsl.contains("lit_emissive *= perro_sample_material_tex(custom_image_tex_3"));
         assert!(wgsl.contains("return shade_standard_multimesh(in)"));
         parse_and_validate(
             &sanitize_reserved_meta_identifier(wgsl),
@@ -1163,7 +1166,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     fn toon_material_uses_shared_lighting_helper_and_base_texture() {
         let wgsl = regular::MATERIAL_TOON_WGSL;
         assert!(wgsl.contains("perro_toon("));
-        assert!(wgsl.contains("textureSample(material_base_color_tex"));
+        assert!(wgsl.contains("perro_sample_material_tex(material_base_color_tex"));
     }
 
     #[test]

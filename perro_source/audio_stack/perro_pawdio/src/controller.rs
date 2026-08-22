@@ -1,3 +1,5 @@
+#![cfg_attr(target_arch = "wasm32", allow(dead_code))]
+
 use crossbeam_channel::{self, Receiver, Sender, TrySendError};
 use perro_ids::AudioBusID;
 use std::collections::{HashMap, HashSet};
@@ -261,11 +263,20 @@ impl AudioController {
     const SOURCE_POOL_CAPACITY: usize = 1024;
 
     pub fn new(static_audio_lookup: Option<fn(u64) -> &'static [u8]>) -> Result<Self, String> {
-        if audio_disabled_by_env() {
-            return Err(format!("audio disabled by {AUDIO_DISABLED_ENV}"));
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = static_audio_lookup;
+            Err("audio playback unavailable on wasm32".to_string())
         }
 
-        Self::new_with_player_factory(static_audio_lookup, BarkPlayer::new)
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if audio_disabled_by_env() {
+                return Err(format!("audio disabled by {AUDIO_DISABLED_ENV}"));
+            }
+
+            Self::new_with_player_factory(static_audio_lookup, BarkPlayer::new)
+        }
     }
 
     fn new_with_player_factory<F>(

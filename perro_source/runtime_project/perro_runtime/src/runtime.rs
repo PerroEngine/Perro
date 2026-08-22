@@ -278,6 +278,7 @@ pub struct Runtime {
     /// hash (the second one dedupes repeat requests for one path).
     pub(crate) pending_preloads: AHashMap<PreloadedSceneID, String>,
     pub(crate) pending_preload_paths: AHashMap<u64, PreloadedSceneID>,
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     pub(crate) scene_preload_tx:
         std::sync::mpsc::Sender<scene_loader::background::BackgroundPreloadResult>,
     pub(crate) scene_preload_rx:
@@ -1140,6 +1141,7 @@ impl Runtime {
         defer_boot: bool,
     ) -> Self {
         let mut runtime = Self::new();
+        perro_structs::structs::boot_log::mark("runtime_state_built");
         let static_material_lookup = project.static_material_lookup;
         let static_audio_lookup = project.static_audio_lookup;
         let static_skeleton_lookup = project.static_skeleton_lookup;
@@ -1164,8 +1166,11 @@ impl Runtime {
             static_csv_lookup,
             localization_config,
         );
+        perro_structs::structs::boot_log::mark("runtime_resources_built");
         runtime.configure_audio_from_project();
+        perro_structs::structs::boot_log::mark("runtime_audio_cfg_ready");
         runtime.input.set_input_map(input_map);
+        perro_structs::structs::boot_log::mark("runtime_input_map_ready");
         if let Some(entries) = script_registry {
             debug_assert!(entries.windows(2).all(|pair| pair[0].0 < pair[1].0));
             runtime.script_runtime.static_script_registry = entries;
@@ -1182,9 +1187,13 @@ impl Runtime {
         }
         if defer_boot {
             runtime.boot_scene_pending = true;
-        } else if let Err(err) = runtime.load_boot_scene() {
-            panic!("failed to load boot scene: {err}");
+        } else {
+            perro_structs::structs::boot_log::mark("runtime_boot_scene_load_start");
+            if let Err(err) = runtime.load_boot_scene() {
+                panic!("failed to load boot scene: {err}");
+            }
         }
+        perro_structs::structs::boot_log::mark("runtime_boot_scene_loaded");
         runtime
     }
 

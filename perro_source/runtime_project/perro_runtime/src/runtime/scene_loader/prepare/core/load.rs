@@ -202,6 +202,19 @@ pub(super) fn prepare_scene_parallel(
     static_ui_style_lookup: Option<StaticUiStyleLookup>,
 ) -> Result<PreparedScene, String> {
     if scene.nodes.iter().all(|entry| entry.script.is_none()) {
+        #[cfg(target_arch = "wasm32")]
+        let nodes = {
+            let mut scratch = ScenePrepareScratch::default();
+            scene
+                .nodes
+                .iter()
+                .map(|entry| {
+                    prepare_node_no_root(scene, entry, static_ui_style_lookup, &mut scratch)
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        };
+
+        #[cfg(not(target_arch = "wasm32"))]
         let nodes = scene
             .nodes
             .as_ref()
@@ -221,6 +234,19 @@ pub(super) fn prepare_scene_parallel(
         return Ok(prepared);
     }
 
+    #[cfg(target_arch = "wasm32")]
+    let entries = {
+        let mut scratch = ScenePrepareScratch::default();
+        scene
+            .nodes
+            .iter()
+            .map(|entry| {
+                prepare_entry_no_root(scene, entry, static_ui_style_lookup, &mut scratch)
+            })
+            .collect::<Vec<_>>()
+    };
+
+    #[cfg(not(target_arch = "wasm32"))]
     let entries = scene
         .nodes
         .as_ref()

@@ -5016,6 +5016,9 @@ dependencies = [
  "glam 0.31.1",
  "perro_ids",
  "rayon",
+ "wasm-bindgen",
+ "web-sys",
+ "web-time",
 ]
 
 [[package]]

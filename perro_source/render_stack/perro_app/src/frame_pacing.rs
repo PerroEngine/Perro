@@ -21,6 +21,7 @@ pub(crate) const MAX_FRAME_RATE_CAP_FPS: f32 = 1000.0;
 // short as the machine allows, bounded to keep both the spin cost and a
 // pathological estimate in check. With 1ms system timer resolution (see
 // timer_resolution.rs) typical overshoot is well under 1ms.
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 pub(crate) const MIN_WAKE_HEADROOM: Duration = Duration::from_millis(1);
 // Never exceed the old fixed 2ms headroom: a loaded machine pushes the
 // overshoot EWMA up, and a bigger headroom means a longer busy-poll tail
@@ -29,6 +30,7 @@ pub(crate) const MIN_WAKE_HEADROOM: Duration = Duration::from_millis(1);
 pub(crate) const MAX_WAKE_HEADROOM: Duration = Duration::from_millis(2);
 // Safety margin over the average overshoot; late wakes only add jitter (the
 // deadline chain repays them), so the margin stays small.
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 const WAKE_HEADROOM_MARGIN: Duration = Duration::from_micros(500);
 // Seed so the first frames use the old fixed 2ms headroom until real
 // overshoot samples arrive.
@@ -241,6 +243,7 @@ impl FramePacer {
     /// How early to arm the OS wake before the frame deadline; the remainder
     /// is busy-polled.
     #[inline]
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     pub(crate) fn wake_headroom(&self) -> Duration {
         (self.wake_overshoot_ewma + WAKE_HEADROOM_MARGIN)
             .clamp(MIN_WAKE_HEADROOM, MAX_WAKE_HEADROOM)

@@ -917,8 +917,10 @@ pub fn run_static_embedded_project_web(input: StaticEmbeddedProject<'_>) -> Resu
         "unknown panic".to_string()
     }
 
+    crate::boot_log::start();
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _ = perro_web::init_router();
+        crate::boot_log::mark("router_ready");
         let mut static_config = perro_runtime::StaticProjectConfig::new(
             input.project.project_name,
             input.project.main_scene_hash,
@@ -980,6 +982,7 @@ pub fn run_static_embedded_project_web(input: StaticEmbeddedProject<'_>) -> Resu
             .with_static_shader_lookup(input.assets.shader_lookup)
             .with_static_icon_lookup(input.assets.texture_lookup)
             .with_perro_assets_bytes(input.assets.perro_assets);
+        crate::boot_log::mark("project_built");
 
         let window_title = project.config.name.clone();
         let graphics = graphics_from_project_config(&project.config, true)
@@ -987,17 +990,22 @@ pub fn run_static_embedded_project_web(input: StaticEmbeddedProject<'_>) -> Resu
             .with_static_texture_lookup(input.assets.texture_lookup)
             .with_static_font_lookup(input.assets.font_lookup)
             .with_static_shader_lookup(input.assets.shader_lookup);
+        crate::boot_log::mark("graphics_built");
         let runtime = Runtime::from_project_with_script_registry(
             project,
             ProviderMode::Static,
             input.assets.static_script_registry,
         );
+        crate::boot_log::mark("runtime_built");
         let app = App::new(runtime, graphics);
+        crate::boot_log::mark("app_built");
         let fixed = app
             .runtime
             .project()
             .and_then(|p| p.config.target_fixed_update);
-        WinitRunner::new()
+        let runner = WinitRunner::new();
+        crate::boot_log::mark("runner_built");
+        runner
             .run_with_timestep(app, &window_title, fixed)
             .map(|_| ())
             .map_err(|err| JsValue::from_str(&err.to_string()))

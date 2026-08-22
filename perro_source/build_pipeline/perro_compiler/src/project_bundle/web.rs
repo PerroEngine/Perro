@@ -172,19 +172,19 @@ pub(super) fn sanitize_android_ident(input: &str) -> String {
 pub(super) fn web_boot_js() -> &'static str {
     "import init from './app.js';\n\
 \n\
-pub(super) const boot = document.getElementById('boot');\n\
-pub(super) const staticPage = document.getElementById('perro-static-page');\n\
-pub(super) const shellCache = new Map();\n\
-pub(super) const parser = new DOMParser();\n\
-pub(super) const setBoot = (text, kind = 'info') => {\n\
+const boot = document.getElementById('boot');\n\
+const staticPage = document.getElementById('perro-static-page');\n\
+const shellCache = new Map();\n\
+const parser = new DOMParser();\n\
+const setBoot = (text, kind = 'info') => {\n\
   if (!boot) return;\n\
   boot.textContent = text;\n\
   boot.dataset.kind = kind;\n\
 };\n\
 \n\
-pub(super) const appReady = () => document.body.dataset.perroApp === 'ready';\n\
+const appReady = () => document.body.dataset.perroApp === 'ready';\n\
 \n\
-pub(super) const splitHref = (href) => {\n\
+const splitHref = (href) => {\n\
   const url = new URL(href, window.location.href);\n\
   let path = url.pathname || '/';\n\
   if (path.length > '/index.html'.length && path.endsWith('/index.html')) {\n\
@@ -203,7 +203,7 @@ pub(super) const splitHref = (href) => {\n\
   };\n\
 };\n\
 \n\
-pub(super) const syncHead = (doc) => {\n\
+const syncHead = (doc) => {\n\
   if (doc.title) {\n\
     document.title = doc.title;\n\
   }\n\
@@ -225,7 +225,7 @@ pub(super) const syncHead = (doc) => {\n\
   }\n\
 };\n\
 \n\
-pub(super) const fetchShellDoc = async (href) => {\n\
+const fetchShellDoc = async (href) => {\n\
   const parts = splitHref(href);\n\
   let pending = shellCache.get(parts.path);\n\
   if (!pending) {\n\
@@ -241,7 +241,7 @@ pub(super) const fetchShellDoc = async (href) => {\n\
   return { parts, doc: parser.parseFromString(text, 'text/html') };\n\
 };\n\
 \n\
-pub(super) const applyShellDoc = (doc) => {\n\
+const applyShellDoc = (doc) => {\n\
   if (!staticPage) return;\n\
   const nextStatic = doc.getElementById('perro-static-page');\n\
   if (!nextStatic) return;\n\
@@ -249,7 +249,7 @@ pub(super) const applyShellDoc = (doc) => {\n\
   syncHead(doc);\n\
 };\n\
 \n\
-pub(super) const navShell = async (href, pushHistory) => {\n\
+const navShell = async (href, pushHistory) => {\n\
   if (appReady()) return;\n\
   const { parts, doc } = await fetchShellDoc(href);\n\
   applyShellDoc(doc);\n\
@@ -258,14 +258,14 @@ pub(super) const navShell = async (href, pushHistory) => {\n\
   }\n\
 };\n\
 \n\
-pub(super) const hideBoot = () => {\n\
+const hideBoot = () => {\n\
   if (!boot) return;\n\
   boot.dataset.state = 'done';\n\
   document.body.dataset.perroApp = 'ready';\n\
   window.setTimeout(() => boot.remove(), 400);\n\
 };\n\
 \n\
-pub(super) const obs = new MutationObserver(() => {\n\
+const obs = new MutationObserver(() => {\n\
   if (document.querySelector('canvas')) {\n\
     hideBoot();\n\
     obs.disconnect();\n\
@@ -292,7 +292,7 @@ document.addEventListener('click', (event) => {\n\
   });\n\
 });\n\
 \n\
-pub(super) const prefetchShell = (target) => {\n\
+const prefetchShell = (target) => {\n\
   if (appReady()) return;\n\
   const anchor = target instanceof Element\n\
     ? target.closest('#perro-static-page a[href]')\n\
@@ -317,7 +317,7 @@ window.addEventListener('popstate', () => {\n\
 setBoot('loading wasm...');\n\
 \n\
 try {\n\
-  await init();\n\
+  await init({ module_or_path: new URL('./app_bg.wasm', import.meta.url) });\n\
   setBoot('starting render...');\n\
   if (document.querySelector('canvas')) {\n\
     hideBoot();\n\

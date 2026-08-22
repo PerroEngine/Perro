@@ -5,7 +5,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     let material = perro_decode_material_params(in.packed_material_params);
     var base_sample = vec4<f32>(1.0, 1.0, 1.0, 1.0);
     if /*__PERRO_STD_BASE_TEXTURE__*/ material.has_base_color_texture {
-        base_sample = textureSample(material_base_color_tex, material_sampler, in.uv);
+        base_sample = perro_sample_material_tex(material_base_color_tex, material_sampler, in.uv);
     }
     var albedo = color.rgb * base_sample.rgb;
     // Chromatic modulate (0x100): re-apply the hue bias against the texture
@@ -23,16 +23,16 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     var ao = 1.0;
     var lit_emissive = emissive;
     if /*__PERRO_STD_METALLIC_ROUGHNESS_TEXTURE__*/ material.has_metallic_roughness_texture {
-        let mr = textureSample(custom_image_tex_0, material_sampler, in.uv).rgb;
+        let mr = perro_sample_material_tex(custom_image_tex_0, material_sampler, in.uv).rgb;
         roughness = clamp(roughness * mr.g, 0.04, 1.0);
         metallic = clamp(metallic * mr.b, 0.0, 1.0);
     }
     if /*__PERRO_STD_OCCLUSION_TEXTURE__*/ material.has_occlusion_texture {
-        let sampled_ao = textureSample(custom_image_tex_2, material_sampler, in.uv).r;
+        let sampled_ao = perro_sample_material_tex(custom_image_tex_2, material_sampler, in.uv).r;
         ao = mix(1.0, sampled_ao, clamp(pbr.z, 0.0, 1.0));
     }
     if /*__PERRO_STD_EMISSIVE_TEXTURE__*/ material.has_emissive_texture {
-        lit_emissive *= textureSample(custom_image_tex_3, material_sampler, in.uv).rgb;
+        lit_emissive *= perro_sample_material_tex(custom_image_tex_3, material_sampler, in.uv).rgb;
     }
     if material.meshlet_debug_view {
         return vec4<f32>(color.rgb, 1.0);

@@ -214,11 +214,11 @@ pub fn build_custom_multimesh_material_shader(
     }
     if apply_standard_lighting {
         out.push_str(
-            "\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    let base = shade_material(in);\n    return perro_standard(in, base, 0.5, 0.0, 1.0, vec3<f32>(0.0));\n}\n",
+            "\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    perro_seed_frag_derivs(in.world_pos, in.uv, in.normal_ws);\n    let base = shade_material(in);\n    return perro_standard(in, base, 0.5, 0.0, 1.0, vec3<f32>(0.0));\n}\n",
         );
     } else {
         out.push_str(
-            "\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    return shade_material(in);\n}\n",
+            "\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    perro_seed_frag_derivs(in.world_pos, in.uv, in.normal_ws);\n    return shade_material(in);\n}\n",
         );
     }
     out
@@ -267,11 +267,11 @@ fn build_material_shader_with_prelude_inner(
     }
     if apply_custom_standard_lighting {
         out.push_str(
-            "\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    let base = shade_material(in);\n    return perro_standard(in, base, 0.5, 0.0, 1.0, vec3<f32>(0.0));\n}\n",
+            "\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    perro_seed_frag_derivs(in.world_pos, in.uv, in.normal_ws);\n    let base = shade_material(in);\n    return perro_standard(in, base, 0.5, 0.0, 1.0, vec3<f32>(0.0));\n}\n",
         );
     } else {
         out.push_str(
-            "\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    return shade_material(in);\n}\n",
+            "\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    perro_seed_frag_derivs(in.world_pos, in.uv, in.normal_ws);\n    return shade_material(in);\n}\n",
         );
     }
     out

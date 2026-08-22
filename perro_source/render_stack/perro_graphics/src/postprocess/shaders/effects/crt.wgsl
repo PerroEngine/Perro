@@ -21,10 +21,14 @@ fn crt_sample(
         return vec4<f32>(0.0);
     }
     let chroma_px = chromatic * post.inv_resolution.x;
-    let r = textureSample(input_tex, input_sampler, duv + vec2<f32>(chroma_px, 0.0)).r;
-    let center = textureSample(input_tex, input_sampler, duv);
+    // The off-screen early-out above is per-fragment, so these samples sit in
+    // non-uniform control flow and textureSample (implicit LOD) is illegal
+    // there. The post chain input is single-mip, so an explicit level 0 is the
+    // same texel textureSample would have picked, and is legal anywhere.
+    let r = textureSampleLevel(input_tex, input_sampler, duv + vec2<f32>(chroma_px, 0.0), 0.0).r;
+    let center = textureSampleLevel(input_tex, input_sampler, duv, 0.0);
     let g = center.g;
-    let b = textureSample(input_tex, input_sampler, duv - vec2<f32>(chroma_px, 0.0)).b;
+    let b = textureSampleLevel(input_tex, input_sampler, duv - vec2<f32>(chroma_px, 0.0), 0.0).b;
     var color = vec3<f32>(r, g, b);
 
     let scan_strength = clamp(scanlines, 0.0, 1.0);

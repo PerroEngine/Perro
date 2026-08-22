@@ -281,7 +281,7 @@ fn perro_mesh_blend_alpha(frag_pos: vec4<f32>, world_pos: vec3<f32>, packed: u32
         return 1.0;
     }
     // Distance-compensated width: world units covered by one pixel here.
-    let texel_world = (length(dpdx(world_pos)) + length(dpdy(world_pos))) * 0.5;
+    let texel_world = (length(perro_d_world_ddx) + length(perro_d_world_ddy)) * 0.5;
     let base_width = max(params.x, 0.0001);
     let max_width = max(base_width, texel_world * MESH_BLEND_MIN_PIXELS);
     let min_width = min(params.y, base_width) * (max_width / base_width);
@@ -402,10 +402,10 @@ fn perro_apply_multimesh_normal_map(
     normal_ws: vec3<f32>,
     scale: f32,
 ) -> vec3<f32> {
-    let dpdx_ws = dpdx(in.world_pos);
-    let dpdy_ws = dpdy(in.world_pos);
-    let duvdx = dpdx(in.uv);
-    let duvdy = dpdy(in.uv);
+    let dpdx_ws = perro_d_world_ddx;
+    let dpdy_ws = perro_d_world_ddy;
+    let duvdx = perro_d_uv_ddx;
+    let duvdy = perro_d_uv_ddy;
     let det = duvdx.x * duvdy.y - duvdx.y * duvdy.x;
     if abs(det) <= 1.0e-8 {
         return normal_ws;
@@ -422,7 +422,7 @@ fn perro_apply_multimesh_normal_map(
     let cross_nt = normalize(cross(normal_ws, tangent));
     let handedness = select(-1.0, 1.0, dot(cross_nt, bitangent_raw) >= 0.0);
     let bitangent = cross_nt * handedness;
-    var mapped = textureSample(custom_image_tex_1, material_sampler, in.uv).xyz * 2.0 - 1.0;
+    var mapped = perro_sample_material_tex(custom_image_tex_1, material_sampler, in.uv).xyz * 2.0 - 1.0;
     mapped = normalize(vec3<f32>(mapped.xy * scale, mapped.z));
     return normalize(tangent * mapped.x + bitangent * mapped.y + normal_ws * mapped.z);
 }
@@ -440,7 +440,7 @@ fn perro_lit_standard_with_ssao(
     let mirrored_winding = (flags & 0x20u) != 0u;
     var n = normalize(in.normal_ws);
     if (flags & 0x2u) != 0u {
-        n = normalize(cross(dpdx(in.world_pos), dpdy(in.world_pos)));
+        n = normalize(cross(perro_d_world_ddx, perro_d_world_ddy));
         if mirrored_winding {
             n = -n;
         }
@@ -555,7 +555,7 @@ fn shade_standard_multimesh(in: FragmentInput) -> vec4<f32> {
     let color = unpack_rgba8(in.packed_color);
     var base_sample = vec4<f32>(1.0);
     if (flags & 0x4u) != 0u {
-        base_sample = textureSample(material_base_color_tex, material_sampler, in.uv);
+        base_sample = perro_sample_material_tex(material_base_color_tex, material_sampler, in.uv);
     }
     var albedo = color.rgb * base_sample.rgb;
     if (flags & 0x100u) != 0u {
@@ -570,17 +570,17 @@ fn shade_standard_multimesh(in: FragmentInput) -> vec4<f32> {
     let emissive = unpack_rgba8(in.packed_emissive);
     var lit_emissive = emissive.xyz * (emissive.w * 16.0);
     if (flags & 0x200u) != 0u {
-        let metallic_roughness = textureSample(custom_image_tex_0, material_sampler, in.uv);
+        let metallic_roughness = perro_sample_material_tex(custom_image_tex_0, material_sampler, in.uv);
         roughness *= metallic_roughness.g;
         metallic *= metallic_roughness.b;
     }
     if (flags & 0x800u) != 0u {
-        let sampled_ao = textureSample(custom_image_tex_2, material_sampler, in.uv).r;
+        let sampled_ao = perro_sample_material_tex(custom_image_tex_2, material_sampler, in.uv).r;
         let strength = perro_unpack_unorm8(in.packed_pbr_params_0, 16u);
         ao = mix(1.0, sampled_ao, strength);
     }
     if (flags & 0x1000u) != 0u {
-        lit_emissive *= textureSample(custom_image_tex_3, material_sampler, in.uv).rgb;
+        lit_emissive *= perro_sample_material_tex(custom_image_tex_3, material_sampler, in.uv).rgb;
     }
     return perro_lit_standard_with_ssao(
         in,
@@ -692,6 +692,7 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
+    perro_seed_frag_derivs(in.world_pos, in.uv, in.normal_ws);
     return shade_standard_multimesh(in);
 }
 

@@ -126,11 +126,14 @@ impl<B: GraphicsBackend> RunnerState<B> {
         if self.window_visible {
             return;
         }
-        let Some(window) = self.window.as_ref().cloned() else {
+        if self.window.is_none() {
             return;
-        };
+        }
         #[cfg(not(target_arch = "wasm32"))]
         {
+            let Some(window) = self.window.as_ref().cloned() else {
+                return;
+            };
             window.set_visible(true);
             window.focus_window();
             // Post-create adjustments can land after surface setup.

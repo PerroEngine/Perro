@@ -97,7 +97,10 @@ impl Gpu {
         if max_compiles == 0 {
             return 0;
         }
-        let started = std::time::Instant::now();
+        // `Instant` comes from the parent module: `std::time::Instant` on
+        // native, `web_time::Instant` on wasm. Naming `std::time` directly here
+        // panics in the browser ("time not implemented on this platform").
+        let started = Instant::now();
         let mut compiled = 0usize;
         if main_requested && self.post.warm_builtin_pipeline(&self.device) {
             compiled += 1;

@@ -1018,12 +1018,18 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler<RunnerUserEvent>
             self.app
                 .resize_surface(initial_size.width, initial_size.height);
             crate::boot_log::mark("gpu_surface_ready");
-            // Web GPU init async; kp prior show point.
+            // Web GPU init is async, so the canvas has to be in the page
+            // before any frame exists. Show it here, but leave `window_visible`
+            // false: the per-frame present only produces `PresentTiming` (and
+            // so only calls `show_window_after_present`, which raises the
+            // `data-perro-frame` flag the host page waits on) on a sampled
+            // frame OR while the window is still not visible. The first present
+            // lands whenever the async GPU finishes, which is never frame 1 and
+            // rarely a sampled frame -- and once the scene goes static, idle
+            // frame skipping reports `presented == false` forever after. So
+            // claiming visibility up front means the flag can never be raised.
             #[cfg(target_arch = "wasm32")]
-            {
-                window.set_visible(true);
-                self.window_visible = true;
-            }
+            window.set_visible(true);
             let initial_present = if self.startup_splash.active {
                 // Pump startup frames until the splash texture reaches a real
                 // swapchain present. Windows is already visible to avoid a
@@ -1458,6 +1464,7 @@ pub(crate) fn standard_window_size(
     fit_aspect(canvas, max_width, max_height)
 }
 
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 pub(crate) fn fit_aspect(
     desired: PhysicalSize<u32>,
     max_width: u32,

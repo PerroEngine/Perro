@@ -9,7 +9,21 @@
 //! Off unless the env var is set: one relaxed atomic load per mark.
 
 use std::sync::OnceLock;
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
+
+/// Emit one boot line. wasm32-unknown-unknown has no stderr, so the browser
+/// console is the only channel that reaches a developer there.
+macro_rules! boot_line {
+    ($($arg:tt)*) => {{
+        #[cfg(target_arch = "wasm32")]
+        web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!($($arg)*)));
+        #[cfg(not(target_arch = "wasm32"))]
+        eprintln!($($arg)*);
+    }};
+}
 
 static ENABLED: OnceLock<bool> = OnceLock::new();
 static START: OnceLock<Instant> = OnceLock::new();
@@ -17,9 +31,15 @@ static LAST: std::sync::Mutex<Option<Instant>> = std::sync::Mutex::new(None);
 static LAST_STALL: std::sync::Mutex<Option<(String, u64)>> = std::sync::Mutex::new(None);
 
 fn enabled() -> bool {
+    // No env vars in a browser, so the page URL carries the opt-in:
+    // append `?perro_boot_log` (or `&perro_boot_log`) to the demo URL.
     #[cfg(target_arch = "wasm32")]
     {
-        false
+        *ENABLED.get_or_init(|| {
+            web_sys::window()
+                .and_then(|window| window.location().search().ok())
+                .is_some_and(|search| search.contains("perro_boot_log"))
+        })
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -53,7 +73,7 @@ pub fn mark(phase: &str) {
         .ok()
         .and_then(|mut last| last.replace(now))
         .unwrap_or(start);
-    eprintln!(
+    boot_line!(
         "[perro][boot] {phase} +{:.0}ms (total {:.0}ms)",
         now.duration_since(previous).as_secs_f64() * 1000.0,
         now.duration_since(start).as_secs_f64() * 1000.0,
@@ -82,7 +102,7 @@ pub fn stall(label: &str, elapsed: std::time::Duration, state: impl FnOnce() -> 
     }
     *last = Some((label.to_string(), secs));
     drop(last);
-    eprintln!("[perro][boot] {label} still waiting @{secs}s: {}", state());
+    boot_line!("[perro][boot] {label} still waiting @{secs}s: {}", state());
 }
 
 #[cfg(test)]

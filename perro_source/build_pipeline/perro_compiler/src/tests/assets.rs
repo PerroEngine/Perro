@@ -2,6 +2,15 @@ mod assets {
     use super::*;
 
     #[test]
+    fn web_boot_passes_explicit_wasm_url_to_bindgen_init() {
+        let js = web_boot_js();
+        assert!(js.contains(
+            "init({ module_or_path: new URL('./app_bg.wasm', import.meta.url) })"
+        ));
+        assert!(!js.contains("await init();"));
+    }
+
+    #[test]
     fn generated_scripts_manifest_binds_perro_jobs_patch() {
         let root = unique_temp_dir("perro_compiler_jobs_manifest");
         let scripts_crate = root.join(".perro").join("scripts");

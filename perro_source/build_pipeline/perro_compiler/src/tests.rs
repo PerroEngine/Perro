@@ -12,8 +12,8 @@ mod tests {
         steam_runtime_library_name, sweep_unknown_embedded_entries, sync_android_project_manifest,
         sync_dlc_scripts, sync_scripts, target_binary_name, target_slug_from_triple,
         transpile_frontend_script, transpile_frontend_script_with_scene_vars,
-        transpiled_exports_script_ctor, validate_native_target_triple, web_route_html_path,
-        write_scripts_lib,
+        transpiled_exports_script_ctor, validate_native_target_triple, web_boot_js,
+        web_route_html_path, write_scripts_lib,
     };
     use perro_project::{
         ensure_project_layout, ensure_project_scaffold, ensure_project_toml,

@@ -5,29 +5,64 @@
 // divergent (perro_unpack_unorm8, perro_apply_blend_shapes, the ggx/lit family) stays
 // in the owning file.
 
+// WGSL only allows the derivative builtins (dpdx/dpdy) and the implicit-LOD
+// samples built on them (textureSample, textureSampleCompare) in UNIFORM
+// control flow. Chrome's Tint enforces that rule; naga does not, so shaders
+// that branch on a per-instance material flag and then sample compile on
+// native and are rejected in the browser with
+// "'textureSample' must only be called from uniform control flow".
+//
+// Every derivative this shading path needs comes from the same three
+// varyings, so take them once at the fragment entry -- which is uniform by
+// construction -- and read the results inside the branches. Sampling then
+// uses textureSampleGrad with these explicit gradients, which picks the same
+// mip as textureSample would have and is legal anywhere.
+var<private> perro_d_world_ddx: vec3<f32>;
+var<private> perro_d_world_ddy: vec3<f32>;
+var<private> perro_d_uv_ddx: vec2<f32>;
+var<private> perro_d_uv_ddy: vec2<f32>;
+var<private> perro_d_normal_ddx: vec3<f32>;
+var<private> perro_d_normal_ddy: vec3<f32>;
+
+// Call as the first statement of every shading `@fragment` entry, before any
+// branch. Skipping it leaves the gradients zero, which reads as "always the
+// top mip" rather than as a crash.
+fn perro_seed_frag_derivs(world_pos: vec3<f32>, uv: vec2<f32>, normal_ws: vec3<f32>) {
+    perro_d_world_ddx = dpdx(world_pos);
+    perro_d_world_ddy = dpdy(world_pos);
+    perro_d_uv_ddx = dpdx(uv);
+    perro_d_uv_ddy = dpdy(uv);
+    perro_d_normal_ddx = dpdx(normal_ws);
+    perro_d_normal_ddy = dpdy(normal_ws);
+}
+
+fn perro_sample_material_tex(tex: texture_2d<f32>, samp: sampler, uv: vec2<f32>) -> vec4<f32> {
+    return textureSampleGrad(tex, samp, uv, perro_d_uv_ddx, perro_d_uv_ddy);
+}
+
 fn custom_image_sample_at(index: u32, uv: vec2<f32>) -> vec4<f32> {
     if index == 0u {
-        return textureSample(custom_image_tex_0, material_sampler, uv);
+        return perro_sample_material_tex(custom_image_tex_0, material_sampler, uv);
     }
     if index == 1u {
-        return textureSample(custom_image_tex_1, material_sampler, uv);
+        return perro_sample_material_tex(custom_image_tex_1, material_sampler, uv);
     }
     if index == 2u {
-        return textureSample(custom_image_tex_2, material_sampler, uv);
+        return perro_sample_material_tex(custom_image_tex_2, material_sampler, uv);
     }
     if index == 3u {
-        return textureSample(custom_image_tex_3, material_sampler, uv);
+        return perro_sample_material_tex(custom_image_tex_3, material_sampler, uv);
     }
     if index == 4u {
-        return textureSample(custom_image_tex_4, material_sampler, uv);
+        return perro_sample_material_tex(custom_image_tex_4, material_sampler, uv);
     }
     if index == 5u {
-        return textureSample(custom_image_tex_5, material_sampler, uv);
+        return perro_sample_material_tex(custom_image_tex_5, material_sampler, uv);
     }
     if index == 6u {
-        return textureSample(custom_image_tex_6, material_sampler, uv);
+        return perro_sample_material_tex(custom_image_tex_6, material_sampler, uv);
     }
-    return textureSample(custom_image_tex_7, material_sampler, uv);
+    return perro_sample_material_tex(custom_image_tex_7, material_sampler, uv);
 }
 
 fn perro_decal_srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
@@ -42,8 +77,8 @@ fn perro_apply_decals(world_pos: vec3<f32>, albedo_in: vec3<f32>, normal_in: vec
     // Derivatives before any branch (uniform control flow); per-decal uv
     // gradients are linear transforms of these, keeping textureSampleGrad
     // valid inside the non-uniform loop body.
-    let dpx = dpdx(world_pos);
-    let dpy = dpdy(world_pos);
+    let dpx = perro_d_world_ddx;
+    let dpy = perro_d_world_ddy;
     let count = scene_decals.count.x;
     for (var i = 0u; i < count; i = i + 1u) {
         let d = scene_decals.decals[i];

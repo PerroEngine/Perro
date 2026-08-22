@@ -310,10 +310,10 @@ fn perro_fallback_tangent(normal_ws: vec3<f32>) -> vec3<f32> {
 // work without growing vertex format or mesh bandwidth. Degenerate UVs use
 // stable normal-derived tangent so mapped normals stay finite.
 fn perro_apply_standard_normal_map(in: FragmentInput, normal_ws: vec3<f32>, scale: f32) -> vec3<f32> {
-    let dp1 = dpdx(in.world_pos);
-    let dp2 = dpdy(in.world_pos);
-    let duv1 = dpdx(in.uv);
-    let duv2 = dpdy(in.uv);
+    let dp1 = perro_d_world_ddx;
+    let dp2 = perro_d_world_ddy;
+    let duv1 = perro_d_uv_ddx;
+    let duv2 = perro_d_uv_ddy;
     let det = duv1.x * duv2.y - duv1.y * duv2.x;
     var tangent_raw = perro_fallback_tangent(normal_ws);
     var bitangent_raw = cross(normal_ws, tangent_raw);
@@ -336,7 +336,7 @@ fn perro_apply_standard_normal_map(in: FragmentInput, normal_ws: vec3<f32>, scal
         );
     }
     let bitangent = normalize(cross(normal_ws, tangent)) * handedness;
-    let sampled = textureSample(custom_image_tex_1, material_sampler, in.uv).xyz * 2.0 - 1.0;
+    let sampled = perro_sample_material_tex(custom_image_tex_1, material_sampler, in.uv).xyz * 2.0 - 1.0;
     let mapped = normalize(vec3<f32>(sampled.xy * scale, sampled.z));
     return normalize(tangent * mapped.x + bitangent * mapped.y + normal_ws * mapped.z);
 }
@@ -364,7 +364,7 @@ fn perro_mesh_blend_fade(in: FragmentInput, material: DecodedMaterialParams) -> 
         return 1.0;
     }
     // Distance-compensated width: world units covered by one pixel here.
-    let texel_world = (length(dpdx(in.world_pos)) + length(dpdy(in.world_pos))) * 0.5;
+    let texel_world = (length(perro_d_world_ddx) + length(perro_d_world_ddy)) * 0.5;
     let base_width = max(params.x, 0.0001);
     let max_width = max(base_width, texel_world * MESH_BLEND_MIN_PIXELS);
     let min_width = min(params.y, base_width) * (max_width / base_width);
@@ -429,7 +429,7 @@ fn perro_apply_mesh_normal_blend(
     if contact <= 0.0001 {
         return normal_ws;
     }
-    let proxy_raw = cross(dpdx(world_pos), dpdy(world_pos));
+    let proxy_raw = cross(perro_d_world_ddx, perro_d_world_ddy);
     let proxy_len_sq = dot(proxy_raw, proxy_raw);
     if proxy_len_sq <= 1.0e-8 {
         return normal_ws;
@@ -561,7 +561,7 @@ fn perro_sample_ray_shadow_array(light_view_proj: mat4x4<f32>, world_pos: vec3<f
     if shadow.ray_params.w >= 0.5 {
         for (var y = -1; y <= 1; y = y + 1) {
             for (var x = -1; x <= 1; x = x + 1) {
-                sum += textureSampleCompare(shadow_map_tex, shadow_map_sampler, uv + vec2<f32>(f32(x), f32(y)) * texel, layer_i, depth - bias);
+                sum += textureSampleCompareLevel(shadow_map_tex, shadow_map_sampler, uv + vec2<f32>(f32(x), f32(y)) * texel, layer_i, depth - bias);
             }
         }
         return sum / 9.0;
@@ -569,7 +569,7 @@ fn perro_sample_ray_shadow_array(light_view_proj: mat4x4<f32>, world_pos: vec3<f
     for (var y = 0; y < 2; y = y + 1) {
         for (var x = 0; x < 2; x = x + 1) {
             let offset = (vec2<f32>(f32(x), f32(y)) - vec2<f32>(0.5)) * texel * 1.5;
-            sum += textureSampleCompare(shadow_map_tex, shadow_map_sampler, uv + offset, layer_i, depth - bias);
+            sum += textureSampleCompareLevel(shadow_map_tex, shadow_map_sampler, uv + offset, layer_i, depth - bias);
         }
     }
     return sum / 4.0;
@@ -607,7 +607,7 @@ fn perro_sample_shadow_array(light_view_proj: mat4x4<f32>, world_pos: vec3<f32>,
         if high_quality {
             for (var y = -1; y <= 1; y = y + 1) {
                 for (var x = -1; x <= 1; x = x + 1) {
-                    sum += textureSampleCompare(point_shadow_map_tex, shadow_map_sampler, uv + vec2<f32>(f32(x), f32(y)) * texel, layer_i, depth - bias);
+                    sum += textureSampleCompareLevel(point_shadow_map_tex, shadow_map_sampler, uv + vec2<f32>(f32(x), f32(y)) * texel, layer_i, depth - bias);
                 }
             }
             return sum / 9.0;
@@ -615,7 +615,7 @@ fn perro_sample_shadow_array(light_view_proj: mat4x4<f32>, world_pos: vec3<f32>,
         for (var y = 0; y < 2; y = y + 1) {
             for (var x = 0; x < 2; x = x + 1) {
                 let offset = (vec2<f32>(f32(x), f32(y)) - vec2<f32>(0.5)) * texel * 1.5;
-                sum += textureSampleCompare(point_shadow_map_tex, shadow_map_sampler, uv + offset, layer_i, depth - bias);
+                sum += textureSampleCompareLevel(point_shadow_map_tex, shadow_map_sampler, uv + offset, layer_i, depth - bias);
             }
         }
         return sum / 4.0;
@@ -623,7 +623,7 @@ fn perro_sample_shadow_array(light_view_proj: mat4x4<f32>, world_pos: vec3<f32>,
     if high_quality {
         for (var y = -1; y <= 1; y = y + 1) {
             for (var x = -1; x <= 1; x = x + 1) {
-                sum += textureSampleCompare(spot_shadow_map_tex, shadow_map_sampler, uv + vec2<f32>(f32(x), f32(y)) * texel, layer_i, depth - bias);
+                sum += textureSampleCompareLevel(spot_shadow_map_tex, shadow_map_sampler, uv + vec2<f32>(f32(x), f32(y)) * texel, layer_i, depth - bias);
             }
         }
         return sum / 9.0;
@@ -631,7 +631,7 @@ fn perro_sample_shadow_array(light_view_proj: mat4x4<f32>, world_pos: vec3<f32>,
     for (var y = 0; y < 2; y = y + 1) {
         for (var x = 0; x < 2; x = x + 1) {
             let offset = (vec2<f32>(f32(x), f32(y)) - vec2<f32>(0.5)) * texel * 1.5;
-            sum += textureSampleCompare(spot_shadow_map_tex, shadow_map_sampler, uv + offset, layer_i, depth - bias);
+            sum += textureSampleCompareLevel(spot_shadow_map_tex, shadow_map_sampler, uv + offset, layer_i, depth - bias);
         }
     }
     return sum / 4.0;
@@ -787,10 +787,12 @@ struct EnvironmentCubeCoord {
 // areas only, so broad convex silhouettes stay clean.  This costs derivatives
 // and ALU only: no AO target, kernel texture, blur pass, or extra bandwidth.
 fn perro_cavity_ambient_occlusion(world_pos: vec3<f32>, normal_ws: vec3<f32>) -> f32 {
-    let px = dpdx(world_pos);
-    let py = dpdy(world_pos);
-    let nx = dpdx(normal_ws);
-    let ny = dpdy(normal_ws);
+    let px = perro_d_world_ddx;
+    let py = perro_d_world_ddy;
+    // Seeded from the interpolated normal, not the shaded one: a normal-mapped
+    // `n` cannot be differentiated from inside a branch at all.
+    let nx = perro_d_normal_ddx;
+    let ny = perro_d_normal_ddy;
     let footprint_sq = dot(px, px) + dot(py, py);
     let signed_curvature = (dot(nx, px) + dot(ny, py)) / max(footprint_sq, 1.0e-6);
     let cavity = clamp(-signed_curvature * 0.08, 0.0, 0.35);
@@ -859,7 +861,7 @@ fn perro_standard(
     var albedo = base_color.rgb;
     var n = normalize(in.normal_ws);
     if material.flat_shading {
-        n = normalize(cross(dpdx(in.world_pos), dpdy(in.world_pos)));
+        n = normalize(cross(perro_d_world_ddx, perro_d_world_ddy));
         if material.mirrored_winding {
             n = -n;
         }

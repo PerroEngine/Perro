@@ -38,7 +38,7 @@ fn perro_toon(
     var albedo = base_color.rgb;
     var n = normalize(in.normal_ws);
     if material.flat_shading {
-        n = normalize(cross(dpdx(in.world_pos), dpdy(in.world_pos)));
+        n = normalize(cross(perro_d_world_ddx, perro_d_world_ddy));
         if material.mirrored_winding {
             n = -n;
         }

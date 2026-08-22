@@ -1,3 +1,5 @@
+#![cfg_attr(target_arch = "wasm32", allow(dead_code))]
+
 use crate::dsp::DspControl;
 use crossbeam_channel::Sender;
 use perro_ids::AudioBusID;

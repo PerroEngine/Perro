@@ -46,7 +46,7 @@ fn perro_toon(
     let mirrored_winding = (flags & 0x20u) != 0u;
     var n = normalize(in.normal_ws);
     if (flags & 0x2u) != 0u {
-        n = normalize(cross(dpdx(in.world_pos), dpdy(in.world_pos)));
+        n = normalize(cross(perro_d_world_ddx, perro_d_world_ddy));
         if mirrored_winding {
             n = -n;
         }

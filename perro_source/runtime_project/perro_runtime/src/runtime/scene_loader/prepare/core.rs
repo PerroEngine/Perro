@@ -78,6 +78,7 @@ use perro_ui::{
     UiMouseFilter, UiNineSlice, UiNineSliceButton, UiPanel, UiProgressBar, UiScrollContainer, UiShape, UiShapeKind, UiTextAlign,
     UiTextBlock, UiTextBox, UiTreeList, UiTreeListItem, UiVLayout,
 };
+#[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
