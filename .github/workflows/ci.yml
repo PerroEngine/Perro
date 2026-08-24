@@ -59,9 +59,22 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Cargo test
+        if: runner.os != 'Windows'
         env:
           PERRO_AUDIO_DISABLED: "1"
         run: cargo test --workspace
+
+      - name: Cargo test (Windows, non-graphics)
+        if: runner.os == 'Windows'
+        env:
+          PERRO_AUDIO_DISABLED: "1"
+        run: cargo test --workspace --exclude perro_graphics
+
+      - name: Cargo test (Windows graphics, serial GPU access)
+        if: runner.os == 'Windows'
+        env:
+          PERRO_AUDIO_DISABLED: "1"
+        run: cargo test -p perro_graphics -- --test-threads=1
 
   editor:
     name: Perro Editor Project
