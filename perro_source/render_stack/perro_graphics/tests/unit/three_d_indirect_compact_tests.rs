@@ -204,6 +204,10 @@ fn run_plan_regions_keep_passes_apart() {
 
 // ---------------------------------------------------------------- GPU setup
 
+fn is_hardware_adapter(adapter: &wgpu::Adapter) -> bool {
+    adapter.get_info().device_type != wgpu::DeviceType::Cpu
+}
+
 async fn test_device(hardware_only: bool) -> Option<(wgpu::Device, wgpu::Queue)> {
     let instance = wgpu::Instance::default();
     let adapter = instance
@@ -218,7 +222,7 @@ async fn test_device(hardware_only: bool) -> Option<(wgpu::Device, wgpu::Queue)>
     // D3D12's CPU fallback does not execute this compaction shader reliably.
     // Windows CI uses Microsoft Basic Render Driver and may return zeroed
     // output or terminate the test process with STATUS_ACCESS_VIOLATION.
-    if hardware_only && adapter.get_info().device_type == wgpu::DeviceType::Cpu {
+    if hardware_only && !is_hardware_adapter(&adapter) {
         return None;
     }
     adapter
@@ -668,7 +672,7 @@ async fn count_capable_device() -> Option<(wgpu::Device, wgpu::Queue)> {
         })
         .await
         .ok()?;
-    if !adapter.features().contains(needed) {
+    if !is_hardware_adapter(&adapter) || !adapter.features().contains(needed) {
         return None;
     }
     adapter
@@ -693,7 +697,7 @@ async fn count_capable_device() -> Option<(wgpu::Device, wgpu::Queue)> {
 fn count_draw_submits_only_surviving_commands() {
     pollster::block_on(async {
         let Some((device, queue)) = count_capable_device().await else {
-            eprintln!("skip indirect count-draw test: adapter lacks MULTI_DRAW_INDIRECT_COUNT");
+            eprintln!("skip indirect count-draw test: no capable hardware adapter");
             return;
         };
         let mut gpu = new_gpu_3d(&device, &queue, true);
