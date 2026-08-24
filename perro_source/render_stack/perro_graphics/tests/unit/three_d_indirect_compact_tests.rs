@@ -204,7 +204,7 @@ fn run_plan_regions_keep_passes_apart() {
 
 // ---------------------------------------------------------------- GPU setup
 
-async fn test_device() -> Option<(wgpu::Device, wgpu::Queue)> {
+async fn test_device(hardware_only: bool) -> Option<(wgpu::Device, wgpu::Queue)> {
     let instance = wgpu::Instance::default();
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions {
@@ -215,6 +215,12 @@ async fn test_device() -> Option<(wgpu::Device, wgpu::Queue)> {
         })
         .await
         .ok()?;
+    // D3D12's CPU fallback does not execute this compaction shader reliably.
+    // Windows CI uses Microsoft Basic Render Driver and may return zeroed
+    // output or terminate the test process with STATUS_ACCESS_VIOLATION.
+    if hardware_only && adapter.get_info().device_type == wgpu::DeviceType::Cpu {
+        return None;
+    }
     adapter
         .request_device(&wgpu::DeviceDescriptor {
             label: Some("perro_indirect_compact_test_device"),
@@ -491,8 +497,8 @@ fn assert_matches_reference(result: &CompactResult, visibility: &[bool], runs: &
 #[test]
 fn cull_then_compact_matches_cpu_reference() {
     pollster::block_on(async {
-        let Some((device, queue)) = test_device().await else {
-            eprintln!("skip indirect compaction test: no wgpu adapter");
+        let Some((device, queue)) = test_device(true).await else {
+            eprintln!("skip indirect compaction test: no suitable hardware adapter");
             return;
         };
         let mut gpu = new_gpu_3d(&device, &queue, true);
@@ -532,8 +538,8 @@ fn cull_then_compact_matches_cpu_reference() {
 #[test]
 fn compaction_preserves_order_across_workgroup_chunks() {
     pollster::block_on(async {
-        let Some((device, queue)) = test_device().await else {
-            eprintln!("skip indirect compaction chunk test: no wgpu adapter");
+        let Some((device, queue)) = test_device(true).await else {
+            eprintln!("skip indirect compaction chunk test: no suitable hardware adapter");
             return;
         };
         let mut gpu = new_gpu_3d(&device, &queue, true);
@@ -562,8 +568,8 @@ fn compaction_preserves_order_across_workgroup_chunks() {
 #[test]
 fn heavily_culled_scene_cuts_submitted_commands() {
     pollster::block_on(async {
-        let Some((device, queue)) = test_device().await else {
-            eprintln!("skip indirect compaction work-reduction test: no wgpu adapter");
+        let Some((device, queue)) = test_device(true).await else {
+            eprintln!("skip indirect compaction work-reduction test: no suitable hardware adapter");
             return;
         };
         let mut gpu = new_gpu_3d(&device, &queue, true);
@@ -847,7 +853,7 @@ fn count_draw_submits_only_surviving_commands() {
 #[test]
 fn count_path_stays_off_without_the_feature() {
     pollster::block_on(async {
-        let Some((device, queue)) = test_device().await else {
+        let Some((device, queue)) = test_device(false).await else {
             eprintln!("skip indirect compaction gate test: no wgpu adapter");
             return;
         };
@@ -879,7 +885,7 @@ fn count_path_stays_off_without_the_feature() {
 #[test]
 fn plans_split_by_pass_and_gate_on_min_commands() {
     pollster::block_on(async {
-        let Some((device, queue)) = test_device().await else {
+        let Some((device, queue)) = test_device(false).await else {
             eprintln!("skip indirect compaction plan-split test: no wgpu adapter");
             return;
         };
