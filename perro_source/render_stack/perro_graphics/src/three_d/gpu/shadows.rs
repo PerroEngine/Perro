@@ -94,6 +94,14 @@ const CASCADE_MAX_DEFER_FRAMES: u32 = 3;
 // 144 Hz it updates one. Worst pose age stays below one 30 Hz interval.
 const LOCAL_SHADOW_REFRESH_HZ: f32 = 30.0;
 
+/// Keep a current local-light shadow slot while its screen importance remains
+/// close to the cutoff. Camera motion otherwise makes two near-equal lights
+/// exchange atlas layers repeatedly, invalidating both cached depth sets and
+/// producing visible shadow popping.
+const LOCAL_SHADOW_SLOT_HYSTERESIS: f32 = 0.10;
+/// Below this projected radius, a local-light shadow cannot affect a pixel.
+const LOCAL_SHADOW_MIN_SCREEN_RADIUS_PX: f32 = 1.0;
+
 // Test-only override for `CASCADE_RENDER_BUDGET`, so the repro can measure the
 // same camera walk with the budget on and off.
 #[cfg(test)]
@@ -896,6 +904,7 @@ impl Gpu3D {
             shadow_map_size: self.shadow_map_size,
             has_casters,
             scale_budget_to_target: self.shadow_scale_to_target,
+            previous_shadow: self.last_shadow.as_ref(),
         });
         // ray_params.w = PCF kernel select (0 = 4-tap default, 1 = 9-tap via
         // graphics.shadow_quality = "high"); applies to ray, spot and point.
@@ -1311,6 +1320,9 @@ pub(super) struct ShadowSetupArgs<'a> {
     /// with the target (see [`local_shadow_light_budget`]). False leaves the
     /// main view on the full compiled budget.
     scale_budget_to_target: bool,
+    /// Last uploaded shadow slots. These provide temporal stability only; all
+    /// current eligibility and frustum tests still apply before a slot survives.
+    previous_shadow: Option<&'a ShadowUniform>,
 }
 
 /// How many local (spot / point) lights this view may shadow.
@@ -1353,6 +1365,27 @@ fn local_shadow_light_score(position: [f32; 3], range: f32, intensity: f32, came
     }
 }
 
+fn local_shadow_screen_radius_px(
+    position: [f32; 3],
+    range: f32,
+    camera: &Camera3DState,
+    viewport_height: u32,
+) -> f32 {
+    let range = range.max(0.0);
+    let distance = (Vec3::from(position) - Vec3::from(camera.position)).length();
+    if distance <= range {
+        return f32::INFINITY;
+    }
+    let scale = camera::projection_y_scale_from_projection(camera.projection);
+    let radius_ndc = match camera.projection {
+        CameraProjectionState::Orthographic { .. } => range * scale,
+        CameraProjectionState::Perspective { .. } | CameraProjectionState::Frustum { .. } => {
+            range * scale / distance.max(1.0e-4)
+        }
+    };
+    radius_ndc * viewport_height.max(1) as f32 * 0.5
+}
+
 /// Rank the candidates and keep the `budget` best, then restore light order.
 ///
 /// Returning to light order matters: the shadow slot a light lands in feeds
@@ -1371,6 +1404,61 @@ fn take_best_shadow_lights(mut candidates: Vec<(usize, f32)>, budget: usize) -> 
     kept
 }
 
+/// Select local shadow lights with a small cutoff band for prior slot owners.
+///
+/// The previous owner remains only when it is still eligible and within 10% of
+/// the current cutoff. This preserves cache residency for nearly tied lights,
+/// while a meaningfully more important light replaces it immediately.
+fn take_best_shadow_lights_stable(
+    candidates: Vec<(usize, f32)>,
+    budget: usize,
+    previous: &[usize],
+) -> Vec<usize> {
+    if budget == 0 || candidates.is_empty() {
+        return Vec::new();
+    }
+    if previous.is_empty() {
+        return take_best_shadow_lights(candidates, budget);
+    }
+    let mut ranked = candidates;
+    ranked.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(a.0.cmp(&b.0))
+    });
+    let budget = budget.min(ranked.len());
+    let cutoff = ranked[budget - 1].1;
+    let retain_min = cutoff * (1.0 - LOCAL_SHADOW_SLOT_HYSTERESIS);
+    let mut kept: Vec<usize> = ranked
+        .iter()
+        .filter(|(index, score)| previous.contains(index) && *score >= retain_min)
+        .map(|(index, _)| *index)
+        .take(budget)
+        .collect();
+    for (index, _) in ranked {
+        if kept.len() == budget {
+            break;
+        }
+        if !kept.contains(&index) {
+            kept.push(index);
+        }
+    }
+    kept.sort_unstable();
+    kept
+}
+
+fn shadowed_light_indices(slots: &[[f32; 4]]) -> Vec<usize> {
+    slots
+        .iter()
+        .enumerate()
+        .flat_map(|(group, slot)| {
+            slot.iter()
+                .enumerate()
+                .filter_map(move |(lane, value)| (*value >= 0.0).then_some(group * 4 + lane))
+        })
+        .collect()
+}
+
 pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
     let ShadowSetupArgs {
         camera,
@@ -1384,6 +1472,7 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
         shadow_map_size,
         has_casters,
         scale_budget_to_target,
+        previous_shadow,
     } = args;
     let mut scenes = vec![Scene3DUniform::zeroed(); SHADOW_CAMERA_COUNT];
     let mut uniform = ShadowUniform::zeroed();
@@ -1485,12 +1574,20 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
         ) {
             continue;
         }
+        if local_shadow_screen_radius_px(spot.position, spot.range, camera, viewport_height)
+            < LOCAL_SHADOW_MIN_SCREEN_RADIUS_PX
+        {
+            continue;
+        }
         spot_candidates.push((
             dense_index,
             local_shadow_light_score(spot.position, spot.range, spot.intensity, camera_position),
         ));
     }
-    let spot_keep = take_best_shadow_lights(spot_candidates, spot_budget);
+    let previous_spot = previous_shadow
+        .map(|shadow| shadowed_light_indices(&shadow.spot_light_slots))
+        .unwrap_or_default();
+    let spot_keep = take_best_shadow_lights_stable(spot_candidates, spot_budget, &previous_spot);
 
     // The shader indexes scene.spot_lights, which build_scene_uniform fills by
     // compacting Some slots densely, so shadow params must carry the dense
@@ -1539,6 +1636,11 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
         ) {
             continue;
         }
+        if local_shadow_screen_radius_px(point.position, point.range, camera, viewport_height)
+            < LOCAL_SHADOW_MIN_SCREEN_RADIUS_PX
+        {
+            continue;
+        }
         point_candidates.push((
             dense_index,
             local_shadow_light_score(
@@ -1549,7 +1651,10 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
             ),
         ));
     }
-    let point_keep = take_best_shadow_lights(point_candidates, point_budget);
+    let previous_point = previous_shadow
+        .map(|shadow| shadowed_light_indices(&shadow.point_light_slots))
+        .unwrap_or_default();
+    let point_keep = take_best_shadow_lights_stable(point_candidates, point_budget, &previous_point);
 
     let mut point_count = 0usize;
     let mut point_dense_index = 0usize;
@@ -2293,6 +2398,7 @@ mod tests {
                 shadow_map_size: SHADOW_MAP_SIZE,
                 has_casters: true,
                 scale_budget_to_target: false,
+                previous_shadow: None,
             });
             if let Some(previous) = previous {
                 for cascade in 0..MAX_SHADOW_RAY_CASCADES {
@@ -2406,6 +2512,7 @@ mod tests {
                 shadow_map_size: SHADOW_MAP_SIZE,
                 has_casters: true,
                 scale_budget_to_target: false,
+                previous_shadow: None,
             });
             assert!(setup.ray_enabled, "frame {frame} lost its ray shadow");
             let dir = setup.ray_light_dir;
@@ -2681,6 +2788,7 @@ mod tests {
             shadow_map_size: SHADOW_MAP_SIZE,
             has_casters: true,
             scale_budget_to_target: false,
+            previous_shadow: None,
         });
         let setup_yaw = build_shadow_setup(ShadowSetupArgs {
             camera: &camera(Quat::from_rotation_y(1.0)),
@@ -2694,6 +2802,7 @@ mod tests {
             shadow_map_size: SHADOW_MAP_SIZE,
             has_casters: true,
             scale_budget_to_target: false,
+            previous_shadow: None,
         });
         let setup_b = build_shadow_setup(ShadowSetupArgs {
             camera: &camera(Quat::IDENTITY),
@@ -2707,6 +2816,7 @@ mod tests {
             shadow_map_size: SHADOW_MAP_SIZE,
             has_casters: true,
             scale_budget_to_target: false,
+            previous_shadow: None,
         });
         assert_eq!(setup_a.uniform.ray_splits, setup_yaw.uniform.ray_splits);
         assert_ne!(
@@ -2731,6 +2841,7 @@ mod tests {
             shadow_map_size: SHADOW_MAP_SIZE,
             has_casters: true,
             scale_budget_to_target: false,
+            previous_shadow: None,
         });
         assert!(setup.ray_enabled);
         assert_eq!(setup.uniform.ray_params[1], MAX_SHADOW_RAY_CASCADES as f32);
@@ -2764,6 +2875,7 @@ mod tests {
             shadow_map_size: SHADOW_MAP_SIZE,
             has_casters: true,
             scale_budget_to_target: false,
+            previous_shadow: None,
         });
         assert!(setup.ray_enabled);
         assert!(
@@ -2802,6 +2914,7 @@ mod tests {
             shadow_map_size: SHADOW_MAP_SIZE,
             has_casters: true,
             scale_budget_to_target: false,
+            previous_shadow: None,
         });
         assert_eq!(setup.uniform.params0, [1.0, 0.5, 0.001, 0.1]);
     }
@@ -2850,6 +2963,7 @@ mod tests {
             shadow_map_size: SHADOW_MAP_SIZE,
             has_casters: true,
             scale_budget_to_target: false,
+            previous_shadow: None,
         });
         assert_eq!(setup.spot_count, 1);
         assert_eq!(setup.point_count, 1);
@@ -2905,6 +3019,7 @@ mod tests {
                     shadow_map_size: SHADOW_MAP_SIZE,
                     has_casters: true,
                     scale_budget_to_target: false,
+                    previous_shadow: None,
                 });
                 let splits = setup.uniform.ray_splits;
                 for cascade in 0..MAX_SHADOW_RAY_CASCADES {
@@ -2975,6 +3090,7 @@ mod tests {
                 shadow_map_size: SHADOW_MAP_SIZE,
                 has_casters: true,
                 scale_budget_to_target: false,
+                previous_shadow: None,
             })
         };
         let high = fit([-0.05, -1.0, 0.02]);
@@ -3040,6 +3156,7 @@ mod tests {
                 shadow_map_size: SHADOW_MAP_SIZE,
                 has_casters: true,
                 scale_budget_to_target: false,
+                previous_shadow: None,
             });
             // Where a fixed world point lands in cascade 0's shadow map.
             let view_proj = Mat4::from_cols_array_2d(&setup.uniform.ray_light_view_proj[0]);
@@ -3075,7 +3192,7 @@ mod local_light_budget_tests {
     use super::{
         MAX_SHADOW_POINT_LIGHTS, MAX_SHADOW_SPOT_LIGHTS, local_shadow_light_budget,
         local_shadow_light_score, local_shadow_update_budget, schedule_local_shadow_renders,
-        take_best_shadow_lights,
+        take_best_shadow_lights, take_best_shadow_lights_stable,
     };
     use glam::Vec3;
 
@@ -3138,6 +3255,23 @@ mod local_light_budget_tests {
             take_best_shadow_lights(vec![(2, 1.0)], 0),
             Vec::<usize>::new()
         );
+    }
+
+    #[test]
+    fn prior_slot_holds_at_near_equal_cutoff() {
+        let kept = take_best_shadow_lights_stable(
+            vec![(0, 1.0), (1, 1.04), (2, 3.0)],
+            2,
+            &[0, 2],
+        );
+        assert_eq!(kept, vec![0, 2]);
+
+        let replaced = take_best_shadow_lights_stable(
+            vec![(0, 1.0), (1, 1.5), (2, 3.0)],
+            2,
+            &[0, 2],
+        );
+        assert_eq!(replaced, vec![1, 2]);
     }
 
     #[test]
