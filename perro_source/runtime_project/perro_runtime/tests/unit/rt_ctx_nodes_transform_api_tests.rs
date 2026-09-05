@@ -1219,6 +1219,62 @@ fn reparent_rejects_self_and_descendant_cycles() {
 }
 
 #[test]
+fn consecutive_fresh_leaf_reparents_keep_topology_trusted() {
+    let mut runtime = Runtime::new();
+    let mut parent = NodeAPI::create::<Node3D>(&mut runtime);
+
+    for _ in 0..1_000 {
+        let child = NodeAPI::create::<Node3D>(&mut runtime);
+        assert!(runtime.nodes.topology_trusted());
+        assert!(runtime.reparent(parent, child));
+        assert!(runtime.nodes.topology_trusted());
+        parent = child;
+    }
+}
+
+#[test]
+fn non_ui_leaf_reparent_ignores_unrelated_ui_tree() {
+    let mut runtime = Runtime::new();
+    let hud = NodeAPI::create::<UiPanel>(&mut runtime);
+    let root = NodeAPI::create::<Node3D>(&mut runtime);
+    runtime.clear_dirty_flags();
+
+    let mut parent = root;
+    for _ in 0..1_000 {
+        let child = NodeAPI::create::<Node3D>(&mut runtime);
+        assert!(runtime.reparent(parent, child));
+        parent = child;
+    }
+
+    assert!(runtime.nodes.topology_trusted());
+    assert!(!runtime.dirty.is_node_dirty(hud));
+}
+
+#[test]
+fn reparent_fresh_leaf_rejects_corrupt_parent_cycle() {
+    let mut runtime = Runtime::new();
+    let parent_a = NodeAPI::create::<Node3D>(&mut runtime);
+    let parent_b = NodeAPI::create::<Node3D>(&mut runtime);
+    let leaf = NodeAPI::create::<Node3D>(&mut runtime);
+
+    // Direct arena edits model corrupt imported/user state and clear topology
+    // trust, so the detached-leaf fast path must fall back to bounded scan.
+    runtime
+        .nodes
+        .get_mut(parent_a)
+        .expect("fresh parent A must exist")
+        .parent = parent_b;
+    runtime
+        .nodes
+        .get_mut(parent_b)
+        .expect("fresh parent B must exist")
+        .parent = parent_a;
+
+    assert!(!runtime.reparent(parent_a, leaf));
+    assert_eq!(runtime.get_node_parent_id(leaf), Some(NodeID::nil()));
+}
+
+#[test]
 fn reparent_to_zero_scale_parent_uses_safe_inverse_3d() {
     let mut runtime = Runtime::new();
 

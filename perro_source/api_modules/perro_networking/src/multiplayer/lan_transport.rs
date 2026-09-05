@@ -4,6 +4,9 @@ use std::net::{SocketAddr, UdpSocket};
 const LAN_HOST_ADDR: &str = "0.0.0.0:7777";
 const LAN_CLIENT_ADDR: &str = "0.0.0.0:0";
 const MAX_PACKET_BYTES: usize = 16384;
+// Bound one game-thread poll, including discovery packets that emit no event.
+const MAX_PACKETS_PER_POLL: usize = 256;
+const MAX_BYTES_PER_POLL: usize = 1024 * 1024;
 pub const LAN_JOIN_TOKEN: i64 = -1;
 pub const LAN_DISCOVER: &[u8] = b"mm_discover";
 pub const LAN_DISCOVER_REPLY: &[u8] = b"mm_here";
@@ -71,6 +74,47 @@ impl LanTransport {
         self.pending_events
             .push(TransportEvent::PeerConnected(PeerId::Lan(addr)));
     }
+
+    fn drain_with_budget(
+        &mut self,
+        packet_budget: usize,
+        byte_budget: usize,
+    ) -> Vec<TransportEvent> {
+        let mut out = std::mem::take(&mut self.pending_events);
+        // Take ownership instead of cloning the socket on every poll.
+        let Some(socket) = self.socket.take() else {
+            return out;
+        };
+        let mut received_bytes = 0usize;
+        for _ in 0..packet_budget {
+            if received_bytes >= byte_budget {
+                break;
+            }
+            match socket.recv_from(&mut self.recv_buf[..]) {
+                Ok((len, addr)) => {
+                    // Whole datagrams: the last packet may cross the byte budget
+                    // by at most MAX_PACKET_BYTES - 1; never truncate to fit it.
+                    received_bytes += len;
+                    let packet = &self.recv_buf[..len];
+                    if self.is_host && packet == LAN_DISCOVER {
+                        let _ = socket.send_to(LAN_DISCOVER_REPLY, addr);
+                        continue;
+                    }
+                    // Events own their payload; receive scratch remains reusable.
+                    let bytes = packet.to_vec();
+                    if self.is_host {
+                        self.add_peer(addr);
+                    }
+                    out.append(&mut self.pending_events);
+                    out.push(TransportEvent::PacketReceived(PeerId::Lan(addr), bytes));
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(_) => break,
+            }
+        }
+        self.socket = Some(socket);
+        out
+    }
 }
 
 impl NetTransport for LanTransport {
@@ -114,34 +158,7 @@ impl NetTransport for LanTransport {
     }
 
     fn drain_events(&mut self) -> Vec<TransportEvent> {
-        let mut out = std::mem::take(&mut self.pending_events);
-
-        // Take the socket out for the loop so `add_peer` can borrow self —
-        // avoids the per-frame try_clone syscall this used to do.
-        let Some(socket) = self.socket.take() else {
-            return out;
-        };
-        loop {
-            match socket.recv_from(&mut self.recv_buf[..]) {
-                Ok((len, addr)) => {
-                    let packet = &self.recv_buf[..len];
-                    if self.is_host && packet == LAN_DISCOVER {
-                        let _ = socket.send_to(LAN_DISCOVER_REPLY, addr);
-                        continue;
-                    }
-                    let bytes = packet.to_vec();
-                    if self.is_host {
-                        self.add_peer(addr);
-                    }
-                    out.append(&mut self.pending_events);
-                    out.push(TransportEvent::PacketReceived(PeerId::Lan(addr), bytes));
-                }
-                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => break,
-                Err(_) => break,
-            }
-        }
-        self.socket = Some(socket);
-        out
+        self.drain_with_budget(MAX_PACKETS_PER_POLL, MAX_BYTES_PER_POLL)
     }
 
     fn shutdown(&mut self) {
@@ -157,6 +174,88 @@ impl NetTransport for LanTransport {
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn receive_budgets_preserve_backlog_and_whole_packets() {
+        let socket = bound_socket();
+        let destination = socket.local_addr().expect("test setup/result must succeed");
+        let sender = bound_socket();
+        let mut transport = LanTransport::new_client_of(destination);
+        transport.socket = Some(socket);
+        for bytes in [b"one", b"two", b"end"] {
+            sender
+                .send_to(bytes, destination)
+                .expect("test setup/result must succeed");
+        }
+        let mut events = Vec::new();
+        while events.len() < 3 {
+            wait_readable(
+                transport
+                    .socket
+                    .as_ref()
+                    .expect("test setup/result must succeed"),
+            );
+            let batch = transport.drain_with_budget(2, usize::MAX);
+            assert!(batch.len() <= 2);
+            events.extend(batch);
+        }
+        assert!(matches!(&events[2], TransportEvent::PacketReceived(_, bytes) if bytes == b"end"));
+        sender
+            .send_to(b"whole", destination)
+            .expect("test setup/result must succeed");
+        sender
+            .send_to(b"later", destination)
+            .expect("test setup/result must succeed");
+        wait_readable(
+            transport
+                .socket
+                .as_ref()
+                .expect("test setup/result must succeed"),
+        );
+        let first = transport.drain_with_budget(8, 1);
+        assert_eq!(first.len(), 1);
+        assert!(matches!(&first[0], TransportEvent::PacketReceived(_, bytes) if bytes == b"whole"));
+        wait_readable(
+            transport
+                .socket
+                .as_ref()
+                .expect("test setup/result must succeed"),
+        );
+        assert!(
+            matches!(&transport.drain_events()[0], TransportEvent::PacketReceived(_, bytes) if bytes == b"later")
+        );
+    }
+
+    #[test]
+    fn discovery_packets_consume_poll_budget() {
+        let socket = bound_socket();
+        let destination = socket.local_addr().expect("test setup/result must succeed");
+        let sender = bound_socket();
+        let mut transport = LanTransport::new_host();
+        transport.socket = Some(socket);
+        sender
+            .send_to(LAN_DISCOVER, destination)
+            .expect("test setup/result must succeed");
+        sender
+            .send_to(b"payload", destination)
+            .expect("test setup/result must succeed");
+        wait_readable(
+            transport
+                .socket
+                .as_ref()
+                .expect("test setup/result must succeed"),
+        );
+        assert!(transport.drain_with_budget(1, usize::MAX).is_empty());
+        wait_readable(
+            transport
+                .socket
+                .as_ref()
+                .expect("test setup/result must succeed"),
+        );
+        assert!(transport.drain_events().iter().any(
+            |event| matches!(event, TransportEvent::PacketReceived(_, bytes) if bytes == b"payload")
+        ));
+    }
 
     #[test]
     fn add_peer_emits_connected_once() {
@@ -274,6 +373,24 @@ mod tests {
             .set_nonblocking(true)
             .expect("test setup must succeed");
         socket
+    }
+
+    fn wait_readable(socket: &UdpSocket) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        let mut byte = [0; MAX_PACKET_BYTES];
+        loop {
+            match socket.peek_from(&mut byte) {
+                Ok(_) => return,
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "loopback packet deadline"
+                    );
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                Err(err) => panic!("loopback peek: {err}"),
+            }
+        }
     }
 
     fn drain_until(

@@ -1391,6 +1391,9 @@ pub struct Gpu3D {
     // Cumulative count of full scene restages since startup. A scene whose
     // topology is settled should stop advancing this even while it animates.
     prepare_full_rebuild_count: u64,
+    // Full staging bakes camera-dependent mesh LOD choices and alpha order.
+    // Camera-only prepares may retain staging only when this is false.
+    camera_dependent_staging: bool,
     // Per-prepare upload accounting (reset at the top of `prepare`). Every
     // gated staging upload notes its byte count here, so the skip gates below
     // are directly observable from tests / debug overlays.

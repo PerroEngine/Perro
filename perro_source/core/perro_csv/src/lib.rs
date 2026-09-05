@@ -707,7 +707,18 @@ impl CSVQuery {
     }
 
     pub fn run(&self) -> CSVQueryResult {
+        if self.limit == Some(0) {
+            return CSVQueryResult {
+                table: self.table,
+                rows: Vec::new(),
+                select_cols: self.select_cols.clone(),
+            };
+        }
+
         let mut rows = Vec::<usize>::new();
+        let scan_limit = self
+            .limit
+            .filter(|_| self.sort.is_none_or(|sort| sort.col == INVALID_COL));
         // Direct loops instead of a boxed `dyn Iterator`: avoids a per-run heap
         // alloc and the vtable `next()` call on every row.
         match self.candidate_rows() {
@@ -715,6 +726,9 @@ impl CSVQuery {
                 for row_idx in candidates {
                     if self.matches(row_idx) {
                         rows.push(row_idx);
+                        if scan_limit == Some(rows.len()) {
+                            break;
+                        }
                     }
                 }
             }
@@ -722,6 +736,9 @@ impl CSVQuery {
                 for row_idx in 0..self.table.rows.len() {
                     if self.matches(row_idx) {
                         rows.push(row_idx);
+                        if scan_limit == Some(rows.len()) {
+                            break;
+                        }
                     }
                 }
             }
@@ -1245,6 +1262,38 @@ mod tests {
             .map(|row| row.get_header("id").expect("test setup must succeed"))
             .collect();
         assert_eq!(ids, vec!["1", "2", "3", "4", "5"]);
+    }
+
+    #[test]
+    fn unsorted_limit_keeps_first_matches() {
+        let csv = parse_csv_static(b"id,kind\na,no\nb,yes\nc,yes\nd,yes\n")
+            .expect("test setup must succeed");
+
+        let ids: Vec<_> = csv
+            .query()
+            .where_eq("kind", "yes")
+            .limit(2)
+            .run()
+            .iter()
+            .map(|row| row.get_header("id").expect("test setup must succeed"))
+            .collect();
+        assert_eq!(ids, vec!["b", "c"]);
+    }
+
+    #[test]
+    fn invalid_sort_column_keeps_unsorted_limit_semantics() {
+        let csv = parse_csv_static(b"id\nc\na\nb\n").expect("test setup must succeed");
+
+        let ids: Vec<_> = csv
+            .query()
+            .order_by_asc("missing")
+            .limit(2)
+            .run()
+            .iter()
+            .map(|row| row.get_header("id").expect("test setup must succeed"))
+            .collect();
+        assert_eq!(ids, vec!["c", "a"]);
+        assert!(csv.query().order_by_asc("id").limit(0).run().is_empty());
     }
 
     #[test]

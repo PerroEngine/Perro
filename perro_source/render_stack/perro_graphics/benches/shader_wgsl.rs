@@ -4,8 +4,8 @@ use perro_graphics::three_d;
 use perro_graphics::two_d::shaders::{
     POINT_LIGHT_2D_WGSL, RECT_INSTANCED_WGSL, SPRITE_INSTANCED_WGSL,
 };
+use perro_wgsl::compose::prelude_wgsl;
 
-const PRELUDE_3D_WGSL: &str = perro_wgsl::compose::raw::PRELUDE_3D_WGSL;
 const MATERIAL_STANDARD_WGSL: &str = include_str!("../src/three_d/shaders/material_standard.wgsl");
 const MATERIAL_UNLIT_WGSL: &str = include_str!("../src/three_d/shaders/material_unlit.wgsl");
 const MATERIAL_TOON_WGSL: &str = include_str!("../src/three_d/shaders/material_toon.wgsl");
@@ -20,6 +20,8 @@ const POST_BLACK_WHITE_WGSL: &str =
     include_str!("../src/postprocess/shaders/effects/black_white.wgsl");
 const POST_BLUR_WGSL: &str = include_str!("../src/postprocess/shaders/effects/blur.wgsl");
 const POST_BLOOM_WGSL: &str = include_str!("../src/postprocess/shaders/effects/bloom.wgsl");
+const POST_CHROMA_KEY_WGSL: &str =
+    include_str!("../src/postprocess/shaders/effects/chroma_key.wgsl");
 const POST_COLOR_FILTER_WGSL: &str =
     include_str!("../src/postprocess/shaders/effects/color_filter.wgsl");
 const POST_COLOR_GRADE_WGSL: &str =
@@ -27,6 +29,7 @@ const POST_COLOR_GRADE_WGSL: &str =
 const POST_CRT_WGSL: &str = include_str!("../src/postprocess/shaders/effects/crt.wgsl");
 const POST_LUT_WGSL: &str = include_str!("../src/postprocess/shaders/effects/lut.wgsl");
 const POST_PIXELATE_WGSL: &str = include_str!("../src/postprocess/shaders/effects/pixelate.wgsl");
+const POST_PIXEL_ART_WGSL: &str = include_str!("../src/postprocess/shaders/effects/pixel_art.wgsl");
 const POST_REVERSE_FILTER_WGSL: &str =
     include_str!("../src/postprocess/shaders/effects/reverse_filter.wgsl");
 const POST_SATURATE_WGSL: &str = include_str!("../src/postprocess/shaders/effects/saturate.wgsl");
@@ -63,11 +66,13 @@ fn build_post_subset_shader() -> String {
     out.push_str(POST_BLACK_WHITE_WGSL);
     out.push_str(POST_BLUR_WGSL);
     out.push_str(POST_BLOOM_WGSL);
+    out.push_str(POST_CHROMA_KEY_WGSL);
     out.push_str(POST_COLOR_FILTER_WGSL);
     out.push_str(POST_COLOR_GRADE_WGSL);
     out.push_str(POST_CRT_WGSL);
     out.push_str(POST_LUT_WGSL);
     out.push_str(POST_PIXELATE_WGSL);
+    out.push_str(POST_PIXEL_ART_WGSL);
     out.push_str(POST_REVERSE_FILTER_WGSL);
     out.push_str(POST_SATURATE_WGSL);
     out.push_str(POST_VIGNETTE_WGSL);
@@ -79,7 +84,7 @@ fn build_post_subset_shader() -> String {
 fn bench_shader_build(c: &mut Criterion) {
     let mut group = c.benchmark_group("graphics_shader_build");
     let material_cases = [
-        ("standard", PRELUDE_3D_WGSL, MATERIAL_STANDARD_WGSL),
+        ("standard", prelude_wgsl(), MATERIAL_STANDARD_WGSL),
         (
             "rigid_standard",
             three_d::shaders::prelude_rigid_wgsl(),
@@ -90,8 +95,8 @@ fn bench_shader_build(c: &mut Criterion) {
             three_d::shaders::prelude_skinned_wgsl(),
             MATERIAL_STANDARD_WGSL,
         ),
-        ("unlit", PRELUDE_3D_WGSL, MATERIAL_UNLIT_WGSL),
-        ("toon", PRELUDE_3D_WGSL, MATERIAL_TOON_WGSL),
+        ("unlit", prelude_wgsl(), MATERIAL_UNLIT_WGSL),
+        ("toon", prelude_wgsl(), MATERIAL_TOON_WGSL),
     ];
     for (name, prelude, material) in material_cases {
         group.bench_function(BenchmarkId::new("material", name), |b| {
@@ -114,7 +119,7 @@ fn bench_shader_parse_validate(c: &mut Criterion) {
     let sky = build_sky_shader();
     let post = build_post_subset_shader();
     let material_standard = three_d::shaders::build_material_shader_with_prelude(
-        PRELUDE_3D_WGSL,
+        prelude_wgsl(),
         MATERIAL_STANDARD_WGSL,
     );
     let material_skinned = three_d::shaders::build_material_shader_with_prelude(

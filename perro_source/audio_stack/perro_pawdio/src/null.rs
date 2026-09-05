@@ -45,6 +45,9 @@ impl AudioLengthProber {
 pub struct AudioController;
 
 impl AudioController {
+    pub fn flush(&self) -> AudioEnqueueResult {
+        Err(AudioEnqueueError::Disconnected)
+    }
     pub fn new(_lookup: Option<fn(u64) -> &'static [u8]>) -> Result<Self, String> {
         Err("audio disabled".to_string())
     }

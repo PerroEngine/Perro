@@ -1,12 +1,11 @@
 use super::*;
 
 impl BarkPlayer {
-    pub(super) fn get_or_load_asset_locked(
+    fn cached_asset_locked(
         state: &mut AudioState,
         source: &str,
         reserved: bool,
-        static_audio_lookup: Option<fn(u64) -> &'static [u8]>,
-    ) -> Result<LoadedAudioAsset, String> {
+    ) -> Result<Option<LoadedAudioAsset>, String> {
         let source_hash = perro_ids::string_to_u64(source);
         if let Some(existing) = state.cache.get_mut(&source_hash) {
             if existing.source.as_ref() != source {
@@ -19,15 +18,112 @@ impl BarkPlayer {
                 existing.reserved = true;
             }
             existing.last_touched = Instant::now();
-            return Ok((
+            return Ok(Some((
                 existing.bytes.clone(),
                 existing.source.clone(),
                 existing.source_hash,
                 existing.asset_epoch,
                 true,
                 SourceLoadStats::cache_hit(),
-            ));
+            )));
         }
+        Ok(None)
+    }
+
+    pub(super) fn get_or_load_asset(
+        state: &Mutex<AudioState>,
+        source: &str,
+        reserved: bool,
+        static_audio_lookup: Option<fn(u64) -> &'static [u8]>,
+    ) -> Result<LoadedAudioAsset, String> {
+        Self::get_or_load_asset_with(state, source, reserved, |source_hash| {
+            Self::load_audio_bytes(source, source_hash, static_audio_lookup)
+        })
+    }
+
+    fn get_or_load_asset_with(
+        state_mutex: &Mutex<AudioState>,
+        source: &str,
+        reserved: bool,
+        load: impl FnOnce(u64) -> Result<(Arc<[u8]>, SourceLoadStats), String>,
+    ) -> Result<LoadedAudioAsset, String> {
+        let source_hash = perro_ids::string_to_u64(source);
+        let (source_key, asset_epoch) = {
+            let mut state = state_mutex
+                .lock()
+                .map_err(|_| "audio mutex poisoned".to_string())?;
+            if let Some(hit) = Self::cached_asset_locked(&mut state, source, reserved)? {
+                return Ok(hit);
+            }
+            let source_key: Arc<str> = Arc::from(source);
+            let epoch = state.next_cache_epoch.max(1);
+            state.next_cache_epoch = epoch.wrapping_add(1).max(1);
+            let pending = state
+                .pending_audio_loads
+                .entry(source_key.clone())
+                .or_insert((epoch, 0));
+            pending.1 += 1;
+            (source_key, pending.0)
+        };
+
+        // Disk/archive IO, static lookup/decompression and the byte copy all run
+        // outside the player-state mutex. Concurrent misses may share a winner.
+        let loaded = load(source_hash);
+        let mut state = state_mutex
+            .lock()
+            .map_err(|_| "audio mutex poisoned".to_string())?;
+        let valid = if let Some(pending) = state.pending_audio_loads.get_mut(source)
+            && pending.0 == asset_epoch
+        {
+            pending.1 -= 1;
+            if pending.1 == 0 {
+                state.pending_audio_loads.remove(source);
+            }
+            true
+        } else {
+            false
+        };
+        // Prefer a concurrent load/reload over stale bytes, including when this
+        // IO attempt fails. Never resurrect a source dropped during this load.
+        if let Some(hit) = Self::cached_asset_locked(&mut state, source, reserved)? {
+            return Ok(hit);
+        }
+        if !valid {
+            return Err(format!("audio asset `{source}` dropped during load"));
+        }
+        let (shared, load_stats) = loaded?;
+        state.cache_bytes = state.cache_bytes.saturating_add(shared.len());
+        state.cache.insert(
+            source_hash,
+            CachedAudioAsset {
+                source: source_key.clone(),
+                source_hash,
+                asset_epoch,
+                bytes: shared.clone(),
+                duration: None,
+                duration_known: false,
+                reserved,
+                active_uses: 0,
+                last_touched: Instant::now(),
+                pcm: None,
+                pcm_oversized: false,
+            },
+        );
+        Ok((
+            shared,
+            source_key,
+            source_hash,
+            asset_epoch,
+            false,
+            load_stats,
+        ))
+    }
+
+    fn load_audio_bytes(
+        source: &str,
+        source_hash: u64,
+        static_audio_lookup: Option<fn(u64) -> &'static [u8]>,
+    ) -> Result<(Arc<[u8]>, SourceLoadStats), String> {
         // Cow keeps uncompressed static blobs borrowed until the single
         // Arc::from below, so that path copies once instead of twice.
         let (bytes, load_stats): (std::borrow::Cow<'_, [u8]>, _) =
@@ -65,35 +161,7 @@ impl BarkPlayer {
                 let stats = SourceLoadStats;
                 (std::borrow::Cow::Owned(disk), stats)
             };
-        let shared: Arc<[u8]> = Arc::from(bytes);
-        let source_key: Arc<str> = Arc::from(source);
-        let asset_epoch = state.next_cache_epoch.max(1);
-        state.next_cache_epoch = state.next_cache_epoch.wrapping_add(1).max(1);
-        state.cache_bytes = state.cache_bytes.saturating_add(shared.len());
-        state.cache.insert(
-            source_hash,
-            CachedAudioAsset {
-                source: source_key.clone(),
-                source_hash,
-                asset_epoch,
-                bytes: shared.clone(),
-                duration: None,
-                duration_known: false,
-                reserved,
-                active_uses: 0,
-                last_touched: Instant::now(),
-                pcm: None,
-                pcm_oversized: false,
-            },
-        );
-        Ok((
-            shared,
-            source_key,
-            source_hash,
-            asset_epoch,
-            false,
-            load_stats,
-        ))
+        Ok((Arc::from(bytes), load_stats))
     }
 
     pub(super) fn insert_audio_bytes_locked(
@@ -143,6 +211,7 @@ impl BarkPlayer {
         &self,
         bytes: &Arc<[u8]>,
         source_hash: u64,
+        asset_epoch: u64,
         source: &str,
     ) -> Result<Option<Arc<CachedPcm>>, String> {
         // The bytes are already resident, so `Cursor` is the reader; a
@@ -184,7 +253,9 @@ impl BarkPlayer {
             .lock()
             .map_err(|_| "audio mutex poisoned".to_string())?;
         if oversized {
-            if let Some(entry) = state.cache.get_mut(&source_hash) {
+            if let Some(entry) = state.cache.get_mut(&source_hash)
+                && entry.asset_epoch == asset_epoch
+            {
                 entry.pcm_oversized = true;
             }
             return Ok(None);
@@ -194,7 +265,13 @@ impl BarkPlayer {
             sample_rate,
             samples: Arc::from(samples.into_boxed_slice()),
         });
-        let stored = if let Some(entry) = state.cache.get_mut(&source_hash) {
+        let stored = if let Some(entry) = state.cache.get_mut(&source_hash)
+            && entry.asset_epoch == asset_epoch
+        {
+            // A concurrent decoder may already publish this epoch's PCM.
+            if let Some(existing) = &entry.pcm {
+                return Ok(Some(existing.clone()));
+            }
             entry.pcm = Some(pcm.clone());
             entry.duration = Some(pcm.duration());
             entry.duration_known = true;
@@ -206,32 +283,6 @@ impl BarkPlayer {
             state.cache_bytes = state.cache_bytes.saturating_add(pcm.byte_len());
         }
         Ok(Some(pcm))
-    }
-
-    pub(super) fn duration_for_source_locked(
-        state: &mut AudioState,
-        source: &str,
-        bytes: Arc<[u8]>,
-    ) -> Option<Duration> {
-        let source_hash = perro_ids::string_to_u64(source);
-        let needs_decode = state
-            .cache
-            .get(&source_hash)
-            .map(|entry| !entry.duration_known)
-            .unwrap_or(true);
-
-        if needs_decode {
-            let decoded = Self::decode_duration_from_cached_bytes(bytes);
-            if let Some(entry) = state.cache.get_mut(&source_hash) {
-                entry.duration = decoded;
-                entry.duration_known = true;
-            }
-        }
-
-        state
-            .cache
-            .get(&source_hash)
-            .and_then(|entry| entry.duration)
     }
 
     pub(super) fn remove_playback_locked(
@@ -591,5 +642,101 @@ impl BarkPlayer {
 
     pub(super) fn pan_emitter_position(pan: AudioPan) -> [f32; 3] {
         [pan.x, pan.y, pan.z]
+    }
+}
+
+#[cfg(test)]
+mod load_tests {
+    use super::*;
+
+    fn bytes() -> Result<(Arc<[u8]>, SourceLoadStats), String> {
+        Ok((Arc::from(&b"old"[..]), SourceLoadStats::cache_hit()))
+    }
+
+    #[test]
+    fn cold_load_releases_mutex_and_reuses_concurrent_replacement() {
+        let state = Mutex::new(AudioState::empty_for_test());
+        let loaded = BarkPlayer::get_or_load_asset_with(&state, "clip", true, |_| {
+            let mut guard = state.try_lock().expect("IO must run outside state lock");
+            BarkPlayer::insert_audio_bytes_locked(
+                &mut guard,
+                "clip",
+                Arc::from(&b"new"[..]),
+                false,
+            )?;
+            bytes()
+        })
+        .expect("test setup/result must succeed");
+        assert_eq!(loaded.0.as_ref(), b"new");
+        let state = state.lock().expect("test setup/result must succeed");
+        assert!(state.pending_audio_loads.is_empty());
+        assert_eq!(state.cache_bytes, 3);
+        assert!(state.cache[&loaded.2].reserved);
+        assert_eq!(state.cache[&loaded.2].asset_epoch, loaded.3);
+    }
+
+    #[test]
+    fn dropped_inflight_load_does_not_resurrect_cache() {
+        let state = Mutex::new(AudioState::empty_for_test());
+        let result = BarkPlayer::get_or_load_asset_with(&state, "clip", false, |_| {
+            state
+                .try_lock()
+                .expect("test setup/result must succeed")
+                .pending_audio_loads
+                .remove("clip");
+            bytes()
+        });
+        assert!(result.is_err());
+        let state = state.lock().expect("test setup/result must succeed");
+        assert!(state.cache.is_empty());
+        assert!(state.pending_audio_loads.is_empty());
+        assert_eq!(state.cache_bytes, 0);
+    }
+
+    #[test]
+    fn concurrent_misses_share_published_epoch_and_account_once() {
+        let state = Mutex::new(AudioState::empty_for_test());
+        let mut inner_epoch = 0;
+        let loaded = BarkPlayer::get_or_load_asset_with(&state, "clip", false, |_| {
+            inner_epoch = BarkPlayer::get_or_load_asset_with(&state, "clip", false, |_| bytes())?.3;
+            bytes()
+        })
+        .expect("test setup/result must succeed");
+        assert_eq!(loaded.3, inner_epoch);
+        assert_eq!(
+            state
+                .lock()
+                .expect("test setup/result must succeed")
+                .cache_bytes,
+            3
+        );
+        assert!(
+            state
+                .lock()
+                .expect("test setup/result must succeed")
+                .pending_audio_loads
+                .is_empty()
+        );
+        BarkPlayer::get_or_load_asset_with(&state, "clip", false, |_| {
+            panic!("cache hit must skip IO")
+        })
+        .expect("test setup/result must succeed");
+    }
+
+    #[test]
+    fn failed_load_clears_inflight_token_for_retry() {
+        let state = Mutex::new(AudioState::empty_for_test());
+        assert!(
+            BarkPlayer::get_or_load_asset_with(&state, "clip", false, |_| Err("IO failed".into()))
+                .is_err()
+        );
+        assert!(
+            state
+                .lock()
+                .expect("test setup/result must succeed")
+                .pending_audio_loads
+                .is_empty()
+        );
+        assert!(BarkPlayer::get_or_load_asset_with(&state, "clip", false, |_| bytes()).is_ok());
     }
 }

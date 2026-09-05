@@ -26,6 +26,8 @@ const SAMPLE_FRAMES: usize = 60;
 // stream texture id + resolution set during setup live here for each case.
 std::thread_local! {
     static WEBCAM_STREAM: std::cell::Cell<(u64, u32, u32)> = const { std::cell::Cell::new((0, 0, 0)) };
+    static RENDER_STREAMS: std::cell::RefCell<Vec<(NodeID, CameraStreamState)>> = const { std::cell::RefCell::new(Vec::new()) };
+    static STREAM_FRAME: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
 }
 
 #[derive(Default)]
@@ -44,6 +46,11 @@ struct TimingSum {
     draw_calls_2d: u64,
     draw_calls_3d: u64,
     draw_instances_3d: u64,
+    stream_renders: u64,
+    stream_draw_calls_2d: u64,
+    stream_draw_calls_3d: u64,
+    stream_render_passes: u64,
+    stream_full_rebuilds_3d: u64,
     frames: u64,
 }
 
@@ -62,6 +69,11 @@ impl TimingSum {
         self.draw_calls_2d += u64::from(timing.draw_calls_2d);
         self.draw_calls_3d += u64::from(timing.draw_calls_3d);
         self.draw_instances_3d += u64::from(timing.draw_instances_3d);
+        self.stream_renders += u64::from(timing.stream_renders);
+        self.stream_draw_calls_2d += u64::from(timing.stream_draw_calls_2d);
+        self.stream_draw_calls_3d += u64::from(timing.stream_draw_calls_3d);
+        self.stream_render_passes += u64::from(timing.stream_render_passes);
+        self.stream_full_rebuilds_3d += u64::from(timing.stream_full_rebuilds_3d);
         self.frames += 1;
     }
 
@@ -98,6 +110,14 @@ struct BenchCase {
     name: &'static str,
     setup: fn(&Arc<Window>) -> PerroGraphics,
     redraw: fn(&mut PerroGraphics),
+    work: BenchWork,
+}
+
+#[derive(Clone, Copy)]
+enum BenchWork {
+    Stream2D,
+    Stream3D,
+    Webcam,
 }
 
 struct App {
@@ -137,6 +157,23 @@ impl ApplicationHandler for App {
                     sum.add_wait_idle(wait.elapsed());
                 }
             }
+            assert_eq!(sum.frames, SAMPLE_FRAMES as u64);
+            match case.work {
+                BenchWork::Stream2D => {
+                    assert!(sum.stream_renders >= sum.frames);
+                    assert!(sum.stream_draw_calls_2d >= sum.frames);
+                }
+                BenchWork::Stream3D => {
+                    assert!(sum.stream_renders >= sum.frames);
+                    assert!(sum.stream_draw_calls_3d >= sum.frames);
+                    assert!(sum.stream_render_passes >= sum.frames);
+                    assert_eq!(
+                        sum.stream_full_rebuilds_3d, 0,
+                        "static single-LOD camera moves must retain 3D staging"
+                    );
+                }
+                BenchWork::Webcam => assert!(sum.draw_calls_2d >= sum.frames),
+            }
             sum.print(case.name);
         }
         event_loop.exit();
@@ -168,31 +205,37 @@ fn main() {
                 name: "stream2d_1_512_sprites1k",
                 setup: |w| setup_stream_2d(w, 1, 512, 1_000),
                 redraw: redraw_2d,
+                work: BenchWork::Stream2D,
             },
             BenchCase {
                 name: "stream2d_4_512_sprites1k",
                 setup: |w| setup_stream_2d(w, 4, 512, 1_000),
                 redraw: redraw_2d,
+                work: BenchWork::Stream2D,
             },
             BenchCase {
                 name: "stream2d_1_1024_sprites10k",
                 setup: |w| setup_stream_2d(w, 1, 1024, 10_000),
                 redraw: redraw_2d,
+                work: BenchWork::Stream2D,
             },
             BenchCase {
                 name: "stream3d_1_512_meshes1k",
                 setup: |w| setup_stream_3d(w, 1, 512, 1_000),
                 redraw: redraw_3d,
+                work: BenchWork::Stream3D,
             },
             BenchCase {
                 name: "stream3d_4_512_meshes1k",
                 setup: |w| setup_stream_3d(w, 4, 512, 1_000),
                 redraw: redraw_3d,
+                work: BenchWork::Stream3D,
             },
             BenchCase {
                 name: "stream3d_1_1024_meshes10k",
                 setup: |w| setup_stream_3d(w, 1, 1024, 10_000),
                 redraw: redraw_3d,
+                work: BenchWork::Stream3D,
             },
             // webcam CPU-upload path: per-frame WriteTextureRgba to a displayed
             // stream texture (exercises findings 1-3, not covered by the
@@ -201,11 +244,13 @@ fn main() {
                 name: "webcam_512_sprites1k",
                 setup: |w| setup_stream_webcam(w, 512, 1_000),
                 redraw: redraw_webcam,
+                work: BenchWork::Webcam,
             },
             BenchCase {
                 name: "webcam_1024_sprites10k",
                 setup: |w| setup_stream_webcam(w, 1024, 10_000),
                 redraw: redraw_webcam,
+                work: BenchWork::Webcam,
             },
         ],
     };
@@ -228,6 +273,8 @@ fn setup_stream_2d(
     resolution: u32,
     sprite_count: u32,
 ) -> PerroGraphics {
+    RENDER_STREAMS.with(|streams| streams.borrow_mut().clear());
+    STREAM_FRAME.with(|frame| frame.set(0));
     let mut graphics = base_graphics(window);
     let texture = create_texture(&mut graphics);
     let sprites: Arc<[Sprite2DCommand]> = (0..sprite_count)
@@ -242,6 +289,7 @@ fn setup_stream_2d(
             node,
             state: Arc::new(stream.clone()),
         }));
+        RENDER_STREAMS.with(|streams| streams.borrow_mut().push((node, stream.clone())));
         graphics.submit(RenderCommand::TwoD(Command2D::UpsertCameraStream {
             node,
             stream: Arc::new(stream),
@@ -258,6 +306,8 @@ fn setup_stream_3d(
     resolution: u32,
     mesh_count: u32,
 ) -> PerroGraphics {
+    RENDER_STREAMS.with(|streams| streams.borrow_mut().clear());
+    STREAM_FRAME.with(|frame| frame.set(0));
     let mut graphics = base_graphics(window);
     let (mesh, material) = create_mesh_material(&mut graphics);
     let draws: Arc<[CameraStreamDraw3DState]> = (0..mesh_count)
@@ -272,6 +322,7 @@ fn setup_stream_3d(
             node,
             state: Arc::new(stream.clone()),
         }));
+        RENDER_STREAMS.with(|streams| streams.borrow_mut().push((node, stream.clone())));
         graphics.submit(RenderCommand::ThreeD(Box::new(
             Command3D::UpsertCameraStream {
                 node,
@@ -339,15 +390,33 @@ fn webcam_frame_bytes(width: u32, height: u32) -> Vec<u8> {
 }
 
 fn redraw_2d(graphics: &mut PerroGraphics) {
-    graphics.submit(RenderCommand::TwoD(Command2D::SetCamera {
-        camera: Camera2DState::default(),
-    }));
+    redraw_render_streams(graphics);
 }
 
 fn redraw_3d(graphics: &mut PerroGraphics) {
-    graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::SetCamera {
-        camera: Camera3DState::default(),
-    })));
+    redraw_render_streams(graphics);
+}
+
+fn redraw_render_streams(graphics: &mut PerroGraphics) {
+    let x = STREAM_FRAME.with(|frame| {
+        let next = frame.get().wrapping_add(1);
+        frame.set(next);
+        if next & 1 == 0 { 0.0 } else { 0.001 }
+    });
+    RENDER_STREAMS.with(|streams| {
+        for (node, base) in streams.borrow().iter() {
+            let mut state = base.clone();
+            match &mut state.source {
+                CameraStreamSourceState::TwoD(camera) => camera.position[0] = x,
+                CameraStreamSourceState::ThreeD(camera) => camera.position[0] = x,
+                CameraStreamSourceState::Webcam { .. } => unreachable!(),
+            }
+            graphics.submit(RenderCommand::CameraStream(CameraStreamCommand::Upsert {
+                node: *node,
+                state: Arc::new(state),
+            }));
+        }
+    });
 }
 
 fn camera_stream_2d_state(

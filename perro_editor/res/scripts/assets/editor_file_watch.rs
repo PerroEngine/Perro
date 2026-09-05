@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
-use std::time::UNIX_EPOCH;
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 pub type FileSig = String;
 
@@ -10,6 +10,7 @@ pub type FileSig = String;
 struct ProjectScanJob {
     running: bool,
     ready: Option<ProjectScan>,
+    last_start: Option<Instant>,
 }
 
 pub struct ProjectScan {
@@ -21,17 +22,34 @@ pub struct ProjectScan {
 
 static PROJECT_SCAN_JOBS: OnceLock<Mutex<BTreeMap<String, ProjectScanJob>>> = OnceLock::new();
 
-pub fn request_project_scan(root: PathBuf, before: Vec<FileSig>) {
+const PROJECT_SCAN_INTERVAL: Duration = Duration::from_secs(1);
+
+pub fn request_project_scan(root: PathBuf, before: &[FileSig]) {
     let key = root.to_string_lossy().to_string();
     let jobs = PROJECT_SCAN_JOBS.get_or_init(|| Mutex::new(BTreeMap::new()));
     let Ok(mut guard) = jobs.lock() else {
         return;
     };
+    guard.retain(|existing_key, existing_job| {
+        existing_key == &key
+            || existing_job.running
+            || existing_job.ready.is_some()
+            || existing_job
+                .last_start
+                .is_some_and(|last| last.elapsed() < PROJECT_SCAN_INTERVAL)
+    });
     let job = guard.entry(key.clone()).or_default();
-    if job.running || job.ready.is_some() {
+    if job.running
+        || job.ready.is_some()
+        || job
+            .last_start
+            .is_some_and(|last| last.elapsed() < PROJECT_SCAN_INTERVAL)
+    {
         return;
     }
     job.running = true;
+    job.last_start = Some(Instant::now());
+    let before = before.to_vec();
     drop(guard);
 
     std::thread::spawn(move || {
@@ -46,7 +64,9 @@ pub fn request_project_scan(root: PathBuf, before: Vec<FileSig>) {
         };
         let jobs = PROJECT_SCAN_JOBS.get_or_init(|| Mutex::new(BTreeMap::new()));
         if let Ok(mut guard) = jobs.lock() {
-            let job = guard.entry(key).or_default();
+            let Some(job) = guard.get_mut(&key) else {
+                return;
+            };
             job.running = false;
             job.ready = Some(scan);
         }
@@ -59,9 +79,6 @@ pub fn take_project_scan(root: &Path) -> Option<ProjectScan> {
     let mut guard = jobs.lock().ok()?;
     let job = guard.get_mut(key.as_ref())?;
     let scan = job.ready.take()?;
-    // Job is fully consumed (not running, ready drained) -- drop the entry
-    // instead of leaving a spent placeholder in the map forever.
-    guard.remove(key.as_ref());
     Some(scan)
 }
 
@@ -91,22 +108,22 @@ pub fn scan_project(root: &Path) -> Vec<FileSig> {
 pub fn changed_paths(before: &[FileSig], after: &[FileSig]) -> Vec<String> {
     let before = before
         .iter()
-        .filter_map(|sig| sig_path(sig).map(|path| (path.to_string(), sig.clone())))
+        .filter_map(|sig| sig_path(sig).map(|path| (path, sig.as_str())))
         .collect::<BTreeMap<_, _>>();
     let after = after
         .iter()
-        .filter_map(|sig| sig_path(sig).map(|path| (path.to_string(), sig.clone())))
+        .filter_map(|sig| sig_path(sig).map(|path| (path, sig.as_str())))
         .collect::<BTreeMap<_, _>>();
 
     let mut out = Vec::new();
     for (path, sig) in after.iter() {
         if before.get(path) != Some(sig) {
-            out.push(path.clone());
+            out.push((*path).to_string());
         }
     }
     for path in before.keys() {
         if !after.contains_key(path) {
-            out.push(path.clone());
+            out.push((*path).to_string());
         }
     }
     out.sort();
@@ -250,6 +267,25 @@ mod tests {
         assert_eq!(
             changed_paths(&before, &after),
             vec!["res/new.scn", "res/old.scn"]
+        );
+    }
+
+    #[test]
+    fn changed_paths_reports_created_removed_and_modified_assets() {
+        let before = vec![
+            "res/gone.png|12|1|0".to_string(),
+            "res/live.rs|20|1|0".to_string(),
+            "res/stable.scn|30|1|0".to_string(),
+        ];
+        let after = vec![
+            "res/live.rs|21|2|0".to_string(),
+            "res/new.png|12|2|0".to_string(),
+            "res/stable.scn|30|1|0".to_string(),
+        ];
+
+        assert_eq!(
+            changed_paths(&before, &after),
+            vec!["res/gone.png", "res/live.rs", "res/new.png"]
         );
     }
 

@@ -61,10 +61,14 @@ impl Runtime {
         old_parent: perro_ids::NodeID,
         new_parent: perro_ids::NodeID,
     ) {
+        if !self.nodes.has_ui_nodes() {
+            return;
+        }
         // Reused scratch stack: no per-subtree-node `children().to_vec()`.
         let mut stack = std::mem::take(&mut self.node_api_scratch.ui_walk_stack);
         stack.clear();
         stack.push(child_id);
+        let mut found_ui = false;
         while let Some(id) = stack.pop() {
             let Some(node) = self.nodes.get(id) else {
                 continue;
@@ -74,6 +78,7 @@ impl Runtime {
                 stack.extend_from_slice(children);
             }
             if is_ui {
+                found_ui = true;
                 self.mark_ui_dirty(
                     id,
                     Self::UI_DIRTY_LAYOUT_SELF
@@ -85,6 +90,12 @@ impl Runtime {
         }
         stack.clear();
         self.node_api_scratch.ui_walk_stack = stack;
+        // UI layout ignores a subtree with no UI descendants. In mixed scenes,
+        // this keeps unrelated HUD nodes from forcing ancestor walks for every
+        // fresh 2D/3D leaf attachment.
+        if !found_ui {
+            return;
+        }
 
         let old_ui_parent = self.closest_ui_ancestor(old_parent);
         let new_ui_parent = self.closest_ui_ancestor(new_parent);

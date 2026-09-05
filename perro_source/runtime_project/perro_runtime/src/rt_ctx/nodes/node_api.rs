@@ -19,7 +19,9 @@ impl NodeAPI for Runtime {
         }
         // Ensure freshly created nodes participate in render/transform extraction
         // even before caller-side mutation paths run.
-        self.mark_needs_rerender(id);
+        // Fresh root has no sub-view owner. Mark it directly so creation never
+        // asks the world-membership cache to rebuild after this insert.
+        self.dirty.mark_rerender(id);
         self.mark_created_ui_node_dirty(id);
         self.mark_transform_dirty_recursive(id);
         id
@@ -506,26 +508,35 @@ impl NodeAPI for Runtime {
             return false;
         }
 
-        // Reject a parent inside the child's subtree. Bound the upward walk by
-        // the live-node count so an already-corrupt parent cycle also fails
-        // closed instead of hanging this API.
-        let mut ancestor = parent_id;
-        let mut remaining = self.nodes.len();
-        while !ancestor.is_nil() {
-            if ancestor == child_id || remaining == 0 {
-                return false;
-            }
-            let Some(node) = self.nodes.get(ancestor) else {
-                return false;
-            };
-            ancestor = node.get_parent();
-            remaining -= 1;
-        }
-
         let old_parent = match self.nodes.get(child_id) {
             Some(node) => node.get_parent(),
             None => return false,
         };
+
+        // A detached leaf cannot contain the proposed parent. When all
+        // topology came through checked runtime operations, skip the ancestor
+        // walk used by repeated fresh-leaf chain construction. Direct arena
+        // edits clear trust and retain the bounded corrupt/cycle guard below.
+        let detached_leaf = old_parent.is_nil()
+            && self
+                .nodes
+                .children(child_id)
+                .is_some_and(|children| children.is_empty());
+        let topology_was_trusted = self.nodes.topology_trusted();
+        if !detached_leaf || !topology_was_trusted {
+            let mut ancestor = parent_id;
+            let mut remaining = self.nodes.len();
+            while !ancestor.is_nil() {
+                if ancestor == child_id || remaining == 0 {
+                    return false;
+                }
+                let Some(node) = self.nodes.get(ancestor) else {
+                    return false;
+                };
+                ancestor = node.get_parent();
+                remaining -= 1;
+            }
+        }
 
         if old_parent == parent_id {
             return true;
@@ -653,6 +664,9 @@ impl NodeAPI for Runtime {
         self.mark_transform_dirty_recursive(child_id);
         self.mark_needs_rerender(child_id);
         self.mark_ui_reparent_dirty(child_id, old_parent, parent_id);
+        if topology_was_trusted {
+            self.nodes.mark_topology_trusted();
+        }
         true
     }
 
@@ -698,6 +712,7 @@ impl NodeAPI for Runtime {
         if node_id.is_nil() || self.nodes.get(node_id).is_none() {
             return false;
         }
+        let topology_was_trusted = self.nodes.topology_trusted();
 
         // Gather subtree ids iteratively to avoid recursion depth issues.
         // We delete in post-order so children are removed before their parents.
@@ -769,6 +784,10 @@ impl NodeAPI for Runtime {
         self.node_api_scratch.remove_stack = stack;
         self.node_api_scratch.remove_postorder = postorder;
         self.node_api_scratch.remove_visited = visited;
+
+        if topology_was_trusted {
+            self.nodes.mark_topology_trusted();
+        }
 
         true
     }

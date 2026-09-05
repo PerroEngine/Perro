@@ -294,107 +294,115 @@ fn bench_play(c: &mut Criterion) {
         eprintln!("skip perro_pawdio controller enqueue bench: no audio output device");
         return;
     };
-    controller.reserve_source(SOURCE);
-    let _ = controller.source_length_seconds(SOURCE);
+    controller
+        .enqueue_reserve_source(SOURCE)
+        .expect("reserve source");
+    controller.flush().expect("drain audio commands");
     let source_handle = controller.source_handle(SOURCE);
 
-    c.bench_function("pawdio_controller_enqueue_play_cached_wav", |b| {
+    // Include worker drain time: bounded accepted-command throughput, not queue-only latency.
+    c.bench_function("pawdio_controller_submit_drain_play_cached_wav", |b| {
         b.iter_custom(|iters| {
-            let mut elapsed = Duration::ZERO;
+            let begin = Instant::now();
             for id in 0..iters {
-                let start = Instant::now();
-                assert!(controller.play_source(request(id, 0.0)));
-                elapsed += start.elapsed();
-                if id % 1024 == 1023 {
-                    let _ = controller.source_length_seconds(SOURCE);
+                controller
+                    .enqueue_play_source(request(id, 0.0))
+                    .expect("enqueue play");
+                if id % 64 == 63 {
+                    controller.flush().expect("drain audio commands");
                 }
             }
-            let _ = controller.source_length_seconds(SOURCE);
-            elapsed
+            controller.flush().expect("drain audio commands");
+            begin.elapsed()
         });
     });
 
-    c.bench_function("pawdio_controller_enqueue_play_handle_cached_wav", |b| {
-        b.iter_custom(|iters| {
-            let mut elapsed = Duration::ZERO;
-            for id in 0..iters {
-                let start = Instant::now();
-                assert!(controller.play_source_handle(&source_handle, request(id, 0.0)));
-                elapsed += start.elapsed();
-                if id % 1024 == 1023 {
-                    let _ = controller.source_length_seconds(SOURCE);
-                }
-            }
-            let _ = controller.source_length_seconds(SOURCE);
-            elapsed
-        });
-    });
-
-    c.bench_function("pawdio_controller_enqueue_spatial_cached_wav", |b| {
-        b.iter_custom(|iters| {
-            let mut elapsed = Duration::ZERO;
-            for id in 0..iters {
-                let idx = id as usize % 64;
-                let audio = Audio3D::new(SOURCE, [idx as f32 * 0.1, 2.0, -8.0], 32.0);
-                let req = audio
-                    .to_playback(listener_3d)
-                    .expect("test setup/result must succeed");
-                let start = Instant::now();
-                assert!(controller.play_spatial_source(req).is_some());
-                elapsed += start.elapsed();
-                if id % 1024 == 1023 {
-                    let _ = controller.source_length_seconds(SOURCE);
-                }
-            }
-            let _ = controller.source_length_seconds(SOURCE);
-            elapsed
-        });
-    });
-
-    c.bench_function("pawdio_controller_enqueue_spatial_handle_cached_wav", |b| {
-        b.iter_custom(|iters| {
-            let mut elapsed = Duration::ZERO;
-            for id in 0..iters {
-                let idx = id as usize % 64;
-                let audio = Audio3D::new(SOURCE, [idx as f32 * 0.1, 2.0, -8.0], 32.0);
-                let req = audio
-                    .to_playback(listener_3d)
-                    .expect("test setup/result must succeed");
-                let start = Instant::now();
-                assert!(
+    c.bench_function(
+        "pawdio_controller_submit_drain_play_handle_cached_wav",
+        |b| {
+            b.iter_custom(|iters| {
+                let begin = Instant::now();
+                for id in 0..iters {
                     controller
-                        .play_spatial_source_handle(&source_handle, req)
-                        .is_some()
-                );
-                elapsed += start.elapsed();
-                if id % 1024 == 1023 {
-                    let _ = controller.source_length_seconds(SOURCE);
+                        .enqueue_play_source_handle(&source_handle, request(id, 0.0))
+                        .expect("enqueue play handle");
+                    if id % 64 == 63 {
+                        controller.flush().expect("drain audio commands");
+                    }
+                }
+                controller.flush().expect("drain audio commands");
+                begin.elapsed()
+            });
+        },
+    );
+
+    c.bench_function("pawdio_controller_submit_drain_spatial_cached_wav", |b| {
+        b.iter_custom(|iters| {
+            let begin = Instant::now();
+            for id in 0..iters {
+                let idx = id as usize % 64;
+                let audio = Audio3D::new(SOURCE, [idx as f32 * 0.1, 2.0, -8.0], 32.0);
+                let req = audio
+                    .to_playback(listener_3d)
+                    .expect("test setup/result must succeed");
+                controller
+                    .enqueue_play_spatial_source(req)
+                    .expect("enqueue spatial");
+                if id % 64 == 63 {
+                    controller.flush().expect("drain audio commands");
                 }
             }
-            let _ = controller.source_length_seconds(SOURCE);
-            elapsed
+            controller.flush().expect("drain audio commands");
+            begin.elapsed()
         });
     });
+
+    c.bench_function(
+        "pawdio_controller_submit_drain_spatial_handle_cached_wav",
+        |b| {
+            b.iter_custom(|iters| {
+                let begin = Instant::now();
+                for id in 0..iters {
+                    let idx = id as usize % 64;
+                    let audio = Audio3D::new(SOURCE, [idx as f32 * 0.1, 2.0, -8.0], 32.0);
+                    let req = audio
+                        .to_playback(listener_3d)
+                        .expect("test setup/result must succeed");
+                    controller
+                        .enqueue_play_spatial_source_handle(&source_handle, req)
+                        .expect("enqueue spatial handle");
+                    if id % 64 == 63 {
+                        controller.flush().expect("drain audio commands");
+                    }
+                }
+                controller.flush().expect("drain audio commands");
+                begin.elapsed()
+            });
+        },
+    );
 
     let update_id = controller
         .play_spatial_source(request(0, 0.0))
         .expect("start controller update bench playback");
-    let _ = controller.source_length_seconds(SOURCE);
-    c.bench_function("pawdio_controller_enqueue_update_spatial_full_dsp", |b| {
-        b.iter_custom(|iters| {
-            let mut elapsed = Duration::ZERO;
-            for id in 0..iters {
-                let start = Instant::now();
-                assert!(controller.update_spatial(update_id, black_box(spatial_params(id))));
-                elapsed += start.elapsed();
-                if id % 1024 == 1023 {
-                    let _ = controller.source_length_seconds(SOURCE);
+    controller.flush().expect("drain audio commands");
+    c.bench_function(
+        "pawdio_controller_submit_drain_update_spatial_full_dsp",
+        |b| {
+            b.iter_custom(|iters| {
+                let begin = Instant::now();
+                for id in 0..iters {
+                    controller
+                        .enqueue_update_spatial(update_id, black_box(spatial_params(id)))
+                        .expect("enqueue spatial update");
+                    if id % 64 == 63 {
+                        controller.flush().expect("drain audio commands");
+                    }
                 }
-            }
-            let _ = controller.source_length_seconds(SOURCE);
-            elapsed
-        });
-    });
+                controller.flush().expect("drain audio commands");
+                begin.elapsed()
+            });
+        },
+    );
 }
 
 criterion_group!(benches, bench_play);

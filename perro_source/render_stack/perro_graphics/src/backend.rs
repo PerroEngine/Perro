@@ -300,11 +300,13 @@ pub struct DrawFrameTiming {
     pub gpu_stream_encode: Duration,
     /// Sum of `width * height` over the streams that rendered this frame.
     pub stream_pixels: u64,
-    /// Per-stream `Gpu3D` counters, summed over the streams that rendered.
+    /// Per-stream draw counters, summed over the streams that rendered.
     /// The main-view fields above deliberately exclude these.
+    pub stream_draw_calls_2d: u32,
     pub stream_draw_calls_3d: u32,
     pub stream_draw_batches_3d: u32,
     pub stream_draw_triangles_3d: u64,
+    pub stream_full_rebuilds_3d: u32,
     pub stream_render_passes: u32,
     pub stream_shadow_layer_renders: u32,
     pub gpu_total: Duration,

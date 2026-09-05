@@ -11,45 +11,37 @@ use perro_variant::Variant;
 
 fn build_chain_2d(count: usize) -> (Runtime, Vec<NodeID>) {
     let mut runtime = Runtime::new();
-    let root = NodeAPI::create::<Node2D>(&mut runtime);
-    let mut ids = Vec::with_capacity(count);
-    ids.push(root);
-    let mut parent = root;
-    for i in 1..count {
-        let id = NodeAPI::create::<Node2D>(&mut runtime);
-        assert!(NodeAPI::reparent(&mut runtime, parent, id));
-        let _ = NodeAPI::with_base_node_mut::<Node2D, _, _>(&mut runtime, id, |node| {
+    let specs: Vec<_> = (0..count)
+        .map(|i| {
+            let mut node = Node2D::new();
             node.transform = Transform2D::new(
                 Vector2::new((i % 17) as f32 * 0.25, (i % 11) as f32 * 0.5),
                 (i % 31) as f32 * 0.001,
                 Vector2::ONE,
             );
-        });
-        ids.push(id);
-        parent = id;
-    }
+            NodeSpec::new(node).parent(i.checked_sub(1))
+        })
+        .collect();
+    let ids = NodeAPI::create_nodes(&mut runtime, &specs, NodeID::nil());
+    assert_eq!(ids.len(), count);
     (runtime, ids)
 }
 
 fn build_chain_3d(count: usize) -> (Runtime, Vec<NodeID>) {
     let mut runtime = Runtime::new();
-    let root = NodeAPI::create::<Node3D>(&mut runtime);
-    let mut ids = Vec::with_capacity(count);
-    ids.push(root);
-    let mut parent = root;
-    for i in 1..count {
-        let id = NodeAPI::create::<Node3D>(&mut runtime);
-        assert!(NodeAPI::reparent(&mut runtime, parent, id));
-        let _ = NodeAPI::with_base_node_mut::<Node3D, _, _>(&mut runtime, id, |node| {
+    let specs: Vec<_> = (0..count)
+        .map(|i| {
+            let mut node = Node3D::new();
             node.transform = Transform3D::new(
                 Vector3::new((i % 17) as f32 * 0.25, (i % 11) as f32 * 0.5, 0.5),
                 node.transform.rotation,
                 Vector3::ONE,
             );
-        });
-        ids.push(id);
-        parent = id;
-    }
+            NodeSpec::new(node).parent(i.checked_sub(1))
+        })
+        .collect();
+    let ids = NodeAPI::create_nodes(&mut runtime, &specs, NodeID::nil());
+    assert_eq!(ids.len(), count);
     (runtime, ids)
 }
 
@@ -181,6 +173,25 @@ fn bench_node_api(c: &mut Criterion) {
         );
 
         group.bench_with_input(
+            BenchmarkId::new("create_nodes_3d_batch_chain", count),
+            &count,
+            |b, &count| {
+                let requests: Vec<_> = (0..count)
+                    .map(|index| NodeSpec::new(Node3D::new()).parent(index.checked_sub(1)))
+                    .collect();
+                b.iter_batched(
+                    Runtime::new,
+                    |mut runtime| {
+                        let ids = NodeAPI::create_nodes(&mut runtime, &requests, NodeID::nil());
+                        assert_eq!(ids.len(), count);
+                        black_box(ids)
+                    },
+                    criterion::BatchSize::LargeInput,
+                )
+            },
+        );
+
+        group.bench_with_input(
             BenchmarkId::new("with_base_node_read", count),
             &count,
             |b, &count| {
@@ -291,6 +302,28 @@ fn bench_node_api(c: &mut Criterion) {
             criterion::BatchSize::LargeInput,
         )
     });
+
+    for count in [1_000usize, 10_000] {
+        group.bench_with_input(
+            BenchmarkId::new("create_nodes_3d_incremental_chain", count),
+            &count,
+            |b, &count| {
+                b.iter_batched(
+                    Runtime::new,
+                    |mut runtime| {
+                        let mut parent = NodeAPI::create::<Node3D>(&mut runtime);
+                        for _ in 1..count {
+                            let child = NodeAPI::create::<Node3D>(&mut runtime);
+                            assert!(NodeAPI::reparent(&mut runtime, parent, child));
+                            parent = child;
+                        }
+                        black_box((runtime, parent))
+                    },
+                    criterion::BatchSize::LargeInput,
+                )
+            },
+        );
+    }
 
     group.finish();
 }

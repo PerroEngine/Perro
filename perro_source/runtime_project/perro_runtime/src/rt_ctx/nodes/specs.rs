@@ -41,6 +41,7 @@ impl Runtime {
             return Vec::new();
         }
 
+        let topology_was_trusted = self.nodes.topology_trusted();
         let mut child_counts = vec![0usize; specs.len()];
         let mut root_count = 0usize;
         for spec in &specs {
@@ -75,7 +76,10 @@ impl Runtime {
             ) {
                 self.note_camera_3d_activated(id);
             }
-            self.mark_needs_rerender(id);
+            // Defer world-owner resolution until extraction, after the full
+            // batch topology exists. Dirty-world collection coalesces that to
+            // one membership rebuild and propagates through nested owners.
+            self.dirty.mark_rerender(id);
             self.mark_created_ui_node_dirty(id);
             if let Some(script) = spec.script {
                 let Some(vars) = resolve_script_vars(&script, &ids) else {
@@ -99,6 +103,9 @@ impl Runtime {
 
         if !parent_id.is_nil() {
             self.attach_created_children(parent_id, &root_ids);
+        }
+        if topology_was_trusted {
+            self.nodes.mark_topology_trusted();
         }
 
         // No packed-children rebuild here: `NodeArena::children` falls back to

@@ -992,6 +992,9 @@ impl Gpu {
                         );
                     }
                     stream_2d.render_pass(&mut encoder, render_view, None, particle_rect_count);
+                    timing.stream_draw_calls_2d = timing
+                        .stream_draw_calls_2d
+                        .saturating_add(stream_2d.draw_call_count(particle_rect_count));
                 }
             } else if let CameraStreamSourceState::ThreeD(camera) = &stream.source {
                 stream_post_camera = Some(camera.clone());
@@ -1078,6 +1081,9 @@ impl Gpu {
                             static_shader_lookup,
                         },
                     );
+                    timing.stream_full_rebuilds_3d = timing
+                        .stream_full_rebuilds_3d
+                        .saturating_add(stream_3d.prepare_step_timing().full_rebuilds);
                     stream_3d.render_pass(
                         &self.queue,
                         &mut encoder,
@@ -1172,7 +1178,12 @@ impl Gpu {
                             },
                         );
                         water.encode(&mut encoder);
-                        water.capture_scene_color(&self.device, &mut encoder, render_view);
+                        water.capture_scene_color(
+                            &self.device,
+                            &mut encoder,
+                            render_view,
+                            post_view_key,
+                        );
                         // Streams render at 1x: water depth-tests against a
                         // scene-depth copy (the scene depth target aliases the
                         // sampled prepass texture).
@@ -1316,6 +1327,9 @@ impl Gpu {
                             );
                         }
                         stream_2d.render_pass(&mut encoder, render_view, None, particle_rect_count);
+                        timing.stream_draw_calls_2d = timing
+                            .stream_draw_calls_2d
+                            .saturating_add(stream_2d.draw_call_count(particle_rect_count));
                     }
                 }
             }
@@ -1585,7 +1599,12 @@ impl Gpu {
                         // target aliases the prepass texture.
                         three_d.water_depth_attachment(&self.device, &mut encoder)
                     };
-                    water.capture_scene_color(&self.device, &mut encoder, color_view);
+                    water.capture_scene_color(
+                        &self.device,
+                        &mut encoder,
+                        color_view,
+                        self.post_view_generation,
+                    );
                     water.render_3d(
                         &mut encoder,
                         color_view,

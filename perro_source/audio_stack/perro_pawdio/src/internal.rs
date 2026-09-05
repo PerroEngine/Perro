@@ -203,6 +203,8 @@ pub(crate) struct AudioState {
     pub(crate) soundfont_midi_mixer_index: HashMap<SoundFontMidiMixerKey, usize>,
     pub(crate) soundfont_midi_notes: HashMap<u64, SoundFontMidiMixerKey>,
     pub(crate) cache: HashMap<u64, CachedAudioAsset>,
+    // Only in-flight misses; drop invalidates the token without retaining tombstones.
+    pub(crate) pending_audio_loads: HashMap<Arc<str>, (u64, usize)>,
     pub(crate) soundfonts: HashMap<perro_ids::SoundFontID, CachedSoundFont>,
     pub(crate) midi_files: HashMap<u64, CachedMidiFile>,
     pub(crate) cache_bytes: usize,
@@ -492,6 +494,9 @@ impl SourceLoadStats {
 }
 
 pub(crate) enum AudioCommand {
+    Flush {
+        reply: Sender<()>,
+    },
     Load {
         source: Arc<str>,
         reserved: bool,
@@ -654,6 +659,7 @@ impl AudioState {
             cache_bytes: 0,
             soundfont_bytes: 0,
             next_cache_epoch: 1,
+            pending_audio_loads: HashMap::new(),
             last_evict_sweep: Instant::now(),
             volumes_dirty: false,
             speeds_dirty: false,

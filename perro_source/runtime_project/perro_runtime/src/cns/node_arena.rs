@@ -91,6 +91,25 @@ pub struct NodeArena {
     /// systems that care only whether node set/topology chg (audio scene-flag
     /// rescan). Structural bumps also move mutation_revision + physics_revision.
     structural_revision: u64,
+    /// Live nodes that split world membership. Kept exact across insert,
+    /// remove, clear, and tracked node-data replacement so the common arena
+    /// with no sub-views can skip membership-cache rebuilds in O(1).
+    sub_view_count: usize,
+    /// Live UI-family nodes. Gates reparent UI ancestor work for pure 2D/3D
+    /// trees.
+    ui_node_count: usize,
+    /// True while topology comes only from checked runtime operations.
+    /// Direct linked inserts or tracked parent/children edits clear it, which
+    /// makes reparent retain its full corrupt-chain validation path.
+    topology_trusted: bool,
+}
+
+#[inline]
+fn is_sub_view_type(node_type: NodeType) -> bool {
+    matches!(
+        node_type,
+        NodeType::SubView2D | NodeType::SubView3D | NodeType::UiSubView
+    )
 }
 
 /// Tracked mutable node access from [`NodeArena::get_mut`].
@@ -179,6 +198,31 @@ impl Drop for NodeMut<'_> {
 
         self.arena.parents[self.index] = new_parent;
         self.arena.node_types[self.index] = new_node_type;
+        if self.old_node_type != new_node_type {
+            match (
+                is_sub_view_type(self.old_node_type),
+                is_sub_view_type(new_node_type),
+            ) {
+                (false, true) => self.arena.sub_view_count += 1,
+                (true, false) => {
+                    self.arena.sub_view_count = self.arena.sub_view_count.saturating_sub(1)
+                }
+                _ => {}
+            }
+            match (
+                self.old_node_type.is_a(NodeType::UiNode),
+                new_node_type.is_a(NodeType::UiNode),
+            ) {
+                (false, true) => self.arena.ui_node_count += 1,
+                (true, false) => {
+                    self.arena.ui_node_count = self.arena.ui_node_count.saturating_sub(1)
+                }
+                _ => {}
+            }
+        }
+        if self.old_parent != new_parent || children_changed {
+            self.arena.topology_trusted = false;
+        }
         if self.old_parent != new_parent || self.old_node_type != new_node_type || children_changed
         {
             self.arena.bump_node_structural(self.index);
@@ -223,6 +267,9 @@ impl NodeArena {
             mutation_revision: 0,
             physics_revision: 0,
             structural_revision: 0,
+            sub_view_count: 0,
+            ui_node_count: 0,
+            topology_trusted: true,
         }
     }
 
@@ -257,6 +304,9 @@ impl NodeArena {
             mutation_revision: 0,
             physics_revision: 0,
             structural_revision: 0,
+            sub_view_count: 0,
+            ui_node_count: 0,
+            topology_trusted: true,
         }
     }
 
@@ -287,6 +337,28 @@ impl NodeArena {
     #[inline]
     pub fn structural_revision(&self) -> u64 {
         self.structural_revision
+    }
+
+    /// Whether any live node can own a non-main render world.
+    #[inline]
+    pub(crate) fn has_sub_views(&self) -> bool {
+        self.sub_view_count != 0
+    }
+
+    #[inline]
+    pub(crate) fn has_ui_nodes(&self) -> bool {
+        self.ui_node_count != 0
+    }
+
+    #[inline]
+    pub(crate) fn topology_trusted(&self) -> bool {
+        self.topology_trusted
+    }
+
+    /// Restore trust after an atomically validated bulk build.
+    #[inline]
+    pub(crate) fn mark_topology_trusted(&mut self) {
+        self.topology_trusted = true;
     }
 
     #[inline]
@@ -366,7 +438,16 @@ impl NodeArena {
         let name_hash = string_to_u64(node.get_name());
         let name_empty = node.get_name().is_empty();
         let node_type = node.node_type();
+        if is_sub_view_type(node_type) {
+            self.sub_view_count += 1;
+        }
+        if node_type.is_a(NodeType::UiNode) {
+            self.ui_node_count += 1;
+        }
         let parent = node.parent;
+        if !parent.is_nil() || !node.children.is_empty() {
+            self.topology_trusted = false;
+        }
         // Reuse a previously freed slot in O(1).
         let id = if let Some(index) = self.free_indices.pop() {
             self.nodes[index] = Some(node);
@@ -496,7 +577,14 @@ impl NodeArena {
         self.bump_node_structural(index);
         self.generations[index] = self.generations[index].wrapping_add(1);
         let removed = self.nodes[index].take();
+        self.topology_trusted = false;
         if let Some(node) = &removed {
+            if is_sub_view_type(node.node_type()) {
+                self.sub_view_count = self.sub_view_count.saturating_sub(1);
+            }
+            if node.node_type().is_a(NodeType::UiNode) {
+                self.ui_node_count = self.ui_node_count.saturating_sub(1);
+            }
             self.active_len = self.active_len.saturating_sub(1);
             self.parents[index] = NodeID::nil();
             self.free_indices.push(index);
@@ -659,6 +747,7 @@ impl NodeArena {
         };
         node.parent = parent;
         self.parents[index] = parent;
+        self.topology_trusted = false;
         self.bump_node_structural(index);
         true
     }
@@ -673,6 +762,7 @@ impl NodeArena {
             return false;
         };
         node.children.push(child);
+        self.topology_trusted = false;
         self.bump_node_structural(index);
         true
     }
@@ -687,6 +777,7 @@ impl NodeArena {
             return false;
         };
         node.children.retain(|&c| c != child);
+        self.topology_trusted = false;
         self.bump_node_structural(index);
         true
     }
@@ -705,6 +796,7 @@ impl NodeArena {
         };
         node.children.reserve_exact(children.len());
         node.children.extend_from_slice(children);
+        self.topology_trusted = false;
         self.bump_node_structural(index);
         true
     }
@@ -757,6 +849,9 @@ impl NodeArena {
         self.name_index.clear();
         self.tag_index.clear();
         self.active_len = 0;
+        self.sub_view_count = 0;
+        self.ui_node_count = 0;
+        self.topology_trusted = true;
     }
 
     /// Return the number of live nodes.

@@ -19,11 +19,13 @@ fn bench_timer_hotpaths(c: &mut Criterion) {
     let mut idle = c.benchmark_group("timers_idle_tick");
     for count in [1_000usize, 10_000, 100_000] {
         let mut runtime = Runtime::new();
-        fill(&mut runtime, count, Duration::from_secs(60));
+        // Keep timers live through warmup + every sample, even at millions of ticks/sec.
+        fill(&mut runtime, count, Duration::MAX);
         idle.throughput(Throughput::Elements(count as u64));
         idle.bench_with_input(BenchmarkId::from_parameter(count), &count, |b, _| {
             b.iter(|| black_box(runtime.bench_timer_advance(1.0 / 60.0)))
         });
+        assert_eq!(runtime.bench_timer_counts(), (count, count, 0));
     }
     idle.finish();
 

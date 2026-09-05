@@ -73,6 +73,20 @@ fn huge_csv_bench(c: &mut Criterion) {
         })
     });
 
+    for limit in [0usize, 32] {
+        let query = CSVQuery::new(csv).limit(limit);
+        assert_eq!(query.run().len(), limit);
+        c.bench_function(&format!("huge_csv_query_unsorted_limit/{limit}"), |b| {
+            b.iter(|| black_box(query.run()))
+        });
+    }
+
+    let query = CSVQuery::new(csv).where_ge("power", 200.0).limit(32);
+    assert_eq!(query.run().len(), 32);
+    c.bench_function("huge_csv_query_numeric_filter_limit/32", |b| {
+        b.iter(|| black_box(query.run()))
+    });
+
     c.bench_function("huge_csv_query_filter_sort_limit", |b| {
         b.iter(|| {
             let result = CSVQuery::new(csv)

@@ -507,8 +507,7 @@ impl Runtime {
     /// True when the arena holds >=1 SubView2D/3D / UiSubView node. Scenes w/o
     /// sub-views (the common case) skip the owner lookup on every dispatch.
     fn has_sub_views(&self) -> bool {
-        self.refresh_world_membership();
-        self.world_membership.borrow().sub_view_count > 0
+        self.nodes.has_sub_views()
     }
 
     pub(crate) fn sub_view_ancestor(&self, node: NodeID) -> Option<NodeID> {
@@ -684,7 +683,7 @@ impl Runtime {
 mod world_membership_tests {
     use super::*;
     use perro_nodes::{Node3D, SubView3D};
-    use perro_runtime_api::sub_apis::NodeAPI;
+    use perro_runtime_api::sub_apis::{NodeAPI, NodeSpec};
 
     #[test]
     fn nearest_sub_view_owner_tracks_nested_reparent() {
@@ -735,5 +734,55 @@ mod world_membership_tests {
         let mut local = Vec::new();
         runtime.fill_world_members(view, &mut local);
         assert_eq!(local.len(), children.len());
+    }
+
+    #[test]
+    fn flat_creates_do_not_rebuild_world_membership() {
+        let mut runtime = Runtime::new();
+        assert_eq!(runtime.node_world(NodeID::nil()), None);
+        runtime.refresh_world_membership();
+        let cached_revision = runtime.world_membership.borrow().revision;
+
+        for _ in 0..1_000 {
+            let _ = NodeAPI::create::<Node3D>(&mut runtime);
+        }
+
+        assert_eq!(runtime.world_membership.borrow().revision, cached_revision);
+        assert!(!runtime.nodes.has_sub_views());
+        runtime.refresh_world_membership();
+        assert_eq!(
+            runtime.world_membership.borrow().revision,
+            runtime.nodes.structural_revision()
+        );
+    }
+
+    #[test]
+    fn sub_view_presence_tracks_remove_and_slot_reuse() {
+        let mut runtime = Runtime::new();
+        let view = NodeAPI::create::<SubView3D>(&mut runtime);
+        assert!(runtime.nodes.has_sub_views());
+        assert!(NodeAPI::remove_node(&mut runtime, view));
+        assert!(!runtime.nodes.has_sub_views());
+
+        let _ = NodeAPI::create::<Node3D>(&mut runtime);
+        assert!(!runtime.nodes.has_sub_views());
+    }
+
+    #[test]
+    fn batch_build_preserves_nested_sub_view_ownership() {
+        let mut runtime = Runtime::new();
+        let specs = [
+            NodeSpec::new(SubView3D::default()),
+            NodeSpec::new(SubView3D::default()).parent(Some(0)),
+            NodeSpec::new(Node3D::new()).parent(Some(1)),
+        ];
+        let ids = NodeAPI::create_nodes(&mut runtime, &specs, NodeID::nil());
+
+        assert_eq!(runtime.node_world(ids[0]), Some(NodeID::nil()));
+        assert_eq!(runtime.node_world(ids[1]), Some(ids[0]));
+        assert_eq!(runtime.node_world(ids[2]), Some(ids[1]));
+        assert!(runtime.dirty.is_node_dirty(ids[0]));
+        assert!(runtime.dirty.is_node_dirty(ids[1]));
+        assert!(runtime.dirty.is_node_dirty(ids[2]));
     }
 }

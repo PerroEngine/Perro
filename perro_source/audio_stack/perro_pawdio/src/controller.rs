@@ -164,6 +164,10 @@ fn process_audio_command(
     loaded: &Mutex<AudioLoadedState>,
 ) {
     match command {
+        AudioCommand::Flush { reply } => {
+            player.flush_pending_refreshes();
+            let _ = reply.send(());
+        }
         AudioCommand::Load { source, reserved } => {
             let success = player.load_source(&source, reserved).is_ok();
             set_source_loaded(loaded, &source, success);
@@ -331,6 +335,16 @@ impl AudioController {
             TrySendError::Full(_) => AudioEnqueueError::Full,
             TrySendError::Disconnected(_) => AudioEnqueueError::Disconnected,
         })
+    }
+
+    /// Wait for all commands submitted before this call to finish on the worker.
+    /// Blocks on queue capacity and the worker; use for loading/tests, not frame hot paths.
+    pub fn flush(&self) -> AudioEnqueueResult {
+        let (reply, done) = crossbeam_channel::bounded(1);
+        self.tx
+            .send(AudioCommand::Flush { reply })
+            .map_err(|_| AudioEnqueueError::Disconnected)?;
+        done.recv().map_err(|_| AudioEnqueueError::Disconnected)
     }
 
     fn intern_source(&self, source: &str) -> Arc<str> {
@@ -958,6 +972,30 @@ fn audio_disabled_by_env() -> bool {
 #[cfg(test)]
 mod tests {
     use super::{AudioController, AudioEnqueueError};
+
+    #[test]
+    fn flush_waits_for_queued_commands_and_reports_disconnect() {
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        let controller = AudioController::from_test_sender(tx);
+        controller
+            .enqueue_stop_all()
+            .expect("test setup/result must succeed");
+        let worker = std::thread::spawn(move || {
+            assert!(matches!(
+                rx.recv().expect("test setup/result must succeed"),
+                crate::internal::AudioCommand::StopAll
+            ));
+            let crate::internal::AudioCommand::Flush { reply } =
+                rx.recv().expect("test setup/result must succeed")
+            else {
+                panic!("expected flush after stop");
+            };
+            reply.send(()).expect("test setup/result must succeed");
+        });
+        assert_eq!(controller.flush(), Ok(()));
+        worker.join().expect("test setup/result must succeed");
+        assert_eq!(controller.flush(), Err(AudioEnqueueError::Disconnected));
+    }
 
     #[test]
     fn enqueue_reports_full_bounded_queue() {

@@ -875,7 +875,11 @@ mod tests {
                 label: Some("perro_water_test_render_encoder"),
             });
             water_gpu.encode(&mut encoder);
-            water_gpu.capture_scene_color(&device, &mut encoder, &color_view);
+            water_gpu.capture_scene_color(&device, &mut encoder, &color_view, 1);
+            water_gpu.capture_scene_color(&device, &mut encoder, &color_view, 1);
+            assert_eq!(water_gpu.scene_color_capture_bind_group_creations, 1);
+            water_gpu.capture_scene_color(&device, &mut encoder, &color_view, 2);
+            assert_eq!(water_gpu.scene_color_capture_bind_group_creations, 2);
             water_gpu.render_3d(
                 &mut encoder,
                 &color_view,
@@ -890,6 +894,10 @@ mod tests {
                 validation_error.is_none(),
                 "water 3D / splash passes failed validation: {validation_error:?}"
             );
+            for _ in 0..WATER_SCENE_COLOR_IDLE_RELEASE_FRAMES {
+                water_gpu.note_scene_color_idle(&device);
+            }
+            assert!(water_gpu.scene_color_capture_bind_group.is_none());
         });
     }
 

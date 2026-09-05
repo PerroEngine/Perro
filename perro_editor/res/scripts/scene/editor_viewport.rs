@@ -5,7 +5,7 @@ use crate::scripts::assets::editor_assets::*;
 use crate::scripts::assets::editor_file_watch as editor_file_watch;
 use crate::scripts::assets::editor_files as editor_files;
 use crate::scripts::editor::main::{
-    EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS, MAX_NODES,
+    EditorState, MAX_FILES, MAX_NODE_PICKER_ROWS, MAX_NODES,
     MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, begin_ui_drag_doc, cached_scene_doc,
     cached_scene_doc_shared, cached_scene_node, capture_active_scene_session, set_state_scene_doc,
     set_state_scene_doc_loaded, take_ui_drag_doc, with_ui_drag_doc_mut,
@@ -619,9 +619,7 @@ pub fn poll_project_diffs<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
         state.file_watch_frame = state.file_watch_frame.wrapping_add(1);
         let root = PathBuf::from(&state.project_root);
         let Some(scan) = editor_file_watch::take_project_scan(root.as_path()) else {
-            if state.file_watch_frame % FILE_WATCH_INTERVAL_FRAMES == 0 {
-                editor_file_watch::request_project_scan(root, state.project_file_sigs.clone());
-            }
+            editor_file_watch::request_project_scan(root, &state.project_file_sigs);
             return None;
         };
 
@@ -680,7 +678,7 @@ pub fn poll_project_diffs<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
     }
 
     if res_changed {
-        res_paths.sort_by_key(|path| editor_files::res_browser_sort_key(path));
+        res_paths.sort_by_cached_key(|path| editor_files::res_browser_sort_key(path));
         let scene_paths = res_paths
             .iter()
             .filter(|path| path.ends_with(".scn"))

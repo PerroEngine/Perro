@@ -81,6 +81,7 @@ impl BarkPlayer {
                 soundfont_midi_mixer_index: HashMap::new(),
                 soundfont_midi_notes: HashMap::new(),
                 cache: HashMap::new(),
+                pending_audio_loads: HashMap::new(),
                 soundfonts: HashMap::new(),
                 midi_files: HashMap::new(),
                 cache_bytes: 0,

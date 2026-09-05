@@ -59,6 +59,28 @@ fn prepare_fast_path_eligible(force_full_rebuild: bool, eligible: bool) -> bool 
     !force_full_rebuild && eligible
 }
 
+#[inline]
+fn camera_only_reuses_staging(
+    draws_unchanged: bool,
+    camera_changed: bool,
+    camera_dependent_staging: bool,
+) -> bool {
+    draws_unchanged && (!camera_changed || !camera_dependent_staging)
+}
+
+#[cfg(test)]
+mod camera_only_tests {
+    use super::camera_only_reuses_staging;
+
+    #[test]
+    fn camera_only_gate_preserves_view_dependent_restage() {
+        assert!(camera_only_reuses_staging(true, true, false));
+        assert!(!camera_only_reuses_staging(true, true, true));
+        assert!(camera_only_reuses_staging(true, false, true));
+        assert!(!camera_only_reuses_staging(false, true, false));
+    }
+}
+
 /// `bounds` describes draw `i`'s rows as `[bounds[i], bounds[i + 1])`, so it is
 /// usable only when it has one mark per draw plus the tail, is non-decreasing,
 /// and stays inside the staging vector it indexes. The tail may sit short of
@@ -465,8 +487,9 @@ impl Gpu3D {
             && stable_animation_ranges;
         let animation_changed = animation_changed && transform_only_changed;
         self.transform_only_kinds_scratch = transform_only_kinds;
-        let scene_changed = self.last_scene != Some(uniform) || !draws_unchanged;
-        if self.last_scene != Some(uniform) {
+        let camera_changed = self.last_scene != Some(uniform);
+        let scene_changed = camera_changed || !draws_unchanged;
+        if camera_changed {
             queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uniform));
             self.last_scene = Some(uniform);
         }
@@ -482,7 +505,11 @@ impl Gpu3D {
         self.last_proj_y_scale = projection_y_scale_from_projection(camera.projection);
         self.lod_ratio_scale = lod_ratio_scale(height, self.last_proj_y_scale);
 
-        if draws_unchanged && !scene_changed {
+        if camera_only_reuses_staging(
+            draws_unchanged,
+            camera_changed,
+            self.camera_dependent_staging,
+        ) {
             let frustum_cull_active = self.should_run_frustum_cull();
             let hiz_active = self.should_run_hiz_occlusion(frustum_cull_active);
             if frustum_cull_active {
@@ -996,6 +1023,7 @@ impl Gpu3D {
         self.frustum_cull_dynamic_staging.clear();
         self.indirect_staging.clear();
         let mut total_meshlets = 0usize;
+        let mut camera_dependent_staging = false;
         let frustum = extract_frustum_planes(view_proj);
         let Some(default_mesh) = mesh_arena.resolve_builtin_mesh_asset("__cube__") else {
             return;
@@ -1101,6 +1129,7 @@ impl Gpu3D {
                 draw.lod,
                 self.lod_ratio_scale,
             );
+            camera_dependent_staging |= mesh_asset.lods.len() > 1;
             surface_entries.clear();
             match draw.kind {
                 Draw3DKind::DebugPointCube => {
@@ -1242,6 +1271,7 @@ impl Gpu3D {
                 });
                 for entry in surface_entries.iter() {
                     let material: &Material3D = &entry.material;
+                    camera_dependent_staging |= material.alpha_mode() == 2;
                     self.ensure_standard_material_texture_slots(
                         device,
                         queue,
@@ -1584,6 +1614,7 @@ impl Gpu3D {
                         // standard_params() here cloned the vertex_modifiers
                         // Cow per surface per frame.
                         let material_alpha_mode = material.alpha_mode();
+                        camera_dependent_staging |= material_alpha_mode == 2;
                         let material_double_sided = material.double_sided();
                         let material_texture_slots = material.texture_slots();
                         self.ensure_standard_material_texture_slots(
@@ -1736,6 +1767,7 @@ impl Gpu3D {
                 // Flag/slot reads off the variant; building standard_params()
                 // here cloned the vertex_modifiers Cow per draw per frame.
                 let material_alpha_mode = material.alpha_mode();
+                camera_dependent_staging |= material_alpha_mode == 2;
                 let material_double_sided = material.double_sided();
                 let material_texture_slots = material.texture_slots();
                 self.ensure_standard_material_texture_slots(
@@ -2114,6 +2146,7 @@ impl Gpu3D {
                 order_index: self.draw_batches.len() as u32,
             });
         }
+        self.camera_dependent_staging = camera_dependent_staging;
         // Alpha batches must draw back-to-front by camera distance; their sort
         // key is order_index, so rewrite it from submission order to inverted
         // distance bits (monotonic for non-negative floats) before sorting.

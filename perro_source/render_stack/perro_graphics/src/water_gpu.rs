@@ -23,6 +23,11 @@ const WATER_3D_MAX_RENDER_RESOLUTION: u32 = 256;
 // never reads it).
 const WATER_SCENE_COLOR_IDLE_RELEASE_FRAMES: u32 = 120;
 
+#[inline]
+fn scene_color_capture_cache_hit(cached_key: Option<u64>, source_view_key: u64) -> bool {
+    cached_key == Some(source_view_key)
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct WaterGpu {
@@ -135,6 +140,10 @@ pub struct GpuWater {
     scene_color_size: [u32; 2],
     scene_color_idle_frames: u32,
     scene_color_blit: SceneColorBlit,
+    scene_color_capture_bind_group: Option<wgpu::BindGroup>,
+    scene_color_capture_view_key: u64,
+    #[cfg(test)]
+    scene_color_capture_bind_group_creations: u32,
     // Last scene depth view bound alongside scene color, retained so the idle
     // release can rebuild the depth bind group without a caller-provided view.
     scene_depth_view: wgpu::TextureView,
@@ -646,6 +655,10 @@ impl GpuWater {
             scene_color_size: [1, 1],
             scene_color_idle_frames: 0,
             scene_color_blit,
+            scene_color_capture_bind_group: None,
+            scene_color_capture_view_key: 0,
+            #[cfg(test)]
+            scene_color_capture_bind_group_creations: 0,
             scene_depth_view: scene_depth_view.clone(),
             sample_count: sample_count.max(1),
             water_buffer,
@@ -756,6 +769,9 @@ impl GpuWater {
             return;
         }
         self.scene_color_idle_frames = 0;
+        // The bind group owns its sampled source view. Release it with the
+        // idle copy target so a resized main/stream target is not kept alive.
+        self.scene_color_capture_bind_group = None;
         (self.scene_color_texture, self.scene_color_view) =
             create_scene_color_texture(device, self.scene_color_format, 1, 1);
         self.scene_color_size = [1, 1];
@@ -764,10 +780,11 @@ impl GpuWater {
     }
 
     pub fn capture_scene_color(
-        &self,
+        &mut self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         source_view: &wgpu::TextureView,
+        source_view_key: u64,
     ) {
         // Only the 3D water surface pipeline samples scene color (refraction /
         // SSR); skip the capture when it draws nothing this frame.
@@ -777,20 +794,37 @@ impl GpuWater {
         if self.sample_count == 1 {
             // Downsample blit into the half-res copy target: one linear-tap
             // fullscreen triangle instead of a full-res 1:1 texture copy.
-            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("perro_water_scene_color_blit_bg"),
-                layout: &self.scene_color_blit.bgl,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(source_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&self.scene_color_blit.sampler),
-                    },
-                ],
-            });
+            if !scene_color_capture_cache_hit(
+                self.scene_color_capture_bind_group
+                    .as_ref()
+                    .map(|_| self.scene_color_capture_view_key),
+                source_view_key,
+            ) {
+                self.scene_color_capture_bind_group =
+                    Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some("perro_water_scene_color_blit_bg"),
+                        layout: &self.scene_color_blit.bgl,
+                        entries: &[
+                            wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: wgpu::BindingResource::TextureView(source_view),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 1,
+                                resource: wgpu::BindingResource::Sampler(
+                                    &self.scene_color_blit.sampler,
+                                ),
+                            },
+                        ],
+                    }));
+                self.scene_color_capture_view_key = source_view_key;
+                #[cfg(test)]
+                {
+                    self.scene_color_capture_bind_group_creations = self
+                        .scene_color_capture_bind_group_creations
+                        .saturating_add(1);
+                }
+            }
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("perro_water_scene_color_downsample"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -808,7 +842,13 @@ impl GpuWater {
                 multiview_mask: None,
             });
             pass.set_pipeline(&self.scene_color_blit.pipeline);
-            pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_bind_group(
+                0,
+                self.scene_color_capture_bind_group
+                    .as_ref()
+                    .expect("scene color capture bind group"),
+                &[],
+            );
             pass.draw(0..3, 0..1);
             return;
         }
@@ -863,6 +903,9 @@ impl GpuWater {
             &self.depth_bgl,
         );
         self.sample_count = sample_count.max(1);
+        // MSAA capture does not use the blit bind group. Drop its source view;
+        // a later 1x capture rebuilds against the caller's current generation.
+        self.scene_color_capture_bind_group = None;
     }
 
     pub fn prepare(

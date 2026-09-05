@@ -25,6 +25,7 @@ use perro_api::scene::{
     SceneDoc, SceneFieldName, SceneKey, SceneNodeData, SceneNodeEntry, SceneValue, SceneValueKey,
 };
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -286,21 +287,24 @@ pub fn scan_res_paths(root: &Path) -> Result<Vec<String>, String> {
             Some(res_path)
         })
         .collect::<Vec<_>>();
+    add_parent_folders(&mut out);
+    out.sort_by_cached_key(|path| editor_files::res_browser_sort_key(path));
+    Ok(out)
+}
+
+fn add_parent_folders(out: &mut Vec<String>) {
+    let mut known = out.iter().cloned().collect::<HashSet<_>>();
     let mut folders = Vec::new();
     for path in out.iter() {
         let mut cursor = parent_res_folder(path);
         while !cursor.is_empty() {
-            if !folders.iter().any(|item| item == &cursor)
-                && !out.iter().any(|item| item == &cursor)
-            {
+            if known.insert(cursor.clone()) {
                 folders.push(cursor.clone());
             }
             cursor = parent_res_folder(&cursor);
         }
     }
     out.extend(folders);
-    out.sort_by_key(|path| editor_files::res_browser_sort_key(path));
-    Ok(out)
 }
 
 pub fn refresh_project_assets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
@@ -2091,5 +2095,31 @@ mod visible_tab_tests {
         assert_eq!(visible_tab_page_target(8, 5, 1), Some(1));
         assert_eq!(visible_tab_page_target(5, 3, 1), Some(4));
         assert_eq!(visible_tab_page_target(5, 4, -1), Some(0));
+    }
+
+    #[test]
+    fn parent_folder_fill_dedups_existing_and_shared_paths() {
+        let mut paths = vec![
+            "res://art/".to_string(),
+            "res://art/ui/icons/play.png".to_string(),
+            "res://art/ui/icons/stop.png".to_string(),
+            "res://code/main.rs".to_string(),
+        ];
+        add_parent_folders(&mut paths);
+        paths.sort();
+
+        assert_eq!(
+            paths,
+            vec![
+                "res://",
+                "res://art/",
+                "res://art/ui/",
+                "res://art/ui/icons/",
+                "res://art/ui/icons/play.png",
+                "res://art/ui/icons/stop.png",
+                "res://code/",
+                "res://code/main.rs",
+            ]
+        );
     }
 }
