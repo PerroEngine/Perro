@@ -29,6 +29,80 @@ use perro_structs::{
 
 use super::*;
 
+#[test]
+fn fixed_array_decode_checks_shape_and_drops_partial_values() {
+    let text = Arc::<str>::from("keep");
+    let invalid = Variant::Array(vec![
+        Variant::from(Arc::clone(&text)),
+        Variant::from(Arc::clone(&text)),
+        Variant::Null,
+    ]);
+    assert!(<[Arc<str>; 3]>::from_variant(&invalid).is_none());
+    assert_eq!(Arc::strong_count(&text), 3);
+    assert!(<[Arc<str>; 3]>::from_owned_variant(invalid).is_none());
+    assert_eq!(Arc::strong_count(&text), 1);
+
+    let empty = Variant::Array(vec![]);
+    assert_eq!(<[i32; 0]>::from_variant(&empty), Some([]));
+    assert_eq!(<[i32; 0]>::from_owned_variant(empty), Some([]));
+    for len in [0, 2, 4] {
+        let value = Variant::Array(vec![Variant::from(7_i32); len]);
+        assert!(<[i32; 3]>::from_variant(&value).is_none());
+        assert!(<[i32; 3]>::from_owned_variant(value).is_none());
+    }
+    // Exceed the scratch stack budget to exercise the large-array fallback.
+    let value = [7_i32; 1024].to_variant();
+    assert_eq!(<[i32; 1024]>::from_variant(&value), Some([7; 1024]));
+    assert_eq!(<[i32; 1024]>::from_owned_variant(value), Some([7; 1024]));
+}
+
+#[test]
+fn fixed_array_scene_decode_stops_at_first_error() {
+    struct Resolver(usize);
+    impl SceneVariantResolver for Resolver {
+        fn resolve_asset(&mut self, _: SceneAssetKind, _: &str) -> Option<Variant> {
+            self.0 += 1;
+            (self.0 != 2).then(|| TextureID::from_u64(1).into())
+        }
+    }
+    let value = Variant::Array(vec![Variant::from("res://texture.png"); 3]);
+    let mut resolver = Resolver(0);
+    assert!(<[TextureID; 3]>::from_scene_variant(&value, &mut resolver).is_none());
+    assert_eq!(resolver.0, 2);
+}
+
+#[test]
+fn unique_shared_wrappers_move_variant_payloads() {
+    let items = vec![Variant::from(1_i32), Variant::from(2_i32)];
+    let ptr = items.as_ptr();
+    let owner = Arc::new(Variant::Array(items));
+    let weak = Arc::downgrade(&owner);
+    let encoded = variant!(owner);
+    assert_eq!(encoded.as_array().expect("array").as_ptr(), ptr);
+    assert!(weak.upgrade().is_none());
+
+    let items = vec![Variant::from(3_i32), Variant::from(4_i32)];
+    let ptr = items.as_ptr();
+    let owner = Rc::new(Variant::Array(items));
+    let weak = Rc::downgrade(&owner);
+    let encoded = owner.into_variant();
+    assert_eq!(encoded.as_array().expect("array").as_ptr(), ptr);
+    assert!(weak.upgrade().is_none());
+}
+
+#[test]
+fn shared_wrappers_preserve_other_owners() {
+    let expected = Variant::Array(vec![Variant::from(7_i32)]);
+    let arc = Arc::new(expected.clone());
+    let rc = Rc::new(expected.clone());
+    let args = params![Arc::clone(&arc), Rc::clone(&rc)];
+    assert_eq!(args, &[expected.clone(), expected.clone()]);
+    assert_eq!(*arc, expected);
+    assert_eq!(*rc, expected);
+    assert_eq!(Arc::strong_count(&arc), 1);
+    assert_eq!(Rc::strong_count(&rc), 1);
+}
+
 struct TestSceneResolver;
 
 impl SceneVariantResolver for TestSceneResolver {

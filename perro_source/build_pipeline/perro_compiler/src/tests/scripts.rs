@@ -1,6 +1,117 @@
 mod scripts {
     use super::*;
 
+    #[test]
+    #[ignore = "spawns nested cargo test for generated script glue"]
+    fn generated_variant_hotpaths_execute() {
+        let source = r#"
+use perro_api::prelude::*;
+
+#[derive(Variant)]
+pub struct Payload {
+    pub data: Variant,
+}
+
+#[State]
+pub struct HotState {
+    #[default = Payload { data: Variant::Null }]
+    pub payload: Payload,
+    #[default = Variant::Null]
+    pub dynamic: Variant,
+}
+
+lifecycle!({});
+"#;
+        let generated = transpile_frontend_script(source, "all_variant_types.rs");
+        let tests = r#"
+#[cfg(test)]
+mod generated_tests {
+    use super::*;
+    use std::{collections::BTreeMap, sync::Arc};
+
+    fn set(state: &mut HotState, member: ScriptMemberID, value: Variant) {
+        <Script as ScriptBehavior<crate::RuntimeScriptApi>>::set_var(&Script, state, member, value);
+    }
+
+    #[test]
+    fn owned_array_set_moves_payload_and_object_patch_still_works() {
+        let mut state = HotState::default();
+        let items = vec![Variant::from(1_i32), Variant::from(2_i32)];
+        let ptr = items.as_ptr();
+        set(&mut state, var!("payload"), Variant::Array(vec![Variant::Array(items)]));
+        assert_eq!(state.payload.data.as_array().expect("array").as_ptr(), ptr);
+        let before = state.payload.data.clone();
+        set(&mut state, var!("payload"), Variant::Bool(false));
+        assert_eq!(state.payload.data, before);
+        set(&mut state, var!("payload"), Variant::Object(BTreeMap::from([
+            (Arc::from("data"), Variant::from(7_i32)),
+        ])));
+        assert_eq!(state.payload.data, Variant::from(7_i32));
+    }
+
+    #[test]
+    fn dynamic_nested_get_and_set_still_work() {
+        let mut state = HotState::default();
+        state.dynamic = Variant::Object(BTreeMap::from([
+            (Arc::from("leaf"), Variant::from(1_i32)),
+        ]));
+        set(&mut state, var!("dynamic.leaf"), Variant::from(8_i32));
+        let value = <Script as ScriptBehavior<crate::RuntimeScriptApi>>::get_var(
+            &Script, &state, var!("dynamic.leaf"),
+        );
+        assert_eq!(value, Variant::from(8_i32));
+    }
+
+    #[test]
+    #[should_panic(expected = "script state type mismatch")]
+    fn wrong_state_get_panics_safely() {
+        <Script as ScriptBehavior<crate::RuntimeScriptApi>>::get_var(&Script, &0_u8, var!("payload"));
+    }
+
+    #[test]
+    #[should_panic(expected = "script state type mismatch")]
+    fn wrong_state_set_panics_safely() {
+        <Script as ScriptBehavior<crate::RuntimeScriptApi>>::set_var(&Script, &mut 0_u8, var!("payload"), Variant::Null);
+    }
+}
+"#;
+        assert_generated_script_cargo(source, &format!("{generated}\n{tests}"), "test");
+    }
+
+    #[test]
+    fn generated_var_glue_moves_array_values_and_skips_leaf_walks() {
+        let source = r#"
+use perro_api::prelude::*;
+
+#[derive(Variant)]
+pub struct Payload {
+    pub data: Variant,
+}
+
+#[State]
+pub struct State {
+    pub count: i32,
+    pub label: String,
+    pub payload: Payload,
+    pub dynamic: Variant,
+}
+"#;
+        let generated = transpile_frontend_script(source, "hotpaths.rs");
+        assert!(generated.contains("if !matches!(&value, Variant::Object(_))"));
+        assert!(generated.contains("value.into_parse::<Payload>()"));
+        assert!(generated.contains("value.parse::<Payload>()"));
+        assert!(generated.contains("nested_vars::apply_nested_object"));
+        let walkers = generated
+            .split_once("fn __perro_get_nested_var")
+            .expect("nested helpers")
+            .1;
+        for field in ["count", "label"] {
+            assert!(!walkers.contains(&format!("let nested_root = perro_api::variant::DeriveVariant::to_variant(&state.{field});")));
+            assert!(!walkers.contains(&format!("let mut nested_root = perro_api::variant::DeriveVariant::to_variant(&state.{field});")));
+        }
+        assert!(generated.contains("let nested_root = perro_api::variant::DeriveVariant::to_variant(&state.dynamic);"));
+    }
+
 
     #[test]
     fn state_script_exports_ctor() {
@@ -101,8 +212,8 @@ mod scripts {
         assert!(!transpiled.contains("std::any::TypeId::of"));
         assert!(transpiled.contains("let state = __perro_state_ref(state)"));
         assert!(transpiled.contains("let state = __perro_state_mut(state)"));
-        assert!(transpiled.contains("perro_api::scripting::state_ref_unchecked::<NestedState>"));
-        assert!(transpiled.contains("perro_api::scripting::state_mut_unchecked::<NestedState>"));
+        assert!(transpiled.contains("state.downcast_ref::<NestedState>()"));
+        assert!(transpiled.contains("state.downcast_mut::<NestedState>()"));
         assert!(transpiled.contains("__perro_get_nested_var"));
         assert!(transpiled.contains("__perro_set_nested_var"));
         assert!(transpiled.contains("var!(\"person.name\")"));

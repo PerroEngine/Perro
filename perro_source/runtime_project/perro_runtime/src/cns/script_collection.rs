@@ -367,7 +367,8 @@ impl ScriptCollection {
         Some(f(state))
     }
 
-    /// Read concrete script state using scheduler snapshot keys.
+    /// Read concrete script state using an active callback's cached slot.
+    /// Re-resolve the full ID if a peer removal moves that slot.
     #[inline(always)]
     pub(crate) fn with_state_scheduled<T: 'static, V, F>(
         &self,
@@ -379,7 +380,9 @@ impl ScriptCollection {
         F: FnOnce(&T) -> V,
     {
         if self.ids.get(instance_index).copied() != Some(id) {
-            return None;
+            // A callback can remove a peer and move its own dense slot.
+            // Resolve the full ID again; a detached/stale ID still fails.
+            return self.with_state(id, f);
         }
         let instance = self.instances.get(instance_index)?;
         let state = checked_state_ref::<T>(instance.state_type, instance.state.as_ref())?;
@@ -398,7 +401,7 @@ impl ScriptCollection {
         Some(f(state))
     }
 
-    /// Mutably access concrete script state using scheduler snapshot keys.
+    /// Mutably access concrete script state using an active callback's cached slot.
     #[inline(always)]
     pub(crate) fn with_state_mut_scheduled<T: 'static, V, F>(
         &mut self,
@@ -410,7 +413,7 @@ impl ScriptCollection {
         F: FnOnce(&mut T) -> V,
     {
         if self.ids.get(instance_index).copied() != Some(id) {
-            return None;
+            return self.with_state_mut(id, f);
         }
         let instance = self.instances.get_mut(instance_index)?;
         let state = checked_state_mut::<T>(instance.state_type, instance.state.as_mut())?;

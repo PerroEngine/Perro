@@ -139,7 +139,7 @@ where
 {
     #[inline]
     fn from(v: Arc<T>) -> Self {
-        v.to_variant()
+        v.into_variant()
     }
 }
 
@@ -149,7 +149,7 @@ where
 {
     #[inline]
     fn from(v: Rc<T>) -> Self {
-        v.to_variant()
+        v.into_variant()
     }
 }
 

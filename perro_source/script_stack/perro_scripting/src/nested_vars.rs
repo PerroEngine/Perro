@@ -17,14 +17,30 @@ pub fn get_nested_by_hash(
     var: ScriptMemberID,
     field_names: &[&str],
 ) -> Option<Variant> {
+    if !has_members(&value, field_names) {
+        return None;
+    }
+    get_nested(&mut member_path(prefix), value, var, field_names)
+}
+
+fn get_nested(
+    path: &mut String,
+    value: Variant,
+    var: ScriptMemberID,
+    field_names: &[&str],
+) -> Option<Variant> {
     match value {
         Variant::Object(obj) => {
             for (key, child) in obj {
-                let full = join_member(prefix, key.as_ref());
-                if ScriptMemberID::from_string(full.as_str()) == var {
-                    return Some(child);
-                }
-                if let Some(found) = get_nested_by_hash(full.as_str(), child, var, &[]) {
+                let len = path.len();
+                push_member(path, key.as_ref());
+                let found = if ScriptMemberID::from_string(path) == var {
+                    Some(child)
+                } else {
+                    get_nested(path, child, var, &[])
+                };
+                path.truncate(len);
+                if let Some(found) = found {
                     return Some(found);
                 }
             }
@@ -35,11 +51,15 @@ pub fn get_nested_by_hash(
                 let Some(key) = field_names.get(idx) else {
                     continue;
                 };
-                let full = join_member(prefix, key);
-                if ScriptMemberID::from_string(full.as_str()) == var {
-                    return Some(child);
-                }
-                if let Some(found) = get_nested_by_hash(full.as_str(), child, var, &[]) {
+                let len = path.len();
+                push_member(path, key);
+                let found = if ScriptMemberID::from_string(path) == var {
+                    Some(child)
+                } else {
+                    get_nested(path, child, var, &[])
+                };
+                path.truncate(len);
+                if let Some(found) = found {
                     return Some(found);
                 }
             }
@@ -58,18 +78,27 @@ pub fn set_nested_by_hash(
     new_value: &mut Option<Variant>,
     field_names: &[&str],
 ) -> bool {
+    if new_value.is_none() || !has_members(value, field_names) {
+        return false;
+    }
+    set_nested(&mut member_path(prefix), value, var, new_value, field_names)
+}
+
+fn set_nested(
+    path: &mut String,
+    value: &mut Variant,
+    var: ScriptMemberID,
+    new_value: &mut Option<Variant>,
+    field_names: &[&str],
+) -> bool {
     match value {
         Variant::Object(obj) => {
             for (key, child) in obj {
-                let full = join_member(prefix, key.as_ref());
-                if ScriptMemberID::from_string(full.as_str()) == var {
-                    let Some(new_value) = new_value.take() else {
-                        return false;
-                    };
-                    *child = new_value;
-                    return true;
-                }
-                if set_nested_by_hash(full.as_str(), child, var, new_value, &[]) {
+                let len = path.len();
+                push_member(path, key.as_ref());
+                let changed = set_child(path, child, var, new_value);
+                path.truncate(len);
+                if changed {
                     return true;
                 }
             }
@@ -80,21 +109,34 @@ pub fn set_nested_by_hash(
                 let Some(key) = field_names.get(idx) else {
                     continue;
                 };
-                let full = join_member(prefix, key);
-                if ScriptMemberID::from_string(full.as_str()) == var {
-                    let Some(new_value) = new_value.take() else {
-                        return false;
-                    };
-                    *child = new_value;
-                    return true;
-                }
-                if set_nested_by_hash(full.as_str(), child, var, new_value, &[]) {
+                let len = path.len();
+                push_member(path, key);
+                let changed = set_child(path, child, var, new_value);
+                path.truncate(len);
+                if changed {
                     return true;
                 }
             }
             false
         }
         _ => false,
+    }
+}
+
+fn set_child(
+    path: &mut String,
+    child: &mut Variant,
+    var: ScriptMemberID,
+    new_value: &mut Option<Variant>,
+) -> bool {
+    if ScriptMemberID::from_string(path) == var {
+        let Some(new_value) = new_value.take() else {
+            return false;
+        };
+        *child = new_value;
+        true
+    } else {
+        set_nested(path, child, var, new_value, &[])
     }
 }
 
@@ -109,27 +151,41 @@ pub fn apply_nested_object(
     let Variant::Object(obj) = incoming else {
         return false;
     };
+    if obj.is_empty() || !has_members(target, field_names) {
+        return false;
+    }
     let mut changed = false;
+    let mut path = member_path(prefix);
     for (key, value) in obj {
-        let full = join_member(prefix, key.as_ref());
+        push_member(&mut path, key.as_ref());
+        let member = ScriptMemberID::from_string(&path);
+        path.truncate(prefix.len());
         let mut value = Some(value);
-        changed |= set_nested_by_hash(
-            prefix,
-            target,
-            ScriptMemberID::from_string(full.as_str()),
-            &mut value,
-            field_names,
-        );
+        changed |= set_nested(&mut path, target, member, &mut value, field_names);
     }
     changed
 }
 
-fn join_member(prefix: &str, key: &str) -> String {
-    if prefix.is_empty() {
-        key.to_string()
-    } else {
-        format!("{prefix}.{key}")
+fn has_members(value: &Variant, field_names: &[&str]) -> bool {
+    match value {
+        Variant::Object(obj) => !obj.is_empty(),
+        Variant::Array(items) => !items.is_empty() && !field_names.is_empty(),
+        _ => false,
     }
+}
+
+// One reusable buffer per traversal; sibling/deep paths share its capacity.
+fn member_path(prefix: &str) -> String {
+    let mut path = String::with_capacity(prefix.len() + 32);
+    path.push_str(prefix);
+    path
+}
+
+fn push_member(path: &mut String, key: &str) {
+    if !path.is_empty() {
+        path.push('.');
+    }
+    path.push_str(key);
 }
 
 #[cfg(test)]
@@ -205,5 +261,79 @@ mod tests {
         ));
         assert!(value.is_some());
         assert!(!apply_nested_object("leaf", &mut root, number(4), &[]));
+    }
+
+    #[test]
+    fn path_buffer_restores_siblings_and_preserves_unicode_and_dots() {
+        for prefix in ["", "root", "根.branch"] {
+            let mut root = object(&[
+                ("a", object(&[("deep", number(1))])),
+                ("z.葉", object(&[("value", number(2))])),
+            ]);
+            let path = if prefix.is_empty() {
+                "z.葉.value".to_string()
+            } else {
+                format!("{prefix}.z.葉.value")
+            };
+            let member = ScriptMemberID::from_string(&path);
+            assert_eq!(
+                get_nested_by_hash(prefix, root.clone(), member, &[]),
+                Some(number(2))
+            );
+            let mut replacement = Some(number(9));
+            assert!(set_nested_by_hash(
+                prefix,
+                &mut root,
+                member,
+                &mut replacement,
+                &[]
+            ));
+            assert!(replacement.is_none());
+            assert_eq!(
+                get_nested_by_hash(prefix, root.clone(), member, &[]),
+                Some(number(9))
+            );
+
+            assert!(apply_nested_object(
+                prefix,
+                &mut root,
+                object(&[("z.葉.value", number(5))]),
+                &[]
+            ));
+            assert_eq!(
+                get_nested_by_hash(prefix, root, member, &[]),
+                Some(number(5))
+            );
+        }
+    }
+
+    #[test]
+    fn array_path_buffer_restores_after_child_miss() {
+        let mut root = Variant::Array(vec![object(&[("x", number(1))]), number(2)]);
+        let names = &["first", "second"];
+        let member = ScriptMemberID::from_string("root.second");
+        assert_eq!(
+            get_nested_by_hash("root", root.clone(), member, names),
+            Some(number(2))
+        );
+        assert!(apply_nested_object(
+            "root",
+            &mut root,
+            object(&[("first.x", number(3)), ("second", number(4))]),
+            names
+        ));
+        assert_eq!(
+            get_nested_by_hash("root", root.clone(), member, names),
+            Some(number(4))
+        );
+        assert_eq!(
+            get_nested_by_hash(
+                "root",
+                root,
+                ScriptMemberID::from_string("root.first.x"),
+                names
+            ),
+            Some(number(3))
+        );
     }
 }

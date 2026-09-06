@@ -17,6 +17,8 @@
 
 `Variant` is the dynamic value type used by script vars, method params, method returns, signals, JSON/network helpers, and scene injected values.
 
+See [script + Variant perf audit](performance_audit.md) for access costs, codec changes + bench results.
+
 Use it when value type is only known at runtime.
 
 ## Mental Model

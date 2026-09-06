@@ -213,7 +213,10 @@ where
 
     #[inline]
     fn into_variant(self) -> Variant {
-        self.as_ref().to_variant()
+        match Arc::try_unwrap(self) {
+            Ok(value) => value.into_variant(),
+            Err(shared) => shared.as_ref().to_variant(),
+        }
     }
 }
 
@@ -245,7 +248,10 @@ where
 
     #[inline]
     fn into_variant(self) -> Variant {
-        self.as_ref().to_variant()
+        match Rc::try_unwrap(self) {
+            Ok(value) => value.into_variant(),
+            Err(shared) => shared.as_ref().to_variant(),
+        }
     }
 }
 

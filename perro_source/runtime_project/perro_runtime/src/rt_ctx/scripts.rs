@@ -729,6 +729,51 @@ mod active_script_stack_tests {
     }
 
     #[test]
+    fn active_state_access_survives_peer_swap_remove() {
+        let mut runtime = Runtime::new();
+        let peer = NodeID::new(1);
+        let active = NodeID::new(2);
+        for id in [peer, active] {
+            runtime
+                .scripts
+                .insert(id, Rc::new(ReplacementScript), Box::new(7_i32));
+        }
+        let index = runtime
+            .scripts
+            .instance_index_for_id(active)
+            .expect("active index");
+        runtime.push_active_script_with_context(
+            index,
+            active,
+            runtime.script_callback_context(),
+        );
+        assert!(runtime.remove_script_instance(peer));
+        assert_eq!(
+            runtime.with_state::<i32, _, _>(active, |value| *value),
+            Some(7)
+        );
+        assert_eq!(
+            runtime.with_state_mut::<i32, _, _>(active, |value| *value += 1),
+            Some(())
+        );
+        assert_eq!(
+            runtime.with_state::<i32, _, _>(active, |value| *value),
+            Some(8)
+        );
+        assert!(runtime.with_state::<String, _, _>(active, |_| ()).is_none());
+        assert!(runtime.with_state_mut::<String, _, _>(active, |_| ()).is_none());
+
+        assert!(runtime.remove_script_instance(active));
+        let reused = NodeID::from_u64(active.as_u64() + (1_u64 << 32));
+        runtime
+            .scripts
+            .insert(reused, Rc::new(ReplacementScript), Box::new(9_i32));
+        assert!(runtime.with_state::<i32, _, _>(active, |_| ()).is_none());
+        assert!(runtime.with_state_mut::<i32, _, _>(active, |_| ()).is_none());
+        runtime.pop_active_script(index, active);
+    }
+
+    #[test]
     fn active_callback_context_lives_until_outer_pop() {
         let mut runtime = Runtime::new();
         let parent = NodeID::new(1);

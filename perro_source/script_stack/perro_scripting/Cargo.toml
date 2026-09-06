@@ -30,3 +30,7 @@ criterion = "0.5"
 [[bench]]
 name = "variant_modes"
 harness = false
+
+[[bench]]
+name = "variant_hotpaths"
+harness = false

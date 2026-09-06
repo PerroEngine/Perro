@@ -883,14 +883,12 @@ fn generate_state_cast_helpers(state_ty: &str, public_fields: &[ScriptField]) ->
     format!(
         r#"#[inline(always)]
 fn __perro_state_ref(state: &dyn std::any::Any) -> &{state_ty} {{
-    // SAFETY: Perro runtime calls generated script methods only with this script's state type.
-    unsafe {{ perro_api::scripting::state_ref_unchecked::<{state_ty}>(state) }}
+    state.downcast_ref::<{state_ty}>().expect("script state type mismatch")
 }}
 
 #[inline(always)]
 fn __perro_state_mut(state: &mut dyn std::any::Any) -> &mut {state_ty} {{
-    // SAFETY: Perro runtime calls generated script methods only with this script's state type.
-    unsafe {{ perro_api::scripting::state_mut_unchecked::<{state_ty}>(state) }}
+    state.downcast_mut::<{state_ty}>().expect("script state type mismatch")
 }}
 "#
     )
@@ -975,6 +973,15 @@ fn variant_type_has_no_schema_fields(ty: &str) -> bool {
     )
 }
 
+// These built-ins encode as leaves, so a nested-member miss cannot match them.
+// Keep Variant and generic/custom types: they may encode dynamic object keys.
+fn variant_type_is_leaf(ty: &str) -> bool {
+    variant_type_has_no_schema_fields(ty)
+        && !ty.contains('<')
+        && !ty.starts_with('&')
+        && !matches!(ty, "Variant" | "perro_api::variant::Variant")
+}
+
 fn generate_var_match_fns(
     state_ty: &str,
     public_fields: &[ScriptField],
@@ -1006,7 +1013,7 @@ fn generate_var_match_fns(
                 )
             } else {
                 format!(
-                    "if let Ok(v) = value.parse::<{ty}>() {{\n                    state.{field_name} = v;\n                }} else {{\n                    let mut nested_root = perro_api::variant::DeriveVariant::to_variant(&state.{field_name});\n                    if perro_api::scripting::nested_vars::apply_nested_object(\"{field_name}\", &mut nested_root, value, {schema_fields})\n                        && let Ok(decoded) = nested_root.into_parse::<{ty}>()\n                    {{\n                        state.{field_name} = decoded;\n                    }}\n                }}",
+                    "if !matches!(&value, Variant::Object(_)) {{\n                    if let Ok(v) = value.into_parse::<{ty}>() {{\n                        state.{field_name} = v;\n                    }}\n                }} else if let Ok(v) = value.parse::<{ty}>() {{\n                    state.{field_name} = v;\n                }} else {{\n                    let mut nested_root = perro_api::variant::DeriveVariant::to_variant(&state.{field_name});\n                    if perro_api::scripting::nested_vars::apply_nested_object(\"{field_name}\", &mut nested_root, value, {schema_fields})\n                        && let Ok(decoded) = nested_root.into_parse::<{ty}>()\n                    {{\n                        state.{field_name} = decoded;\n                    }}\n                }}",
                     field_name = field.name
                 )
             };
@@ -1083,6 +1090,9 @@ fn generate_var_match_fns(
         ));
         for field in public_fields {
             let ty = normalize_type(&field.ty);
+            if variant_type_is_leaf(&ty) {
+                continue;
+            }
             let schema_fields = variant_schema_field_names_expr(&ty);
             out.push_str(&format!(
                 "    {{\n        let nested_root = perro_api::variant::DeriveVariant::to_variant(&state.{field_name});\n        if let Some(value) = perro_api::scripting::nested_vars::get_nested_by_hash(\"{field_name}\", nested_root, var, {schema_fields}) {{\n            return Some(value);\n        }}\n    }}\n",
@@ -1099,6 +1109,9 @@ fn generate_var_match_fns(
         out.push_str("    let mut value = Some(value);\n");
         for field in public_fields {
             let ty = normalize_type(&field.ty);
+            if variant_type_is_leaf(&ty) {
+                continue;
+            }
             let schema_fields = variant_schema_field_names_expr(&ty);
             out.push_str(&format!(
                 "    {{\n        let mut nested_root = perro_api::variant::DeriveVariant::to_variant(&state.{field_name});\n        if perro_api::scripting::nested_vars::set_nested_by_hash(\"{field_name}\", &mut nested_root, var, &mut value, {schema_fields}) {{\n            if let Ok(decoded) = nested_root.into_parse::<{ty}>() {{\n                state.{field_name} = decoded;\n            }}\n            return true;\n        }}\n    }}\n",
@@ -1117,6 +1130,9 @@ fn generate_var_match_fns(
         out.push_str("    let mut value = Some(value);\n");
         for field in scene_fields {
             let ty = normalize_type(&field.ty);
+            if variant_type_is_leaf(&ty) {
+                continue;
+            }
             let schema_fields = variant_schema_field_names_expr(&ty);
             out.push_str(&format!(
                 "    {{\n        let mut nested_root = perro_api::variant::DeriveVariant::to_variant(&state.{field_name});\n        if perro_api::scripting::nested_vars::set_nested_by_hash(\"{field_name}\", &mut nested_root, var, &mut value, {schema_fields}) {{\n            if let Ok(decoded) = nested_root.into_parse_scene::<{ty}>(resolver) {{\n                state.{field_name} = decoded;\n            }}\n            return true;\n        }}\n    }}\n",

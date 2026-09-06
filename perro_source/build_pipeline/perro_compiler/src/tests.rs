@@ -412,10 +412,10 @@ lifecycle!({});
         assert!(!transpiled.contains("unsafe fn __perro_state_mut"));
         assert!(!transpiled.contains("std::any::TypeId::of"));
         assert!(
-            transpiled.contains("perro_api::scripting::state_ref_unchecked::<AllVariantState>")
+            transpiled.contains("state.downcast_ref::<AllVariantState>()")
         );
         assert!(
-            transpiled.contains("perro_api::scripting::state_mut_unchecked::<AllVariantState>")
+            transpiled.contains("state.downcast_mut::<AllVariantState>()")
         );
         assert!(transpiled.contains("value.parse::<NestedCombo>()"));
         assert!(transpiled.contains("value.into_parse::<Arc<str>>()"));
@@ -1554,6 +1554,10 @@ parent = page
     ];
 
     fn assert_generated_script_compiles(source: &str, transpiled: &str) {
+        assert_generated_script_cargo(source, transpiled, "check");
+    }
+
+    fn assert_generated_script_cargo(source: &str, transpiled: &str, command: &str) {
         let workspace_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .ancestors()
             .nth(3)
@@ -1601,9 +1605,13 @@ perro_runtime = {{ path = "{perro_runtime}" }}
 
         let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
         let mut output = std::process::Command::new(&cargo)
-            .arg("check")
+            .arg(command)
             .arg("--quiet")
             .arg("--offline")
+            .env(
+                "CARGO_TARGET_DIR",
+                workspace_root.join("target/generated-script-tests"),
+            )
             .current_dir(&tmp)
             .output()
             .expect("run cargo check");
@@ -1613,8 +1621,12 @@ perro_runtime = {{ path = "{perro_runtime}" }}
                 || stderr.contains("attempting to make an HTTP request"))
         {
             output = std::process::Command::new(cargo)
-                .arg("check")
+                .arg(command)
                 .arg("--quiet")
+                .env(
+                    "CARGO_TARGET_DIR",
+                    workspace_root.join("target/generated-script-tests"),
+                )
                 .current_dir(&tmp)
                 .output()
                 .expect("run cargo check online");
@@ -1626,7 +1638,7 @@ perro_runtime = {{ path = "{perro_runtime}" }}
         }
 
         panic!(
-            "generated script failed cargo check in {}\nstdout:\n{}\nstderr:\n{}",
+            "generated script failed cargo {command} in {}\nstdout:\n{}\nstderr:\n{}",
             tmp.display(),
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)

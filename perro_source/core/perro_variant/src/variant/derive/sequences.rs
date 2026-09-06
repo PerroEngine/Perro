@@ -1,5 +1,24 @@
 use super::super::*;
 
+// Option lanes win for short arrays; cap both count and scratch stack size.
+const fn array_on_stack<T, const N: usize>() -> bool {
+    N <= 16 && std::mem::size_of::<[Option<T>; N]>() <= 4096
+}
+
+/// Decode small fixed arrays on the stack; drop the initialized prefix on error.
+#[inline]
+fn decode_small_array<T, I, const N: usize>(
+    items: impl IntoIterator<Item = I>,
+    mut decode: impl FnMut(I) -> Option<T>,
+) -> Option<[T; N]> {
+    let mut out = [const { None }; N];
+    for (slot, item) in out.iter_mut().zip(items) {
+        *slot = Some(decode(item)?);
+    }
+    // All callers validate the input length before decoding.
+    Some(out.map(|item| item.expect("validated array length")))
+}
+
 impl<T, const N: usize> DeriveVariant for [T; N]
 where
     T: DeriveVariant,
@@ -9,6 +28,9 @@ where
         let items = value.as_array()?;
         if items.len() != N {
             return None;
+        }
+        if array_on_stack::<T, N>() {
+            return decode_small_array(items, T::from_variant);
         }
         let mut out = Vec::with_capacity(N);
         for item in items {
@@ -28,6 +50,9 @@ where
         if items.len() != N {
             return None;
         }
+        if array_on_stack::<T, N>() {
+            return decode_small_array(items, |item| T::from_scene_variant(item, resolver));
+        }
         let out = items
             .iter()
             .map(|item| T::from_scene_variant(item, resolver))
@@ -44,6 +69,9 @@ where
         };
         if items.len() != N {
             return None;
+        }
+        if array_on_stack::<T, N>() {
+            return decode_small_array(items, T::from_owned_variant);
         }
         let mut out = Vec::with_capacity(N);
         for item in items {
