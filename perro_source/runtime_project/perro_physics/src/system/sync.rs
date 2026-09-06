@@ -652,6 +652,73 @@ mod tests {
     use super::*;
     use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 
+    #[test]
+    fn bowling_pin_keeps_contact_with_thin_floor() {
+        for clearance in [0.02, 0.5] {
+            let mut system = PhysicsSystem::new();
+            let shape = |shape| crate::ShapeDesc3D {
+                local: Transform3D::IDENTITY,
+                shape: crate::ShapeKind3D::Primitive(shape),
+                sensor: false,
+                collision_layers: perro_structs::BitMask::ALL,
+                collision_mask: perro_structs::BitMask::NONE,
+                friction: 0.38,
+                restitution: 0.12,
+                density: 59.1,
+            };
+            let mut floor = body_3d(1);
+            floor.kind = crate::BodyKind::Static;
+            floor.global.position = Vector3::new(0.0, -0.05, 0.0);
+            floor.shape_signature = 1;
+            floor.shapes = vec![shape(perro_nodes::Shape3D::Cube {
+                size: Vector3::new(4.2, 0.1, 32.0),
+            })];
+            let mut pin = body_3d(2);
+            pin.global.position = Vector3::new(0.0, 0.296 + clearance, 0.0);
+            pin.shape_signature = 2;
+            pin.rigid = Some(crate::RigidProps3D {
+                enabled: true,
+                can_sleep: true,
+                mass: 0.0,
+                density: 59.1,
+                continuous_collision_detection: true,
+                linear_velocity: Vector3::ZERO,
+                angular_velocity: Vector3::ZERO,
+                gravity_scale: 1.0,
+                linear_damping: 0.06,
+                angular_damping: 0.1,
+            });
+            pin.shapes = vec![shape(perro_nodes::Shape3D::Cylinder {
+                radius: 0.115,
+                half_height: 0.296,
+            })];
+            let mut bodies = vec![floor, pin];
+            system.sync_world_3d(&bodies, asset_context(), |_, _| {});
+            for tick in 0..225 {
+                system.step_world_3d(-7.41, 1.0 / 45.0);
+                let world = system.world_3d.as_ref().unwrap();
+                let body = &world.bodies[world.body_map[&NodeID::new(2)].handle];
+                let p = body.translation();
+                let q = body.rotation();
+                let v = body.linvel();
+                let a = body.angvel();
+                bodies[1].global.position = Vector3::new(p.x, p.y, p.z);
+                bodies[1].global.rotation = Quaternion::new(q.x, q.y, q.z, q.w);
+                bodies[1].rigid.as_mut().unwrap().linear_velocity = Vector3::new(v.x, v.y, v.z);
+                bodies[1].rigid.as_mut().unwrap().angular_velocity = Vector3::new(a.x, a.y, a.z);
+                bodies[1].sync_signature = tick + 10;
+                system.sync_world_3d(&bodies, asset_context(), |_, _| {});
+            }
+            let world = system.world_3d.as_ref().unwrap();
+            let body = &world.bodies[world.body_map[&NodeID::new(2)].handle];
+            assert!(
+                body.translation().y > 0.27,
+                "clearance={clearance} position={:?}",
+                body.translation()
+            );
+        }
+    }
+
     fn body_2d(id: u32) -> crate::BodyDesc2D {
         crate::BodyDesc2D {
             id: NodeID::new(id),

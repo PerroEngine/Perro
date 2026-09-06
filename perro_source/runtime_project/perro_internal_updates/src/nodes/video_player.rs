@@ -46,15 +46,3 @@ pub fn internal_update<RT, R, IP>(
         let _ = ctx.Nodes().mark_needs_rerender(id);
     }
 }
-
-pub fn internal_fixed_update<RT, R, IP>(
-    _ctx: &mut RuntimeWindow<'_, RT>,
-    _res: &ResourceWindow<'_, R>,
-    _ipt: &InputWindow<'_, IP>,
-    _id: NodeID,
-) where
-    RT: RuntimeAPI + ?Sized,
-    R: ResourceAPI + ?Sized,
-    IP: InputAPI + ?Sized,
-{
-}

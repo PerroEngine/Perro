@@ -1654,7 +1654,8 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
     let previous_point = previous_shadow
         .map(|shadow| shadowed_light_indices(&shadow.point_light_slots))
         .unwrap_or_default();
-    let point_keep = take_best_shadow_lights_stable(point_candidates, point_budget, &previous_point);
+    let point_keep =
+        take_best_shadow_lights_stable(point_candidates, point_budget, &previous_point);
 
     let mut point_count = 0usize;
     let mut point_dense_index = 0usize;
@@ -3259,18 +3260,11 @@ mod local_light_budget_tests {
 
     #[test]
     fn prior_slot_holds_at_near_equal_cutoff() {
-        let kept = take_best_shadow_lights_stable(
-            vec![(0, 1.0), (1, 1.04), (2, 3.0)],
-            2,
-            &[0, 2],
-        );
+        let kept = take_best_shadow_lights_stable(vec![(0, 1.0), (1, 1.04), (2, 3.0)], 2, &[0, 2]);
         assert_eq!(kept, vec![0, 2]);
 
-        let replaced = take_best_shadow_lights_stable(
-            vec![(0, 1.0), (1, 1.5), (2, 3.0)],
-            2,
-            &[0, 2],
-        );
+        let replaced =
+            take_best_shadow_lights_stable(vec![(0, 1.0), (1, 1.5), (2, 3.0)], 2, &[0, 2]);
         assert_eq!(replaced, vec![1, 2]);
     }
 

@@ -93,20 +93,20 @@ impl StreamRetention {
     }
 }
 
-/// Per-epoch memo for the O(depth) ancestor walks in
+/// Per-domain memo for the O(depth) ancestor walks in
 /// [`Runtime::is_effectively_visible`] and
 /// [`Runtime::effective_self_modulate`].
 ///
-/// Slot-indexed stamp arrays: a slot whose stamp equals `current` holds a
-/// valid value for this epoch. The epoch is the arena `mutation_revision`
-/// (every visibility / modulate / structural change bumps it, so the memo can
-/// never serve a stale ancestor chain); within one render/extraction pass the
-/// revision is stable, which is where the repeated walks happen.
+/// Slot-indexed stamp arrays let visibility and modulation invalidate alone.
+/// Structural and conservative generic writes bump both arena revisions.
 #[derive(Default)]
 pub(crate) struct VisibilityModulateMemo {
-    revision: u64,
-    initialized: bool,
-    current: u32,
+    vis_revision: u64,
+    vis_initialized: bool,
+    vis_current: u32,
+    modulate_revision: u64,
+    modulate_initialized: bool,
+    modulate_current: u32,
     vis_stamp: Vec<u32>,
     /// generation of the id the stamp was written for; a hit requires both the
     /// stamp and the generation to match so stale ids can't read a reused
@@ -119,25 +119,44 @@ pub(crate) struct VisibilityModulateMemo {
     modulate_value: Vec<Color>,
     vis_chain_scratch: Vec<(NodeID, bool)>,
     modulate_chain_scratch: Vec<(NodeID, Color)>,
+    #[cfg(any(feature = "bench", feature = "profile"))]
+    vis_hits: u64,
+    #[cfg(any(feature = "bench", feature = "profile"))]
+    vis_misses: u64,
+    #[cfg(any(feature = "bench", feature = "profile"))]
+    modulate_hits: u64,
+    #[cfg(any(feature = "bench", feature = "profile"))]
+    modulate_misses: u64,
 }
 
 impl VisibilityModulateMemo {
-    fn refresh(&mut self, revision: u64, slot_count: usize) {
-        if !self.initialized || self.revision != revision {
-            self.initialized = true;
-            self.revision = revision;
-            self.current = self.current.wrapping_add(1);
-            if self.current == 0 {
+    fn refresh_visibility(&mut self, revision: u64, slot_count: usize) {
+        if !self.vis_initialized || self.vis_revision != revision {
+            self.vis_initialized = true;
+            self.vis_revision = revision;
+            self.vis_current = self.vis_current.wrapping_add(1);
+            if self.vis_current == 0 {
                 // wrapped: reset stamps so stale 0 entries don't read as hits.
                 self.vis_stamp.iter_mut().for_each(|s| *s = 0);
-                self.modulate_stamp.iter_mut().for_each(|s| *s = 0);
-                self.current = 1;
+                self.vis_current = 1;
             }
         }
         if self.vis_stamp.len() < slot_count {
             self.vis_stamp.resize(slot_count, 0);
             self.vis_generation.resize(slot_count, 0);
             self.vis_value.resize(slot_count, 0);
+        }
+    }
+
+    fn refresh_modulate(&mut self, revision: u64, slot_count: usize) {
+        if !self.modulate_initialized || self.modulate_revision != revision {
+            self.modulate_initialized = true;
+            self.modulate_revision = revision;
+            self.modulate_current = self.modulate_current.wrapping_add(1);
+            if self.modulate_current == 0 {
+                self.modulate_stamp.iter_mut().for_each(|s| *s = 0);
+                self.modulate_current = 1;
+            }
         }
         if self.modulate_stamp.len() < slot_count {
             self.modulate_stamp.resize(slot_count, 0);
@@ -150,7 +169,7 @@ impl VisibilityModulateMemo {
     fn vis_hit(&self, id: NodeID) -> Option<bool> {
         let index = id.index() as usize;
         if index < self.vis_stamp.len()
-            && self.vis_stamp[index] == self.current
+            && self.vis_stamp[index] == self.vis_current
             && self.vis_generation[index] == id.generation()
         {
             Some(self.vis_value[index] != 0)
@@ -163,7 +182,7 @@ impl VisibilityModulateMemo {
     fn modulate_hit(&self, id: NodeID) -> Option<Color> {
         let index = id.index() as usize;
         if index < self.modulate_stamp.len()
-            && self.modulate_stamp[index] == self.current
+            && self.modulate_stamp[index] == self.modulate_current
             && self.modulate_generation[index] == id.generation()
         {
             Some(self.modulate_value[index])
@@ -173,7 +192,63 @@ impl VisibilityModulateMemo {
     }
 }
 
+#[derive(Default)]
+pub(crate) struct SuspensionMemo {
+    revision: u64,
+    initialized: bool,
+    by_world: AHashMap<NodeID, bool>,
+    chain_scratch: Vec<(NodeID, bool)>,
+    #[cfg(any(feature = "bench", feature = "profile"))]
+    hits: u64,
+    #[cfg(any(feature = "bench", feature = "profile"))]
+    misses: u64,
+}
+
+impl SuspensionMemo {
+    fn refresh(&mut self, revision: u64) {
+        if !self.initialized || self.revision != revision {
+            self.initialized = true;
+            self.revision = revision;
+            self.by_world.clear();
+        }
+    }
+}
+
 impl Runtime {
+    /// Visibility, modulate, and suspension memo hit/miss counts.
+    #[cfg(any(feature = "bench", feature = "profile"))]
+    pub fn world_state_memo_counts(&self) -> [u64; 6] {
+        let state = self.vis_memo.borrow();
+        let suspension = self.suspension_memo.borrow();
+        [
+            state.vis_hits,
+            state.vis_misses,
+            state.modulate_hits,
+            state.modulate_misses,
+            suspension.hits,
+            suspension.misses,
+        ]
+    }
+
+    #[cfg(any(feature = "bench", feature = "profile"))]
+    pub fn reset_world_state_memo_counts(&self) {
+        let mut state = self.vis_memo.borrow_mut();
+        state.vis_hits = 0;
+        state.vis_misses = 0;
+        state.modulate_hits = 0;
+        state.modulate_misses = 0;
+        let mut suspension = self.suspension_memo.borrow_mut();
+        suspension.hits = 0;
+        suspension.misses = 0;
+    }
+
+    #[cfg(feature = "bench")]
+    pub fn bench_effectively_visible_count(&self, ids: &[NodeID]) -> usize {
+        ids.iter()
+            .filter(|&&id| self.is_effectively_visible(id))
+            .count()
+    }
+
     #[inline]
     fn is_sub_view_data(data: &SceneNodeData) -> bool {
         matches!(
@@ -456,9 +531,17 @@ impl Runtime {
         // and stamp the whole chain.
         let mut memo = self.vis_memo.borrow_mut();
         let memo = &mut *memo;
-        memo.refresh(self.nodes.mutation_revision(), self.nodes.slot_count());
+        memo.refresh_visibility(self.nodes.visibility_revision(), self.nodes.slot_count());
         if let Some(hit) = memo.vis_hit(node) {
+            #[cfg(any(feature = "bench", feature = "profile"))]
+            {
+                memo.vis_hits = memo.vis_hits.wrapping_add(1);
+            }
             return hit;
+        }
+        #[cfg(any(feature = "bench", feature = "profile"))]
+        {
+            memo.vis_misses = memo.vis_misses.wrapping_add(1);
         }
 
         let mut chain = std::mem::take(&mut memo.vis_chain_scratch);
@@ -489,7 +572,7 @@ impl Runtime {
             hops += 1;
         };
 
-        let stamp = memo.current;
+        let stamp = memo.vis_current;
         let mut acc = base;
         for &(id, local_visible) in chain.iter().rev() {
             acc = acc && local_visible;
@@ -521,14 +604,64 @@ impl Runtime {
         self.sub_view_ancestor(node).is_some()
     }
 
+    /// Measure the same suspension predicate used by script and physics dispatch.
+    #[cfg(feature = "bench")]
+    pub fn bench_is_suspended_by_sub_view(&self, node: NodeID) -> bool {
+        self.is_suspended_by_sub_view(node)
+    }
+
+    #[inline]
     pub(crate) fn is_suspended_by_sub_view(&self, node: NodeID) -> bool {
-        let Some(mut viewport_id) = self.sub_view_ancestor(node) else {
+        if !self.has_sub_views() {
+            return false;
+        }
+        self.is_suspended_by_sub_view_with_views(node)
+    }
+
+    #[inline(never)]
+    fn is_suspended_by_sub_view_with_views(&self, node: NodeID) -> bool {
+        let Some(mut viewport_id) = self.node_world(node).filter(|world| !world.is_nil()) else {
             return false;
         };
+        let revision = self.nodes.suspension_revision();
+        let mut chain = {
+            let mut memo = self.suspension_memo.borrow_mut();
+            memo.refresh(revision);
+            if let Some(&hit) = memo.by_world.get(&viewport_id) {
+                #[cfg(any(feature = "bench", feature = "profile"))]
+                {
+                    memo.hits = memo.hits.wrapping_add(1);
+                }
+                return hit;
+            }
+            #[cfg(any(feature = "bench", feature = "profile"))]
+            {
+                memo.misses = memo.misses.wrapping_add(1);
+            }
+            std::mem::take(&mut memo.chain_scratch)
+        };
+        chain.clear();
         let mut hops = 0usize;
-        while !viewport_id.is_nil() && hops <= self.nodes.len() {
+        let base = loop {
+            if viewport_id.is_nil() {
+                break false;
+            }
+            if hops > self.nodes.len() {
+                chain.clear();
+                self.suspension_memo.borrow_mut().chain_scratch = chain;
+                return false;
+            }
+            if let Some(hit) = self
+                .suspension_memo
+                .borrow()
+                .by_world
+                .get(&viewport_id)
+                .copied()
+            {
+                break hit;
+            }
             let Some(viewport_node) = self.nodes.get(viewport_id) else {
-                return true;
+                break true;
             };
             let suspended = matches!(
                 &viewport_node.data,
@@ -548,13 +681,21 @@ impl Runtime {
                         && (!viewport.sub_view.enabled
                             || !self.is_effectively_visible(viewport_id))
             );
-            if suspended {
-                return true;
-            }
+            chain.push((viewport_id, suspended));
             viewport_id = self.node_world(viewport_id).unwrap_or(NodeID::nil());
             hops += 1;
+        };
+
+        let mut value = base;
+        let mut memo = self.suspension_memo.borrow_mut();
+        memo.refresh(revision);
+        for &(world, local_suspended) in chain.iter().rev() {
+            value = value || local_suspended;
+            memo.by_world.insert(world, value);
         }
-        false
+        chain.clear();
+        memo.chain_scratch = chain;
+        value
     }
 
     pub(crate) fn color_modulate(a: Color, b: Color) -> Color {
@@ -619,9 +760,17 @@ impl Runtime {
         }
         let mut memo = self.vis_memo.borrow_mut();
         let memo = &mut *memo;
-        memo.refresh(self.nodes.mutation_revision(), self.nodes.slot_count());
+        memo.refresh_modulate(self.nodes.modulate_revision(), self.nodes.slot_count());
         if let Some(hit) = memo.modulate_hit(node) {
+            #[cfg(any(feature = "bench", feature = "profile"))]
+            {
+                memo.modulate_hits = memo.modulate_hits.wrapping_add(1);
+            }
             return hit;
+        }
+        #[cfg(any(feature = "bench", feature = "profile"))]
+        {
+            memo.modulate_misses = memo.modulate_misses.wrapping_add(1);
         }
 
         let mut chain = std::mem::take(&mut memo.modulate_chain_scratch);
@@ -655,7 +804,7 @@ impl Runtime {
             hops += 1;
         };
 
-        let stamp = memo.current;
+        let stamp = memo.modulate_current;
         let mut acc = base;
         for &(id, contribution) in chain.iter().rev() {
             acc = Self::color_modulate(acc, contribution);
@@ -682,8 +831,9 @@ impl Runtime {
 #[cfg(test)]
 mod world_membership_tests {
     use super::*;
-    use perro_nodes::{Node3D, SubView3D};
+    use perro_nodes::{Node3D, RigidBody3D, SubView3D};
     use perro_runtime_api::sub_apis::{NodeAPI, NodeSpec};
+    use perro_structs::{Color, Vector3};
 
     #[test]
     fn nearest_sub_view_owner_tracks_nested_reparent() {
@@ -716,6 +866,191 @@ mod world_membership_tests {
             view.visible = false;
         }
         assert!(runtime.is_suspended_by_sub_view(child));
+    }
+
+    #[test]
+    fn transform_only_callback_keeps_visibility_and_modulate_memos() {
+        let mut runtime = Runtime::new();
+        let parent = NodeAPI::create::<Node3D>(&mut runtime);
+        let child = NodeAPI::create::<Node3D>(&mut runtime);
+        assert!(runtime.reparent(parent, child));
+
+        assert!(runtime.is_effectively_visible(child));
+        assert_eq!(runtime.effective_self_modulate(child), Color::WHITE);
+        let vis_current = runtime.vis_memo.borrow().vis_current;
+        let modulate_current = runtime.vis_memo.borrow().modulate_current;
+        let vis_revision = runtime.nodes.visibility_revision();
+        let modulate_revision = runtime.nodes.modulate_revision();
+        #[cfg(feature = "bench")]
+        runtime.reset_world_state_memo_counts();
+
+        let _ = NodeAPI::with_node_mut::<Node3D, _, _>(&mut runtime, parent, |node| {
+            node.transform.position = Vector3::new(4.0, 5.0, 6.0);
+        });
+
+        assert_eq!(runtime.nodes.visibility_revision(), vis_revision);
+        assert_eq!(runtime.nodes.modulate_revision(), modulate_revision);
+        assert!(runtime.is_effectively_visible(child));
+        assert_eq!(runtime.effective_self_modulate(child), Color::WHITE);
+        assert_eq!(runtime.vis_memo.borrow().vis_current, vis_current);
+        assert_eq!(runtime.vis_memo.borrow().modulate_current, modulate_current);
+        #[cfg(feature = "bench")]
+        assert_eq!(runtime.world_state_memo_counts(), [1, 0, 1, 0, 0, 0]);
+    }
+
+    #[test]
+    fn callback_visibility_and_modulate_writes_apply_same_frame() {
+        let mut runtime = Runtime::new();
+        let parent = NodeAPI::create::<Node3D>(&mut runtime);
+        let child = NodeAPI::create::<Node3D>(&mut runtime);
+        assert!(runtime.reparent(parent, child));
+        assert!(runtime.is_effectively_visible(child));
+        assert_eq!(runtime.effective_self_modulate(child), Color::WHITE);
+
+        let tint = Color::new(0.5, 0.25, 1.0, 1.0);
+        let _ = NodeAPI::with_node_mut::<Node3D, _, _>(&mut runtime, parent, |node| {
+            node.visible = false;
+            node.modulate.children_modulate = tint;
+        });
+
+        assert!(!runtime.is_effectively_visible(child));
+        assert_eq!(runtime.effective_self_modulate(child), tint);
+    }
+
+    #[test]
+    fn visibility_memo_tracks_reparent_remove_and_slot_reuse() {
+        let mut runtime = Runtime::new();
+        let hidden_parent = NodeAPI::create::<Node3D>(&mut runtime);
+        let child = NodeAPI::create::<Node3D>(&mut runtime);
+        let _ = NodeAPI::with_node_mut::<Node3D, _, _>(&mut runtime, hidden_parent, |node| {
+            node.visible = false
+        });
+        assert!(runtime.is_effectively_visible(child));
+        assert!(runtime.reparent(hidden_parent, child));
+        assert!(!runtime.is_effectively_visible(child));
+
+        assert!(NodeAPI::remove_node(&mut runtime, child));
+        let replacement = NodeAPI::create::<Node3D>(&mut runtime);
+        assert_eq!(replacement.index(), child.index());
+        assert_ne!(replacement.generation(), child.generation());
+        assert!(runtime.is_effectively_visible(replacement));
+    }
+
+    #[test]
+    fn suspension_memo_tracks_flags_reparent_remove_and_slot_reuse() {
+        let mut runtime = Runtime::new();
+        let view = NodeAPI::create::<SubView3D>(&mut runtime);
+        let child = NodeAPI::create::<Node3D>(&mut runtime);
+        assert!(runtime.reparent(view, child));
+        assert!(!runtime.is_suspended_by_sub_view(child));
+        #[cfg(feature = "bench")]
+        runtime.reset_world_state_memo_counts();
+        assert!(!runtime.is_suspended_by_sub_view(child));
+        #[cfg(feature = "bench")]
+        assert_eq!(runtime.world_state_memo_counts()[4..], [1, 0]);
+
+        let _ = NodeAPI::with_node_mut::<SubView3D, _, _>(&mut runtime, view, |node| {
+            node.sub_view.enabled = false;
+        });
+        assert!(runtime.is_suspended_by_sub_view(child));
+
+        assert!(runtime.reparent(NodeID::nil(), child));
+        assert!(!runtime.is_suspended_by_sub_view(child));
+        assert!(NodeAPI::remove_node(&mut runtime, view));
+        let replacement = NodeAPI::create::<SubView3D>(&mut runtime);
+        assert_eq!(replacement.index(), view.index());
+        assert_ne!(replacement.generation(), view.generation());
+        assert!(runtime.reparent(replacement, child));
+        assert!(!runtime.is_suspended_by_sub_view(child));
+    }
+
+    #[test]
+    fn concrete_base_callback_invalidates_sub_view_flags() {
+        let mut runtime = Runtime::new();
+        let view = NodeAPI::create::<SubView3D>(&mut runtime);
+        let child = NodeAPI::create::<Node3D>(&mut runtime);
+        assert!(runtime.reparent(view, child));
+        assert!(!runtime.is_suspended_by_sub_view(child));
+
+        let _ = NodeAPI::with_base_node_mut::<SubView3D, _, _>(&mut runtime, view, |node| {
+            node.sub_view.enabled = false
+        });
+
+        assert!(runtime.is_suspended_by_sub_view(child));
+    }
+
+    #[test]
+    fn callback_unwind_invalidates_visibility_memo() {
+        let mut runtime = Runtime::new();
+        let node = NodeAPI::create::<Node3D>(&mut runtime);
+        assert!(runtime.is_effectively_visible(node));
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = NodeAPI::with_node_mut::<Node3D, _, _>(&mut runtime, node, |node| {
+                node.visible = false;
+                panic!("test unwind");
+            });
+        }));
+
+        assert!(result.is_err());
+        assert!(!runtime.is_effectively_visible(node));
+    }
+
+    #[test]
+    fn base_callback_unwind_invalidates_visibility_memo() {
+        let mut runtime = Runtime::new();
+        let node = NodeAPI::create::<Node3D>(&mut runtime);
+        assert!(runtime.is_effectively_visible(node));
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = NodeAPI::with_base_node_mut::<Node3D, _, _>(&mut runtime, node, |node| {
+                node.visible = false;
+                panic!("test base unwind");
+            });
+        }));
+
+        assert!(result.is_err());
+        assert!(!runtime.is_effectively_visible(node));
+    }
+
+    #[test]
+    fn generic_arena_write_invalidates_all_world_state_domains() {
+        let mut runtime = Runtime::new();
+        let node = NodeAPI::create::<Node3D>(&mut runtime);
+        let visibility = runtime.nodes.visibility_revision();
+        let modulate = runtime.nodes.modulate_revision();
+        let suspension = runtime.nodes.suspension_revision();
+
+        if let Some(mut node) = runtime.nodes.get_mut(node) {
+            let _ = node.with_base_mut::<Node3D, _>(|node| {
+                node.transform.position.x += 1.0;
+            });
+        }
+
+        assert_ne!(runtime.nodes.visibility_revision(), visibility);
+        assert_ne!(runtime.nodes.modulate_revision(), modulate);
+        assert_ne!(runtime.nodes.suspension_revision(), suspension);
+    }
+
+    #[test]
+    fn physics_pose_write_keeps_world_state_domains() {
+        let mut runtime = Runtime::new();
+        let body = NodeAPI::create::<RigidBody3D>(&mut runtime);
+        let visibility = runtime.nodes.visibility_revision();
+        let modulate = runtime.nodes.modulate_revision();
+        let suspension = runtime.nodes.suspension_revision();
+        let physics = runtime.nodes.physics_revision();
+
+        if let Some(node) = runtime.nodes.get_mut_untracked_physics_pose(body)
+            && let SceneNodeData::RigidBody3D(body) = &mut node.data
+        {
+            body.transform.position.x += 1.0;
+        }
+
+        assert_eq!(runtime.nodes.visibility_revision(), visibility);
+        assert_eq!(runtime.nodes.modulate_revision(), modulate);
+        assert_eq!(runtime.nodes.suspension_revision(), suspension);
+        assert_ne!(runtime.nodes.physics_revision(), physics);
     }
 
     #[test]

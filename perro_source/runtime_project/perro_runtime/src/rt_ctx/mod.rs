@@ -1,5 +1,7 @@
 pub mod animation;
 pub mod animation_tree;
+#[cfg(feature = "bench")]
+pub mod bench_observability;
 pub mod navmesh;
 pub mod nodes;
 pub mod physics;

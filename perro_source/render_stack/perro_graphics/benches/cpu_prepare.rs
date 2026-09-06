@@ -8,7 +8,38 @@ use perro_render_bridge::{
     WaterIdleModeState, WaterShapeState,
 };
 use perro_structs::{BitMask, Color};
+use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+struct BenchAllocator;
+static COUNT_ALLOCS: AtomicBool = AtomicBool::new(false);
+static ALLOC_CALLS: AtomicUsize = AtomicUsize::new(0);
+static ALLOC_BYTES: AtomicUsize = AtomicUsize::new(0);
+
+#[global_allocator]
+static ALLOCATOR: BenchAllocator = BenchAllocator;
+
+// Count requests, including reallocations, only around the sampled frame.
+unsafe impl GlobalAlloc for BenchAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        if COUNT_ALLOCS.load(Ordering::Relaxed) {
+            ALLOC_CALLS.fetch_add(1, Ordering::Relaxed);
+            ALLOC_BYTES.fetch_add(layout.size(), Ordering::Relaxed);
+        }
+        unsafe { System.alloc(layout) }
+    }
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        unsafe { System.dealloc(ptr, layout) }
+    }
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, size: usize) -> *mut u8 {
+        if COUNT_ALLOCS.load(Ordering::Relaxed) {
+            ALLOC_CALLS.fetch_add(1, Ordering::Relaxed);
+            ALLOC_BYTES.fetch_add(size, Ordering::Relaxed);
+        }
+        unsafe { System.realloc(ptr, layout, size) }
+    }
+}
 
 #[inline]
 fn color(v: [f32; 4]) -> Color {
@@ -305,6 +336,28 @@ fn create_mesh_material(graphics: &mut PerroGraphics) -> (MeshID, MaterialID) {
     drain_mesh_material(graphics)
 }
 
+fn create_material(graphics: &mut PerroGraphics, request: u64, source: &str) -> MaterialID {
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::CreateMaterial {
+            request: RenderRequestID::new(request),
+            id: MaterialID::nil(),
+            material: Material3D::default().into(),
+            source: Some(source.to_string()),
+            reserved: true,
+        },
+    )));
+    graphics.draw_frame();
+    let mut events = Vec::new();
+    graphics.drain_events(&mut events);
+    events
+        .into_iter()
+        .find_map(|event| match event {
+            RenderEvent::MaterialCreated { id, .. } => Some(id),
+            _ => None,
+        })
+        .expect("material event")
+}
+
 fn bench_2d_rect_prepare(c: &mut Criterion) {
     let mut group = c.benchmark_group("graphics_2d_rect_prepare");
     for count in [1_000u32, 10_000, 100_000] {
@@ -463,6 +516,266 @@ fn bench_3d_blend_prepare(c: &mut Criterion) {
     group.finish();
 }
 
+// Exercise the retained cache with real transform changes. Command construction
+// stays outside the timed region; submission and frame preparation stay inside.
+fn bench_3d_retained_updates(c: &mut Criterion) {
+    let mut group = c.benchmark_group("graphics_3d_retained_updates");
+    for count in [1_000u32, 10_000] {
+        for (name, updated) in [
+            ("idle", 0),
+            ("one", 1),
+            ("percent", count / 100),
+            ("all", count),
+        ] {
+            group.bench_with_input(BenchmarkId::new(name, count), &updated, |b, &updated| {
+                let mut graphics = PerroGraphics::new();
+                let (mesh, material) = create_mesh_material(&mut graphics);
+                graphics.submit_many((0..count).map(|i| draw_3d_command(i, mesh, material)));
+                graphics.draw_frame();
+                let mut offset = 0.0;
+                b.iter_batched(
+                    || {
+                        offset = if offset == 0.0 { 0.5 } else { 0.0 };
+                        (0..updated)
+                            .map(|i| {
+                                let mut command =
+                                    draw_3d_command(i * (count / updated), mesh, material);
+                                if let RenderCommand::ThreeD(command) = &mut command
+                                    && let Command3D::Draw { model, .. } = command.as_mut()
+                                {
+                                    model[0][3] += offset;
+                                }
+                                command
+                            })
+                            .collect::<Vec<_>>()
+                    },
+                    |commands| {
+                        graphics.submit_many(commands);
+                        black_box(graphics.draw_frame_timed().expect("timing"));
+                    },
+                    BatchSize::PerIteration,
+                );
+            });
+        }
+    }
+    group.finish();
+}
+
+fn bench_3d_bulk_remove(c: &mut Criterion) {
+    let mut group = c.benchmark_group("graphics_3d_bulk_remove");
+    for count in [1_000u32, 10_000] {
+        group.bench_with_input(BenchmarkId::from_parameter(count), &count, |b, &count| {
+            b.iter_batched_ref(
+                || {
+                    let mut graphics = PerroGraphics::new();
+                    let (mesh, material) = create_mesh_material(&mut graphics);
+                    graphics.submit_many((0..count).map(|i| draw_3d_command(i, mesh, material)));
+                    graphics.draw_frame();
+                    let commands = (0..count)
+                        .map(|i| {
+                            RenderCommand::ThreeD(Box::new(Command3D::RemoveNode {
+                                node: NodeID::from_parts(i + 1, 0),
+                            }))
+                        })
+                        .collect::<Vec<_>>();
+                    (graphics, commands)
+                },
+                |(graphics, commands)| {
+                    graphics.submit_many(commands.drain(..));
+                    black_box(graphics.draw_frame_timed().expect("timing"));
+                },
+                BatchSize::PerIteration,
+            );
+        });
+    }
+    group.finish();
+}
+
+fn bench_3d_revision_gate_paths(c: &mut Criterion) {
+    const RETAINED: u32 = 10_000;
+    let mut group = c.benchmark_group("graphics_3d_revision_gate_paths");
+
+    group.bench_function("sparse_transform_1_of_10000", |b| {
+        let mut graphics = PerroGraphics::new();
+        let (mesh, material) = create_mesh_material(&mut graphics);
+        graphics.submit_many((0..RETAINED).map(|i| draw_3d_command(i, mesh, material)));
+        graphics.draw_frame();
+        let mut offset = 0.0;
+        b.iter_batched(
+            || {
+                offset = if offset == 0.0 { 0.5 } else { 0.0 };
+                let mut command = draw_3d_command(0, mesh, material);
+                if let RenderCommand::ThreeD(command) = &mut command
+                    && let Command3D::Draw { model, .. } = command.as_mut()
+                {
+                    model[0][3] += offset;
+                }
+                command
+            },
+            |command| {
+                graphics.submit(command);
+                black_box(graphics.draw_frame_timed().expect("timing"));
+            },
+            BatchSize::PerIteration,
+        );
+    });
+
+    group.bench_function("binding_change_1_of_10000", |b| {
+        let mut graphics = PerroGraphics::new();
+        let (mesh, material_a) = create_mesh_material(&mut graphics);
+        let material_b = create_material(&mut graphics, 4, "__bench_material_b__");
+        graphics.submit_many((0..RETAINED).map(|i| draw_3d_command(i, mesh, material_a)));
+        graphics.draw_frame();
+        let mut use_b = false;
+        b.iter_batched(
+            || {
+                use_b = !use_b;
+                draw_3d_command(0, mesh, if use_b { material_b } else { material_a })
+            },
+            |command| {
+                graphics.submit(command);
+                black_box(graphics.draw_frame_timed().expect("timing"));
+            },
+            BatchSize::PerIteration,
+        );
+    });
+
+    group.bench_function("unready_binding_fallback_1_of_10000", |b| {
+        let mut graphics = PerroGraphics::new();
+        let (mesh, material) = create_mesh_material(&mut graphics);
+        graphics.submit_many((0..RETAINED).map(|i| draw_3d_command(i, mesh, material)));
+        graphics.draw_frame();
+        let missing_mesh = MeshID::from_parts(123_456, 0);
+        let missing_material = MaterialID::from_parts(123_456, 0);
+        let mut offset = 0.0;
+        b.iter_batched(
+            || {
+                offset = if offset == 0.0 { 0.5 } else { 0.0 };
+                let mut command = draw_3d_command(0, missing_mesh, missing_material);
+                if let RenderCommand::ThreeD(command) = &mut command
+                    && let Command3D::Draw { model, .. } = command.as_mut()
+                {
+                    model[0][3] += offset;
+                }
+                command
+            },
+            |command| {
+                graphics.submit(command);
+                black_box(graphics.draw_frame_timed().expect("timing"));
+            },
+            BatchSize::PerIteration,
+        );
+    });
+
+    group.bench_function("dense_instance_count_change", |b| {
+        let mut graphics = PerroGraphics::new();
+        let (mesh, material) = create_mesh_material(&mut graphics);
+        graphics.submit(draw_3d_dense_command_with_blend(
+            100_000,
+            mesh,
+            material,
+            MeshBlendOptions3D::default(),
+        ));
+        graphics.draw_frame();
+        let mut count = 100_000;
+        b.iter_batched(
+            || {
+                count = if count == 100_000 { 100_001 } else { 100_000 };
+                draw_3d_dense_command_with_blend(
+                    count,
+                    mesh,
+                    material,
+                    MeshBlendOptions3D::default(),
+                )
+            },
+            |command| {
+                graphics.submit(command);
+                black_box(graphics.draw_frame_timed().expect("timing"));
+            },
+            BatchSize::LargeInput,
+        );
+    });
+
+    group.bench_function("single_add_remove_at_10000", |b| {
+        let mut graphics = PerroGraphics::new();
+        let (mesh, material) = create_mesh_material(&mut graphics);
+        graphics.submit_many((0..RETAINED).map(|i| draw_3d_command(i, mesh, material)));
+        graphics.draw_frame();
+        let mut add = false;
+        b.iter_batched(
+            || {
+                add = !add;
+                if add {
+                    draw_3d_command(RETAINED, mesh, material)
+                } else {
+                    RenderCommand::ThreeD(Box::new(Command3D::RemoveNode {
+                        node: NodeID::from_parts(RETAINED + 1, 0),
+                    }))
+                }
+            },
+            |command| {
+                graphics.submit(command);
+                black_box(graphics.draw_frame_timed().expect("timing"));
+            },
+            BatchSize::PerIteration,
+        );
+    });
+
+    group.finish();
+}
+
+// Run with PERRO_BENCH_ALLOCS=1 and a nonmatching Criterion filter to print
+// frame-only allocation requests without running the timing suite.
+fn bench_3d_allocations(_: &mut Criterion) {
+    if std::env::var_os("PERRO_BENCH_ALLOCS").is_none() {
+        return;
+    }
+    for count in [1_000u32, 10_000] {
+        for (name, updated) in [
+            ("idle", 0),
+            ("one", 1),
+            ("percent", count / 100),
+            ("all", count),
+            ("remove_all", count),
+        ] {
+            let mut graphics = PerroGraphics::new();
+            let (mesh, material) = create_mesh_material(&mut graphics);
+            graphics.submit_many((0..count).map(|i| draw_3d_command(i, mesh, material)));
+            graphics.draw_frame();
+            let commands = (0..updated)
+                .map(|i| {
+                    if name == "remove_all" {
+                        RenderCommand::ThreeD(Box::new(Command3D::RemoveNode {
+                            node: NodeID::from_parts(i + 1, 0),
+                        }))
+                    } else {
+                        let mut command = draw_3d_command(i * (count / updated), mesh, material);
+                        if let RenderCommand::ThreeD(command) = &mut command
+                            && let Command3D::Draw { model, .. } = command.as_mut()
+                        {
+                            model[0][3] += 0.5;
+                        }
+                        command
+                    }
+                })
+                .collect::<Vec<_>>();
+            ALLOC_CALLS.store(0, Ordering::Relaxed);
+            ALLOC_BYTES.store(0, Ordering::Relaxed);
+            COUNT_ALLOCS.store(true, Ordering::Relaxed);
+            graphics.submit_many(commands);
+            let timing = graphics.draw_frame_timed().expect("timing");
+            COUNT_ALLOCS.store(false, Ordering::Relaxed);
+            println!(
+                "allocations/{name}/{count}: calls={} bytes={} process={:?} prepare={:?}",
+                ALLOC_CALLS.load(Ordering::Relaxed),
+                ALLOC_BYTES.load(Ordering::Relaxed),
+                timing.process_commands,
+                timing.prepare_cpu
+            );
+        }
+    }
+}
+
 fn bench_3d_blend_dense_prepare(c: &mut Criterion) {
     let mut group = c.benchmark_group("graphics_3d_blend_dense_prepare");
     for count in [100_000u32, 1_000_000, 5_000_000] {
@@ -602,6 +915,10 @@ criterion_group!(
     bench_2d_sprite_prepare,
     bench_2d_sprite_prepare_unique_z,
     bench_3d_draw_prepare,
+    bench_3d_retained_updates,
+    bench_3d_bulk_remove,
+    bench_3d_revision_gate_paths,
+    bench_3d_allocations,
     bench_3d_blend_prepare,
     bench_3d_blend_dense_prepare,
     bench_water_prepare,

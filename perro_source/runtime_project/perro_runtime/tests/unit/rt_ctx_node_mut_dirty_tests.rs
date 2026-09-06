@@ -179,10 +179,24 @@ fn with_node_mut_type_mismatch_returns_none_no_flags() {
     let mut runtime = Runtime::new();
     let node = NodeAPI::create::<Node3D>(&mut runtime);
     reset_all(&mut runtime);
+    let mutation = runtime.nodes.mutation_revision();
+    let visibility = runtime.nodes.visibility_revision();
+    let modulate = runtime.nodes.modulate_revision();
+    let suspension = runtime.nodes.suspension_revision();
+    let physics = runtime.nodes.physics_revision();
+    let mut called = false;
 
-    let out = <Runtime as NodeAPI>::with_node_mut::<Sprite2D, _, _>(&mut runtime, node, |_s| 1);
+    let out = <Runtime as NodeAPI>::with_node_mut::<Sprite2D, _, _>(&mut runtime, node, |_s| {
+        called = true;
+        1
+    });
     assert!(out.is_none());
-    // with_typed_mut returns None before any dirty marking -> node stays clean.
+    assert!(!called);
+    assert_eq!(runtime.nodes.mutation_revision(), mutation);
+    assert_eq!(runtime.nodes.visibility_revision(), visibility);
+    assert_eq!(runtime.nodes.modulate_revision(), modulate);
+    assert_eq!(runtime.nodes.suspension_revision(), suspension);
+    assert_eq!(runtime.nodes.physics_revision(), physics);
     assert_eq!(raw_flags(&runtime, node), 0);
 }
 
@@ -732,11 +746,25 @@ fn with_base_node_mut_type_mismatch_returns_none_no_flags() {
     let mut runtime = Runtime::new();
     let sprite = NodeAPI::create::<Sprite2D>(&mut runtime);
     reset_all(&mut runtime);
+    let mutation = runtime.nodes.mutation_revision();
+    let visibility = runtime.nodes.visibility_revision();
+    let modulate = runtime.nodes.modulate_revision();
+    let suspension = runtime.nodes.suspension_revision();
+    let physics = runtime.nodes.physics_revision();
+    let mut called = false;
 
     let out =
-        <Runtime as NodeAPI>::with_base_node_mut::<Node3D, _, _>(&mut runtime, sprite, |_b| 7);
+        <Runtime as NodeAPI>::with_base_node_mut::<Node3D, _, _>(&mut runtime, sprite, |_b| {
+            called = true;
+            7
+        });
     assert!(out.is_none());
-    // Early return before mark_needs_rerender -> node stays clean.
+    assert!(!called);
+    assert_eq!(runtime.nodes.mutation_revision(), mutation);
+    assert_eq!(runtime.nodes.visibility_revision(), visibility);
+    assert_eq!(runtime.nodes.modulate_revision(), modulate);
+    assert_eq!(runtime.nodes.suspension_revision(), suspension);
+    assert_eq!(runtime.nodes.physics_revision(), physics);
     assert_eq!(raw_flags(&runtime, sprite), 0);
 }
 

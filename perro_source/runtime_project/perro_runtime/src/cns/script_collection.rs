@@ -94,6 +94,14 @@ impl ScriptCollection {
         self.instances.get(i)
     }
 
+    /// Resolve a live ID and borrow its instance in one lookup. The returned
+    /// index is valid for this borrow; callers must revalidate it after edits.
+    #[inline]
+    pub(crate) fn indexed_instance(&self, id: NodeID) -> Option<(usize, &ScriptInstance)> {
+        let i = self.instance_index_for(id)?;
+        Some((i, self.instances.get(i)?))
+    }
+
     /// Return dense instance index for a script node id.
     #[inline]
     pub(crate) fn instance_index_for_id(&self, id: NodeID) -> Option<usize> {
@@ -714,6 +722,32 @@ mod scheduled_instance_tests {
             .get_var(instance.state.as_ref(), ScriptMemberID(0))
             .as_i64()
             .expect("test or bench setup must succeed")
+    }
+
+    #[test]
+    fn indexed_lookup_tracks_swap_remove_replacement_and_generation_reuse() {
+        let mut coll = ScriptCollection::new();
+        let a = NodeID::from_parts(1, 1);
+        let b = NodeID::from_parts(2, 1);
+        let reused = NodeID::from_parts(1, 2);
+        insert_marker(&mut coll, a, 10, ScriptFlags::NONE);
+        insert_marker(&mut coll, b, 20, ScriptFlags::NONE);
+        assert!(coll.remove(a).is_some());
+        assert!(coll.indexed_instance(a).is_none());
+        let (index, moved) = coll.indexed_instance(b).expect("live moved script");
+        assert_eq!((index, marker_of(moved)), (0, 20));
+        insert_marker(&mut coll, reused, 30, ScriptFlags::NONE);
+        assert!(coll.indexed_instance(a).is_none());
+        insert_marker(&mut coll, b, 40, ScriptFlags::NONE);
+        assert_eq!(
+            marker_of(coll.indexed_instance(b).expect("replacement").1),
+            40
+        );
+        assert_eq!(
+            marker_of(coll.indexed_instance(reused).expect("new generation").1),
+            30
+        );
+        assert!(coll.indexed_instance(NodeID::new(99)).is_none());
     }
 
     // (a) A script removed mid-frame is skipped by a stale scheduler snapshot key.

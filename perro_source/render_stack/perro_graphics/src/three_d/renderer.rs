@@ -59,6 +59,51 @@ pub struct Draw3DInstance {
     pub receive_shadows: bool,
 }
 
+impl Draw3DInstance {
+    #[inline]
+    pub(crate) fn retained_instance_count(&self) -> u32 {
+        if let Some(dense) = &self.dense_multimesh {
+            return dense.instances.len().min(u32::MAX as usize) as u32;
+        }
+        let count = self.instance_mats.len();
+        if count == 0 {
+            1
+        } else {
+            count.min(u32::MAX as usize) as u32
+        }
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+struct DrawChanges {
+    any: bool,
+    resource_bindings: bool,
+    instance_count: bool,
+}
+
+impl DrawChanges {
+    fn between(previous: Option<&Draw3DInstance>, next: &Draw3DInstance) -> Self {
+        let Some(previous) = previous else {
+            return Self {
+                any: true,
+                resource_bindings: true,
+                instance_count: next.retained_instance_count() != 0,
+            };
+        };
+        Self {
+            any: previous != next,
+            resource_bindings: !draw_resource_bindings_eq(previous, next),
+            instance_count: previous.retained_instance_count() != next.retained_instance_count(),
+        }
+    }
+
+    fn merge(&mut self, other: Self) {
+        self.any |= other.any;
+        self.resource_bindings |= other.resource_bindings;
+        self.instance_count |= other.instance_count;
+    }
+}
+
 #[inline]
 fn arc_slice_eq<T: PartialEq>(a: &Arc<[T]>, b: &Arc<[T]>) -> bool {
     Arc::ptr_eq(a, b) || a == b
@@ -193,6 +238,12 @@ pub struct Renderer3D {
     waters_sorted_cache: Vec<(NodeID, Water3DState)>,
     decals_sorted_cache: Vec<(NodeID, Decal3DState)>,
     retained_draws_sorted_cache: Vec<Draw3DInstance>,
+    node_to_sorted_draw_index: AHashMap<NodeID, usize>,
+    draws_membership_dirty: bool,
+    #[cfg(test)]
+    draw_cache_rebuilds: usize,
+    #[cfg(test)]
+    non_draw_remove_hashes: usize,
     ray_lights_dirty: bool,
     point_lights_dirty: bool,
     spot_lights_dirty: bool,
@@ -202,6 +253,8 @@ pub struct Renderer3D {
     decals_revision: u64,
     camera: Camera3DState,
     draw_revision: u64,
+    resource_binding_revision: u64,
+    instance_count_revision: u64,
     last_frame_time: Option<Instant>,
     // App-time accumulator for shader frame globals (f64 so hours of play
     // don't lose precision before the hourly f32 wrap).
@@ -420,26 +473,44 @@ impl Renderer3D {
     }
 
     pub fn remove_node(&mut self, node: NodeID) {
-        if self.remove_retained_draw(node) {
+        if let Some(removed) = self.remove_retained_draw(node) {
             self.draw_revision = self.draw_revision.wrapping_add(1);
-            self.rebuild_sorted_draws_cache();
+            self.resource_binding_revision = self.resource_binding_revision.wrapping_add(1);
+            if removed.retained_instance_count() != 0 {
+                self.instance_count_revision = self.instance_count_revision.wrapping_add(1);
+            }
         }
-        self.ambient_lights.remove(&node);
-        self.skies.remove(&node);
-        if self.ray_lights.remove(&node).is_some() {
+        // One remove command clears every retained role a node may own. Most
+        // nodes own only a draw; skip hashing the id into empty role maps.
+        macro_rules! remove_if_populated {
+            ($map:ident) => {{
+                if self.$map.is_empty() {
+                    None
+                } else {
+                    #[cfg(test)]
+                    {
+                        self.non_draw_remove_hashes += 1;
+                    }
+                    self.$map.remove(&node)
+                }
+            }};
+        }
+        let _ = remove_if_populated!(ambient_lights);
+        let _ = remove_if_populated!(skies);
+        if remove_if_populated!(ray_lights).is_some() {
             self.ray_lights_dirty = true;
         }
-        if self.point_lights.remove(&node).is_some() {
+        if remove_if_populated!(point_lights).is_some() {
             self.point_lights_dirty = true;
         }
-        if self.spot_lights.remove(&node).is_some() {
+        if remove_if_populated!(spot_lights).is_some() {
             self.spot_lights_dirty = true;
         }
-        if self.waters.remove(&node).is_some() {
+        if remove_if_populated!(waters).is_some() {
             self.waters_dirty = true;
             self.waters_revision = self.waters_revision.wrapping_add(1);
         }
-        if self.decals.remove(&node).is_some() {
+        if remove_if_populated!(decals).is_some() {
             self.decals_dirty = true;
             self.decals_revision = self.decals_revision.wrapping_add(1);
         }
@@ -517,7 +588,7 @@ impl Renderer3D {
         resources: &ResourceStore,
     ) -> (Camera3DState, Renderer3DStats, Lighting3DState) {
         let mut stats = Renderer3DStats::default();
-        let mut draws_changed = false;
+        let mut draw_changes = DrawChanges::default();
         let now = Instant::now();
         let dt = self
             .last_frame_time
@@ -539,45 +610,50 @@ impl Renderer3D {
         // Reuse the queue's backing allocation across frames: take it, consume
         // the draws, then hand the emptied Vec back so capacity persists.
         let mut queued = std::mem::take(&mut self.queued_draws);
-        let used_sequential_draw_fast_path = if let Some((fast_stats, fast_changed)) =
+        if let Some((fast_stats, fast_changes)) =
             self.try_apply_sequential_draw_packets(queued.as_mut_slice(), resources)
         {
             stats = fast_stats;
-            draws_changed = fast_changed;
-            true
+            draw_changes = fast_changes;
         } else {
             for draw in queued.drain(..) {
                 let (material_ready, mesh_ready, draw_ready) = draw_readiness(&draw, resources);
                 if draw_ready {
-                    let changed = self.retained_draw_ref(draw.node) != Some(&draw);
-                    if changed {
+                    let changes = DrawChanges::between(self.retained_draw_ref(draw.node), &draw);
+                    if changes.any {
                         self.upsert_retained_draw(draw);
-                        draws_changed = true;
+                        draw_changes.merge(changes);
                     }
                     stats.accepted_draws = stats.accepted_draws.saturating_add(1);
                 } else {
                     if let Some(retained) = self.retained_draw_mut(draw.node) {
                         // Keep previous mesh/material bindings until replacements exist,
                         // but continue applying latest transform updates.
-                        draws_changed |= update_unready_retained_draw(
+                        let changes = update_unready_retained_draw(
                             retained,
                             &draw,
                             mesh_ready,
                             material_ready,
                         );
+                        if changes.any {
+                            self.patch_sorted_draw(draw.node);
+                            draw_changes.merge(changes);
+                        }
                     }
                     stats.rejected_draws = stats.rejected_draws.saturating_add(1);
                 }
             }
-            false
-        };
+        }
         queued.clear();
         self.queued_draws = queued;
-        if draws_changed {
+        if draw_changes.any {
             self.draw_revision = self.draw_revision.wrapping_add(1);
-            if !used_sequential_draw_fast_path {
-                self.rebuild_sorted_draws_cache();
-            }
+        }
+        if draw_changes.resource_bindings {
+            self.resource_binding_revision = self.resource_binding_revision.wrapping_add(1);
+        }
+        if draw_changes.instance_count {
+            self.instance_count_revision = self.instance_count_revision.wrapping_add(1);
         }
 
         let mut lighting = Lighting3DState {
@@ -636,8 +712,8 @@ impl Renderer3D {
         &mut self,
         queued: &mut [Draw3DInstance],
         resources: &ResourceStore,
-    ) -> Option<(Renderer3DStats, bool)> {
-        if queued.len() != self.retained_draws_sorted_cache.len() {
+    ) -> Option<(Renderer3DStats, DrawChanges)> {
+        if self.draws_membership_dirty || queued.len() != self.retained_draws_sorted_cache.len() {
             return None;
         }
         if !queued
@@ -649,35 +725,38 @@ impl Renderer3D {
         }
 
         let mut stats = Renderer3DStats::default();
-        let mut draws_changed = false;
+        let mut draw_changes = DrawChanges::default();
         for (index, draw) in queued.iter_mut().enumerate() {
             let (material_ready, mesh_ready, draw_ready) = draw_readiness(draw, resources);
             if draw_ready {
-                let changed = self.retained_draws_sorted_cache[index] != *draw;
-                if changed {
+                let changes =
+                    DrawChanges::between(Some(&self.retained_draws_sorted_cache[index]), draw);
+                if changes.any {
                     // One logical update, one clone: move the new draw into
                     // the sorted-cache slot (the stale value lands in the
                     // soon-cleared queue slot), then hand the retained store
                     // a clone of it.
                     std::mem::swap(&mut self.retained_draws_sorted_cache[index], draw);
                     let owned = self.retained_draws_sorted_cache[index].clone();
-                    self.upsert_retained_draw(owned);
-                    draws_changed = true;
+                    let retained_index = self.node_to_draw_index[&owned.node];
+                    self.retained_draws[retained_index] = owned;
+                    draw_changes.merge(changes);
                 }
                 stats.accepted_draws = stats.accepted_draws.saturating_add(1);
             } else {
                 if let Some(retained) = self.retained_draw_mut(draw.node) {
-                    draws_changed |=
+                    let changes =
                         update_unready_retained_draw(retained, draw, mesh_ready, material_ready);
-                    let retained_updated = retained.clone();
-                    if self.retained_draws_sorted_cache[index] != retained_updated {
+                    if changes.any {
+                        let retained_updated = retained.clone();
                         self.retained_draws_sorted_cache[index] = retained_updated;
+                        draw_changes.merge(changes);
                     }
                 }
                 stats.rejected_draws = stats.rejected_draws.saturating_add(1);
             }
         }
-        Some((stats, draws_changed))
+        Some((stats, draw_changes))
     }
 
     pub fn retained_draw(&self, node: NodeID) -> Option<Draw3DInstance> {
@@ -712,12 +791,25 @@ impl Renderer3D {
         self.retained_draws.iter().cloned()
     }
 
-    pub fn retained_draws_sorted(&self) -> &[Draw3DInstance] {
+    pub fn retained_draws_sorted(&mut self) -> &[Draw3DInstance] {
+        if self.draws_membership_dirty {
+            self.rebuild_sorted_draws_cache();
+        }
         &self.retained_draws_sorted_cache
     }
 
     pub fn draw_revision(&self) -> u64 {
         self.draw_revision
+    }
+
+    #[inline]
+    pub fn resource_binding_revision(&self) -> u64 {
+        self.resource_binding_revision
+    }
+
+    #[inline]
+    pub fn instance_count_revision(&self) -> u64 {
+        self.instance_count_revision
     }
 
     pub fn retained_waters_sorted(&mut self) -> &[(NodeID, Water3DState)] {
@@ -801,6 +893,10 @@ impl Renderer3D {
     }
 
     fn rebuild_sorted_draws_cache(&mut self) {
+        #[cfg(test)]
+        {
+            self.draw_cache_rebuilds += 1;
+        }
         self.retained_draws_sorted_cache.clear();
         if self.retained_draws_sorted_cache.capacity() < self.retained_draws.len() {
             self.retained_draws_sorted_cache
@@ -815,17 +911,39 @@ impl Renderer3D {
             self.retained_draws_sorted_cache
                 .sort_unstable_by_key(|draw| draw.node.as_u64());
         }
+        self.node_to_sorted_draw_index.clear();
+        self.node_to_sorted_draw_index.extend(
+            self.retained_draws_sorted_cache
+                .iter()
+                .enumerate()
+                .map(|(index, draw)| (draw.node, index)),
+        );
+        self.draws_membership_dirty = false;
+    }
+
+    fn patch_sorted_draw(&mut self, node: NodeID) {
+        // Structural edits leave the cache stale until its next read. No row
+        // index may be used until that rebuild restores the lookup.
+        if !self.draws_membership_dirty {
+            let sorted_index = self.node_to_sorted_draw_index[&node];
+            let retained_index = self.node_to_draw_index[&node];
+            self.retained_draws_sorted_cache[sorted_index] =
+                self.retained_draws[retained_index].clone();
+        }
     }
 
     fn upsert_retained_draw(&mut self, draw: Draw3DInstance) {
         if let Some(&idx) = self.node_to_draw_index.get(&draw.node) {
+            let node = draw.node;
             self.retained_draws[idx] = draw;
+            self.patch_sorted_draw(node);
             return;
         }
         let idx = self.retained_draws.len();
         self.retained_draws.push(draw);
         self.node_to_draw_index
             .insert(self.retained_draws[idx].node, idx);
+        self.draws_membership_dirty = true;
     }
 
     fn retained_draw_mut(&mut self, node: NodeID) -> Option<&mut Draw3DInstance> {
@@ -833,18 +951,39 @@ impl Renderer3D {
         self.retained_draws.get_mut(idx)
     }
 
-    fn remove_retained_draw(&mut self, node: NodeID) -> bool {
-        let Some(removed_idx) = self.node_to_draw_index.remove(&node) else {
-            return false;
-        };
+    fn remove_retained_draw(&mut self, node: NodeID) -> Option<Draw3DInstance> {
+        let removed_idx = self.node_to_draw_index.remove(&node)?;
         let last = self.retained_draws.len() - 1;
-        self.retained_draws.swap_remove(removed_idx);
+        let removed = self.retained_draws.swap_remove(removed_idx);
+        self.draws_membership_dirty = true;
         if removed_idx != last {
             let moved_node = self.retained_draws[removed_idx].node;
             self.node_to_draw_index.insert(moved_node, removed_idx);
         }
-        true
+        Some(removed)
     }
+}
+
+fn draw_kind_resource_eq(a: &Draw3DKind, b: &Draw3DKind) -> bool {
+    match (a, b) {
+        (Draw3DKind::Mesh(a), Draw3DKind::Mesh(b)) => a == b,
+        (
+            Draw3DKind::CameraStreamQuad { texture: a, .. },
+            Draw3DKind::CameraStreamQuad { texture: b, .. },
+        ) => a == b,
+        (Draw3DKind::DebugPointCube, Draw3DKind::DebugPointCube)
+        | (Draw3DKind::DebugEdgeCylinder, Draw3DKind::DebugEdgeCylinder) => true,
+        _ => false,
+    }
+}
+
+fn draw_resource_bindings_eq(a: &Draw3DInstance, b: &Draw3DInstance) -> bool {
+    draw_kind_resource_eq(&a.kind, &b.kind)
+        && a.surfaces.len() == b.surfaces.len()
+        && a.surfaces
+            .iter()
+            .zip(b.surfaces.iter())
+            .all(|(a, b)| a.material == b.material)
 }
 
 fn draw_readiness(draw: &Draw3DInstance, resources: &ResourceStore) -> (bool, bool, bool) {
@@ -872,49 +1011,58 @@ fn update_unready_retained_draw(
     draw: &Draw3DInstance,
     mesh_ready: bool,
     material_ready: bool,
-) -> bool {
-    let mut changed = false;
+) -> DrawChanges {
+    let previous_count = retained.retained_instance_count();
+    let mut changes = DrawChanges::default();
     if retained.instance_mats != draw.instance_mats {
         retained.instance_mats = draw.instance_mats.clone();
-        changed = true;
+        changes.any = true;
     }
     if mesh_ready && retained.kind != draw.kind {
+        changes.resource_bindings |= !draw_kind_resource_eq(&retained.kind, &draw.kind);
         retained.kind = draw.kind.clone();
-        changed = true;
+        changes.any = true;
     }
     if material_ready && retained.surfaces != draw.surfaces {
+        changes.resource_bindings |= retained.surfaces.len() != draw.surfaces.len()
+            || retained
+                .surfaces
+                .iter()
+                .zip(draw.surfaces.iter())
+                .any(|(a, b)| a.material != b.material);
         retained.surfaces = draw.surfaces.clone();
-        changed = true;
+        changes.any = true;
     }
     if draw.skeleton.is_some() && retained.skeleton != draw.skeleton {
         retained.skeleton = draw.skeleton.clone();
-        changed = true;
+        changes.any = true;
     }
     if draw.dense_multimesh.is_some() && retained.dense_multimesh != draw.dense_multimesh {
         retained.dense_multimesh = draw.dense_multimesh.clone();
-        changed = true;
+        changes.any = true;
     }
     if retained.meshlet_override != draw.meshlet_override {
         retained.meshlet_override = draw.meshlet_override;
-        changed = true;
+        changes.any = true;
     }
     if retained.lod != draw.lod {
         retained.lod = draw.lod;
-        changed = true;
+        changes.any = true;
     }
     if retained.blend != draw.blend {
         retained.blend = draw.blend;
-        changed = true;
+        changes.any = true;
     }
     if retained.cast_shadows != draw.cast_shadows {
         retained.cast_shadows = draw.cast_shadows;
-        changed = true;
+        changes.any = true;
     }
     if retained.receive_shadows != draw.receive_shadows {
         retained.receive_shadows = draw.receive_shadows;
-        changed = true;
+        changes.any = true;
     }
-    changed
+    changes.instance_count = previous_count != retained.retained_instance_count();
+    changes
 }
 
 impl Default for Renderer3D {
@@ -936,6 +1084,12 @@ impl Default for Renderer3D {
             waters_sorted_cache: Vec::new(),
             decals_sorted_cache: Vec::new(),
             retained_draws_sorted_cache: Vec::new(),
+            node_to_sorted_draw_index: AHashMap::new(),
+            draws_membership_dirty: false,
+            #[cfg(test)]
+            draw_cache_rebuilds: 0,
+            #[cfg(test)]
+            non_draw_remove_hashes: 0,
             ray_lights_dirty: false,
             point_lights_dirty: false,
             spot_lights_dirty: false,
@@ -957,6 +1111,8 @@ impl Default for Renderer3D {
                 audio_options: perro_structs::AudioListenerOptions::new(),
             },
             draw_revision: 0,
+            resource_binding_revision: 0,
+            instance_count_revision: 0,
             last_frame_time: None,
             app_time_seconds: 0.0,
             frame_index: 0,

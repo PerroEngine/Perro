@@ -101,18 +101,6 @@ pub fn internal_update<RT, R, IP>(
     });
 }
 
-pub fn internal_fixed_update<RT, R, IP>(
-    _run: &mut RuntimeWindow<'_, RT>,
-    _res_w: &ResourceWindow<'_, R>,
-    _ipt_w: &InputWindow<'_, IP>,
-    _id: NodeID,
-) where
-    RT: RuntimeAPI + ?Sized,
-    R: ResourceAPI + ?Sized,
-    IP: InputAPI + ?Sized,
-{
-}
-
 mod tracks;
 pub(super) use tracks::*;
 mod playback;

@@ -64,8 +64,10 @@ impl PerroGraphics {
             texture_filter: TextureFilterMode::LinearMipmap,
             hdr_mode: HdrMode::Auto,
             shader_variant_mode: ShaderVariantMode::Auto,
-            retained_draws_cache_revision: u64::MAX,
+            retained_draw_instance_counts_revision: u64::MAX,
             retained_draw_instances_cache: 0,
+            #[cfg(test)]
+            retained_draw_instance_recounts: 0,
             retained_point_particles_cache: Vec::new(),
             retained_point_particles_cache_revision: u64::MAX,
             retained_waters_2d_cache: Vec::new(),
@@ -98,7 +100,11 @@ impl PerroGraphics {
             scene_texture_refs_cache: AHashMap::new(),
             scene_mesh_refs_cache: AHashMap::new(),
             scene_material_refs_cache: AHashMap::new(),
-            used_ref_draws_revision: u64::MAX,
+            used_ref_draw_bindings_revision: u64::MAX,
+            #[cfg(test)]
+            retained_draw_resource_ref_recounts: 0,
+            #[cfg(test)]
+            retained_animated_material_scans: 0,
             used_ref_sprites_revision: u64::MAX,
             global_post_processing: PostProcessSet::new(),
             global_post_processing_cache: Arc::from(Vec::new()),

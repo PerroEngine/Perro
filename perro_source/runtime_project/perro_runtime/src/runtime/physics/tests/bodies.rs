@@ -2,6 +2,125 @@ mod bodies {
     use super::*;
 
     #[test]
+    fn bowling_nested_rigid_writeback_preserves_authored_scale() {
+        let mut runtime = Runtime::new();
+        let root = NodeAPI::create::<perro_nodes::Node3D>(&mut runtime);
+        let pin = NodeAPI::create::<RigidBody3D>(&mut runtime);
+        NodeAPI::reparent(&mut runtime, root, pin);
+        let shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+        NodeAPI::reparent(&mut runtime, pin, shape);
+        NodeAPI::with_node_mut::<RigidBody3D, _, _>(&mut runtime, pin, |n| {
+            n.gravity_scale = 0.0;
+            n.angular_velocity = Vector3::new(0.3, 0.7, 0.2);
+        });
+        runtime.time.fixed_delta = 1.0 / 45.0;
+        runtime.physics_fixed_step();
+        let initial_signature = runtime
+            .physics
+            .world_3d
+            .as_ref()
+            .expect("3D physics world")
+            .body_map[&pin]
+            .shape_signature;
+        for _ in 0..225 {
+            runtime.physics_fixed_step();
+        }
+        let scale = NodeAPI::with_node::<RigidBody3D, _>(&mut runtime, pin, |n| n.scale)
+            .expect("live rigid body");
+        assert_eq!(scale, Vector3::ONE, "physics must never integrate scale");
+        assert_eq!(
+            runtime
+                .physics
+                .world_3d
+                .as_ref()
+                .expect("3D physics world")
+                .body_map[&pin]
+                .shape_signature,
+            initial_signature,
+            "rotation must not rebuild colliders"
+        );
+        NodeAPI::with_node_mut::<RigidBody3D, _, _>(&mut runtime, pin, |n| {
+            n.scale = Vector3::new(2.0, 2.0, 2.0)
+        });
+        runtime.physics_fixed_step();
+        assert_ne!(
+            runtime
+                .physics
+                .world_3d
+                .as_ref()
+                .expect("3D physics world")
+                .body_map[&pin]
+                .shape_signature,
+            initial_signature,
+            "authored scale must rebuild colliders"
+        );
+    }
+
+    #[test]
+    fn bowling_pin_on_thin_lane_keeps_runtime_contact() {
+        let mut runtime = Runtime::new();
+        let root = NodeAPI::create::<perro_nodes::Node3D>(&mut runtime);
+        let floor = NodeAPI::create::<StaticBody3D>(&mut runtime);
+        let floor_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+        let pin = NodeAPI::create::<RigidBody3D>(&mut runtime);
+        let pin_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+        for (p, c) in [
+            (root, floor),
+            (floor, floor_shape),
+            (root, pin),
+            (pin, pin_shape),
+        ] {
+            NodeAPI::reparent(&mut runtime, p, c);
+        }
+        NodeAPI::with_node_mut::<CollisionShape3D, _, _>(&mut runtime, floor_shape, |n| {
+            n.shape = Shape3D::Cube {
+                size: Vector3::new(4.2, 0.1, 32.0),
+            }
+        });
+        NodeAPI::with_node_mut::<CollisionShape3D, _, _>(&mut runtime, pin_shape, |n| {
+            n.shape = Shape3D::Cylinder {
+                radius: 0.115,
+                half_height: 0.296,
+            }
+        });
+        NodeAPI::set_global_transform_3d(
+            &mut runtime,
+            floor,
+            Transform3D::new(
+                Vector3::new(0.0, -0.05, 0.0),
+                Quaternion::IDENTITY,
+                Vector3::ONE,
+            ),
+        );
+        NodeAPI::set_global_transform_3d(
+            &mut runtime,
+            pin,
+            Transform3D::new(
+                Vector3::new(0.0, 0.316, 0.0),
+                Quaternion::IDENTITY,
+                Vector3::ONE,
+            ),
+        );
+        runtime.time.fixed_delta = 1.0 / 45.0;
+        let mut accumulated = 0.0;
+        for _ in 0..720 {
+            runtime.update(1.0 / 144.0);
+            accumulated += 1.0 / 144.0;
+            while accumulated >= 1.0 / 45.0 {
+                runtime.fixed_update(1.0 / 45.0);
+                accumulated -= 1.0 / 45.0;
+            }
+            runtime.set_physics_render_alpha(accumulated * 45.0);
+            runtime.get_render_global_transform_3d(pin);
+            runtime.get_render_global_transform_3d(floor);
+        }
+        let pose = runtime
+            .get_global_transform_3d(pin)
+            .expect("live pin transform");
+        assert!(pose.position.y > 0.27, "pin pose={pose:?}");
+    }
+
+    #[test]
     fn deeply_submerged_3d_body_gets_enough_lift_to_leave_bed() {
         let mut surface = WaterSurfaceParams {
             shape: WaterShape::rect(Vector2::new(16.0, 16.0)),

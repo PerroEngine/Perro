@@ -107,7 +107,6 @@ impl NodeAPI for Runtime {
         if id.is_nil() {
             return None;
         }
-
         // Const-gated so the optimizer strips the memo probe for node types
         // that can never be UI nodes.
         let track_ui = T::NODE_TYPE.is_a(NodeType::UiNode);
@@ -138,7 +137,7 @@ impl NodeAPI for Runtime {
         ) = {
             // Non-physics types skip the physics-version bump (const-gated);
             // physics types mark the change after the mutation below.
-            let node = self.nodes.get_mut_untracked_non_physics(id)?;
+            let mut node = self.nodes.get_mut_scoped_exact_node_api(id, T::NODE_TYPE)?;
 
             // Const-gated so the optimizer strips camera capture for node types
             // that can never be those variants.
@@ -196,21 +195,39 @@ impl NodeAPI for Runtime {
             } else {
                 None
             };
+            let camera_2d_changed = cam_2d_before != cam_2d_after;
+            let camera_3d_changed = cam_3d_before != cam_3d_after;
+            let camera_3d_activated = cam_3d_before != Some(true) && cam_3d_after == Some(true);
+            let visibility_changed = visible_before != visible_after;
+            let modulate_changed = modulate_before != modulate_after;
+            node.finish();
             (
                 changed,
                 ui_before,
                 ui_after,
-                cam_2d_before != cam_2d_after,
-                cam_3d_before != cam_3d_after,
-                cam_3d_before != Some(true) && cam_3d_after == Some(true),
-                visible_before != visible_after,
-                modulate_before != modulate_after,
+                camera_2d_changed,
+                camera_3d_changed,
+                camera_3d_activated,
+                visibility_changed,
+                modulate_changed,
                 value,
             )
         };
 
         if T::NODE_TYPE.is_physics() {
             self.nodes.mark_physics_change();
+        }
+        if visibility_changed {
+            self.nodes.mark_visibility_change();
+        }
+        if modulate_changed {
+            self.nodes.mark_modulate_change();
+        }
+        if matches!(
+            T::NODE_TYPE,
+            NodeType::UiSubView | NodeType::SubView2D | NodeType::SubView3D
+        ) {
+            self.nodes.mark_suspension_change();
         }
         if T::NODE_TYPE == NodeType::UiSubView {
             self.invalidate_physics_query_sync();
@@ -306,9 +323,13 @@ impl NodeAPI for Runtime {
         if id.is_nil() {
             return None;
         }
-        let concrete_type = self.nodes.get(id)?.node_type();
+        let canonical_base = matches!(
+            T::BASE_NODE_TYPE,
+            NodeType::Node2D | NodeType::Node3D | NodeType::UiNode
+        );
 
         let (
+            concrete_type,
             value,
             transform_changed,
             ui_before,
@@ -321,17 +342,11 @@ impl NodeAPI for Runtime {
             modulate_changed,
             base_changed,
         ) = {
-            // Base kinds (2D/3D) cannot tell physics nodes apart at compile
-            // time; keep the conservative full bump for physics nodes and skip
-            // only for the rest.
-            let node = if self.nodes.get(id)?.node_type().is_physics() {
-                self.nodes.get_mut_untracked(id)?
-            } else {
-                self.nodes.get_mut_untracked_non_physics(id)?
-            };
-            if !node.node_type().is_a(T::BASE_NODE_TYPE) {
-                return None;
-            }
+            // One arena lookup validates id + base compatibility, returns the
+            // concrete type for later physics handling, and arms unwind safety.
+            let (concrete_type, mut node) = self
+                .nodes
+                .get_mut_scoped_base_node_api(id, T::BASE_NODE_TYPE)?;
             // A base mutation touches exactly one base kind (2D / 3D / UI).
             // `base_spatial_snapshot` folds the transform + visible + modulate
             // probes for the 2D/3D bases into one match, and the UI base is
@@ -350,10 +365,6 @@ impl NodeAPI for Runtime {
             // full equality proves the mutation was a no-op. Exactly one probe
             // is Some per node family; the 2D/3D bases are small Copy-content
             // structs.
-            let canonical_base = matches!(
-                T::BASE_NODE_TYPE,
-                NodeType::Node2D | NodeType::Node3D | NodeType::UiNode
-            );
             let base_2d_before =
                 canonical_base.then(|| node.with_base_ref::<Node2D, _>(Clone::clone));
             let base_3d_before =
@@ -383,28 +394,58 @@ impl NodeAPI for Runtime {
                 // exists, so treat every call as a change.
                 true
             };
+            let vis_2d_changed = before.visible_2d != after.visible_2d;
+            let vis_3d_changed = before.visible_3d != after.visible_3d;
+            let active_camera_2d_changed = before_camera_2d != after_camera_2d;
+            let active_camera_3d_changed = before_camera_3d != after_camera_3d;
+            let active_camera_3d_activated =
+                before_camera_3d.is_none() && after_camera_3d.is_some();
+            let modulate_changed = before.modulate != after.modulate;
+            node.finish();
             (
+                concrete_type,
                 value,
                 changed,
                 ui_before,
                 ui_after,
-                before.visible_2d != after.visible_2d,
-                before.visible_3d != after.visible_3d,
-                before_camera_2d != after_camera_2d,
-                before_camera_3d != after_camera_3d,
-                before_camera_3d.is_none() && after_camera_3d.is_some(),
-                before.modulate != after.modulate,
+                vis_2d_changed,
+                vis_3d_changed,
+                active_camera_2d_changed,
+                active_camera_3d_changed,
+                active_camera_3d_activated,
+                modulate_changed,
                 base_changed,
             )
         };
 
+        if concrete_type.is_physics() {
+            self.nodes.mark_physics_change();
+        }
+        let visibility_changed = vis_2d_changed
+            || vis_3d_changed
+            || ui_before
+                .as_ref()
+                .zip(ui_after.as_ref())
+                .is_some_and(|(before, after)| before.visible != after.visible);
+        if canonical_base {
+            if visibility_changed {
+                self.nodes.mark_visibility_change();
+            }
+            if modulate_changed {
+                self.nodes.mark_modulate_change();
+            }
+        } else {
+            // Concrete base-dispatch types expose payload fields outside the
+            // spatial snapshot, including sub-view suspension flags.
+            self.nodes.mark_world_state_change();
+        }
         if base_changed {
             self.mark_needs_rerender(id);
         }
         if concrete_type == NodeType::UiSubView {
             self.invalidate_physics_query_sync();
         }
-        if vis_2d_changed || vis_3d_changed {
+        if visibility_changed {
             self.force_rerender(id);
         }
         if modulate_changed {

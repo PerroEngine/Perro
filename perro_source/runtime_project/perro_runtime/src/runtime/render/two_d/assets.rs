@@ -12,7 +12,7 @@ impl Runtime {
                 match result {
                     crate::RuntimeRenderResult::Texture(id) => {
                         texture = id;
-                        if let Some(node) = self.nodes.get_mut_untracked(node) {
+                        if let Some(node) = self.nodes.get_mut_untracked_non_physics(node) {
                             match &mut node.data {
                                 SceneNodeData::Sprite2D(sprite) => sprite.texture = id,
                                 SceneNodeData::AnimatedSprite2D(sprite) => sprite.texture = id,

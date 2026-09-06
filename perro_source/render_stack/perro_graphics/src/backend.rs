@@ -9,7 +9,6 @@ use crate::{
     three_d::renderer::Renderer3D,
     three_d::{
         gpu::{load_mesh3d_from_source, validate_mesh_source},
-        renderer::Draw3DInstance,
         renderer::Draw3DKind,
     },
     two_d::renderer::{RectInstanceGpu, Renderer2D},
@@ -365,19 +364,6 @@ impl FrameState {
 }
 
 #[inline]
-fn draw_instance_count(draw: &Draw3DInstance) -> u32 {
-    if let Some(dense) = &draw.dense_multimesh {
-        return dense.instances.len().min(u32::MAX as usize) as u32;
-    }
-    let count = draw.instance_mats.len();
-    if count == 0 {
-        1
-    } else {
-        count.min(u32::MAX as usize) as u32
-    }
-}
-
-#[inline]
 fn command_dirty_bits(command: &RenderCommand) -> u32 {
     match command {
         RenderCommand::TwoD(Command2D::SetCamera { .. }) => DIRTY_CAMERA_2D,
@@ -622,7 +608,7 @@ pub struct PerroGraphics {
     // shader_path_hash -> shader reads perro_time/delta/frame_index. gates
     // the continuous-redraw path: static custom shaders don't force it.
     custom_shader_animated_cache: AHashMap<u64, bool>,
-    // memo of the retained-draw probe: (draw revision, material revision) ->
+    // memo of the retained-draw probe: (binding revision, material revision) ->
     // result. w/o it every frame (incl idle ones) re-walks all draws x
     // surfaces + re-hashes shader path strings.
     retained_animated_material_memo: Option<(u64, u64, bool)>,
@@ -647,8 +633,10 @@ pub struct PerroGraphics {
     texture_filter: TextureFilterMode,
     hdr_mode: HdrMode,
     shader_variant_mode: ShaderVariantMode,
-    retained_draws_cache_revision: u64,
+    retained_draw_instance_counts_revision: u64,
     retained_draw_instances_cache: u32,
+    #[cfg(test)]
+    retained_draw_instance_recounts: usize,
     retained_point_particles_cache: Vec<(NodeID, PointParticles3DState)>,
     retained_point_particles_cache_revision: u64,
     retained_waters_2d_cache: Vec<(NodeID, Water2DState)>,
@@ -686,7 +674,11 @@ pub struct PerroGraphics {
     scene_texture_refs_cache: AHashMap<TextureID, Vec<NodeID>>,
     scene_mesh_refs_cache: AHashMap<MeshID, Vec<NodeID>>,
     scene_material_refs_cache: AHashMap<MaterialID, Vec<NodeID>>,
-    used_ref_draws_revision: u64,
+    used_ref_draw_bindings_revision: u64,
+    #[cfg(test)]
+    retained_draw_resource_ref_recounts: usize,
+    #[cfg(test)]
+    retained_animated_material_scans: usize,
     used_ref_sprites_revision: u64,
     global_post_processing: PostProcessSet,
     // Cached built effects Arc handed to the renderer each frame, rebuilt only

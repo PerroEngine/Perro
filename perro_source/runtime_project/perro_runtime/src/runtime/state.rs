@@ -1,5 +1,5 @@
 use crate::{
-    cns::{ScriptCollection, SignalConnection, SignalRegistry},
+    cns::{ScriptCollection, SignalRegistry},
     rs_ctx::RuntimeResourceApi,
     runtime::{RuntimeScriptApi, RuntimeScriptBehavior, RuntimeScriptCtor},
 };
@@ -189,10 +189,18 @@ impl Default for PhysicsPose3D {
 
 pub(crate) struct InternalUpdateState {
     pub(crate) internal_update_nodes: Vec<NodeID>,
-    pub(crate) internal_update_dispatch_scratch: Vec<NodeID>,
+    pub(crate) internal_update_dispatch_scratch: Rc<[NodeID]>,
+    pub(crate) internal_update_membership_epoch: u64,
+    pub(crate) internal_update_dispatch_epoch: u64,
     pub(crate) internal_fixed_update_nodes: Vec<NodeID>,
     pub(crate) internal_fixed_dispatch_nodes: Vec<NodeID>,
-    pub(crate) internal_fixed_dispatch_scratch: Vec<NodeID>,
+    pub(crate) internal_fixed_dispatch_scratch: Rc<[NodeID]>,
+    pub(crate) internal_fixed_membership_epoch: u64,
+    pub(crate) internal_fixed_dispatch_epoch: u64,
+    #[cfg(any(test, feature = "bench", feature = "profile"))]
+    pub(crate) internal_update_snapshot_copies: u64,
+    #[cfg(any(test, feature = "bench", feature = "profile"))]
+    pub(crate) internal_fixed_snapshot_copies: u64,
     pub(crate) internal_update_pos: Vec<u32>,
     pub(crate) internal_fixed_update_pos: Vec<u32>,
     pub(crate) physics_body_nodes_2d: Vec<NodeID>,
@@ -209,10 +217,18 @@ impl InternalUpdateState {
     pub(crate) fn new() -> Self {
         Self {
             internal_update_nodes: Vec::new(),
-            internal_update_dispatch_scratch: Vec::new(),
+            internal_update_dispatch_scratch: Rc::from(Vec::<NodeID>::new()),
+            internal_update_membership_epoch: 0,
+            internal_update_dispatch_epoch: 0,
             internal_fixed_update_nodes: Vec::new(),
             internal_fixed_dispatch_nodes: Vec::new(),
-            internal_fixed_dispatch_scratch: Vec::new(),
+            internal_fixed_dispatch_scratch: Rc::from(Vec::<NodeID>::new()),
+            internal_fixed_membership_epoch: 0,
+            internal_fixed_dispatch_epoch: 0,
+            #[cfg(any(test, feature = "bench", feature = "profile"))]
+            internal_update_snapshot_copies: 0,
+            #[cfg(any(test, feature = "bench", feature = "profile"))]
+            internal_fixed_snapshot_copies: 0,
             internal_update_pos: Vec::new(),
             internal_fixed_update_pos: Vec::new(),
             physics_body_nodes_2d: Vec::new(),
@@ -229,7 +245,6 @@ impl InternalUpdateState {
 
 pub(crate) struct SignalRuntimeState {
     pub(crate) registry: SignalRegistry,
-    pub(crate) emit_scratch: Vec<SignalConnection>,
     pub(crate) param_scratch: Vec<perro_variant::Variant>,
     pub(crate) queued_ui_signals: Vec<(SignalID, Rc<[perro_variant::Variant]>)>,
 }
@@ -238,7 +253,6 @@ impl SignalRuntimeState {
     pub(crate) fn new() -> Self {
         Self {
             registry: SignalRegistry::new(),
-            emit_scratch: Vec::new(),
             param_scratch: Vec::new(),
             queued_ui_signals: Vec::new(),
         }

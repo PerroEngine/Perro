@@ -25,6 +25,174 @@ fn surfaces_for(material: MaterialID) -> Arc<[MeshSurfaceBinding3D]> {
     }])
 }
 
+fn multi_draw_command(
+    mesh: MeshID,
+    material: MaterialID,
+    node: NodeID,
+    count: usize,
+    offset: f32,
+) -> RenderCommand {
+    let instance_mats = (0..count)
+        .map(|index| {
+            glam::Mat4::from_translation(glam::Vec3::X * (index as f32 + offset)).to_cols_array_2d()
+        })
+        .collect::<Vec<_>>()
+        .into();
+    RenderCommand::ThreeD(Box::new(Command3D::DrawMulti {
+        mesh,
+        surfaces: surfaces_for(material),
+        node,
+        instance_mats,
+        skeleton: None,
+        blend_shape_weights: Arc::from([]),
+        meshlet_override: None,
+        lod: LODOptions3D::default(),
+        blend: Default::default(),
+        cast_shadows: true,
+        receive_shadows: true,
+    }))
+}
+
+#[test]
+fn sparse_draw_and_bulk_remove_refresh_backend_counts_and_resource_refs() {
+    let mut graphics = PerroGraphics::new();
+    let mesh = graphics.resources.create_mesh("__cube__", false);
+    let material = graphics.resources.create_material(
+        Material3D::Custom(CustomMaterial3D::new("res://shaders/animated.wgsl")),
+        Some("__cache_test_mat__"),
+        false,
+    );
+    let draw = |index, x| {
+        RenderCommand::ThreeD(Box::new(Command3D::Draw {
+            mesh,
+            surfaces: surfaces_for(material),
+            node: NodeID::from_parts(index, 0),
+            model: glam::Mat4::from_translation(glam::Vec3::X * x).to_cols_array_2d(),
+            skeleton: None,
+            blend_shape_weights: Arc::from([]),
+            meshlet_override: None,
+            lod: LODOptions3D::default(),
+            blend: Default::default(),
+            cast_shadows: true,
+            receive_shadows: true,
+        }))
+    };
+    for index in [3, 1, 2] {
+        graphics.submit(draw(index, 0.0));
+    }
+    graphics.draw_frame();
+    graphics.draw_frame();
+    assert_eq!(graphics.retained_draw_instances_cache, 3);
+    assert_eq!(graphics.used_mesh_refs_cache.get(&mesh), Some(&3));
+    let instance_recounts = graphics.retained_draw_instance_recounts;
+    let resource_ref_recounts = graphics.retained_draw_resource_ref_recounts;
+    let animated_scans = graphics.retained_animated_material_scans;
+    graphics.submit(draw(2, 42.0));
+    graphics.draw_frame();
+    assert_eq!(graphics.retained_draw_instances_cache, 3);
+    assert_eq!(graphics.used_material_refs_cache.get(&material), Some(&3));
+    assert_eq!(graphics.retained_draw_instance_recounts, instance_recounts);
+    assert_eq!(
+        graphics.retained_draw_resource_ref_recounts,
+        resource_ref_recounts
+    );
+    assert_eq!(graphics.retained_animated_material_scans, animated_scans);
+    assert_eq!(
+        graphics.renderer_3d.retained_draws_sorted()[1].instance_mats[0][3][0],
+        42.0
+    );
+    for index in [1, 3] {
+        graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::RemoveNode {
+            node: NodeID::from_parts(index, 0),
+        })));
+    }
+    graphics.draw_frame();
+    assert_eq!(graphics.retained_draw_instances_cache, 1);
+    assert_eq!(
+        graphics.retained_draw_instance_recounts,
+        instance_recounts + 1
+    );
+    assert_eq!(
+        graphics.retained_draw_resource_ref_recounts,
+        resource_ref_recounts + 1
+    );
+    assert_eq!(graphics.used_mesh_refs_cache.get(&mesh), Some(&1));
+    assert_eq!(graphics.used_material_refs_cache.get(&material), Some(&1));
+    assert_eq!(
+        graphics.renderer_3d.retained_draws_sorted()[0].node,
+        NodeID::from_parts(2, 0)
+    );
+    graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::RemoveNode {
+        node: NodeID::from_parts(2, 0),
+    })));
+    graphics.draw_frame();
+    assert_eq!(graphics.retained_draw_instances_cache, 0);
+    assert_eq!(
+        graphics.retained_draw_instance_recounts,
+        instance_recounts + 2
+    );
+    assert_eq!(
+        graphics.retained_draw_resource_ref_recounts,
+        resource_ref_recounts + 2
+    );
+    assert!(graphics.used_mesh_refs_cache.is_empty());
+    assert!(graphics.used_material_refs_cache.is_empty());
+}
+
+#[test]
+fn backend_recounts_only_binding_and_instance_count_inputs() {
+    let mut graphics = PerroGraphics::new();
+    let mesh = graphics.resources.create_mesh("__cube__", false);
+    let material_a = graphics.resources.create_material(
+        Material3D::Custom(CustomMaterial3D::new("res://shaders/animated_a.wgsl")),
+        Some("__revision_mat_a__"),
+        false,
+    );
+    let material_b = graphics.resources.create_material(
+        Material3D::Custom(CustomMaterial3D::new("res://shaders/animated_b.wgsl")),
+        Some("__revision_mat_b__"),
+        false,
+    );
+    let node = NodeID::from_parts(90, 0);
+    graphics.submit(multi_draw_command(mesh, material_a, node, 2, 0.0));
+    graphics.draw_frame();
+    graphics.draw_frame();
+
+    let count_recounts = graphics.retained_draw_instance_recounts;
+    let ref_recounts = graphics.retained_draw_resource_ref_recounts;
+    let animated_scans = graphics.retained_animated_material_scans;
+    graphics.submit(multi_draw_command(mesh, material_a, node, 2, 5.0));
+    graphics.draw_frame();
+    assert_eq!(graphics.retained_draw_instances_cache, 2);
+    assert_eq!(graphics.retained_draw_instance_recounts, count_recounts);
+    assert_eq!(graphics.retained_draw_resource_ref_recounts, ref_recounts);
+    assert_eq!(graphics.retained_animated_material_scans, animated_scans);
+
+    graphics.submit(multi_draw_command(mesh, material_b, node, 2, 5.0));
+    graphics.draw_frame();
+    assert_eq!(graphics.retained_draw_instance_recounts, count_recounts);
+    assert_eq!(
+        graphics.retained_draw_resource_ref_recounts,
+        ref_recounts + 1
+    );
+    assert_eq!(graphics.used_material_refs_cache.get(&material_a), None);
+    assert_eq!(graphics.used_material_refs_cache.get(&material_b), Some(&1));
+    graphics.draw_frame();
+    assert_eq!(
+        graphics.retained_animated_material_scans,
+        animated_scans + 1
+    );
+
+    graphics.submit(multi_draw_command(mesh, material_b, node, 7, 5.0));
+    graphics.draw_frame();
+    assert_eq!(graphics.retained_draw_instances_cache, 7);
+    assert_eq!(graphics.retained_draw_instance_recounts, count_recounts + 1);
+    assert_eq!(
+        graphics.retained_draw_resource_ref_recounts,
+        ref_recounts + 1
+    );
+}
+
 fn rect_command() -> Rect2DCommand {
     Rect2DCommand {
         center: [0.0, 0.0],
@@ -1211,6 +1379,10 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
             receive_shadows: true,
         })
     );
+    graphics.draw_frame();
+    let count_recounts = graphics.retained_draw_instance_recounts;
+    let ref_recounts = graphics.retained_draw_resource_ref_recounts;
+    let animated_scans = graphics.retained_animated_material_scans;
 
     let missing_mesh = MeshID::from_parts(999_999, 0);
     let second_model = [
@@ -1233,6 +1405,10 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
         receive_shadows: true,
     })));
     graphics.draw_frame();
+
+    assert_eq!(graphics.retained_draw_instance_recounts, count_recounts);
+    assert_eq!(graphics.retained_draw_resource_ref_recounts, ref_recounts);
+    assert_eq!(graphics.retained_animated_material_scans, animated_scans);
 
     assert_eq!(
         graphics.renderer_3d.retained_draw(node),

@@ -337,10 +337,12 @@ pub struct Runtime {
     pub(crate) ui_stream_render_info: AHashMap<NodeID, (TextureID, [u32; 2], [f32; 2])>,
     pub(crate) pending_camera_capture_removals: Vec<(NodeID, u8)>,
     pub(crate) world_membership: RefCell<WorldMembershipCache>,
-    /// per-epoch memo for effective-visibility + ancestor-modulate walks; any
-    /// arena mutation (mutation_revision) invalidates. RefCell so &self
-    /// per-frame query paths can stamp results.
+    /// Split-revision memo for effective visibility + ancestor modulation.
+    /// RefCell lets read-only per-frame query paths stamp results.
     pub(crate) vis_memo: RefCell<world_state::VisibilityModulateMemo>,
+    /// Per-world suspension result memo, invalidated by visibility, sub-view
+    /// flags, and topology changes.
+    pub(crate) suspension_memo: RefCell<world_state::SuspensionMemo>,
     pub(crate) dirty: DirtyState,
     pub(crate) transforms: TransformRuntimeState,
     internal_updates: InternalUpdateState,
@@ -734,6 +736,7 @@ impl Runtime {
             pending_camera_capture_removals: Vec::new(),
             world_membership: RefCell::new(WorldMembershipCache::default()),
             vis_memo: RefCell::new(world_state::VisibilityModulateMemo::default()),
+            suspension_memo: RefCell::new(world_state::SuspensionMemo::default()),
             dirty: DirtyState::new(),
             transforms: TransformRuntimeState::new(),
             internal_updates: InternalUpdateState::new(),

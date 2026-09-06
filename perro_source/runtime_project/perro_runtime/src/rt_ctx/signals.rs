@@ -7,6 +7,7 @@ use perro_variant::Variant;
 use std::rc::Rc;
 
 use crate::Runtime;
+use crate::cns::signal_registry::SignalConnectionsSnapshot;
 
 #[cfg(feature = "bench")]
 pub fn bench_insert_noop_signal_script(runtime: &mut Runtime, id: NodeID) {
@@ -50,6 +51,24 @@ pub fn bench_insert_noop_signal_script(runtime: &mut Runtime, id: NodeID) {
         .insert(id, Rc::new(BenchNoopSignalScript), Box::new(()));
 }
 
+#[cfg(feature = "bench")]
+pub fn bench_disconnect_signal_script(runtime: &mut Runtime, id: NodeID) -> usize {
+    runtime.signal_runtime.registry.disconnect_script(id)
+}
+
+#[cfg(feature = "bench")]
+pub fn bench_reset_signal_disconnect_counters(runtime: &mut Runtime) {
+    runtime
+        .signal_runtime
+        .registry
+        .reset_disconnect_script_counters();
+}
+
+#[cfg(feature = "bench")]
+pub fn bench_signal_disconnect_counters(runtime: &Runtime) -> (usize, usize) {
+    runtime.signal_runtime.registry.disconnect_script_counters()
+}
+
 impl SignalAPI for Runtime {
     fn signal_connect(
         &mut self,
@@ -75,20 +94,17 @@ impl SignalAPI for Runtime {
     }
 
     fn signal_emit(&mut self, signal: SignalID, params: &[Variant]) -> usize {
-        let mut calls = 0usize;
-
-        if let Some(connection) = self
+        let Some(snapshot) = self
             .signal_runtime
             .registry
-            .single_signal_connection(signal)
-        {
-            let Some(instance_index) = self.scripts.instance_index_for_id(connection.script_id)
-            else {
-                return 0;
-            };
-            let Some(instance) = self
-                .scripts
-                .get_instance_scheduled_indexed(instance_index, connection.script_id)
+            .signal_connections_snapshot(signal)
+        else {
+            return 0;
+        };
+
+        if let SignalConnectionsSnapshot::Single(connection) = snapshot {
+            let Some((instance_index, instance)) =
+                self.scripts.indexed_instance(connection.script_id)
             else {
                 return 0;
             };
@@ -111,11 +127,18 @@ impl SignalAPI for Runtime {
             let ipt: InputWindow<'_, perro_input_api::InputSnapshot> =
                 unsafe { InputWindow::new(&*context.input) };
             self.push_active_script_with_context(instance_index, connection.script_id, context);
-            let mut param_scratch = std::mem::take(&mut self.signal_runtime.param_scratch);
+            let connect_params = connection.params();
+            let mut param_scratch = (!params.is_empty() && !connect_params.is_empty())
+                .then(|| std::mem::take(&mut self.signal_runtime.param_scratch));
             {
                 let mut run = RuntimeWindow::new(self);
-                let call_params =
-                    merged_signal_params(params, connection.params.as_ref(), &mut param_scratch);
+                let call_params = if let Some(scratch) = param_scratch.as_mut() {
+                    merged_signal_params_into(params, connect_params, scratch)
+                } else if connect_params.is_empty() {
+                    params
+                } else {
+                    connect_params
+                };
                 let mut sctx = ScriptContext {
                     run: &mut run,
                     res: &res,
@@ -124,26 +147,17 @@ impl SignalAPI for Runtime {
                 };
                 let _ = behavior.call_method(connection.method, &mut sctx, call_params);
             }
-            param_scratch.clear();
-            self.signal_runtime.param_scratch = param_scratch;
+            if let Some(mut scratch) = param_scratch {
+                scratch.clear();
+                self.signal_runtime.param_scratch = scratch;
+            }
             self.pop_active_script(instance_index, connection.script_id);
-            calls = 1;
-            return calls;
+            return 1;
         }
 
-        let mut pending = std::mem::take(&mut self.signal_runtime.emit_scratch);
-        pending.clear();
-        self.signal_runtime
-            .registry
-            .copy_signal_connections(signal, &mut pending);
-        if pending.is_empty() {
-            // No listeners: skip context/window setup below entirely. Emit is
-            // side-effect-free when unconnected (no queued/deferred/wildcard
-            // dispatch), so returning 0 here is behavior-identical to running
-            // the (now-empty) loop.
-            self.signal_runtime.emit_scratch = pending;
+        let SignalConnectionsSnapshot::Multiple(pending) = snapshot else {
             return 0;
-        }
+        };
         let active_context = self.current_script_callback_context();
         let resource_api = active_context.is_none().then(|| self.resource_api.clone());
         let context = active_context.unwrap_or_else(|| {
@@ -161,25 +175,25 @@ impl SignalAPI for Runtime {
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
         let ipt: InputWindow<'_, perro_input_api::InputSnapshot> =
             unsafe { InputWindow::new(&*context.input) };
-        let mut param_scratch = std::mem::take(&mut self.signal_runtime.param_scratch);
+        let mut param_scratch =
+            (!params.is_empty()).then(|| std::mem::take(&mut self.signal_runtime.param_scratch));
+        let mut calls = 0usize;
 
         for connection in pending.iter() {
-            let instance_index = match self.scripts.instance_index_for_id(connection.script_id) {
-                Some(i) => i,
-                None => continue,
+            let Some((instance_index, instance)) =
+                self.scripts.indexed_instance(connection.script_id)
+            else {
+                continue;
             };
-            let behavior = match self
-                .scripts
-                .get_instance_scheduled_indexed(instance_index, connection.script_id)
-            {
-                Some(instance) => Rc::clone(&instance.behavior),
-                None => continue,
-            };
+            let behavior = Rc::clone(&instance.behavior);
             self.push_active_script_with_context(instance_index, connection.script_id, context);
             {
                 let mut run = RuntimeWindow::new(self);
-                let call_params =
-                    merged_signal_params(params, connection.params.as_ref(), &mut param_scratch);
+                let call_params = if let Some(scratch) = param_scratch.as_mut() {
+                    merged_signal_params(params, connection.params(), scratch)
+                } else {
+                    connection.params()
+                };
                 let mut sctx = ScriptContext {
                     run: &mut run,
                     res: &res,
@@ -188,14 +202,16 @@ impl SignalAPI for Runtime {
                 };
                 let _ = behavior.call_method(connection.method, &mut sctx, call_params);
             }
-            param_scratch.clear();
+            if let Some(scratch) = param_scratch.as_mut() {
+                scratch.clear();
+            }
             self.pop_active_script(instance_index, connection.script_id);
             calls += 1;
         }
 
-        self.signal_runtime.param_scratch = param_scratch;
-        pending.clear();
-        self.signal_runtime.emit_scratch = pending;
+        if let Some(param_scratch) = param_scratch {
+            self.signal_runtime.param_scratch = param_scratch;
+        }
         calls
     }
 }
@@ -250,6 +266,9 @@ where
     if connect_params.is_empty() {
         return emit_params;
     }
+    if emit_params.is_empty() {
+        return connect_params;
+    }
     merged_signal_params_into(emit_params, connect_params, scratch)
 }
 
@@ -260,6 +279,23 @@ mod tests {
     use perro_scripting::{ScriptBehavior, ScriptFlags, ScriptLifecycle};
     use std::any::Any;
     use std::hint::black_box;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static NESTED_EMITTER_CALLS: AtomicUsize = AtomicUsize::new(0);
+    static NESTED_RECEIVER_CALLS: AtomicUsize = AtomicUsize::new(0);
+    static OUTER_RECEIVER_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    struct NestedEmitterScript {
+        inner_signal: SignalID,
+    }
+
+    struct NestedReceiverScript;
+
+    struct OuterReceiverScript;
+
+    struct RemovingSignalScript {
+        victim: NodeID,
+    }
 
     struct NoopSignalScript;
 
@@ -291,6 +327,98 @@ mod tests {
         }
     }
 
+    impl ScriptLifecycle<RuntimeScriptApi> for NestedEmitterScript {}
+
+    impl ScriptBehavior<RuntimeScriptApi> for NestedEmitterScript {
+        fn script_flags(&self) -> ScriptFlags {
+            ScriptFlags::new(ScriptFlags::NONE)
+        }
+
+        fn create_state(&self) -> Box<dyn Any> {
+            Box::new(())
+        }
+
+        fn get_var(&self, _state: &dyn Any, _var: ScriptMemberID) -> Variant {
+            Variant::Null
+        }
+
+        fn set_var(&self, _state: &mut dyn Any, _var: ScriptMemberID, _value: Variant) {}
+
+        fn call_method(
+            &self,
+            _method: ScriptMemberID,
+            ctx: &mut ScriptContext<'_, RuntimeScriptApi>,
+            _params: &[Variant],
+        ) -> Variant {
+            NESTED_EMITTER_CALLS.fetch_add(1, Ordering::Relaxed);
+            assert_eq!(ctx.run.Signals().emit(self.inner_signal, &[]), 1);
+            Variant::Null
+        }
+    }
+
+    macro_rules! impl_counting_signal_script {
+        ($ty:ty, $counter:ident) => {
+            impl ScriptLifecycle<RuntimeScriptApi> for $ty {}
+
+            impl ScriptBehavior<RuntimeScriptApi> for $ty {
+                fn script_flags(&self) -> ScriptFlags {
+                    ScriptFlags::new(ScriptFlags::NONE)
+                }
+
+                fn create_state(&self) -> Box<dyn Any> {
+                    Box::new(())
+                }
+
+                fn get_var(&self, _state: &dyn Any, _var: ScriptMemberID) -> Variant {
+                    Variant::Null
+                }
+
+                fn set_var(&self, _state: &mut dyn Any, _var: ScriptMemberID, _value: Variant) {}
+
+                fn call_method(
+                    &self,
+                    _method: ScriptMemberID,
+                    _ctx: &mut ScriptContext<'_, RuntimeScriptApi>,
+                    _params: &[Variant],
+                ) -> Variant {
+                    $counter.fetch_add(1, Ordering::Relaxed);
+                    Variant::Null
+                }
+            }
+        };
+    }
+
+    impl_counting_signal_script!(NestedReceiverScript, NESTED_RECEIVER_CALLS);
+    impl_counting_signal_script!(OuterReceiverScript, OUTER_RECEIVER_CALLS);
+
+    impl ScriptLifecycle<RuntimeScriptApi> for RemovingSignalScript {}
+
+    impl ScriptBehavior<RuntimeScriptApi> for RemovingSignalScript {
+        fn script_flags(&self) -> ScriptFlags {
+            ScriptFlags::new(ScriptFlags::NONE)
+        }
+
+        fn create_state(&self) -> Box<dyn Any> {
+            Box::new(())
+        }
+
+        fn get_var(&self, _state: &dyn Any, _var: ScriptMemberID) -> Variant {
+            Variant::Null
+        }
+
+        fn set_var(&self, _state: &mut dyn Any, _var: ScriptMemberID, _value: Variant) {}
+
+        fn call_method(
+            &self,
+            _method: ScriptMemberID,
+            ctx: &mut ScriptContext<'_, RuntimeScriptApi>,
+            _params: &[Variant],
+        ) -> Variant {
+            let _ = ctx.run.Scripts().remove(self.victim);
+            Variant::Null
+        }
+    }
+
     #[test]
     fn merged_signal_params_appends_connect_params() {
         let emit_params = [Variant::from(7_i32)];
@@ -303,6 +431,18 @@ mod tests {
             merged,
             &[Variant::from(7_i32), Variant::from("right_pressed")]
         );
+    }
+
+    #[test]
+    fn merged_signal_params_reuses_connect_params_when_emit_params_empty() {
+        let connect_params = [Variant::from(13_i32), Variant::from(17_i32)];
+        let mut scratch = vec![Variant::from(99_i32)];
+
+        let merged = merged_signal_params(&[], &connect_params, &mut scratch);
+
+        assert_eq!(merged, connect_params);
+        assert_eq!(merged.as_ptr(), connect_params.as_ptr());
+        assert_eq!(scratch, [Variant::from(99_i32)]);
     }
 
     #[test]
@@ -326,5 +466,65 @@ mod tests {
         }
 
         assert_eq!(calls, 1024 * 4);
+    }
+
+    #[test]
+    fn nested_emit_keeps_outer_emission_snapshot() {
+        NESTED_EMITTER_CALLS.store(0, Ordering::Relaxed);
+        NESTED_RECEIVER_CALLS.store(0, Ordering::Relaxed);
+        OUTER_RECEIVER_CALLS.store(0, Ordering::Relaxed);
+        let outer = SignalID::from_string("outer");
+        let inner = SignalID::from_string("inner");
+        let method = ScriptMemberID::from_string("handle");
+        let emitter = NodeID::new(1);
+        let nested_receiver = NodeID::new(2);
+        let outer_receiver = NodeID::new(3);
+        let mut runtime = Runtime::new();
+        runtime.scripts.insert(
+            emitter,
+            Rc::new(NestedEmitterScript {
+                inner_signal: inner,
+            }),
+            Box::new(()),
+        );
+        runtime
+            .scripts
+            .insert(nested_receiver, Rc::new(NestedReceiverScript), Box::new(()));
+        runtime
+            .scripts
+            .insert(outer_receiver, Rc::new(OuterReceiverScript), Box::new(()));
+        assert!(runtime.signal_connect(emitter, outer, method, &[]));
+        assert!(runtime.signal_connect(outer_receiver, outer, method, &[]));
+        assert!(runtime.signal_connect(nested_receiver, inner, method, &[]));
+
+        assert_eq!(runtime.signal_emit(outer, &[]), 2);
+        assert_eq!(NESTED_EMITTER_CALLS.load(Ordering::Relaxed), 1);
+        assert_eq!(NESTED_RECEIVER_CALLS.load(Ordering::Relaxed), 1);
+        assert_eq!(OUTER_RECEIVER_CALLS.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn reentrant_script_teardown_skips_stale_snapshot_connection() {
+        let outer = SignalID::from_string("reentrant_teardown");
+        let victim_only = SignalID::from_string("victim_only");
+        let method = ScriptMemberID::from_string("handle");
+        let remover = NodeID::new(1);
+        let victim = NodeID::new(2);
+        let mut runtime = Runtime::new();
+        runtime.scripts.insert(
+            remover,
+            Rc::new(RemovingSignalScript { victim }),
+            Box::new(()),
+        );
+        runtime
+            .scripts
+            .insert(victim, Rc::new(NoopSignalScript), Box::new(()));
+        assert!(runtime.signal_connect(remover, outer, method, &[]));
+        assert!(runtime.signal_connect(victim, outer, method, &[]));
+        assert!(runtime.signal_connect(victim, victim_only, method, &[]));
+
+        assert_eq!(runtime.signal_emit(outer, &[]), 1);
+        assert_eq!(runtime.signal_emit(victim_only, &[]), 0);
+        assert_eq!(runtime.signal_emit(outer, &[]), 1);
     }
 }

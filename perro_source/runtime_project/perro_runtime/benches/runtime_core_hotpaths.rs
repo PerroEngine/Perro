@@ -465,7 +465,82 @@ fn bench_animated_sprite_2d_hotpaths(c: &mut Criterion) {
     group.finish();
 }
 
+#[cfg(feature = "bench")]
+fn bench_sub_view_suspension(c: &mut Criterion) {
+    use perro_nodes::SubView3D;
+
+    let mut group = c.benchmark_group("runtime_core/sub_view_suspension");
+    for count in [1_000, 10_000] {
+        for depth in [0, 1, 4, 16] {
+            let mut runtime = Runtime::new();
+            let mut parent = NodeID::nil();
+            for _ in 0..depth {
+                let view = NodeAPI::create::<SubView3D>(&mut runtime);
+                assert!(NodeAPI::reparent(&mut runtime, parent, view));
+                parent = view;
+            }
+            let specs = vec![NodeSpec::new(Node3D::new()); count];
+            let ids = NodeAPI::create_nodes(&mut runtime, &specs, parent);
+            assert_eq!(ids.len(), count);
+            assert!(
+                ids.iter()
+                    .all(|&id| !runtime.bench_is_suspended_by_sub_view(id))
+            );
+            group.bench_with_input(
+                BenchmarkId::new(format!("visible_depth_{depth}"), count),
+                &ids,
+                |b, ids| {
+                    b.iter(|| {
+                        let mut suspended = 0;
+                        for &id in black_box(ids) {
+                            suspended +=
+                                runtime.bench_is_suspended_by_sub_view(black_box(id)) as usize;
+                        }
+                        black_box(suspended)
+                    });
+                },
+            );
+        }
+    }
+    group.finish();
+}
+
+fn bench_render_bridge_3d_commands(c: &mut Criterion) {
+    use perro_render_bridge::Command3D;
+
+    let mut group = c.benchmark_group("runtime_core/render_bridge_3d");
+    for count in [1_000, 10_000] {
+        let mut runtime = Runtime::new();
+        let mut commands = Vec::with_capacity(count);
+        Runtime::drain_render_commands(&mut runtime, &mut commands);
+        commands.clear();
+        group.bench_with_input(
+            BenchmarkId::new("queue_drain_drop", count),
+            &count,
+            |b, &count| {
+                b.iter(|| {
+                    for index in 0..count {
+                        runtime.queue_render_command(RenderCommand::ThreeD(Box::new(
+                            Command3D::RemoveNode {
+                                node: NodeID::from_parts((index + 1) as u32, 0),
+                            },
+                        )));
+                    }
+                    runtime.drain_render_commands(&mut commands);
+                    assert_eq!(commands.len(), count);
+                    black_box(&commands);
+                    commands.clear();
+                });
+            },
+        );
+    }
+    group.finish();
+}
+
 fn benches(c: &mut Criterion) {
+    bench_render_bridge_3d_commands(c);
+    #[cfg(feature = "bench")]
+    bench_sub_view_suspension(c);
     bench_node_arena_len_hotloop(c);
     bench_child_topology_scan(c);
     bench_internal_schedule_unregister(c);

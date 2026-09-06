@@ -22,18 +22,6 @@ pub fn internal_update<RT, R, IP>(
     }
 }
 
-pub fn internal_fixed_update<RT, R, IP>(
-    _ctx: &mut RuntimeWindow<'_, RT>,
-    _res: &ResourceWindow<'_, R>,
-    _ipt: &InputWindow<'_, IP>,
-    _id: NodeID,
-) where
-    RT: RuntimeAPI + ?Sized,
-    R: ResourceAPI + ?Sized,
-    IP: InputAPI + ?Sized,
-{
-}
-
 fn step_ui_animated_image(image: &mut UiAnimatedImage, delta_seconds: f32) -> bool {
     let Some(animation) = image.current_animation_data() else {
         return false;

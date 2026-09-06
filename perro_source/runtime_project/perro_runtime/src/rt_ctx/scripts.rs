@@ -69,10 +69,21 @@ pub fn bench_insert_state_script(runtime: &mut Runtime, id: NodeID) {
 
         fn call_method(
             &self,
-            _method: ScriptMemberID,
-            _ctx: &mut ScriptContext<'_, RuntimeScriptApi>,
-            _params: &[Variant],
+            method: ScriptMemberID,
+            ctx: &mut ScriptContext<'_, RuntimeScriptApi>,
+            params: &[Variant],
         ) -> Variant {
+            if method == ScriptMemberID(2) {
+                let step = params.first().and_then(Variant::as_i64).unwrap_or(1);
+                return ctx
+                    .run
+                    .Scripts()
+                    .with_state_mut::<BenchScriptState, _, _>(ctx.id, |state| {
+                        state.frame = state.frame.wrapping_add(step as u64);
+                        Variant::from(state.frame as i64)
+                    })
+                    .unwrap_or(Variant::Null);
+            }
             Variant::Null
         }
     }
@@ -449,6 +460,7 @@ impl ScriptAPI for Runtime {
         self.scripts.set_fixed_update_enabled(script_id, enabled)
     }
 
+    #[inline]
     fn get_var(&mut self, script_id: NodeID, member: ScriptMemberID) -> Variant {
         self.scripts
             .with_instance(script_id, |instance| {
@@ -457,6 +469,7 @@ impl ScriptAPI for Runtime {
             .unwrap_or(Variant::Null)
     }
 
+    #[inline]
     fn set_var(&mut self, script_id: NodeID, member: ScriptMemberID, value: Variant) {
         let _ = self.scripts.with_instance_mut(script_id, |instance| {
             instance
@@ -471,14 +484,8 @@ impl ScriptAPI for Runtime {
         method: ScriptMemberID,
         params: &[Variant],
     ) -> Variant {
-        let (instance_index, behavior) = match self.scripts.instance_index_for_id(script_id) {
-            Some(i) => {
-                let behavior = match self.scripts.get_instance_scheduled_indexed(i, script_id) {
-                    Some(instance) => Rc::clone(&instance.behavior),
-                    None => return Variant::Null,
-                };
-                (i, behavior)
-            }
+        let (instance_index, behavior) = match self.scripts.indexed_instance(script_id) {
+            Some((i, instance)) => (i, Rc::clone(&instance.behavior)),
             None => return Variant::Null,
         };
         let active_context = self.current_script_callback_context();

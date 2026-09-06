@@ -1,6 +1,6 @@
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use perro_ids::{NodeID, ScriptMemberID, TagID};
-use perro_nodes::{Node2D, Node3D};
+use perro_nodes::{Node2D, Node3D, SubView3D};
 use perro_runtime::Runtime;
 use perro_runtime::api::scripts::{
     BenchScriptState, bench_insert_state_script, bench_with_active_script,
@@ -328,6 +328,46 @@ fn bench_node_api(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_world_state_memos(c: &mut Criterion) {
+    let mut group = c.benchmark_group("node_state/world_state_memos");
+
+    group.bench_function("transform_write_keeps_visibility_modulate_4096", |b| {
+        let (mut runtime, ids) = build_chain_3d(4_096);
+        let root = ids[0];
+        black_box(runtime.bench_effectively_visible_count(&ids));
+        black_box(runtime.bench_effective_self_modulate_sum(&ids));
+        b.iter(|| {
+            let _ = NodeAPI::with_node_mut::<Node3D, _, _>(&mut runtime, root, |node| {
+                node.transform.position.x += 0.001;
+            });
+            black_box(runtime.bench_effectively_visible_count(black_box(&ids)));
+            black_box(runtime.bench_effective_self_modulate_sum(black_box(&ids)));
+        });
+    });
+
+    group.bench_function("suspension_per_world_4096", |b| {
+        let mut runtime = Runtime::new();
+        let view = NodeAPI::create::<SubView3D>(&mut runtime);
+        let ids: Vec<_> = (0..4_096)
+            .map(|_| {
+                let id = NodeAPI::create::<Node3D>(&mut runtime);
+                assert!(NodeAPI::reparent(&mut runtime, view, id));
+                id
+            })
+            .collect();
+        assert!(!runtime.bench_is_suspended_by_sub_view(ids[0]));
+        b.iter(|| {
+            black_box(
+                ids.iter()
+                    .filter(|&&id| runtime.bench_is_suspended_by_sub_view(black_box(id)))
+                    .count(),
+            )
+        });
+    });
+
+    group.finish();
+}
+
 fn bench_script_state(c: &mut Criterion) {
     let mut group = c.benchmark_group("node_state/script_state");
 
@@ -611,6 +651,36 @@ fn bench_script_state(c: &mut Criterion) {
         );
 
         group.bench_with_input(
+            BenchmarkId::new("call_method_cross_state", count),
+            &count,
+            |b, &count| {
+                let mut runtime = Runtime::new();
+                let owner = NodeID::new(1);
+                bench_insert_state_script(&mut runtime, owner);
+                let targets: Vec<_> = (0..count)
+                    .map(|i| {
+                        let id = NodeID::new((i + 2) as u32);
+                        bench_insert_state_script(&mut runtime, id);
+                        id
+                    })
+                    .collect();
+                let params = [Variant::from(1_i64)];
+                b.iter(|| {
+                    let _ = bench_with_active_script(&mut runtime, owner, |runtime| {
+                        for &id in &targets {
+                            black_box(ScriptAPI::call_method(
+                                runtime,
+                                id,
+                                ScriptMemberID(2),
+                                &params,
+                            ));
+                        }
+                    });
+                })
+            },
+        );
+
+        group.bench_with_input(
             BenchmarkId::new("with_state_nested_self_mut", count),
             &count,
             |b, &count| {
@@ -728,6 +798,7 @@ fn bench_script_state(c: &mut Criterion) {
 fn benches(c: &mut Criterion) {
     bench_transform_propagation(c);
     bench_node_api(c);
+    bench_world_state_memos(c);
     bench_script_state(c);
 }
 

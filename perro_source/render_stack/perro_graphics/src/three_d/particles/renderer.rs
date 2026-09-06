@@ -19,7 +19,7 @@ impl Particles3DRenderer {
     }
 
     pub fn remove_node(&mut self, node: NodeID) {
-        if self.retained_points.remove(&node).is_some() {
+        if !self.retained_points.is_empty() && self.retained_points.remove(&node).is_some() {
             self.retained_points_revision = self.retained_points_revision.wrapping_add(1);
         }
     }

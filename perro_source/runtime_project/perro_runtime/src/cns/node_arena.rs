@@ -80,6 +80,12 @@ pub struct NodeArena {
     /// that mirror node data (resource-ref scan). Per-node caches want
     /// [`Self::node_change_stamp`] instead — this one move on ANY node write.
     mutation_revision: u64,
+    /// Bump when local visibility or topology may change.
+    visibility_revision: u64,
+    /// Bump when local modulation or topology may change.
+    modulate_revision: u64,
+    /// Bump when visibility, sub-view flags, or topology may change.
+    suspension_revision: u64,
     /// bump on structural chg + physics-relevant mut access. Split frm
     /// mutation_revision so per-frame non-physics data mut (UI text, sprite
     /// frames) not invalidate physics world sync gate. Tracked `get_mut` bump
@@ -128,6 +134,53 @@ pub struct NodeMut<'a> {
     old_node_type: NodeType,
     old_children_len: usize,
     old_children_hash: u64,
+}
+
+/// Narrow mutable access for typed/base node API callbacks.
+///
+/// Normal completion lets the caller classify visibility/modulate/suspension
+/// changes exactly. Unwinding cannot run that classification, so drop falls
+/// back to conservative invalidation.
+pub(crate) struct ScopedNodeMut<'a> {
+    arena: &'a mut NodeArena,
+    index: usize,
+    armed: bool,
+}
+
+impl ScopedNodeMut<'_> {
+    /// End a normally classified callback. Unwind before this call leaves the
+    /// guard armed so drop invalidates every dependent domain.
+    #[inline]
+    pub(crate) fn finish(mut self) {
+        self.armed = false;
+    }
+}
+
+impl Deref for ScopedNodeMut<'_> {
+    type Target = SceneNode;
+
+    fn deref(&self) -> &Self::Target {
+        self.arena.nodes[self.index]
+            .as_ref()
+            .expect("scoped node slot stays live while borrowed")
+    }
+}
+
+impl DerefMut for ScopedNodeMut<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.arena.nodes[self.index]
+            .as_mut()
+            .expect("scoped node slot stays live while borrowed")
+    }
+}
+
+impl Drop for ScopedNodeMut<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            self.arena.bump_world_state_revisions();
+            self.arena.physics_revision = self.arena.physics_revision.wrapping_add(1);
+        }
+    }
 }
 
 impl Deref for NodeMut<'_> {
@@ -265,6 +318,9 @@ impl NodeArena {
             tag_index: AHashMap::default(),
             active_len: 0,
             mutation_revision: 0,
+            visibility_revision: 0,
+            modulate_revision: 0,
+            suspension_revision: 0,
             physics_revision: 0,
             structural_revision: 0,
             sub_view_count: 0,
@@ -302,6 +358,9 @@ impl NodeArena {
             tag_index: AHashMap::default(),
             active_len: 0,
             mutation_revision: 0,
+            visibility_revision: 0,
+            modulate_revision: 0,
+            suspension_revision: 0,
             physics_revision: 0,
             structural_revision: 0,
             sub_view_count: 0,
@@ -314,6 +373,42 @@ impl NodeArena {
     #[inline]
     pub fn mutation_revision(&self) -> u64 {
         self.mutation_revision
+    }
+
+    #[inline]
+    pub(crate) fn visibility_revision(&self) -> u64 {
+        self.visibility_revision
+    }
+
+    #[inline]
+    pub(crate) fn modulate_revision(&self) -> u64 {
+        self.modulate_revision
+    }
+
+    #[inline]
+    pub(crate) fn suspension_revision(&self) -> u64 {
+        self.suspension_revision
+    }
+
+    #[inline]
+    pub(crate) fn mark_visibility_change(&mut self) {
+        self.visibility_revision = self.visibility_revision.wrapping_add(1);
+        self.suspension_revision = self.suspension_revision.wrapping_add(1);
+    }
+
+    #[inline]
+    pub(crate) fn mark_modulate_change(&mut self) {
+        self.modulate_revision = self.modulate_revision.wrapping_add(1);
+    }
+
+    #[inline]
+    pub(crate) fn mark_suspension_change(&mut self) {
+        self.suspension_revision = self.suspension_revision.wrapping_add(1);
+    }
+
+    #[inline]
+    pub(crate) fn mark_world_state_change(&mut self) {
+        self.bump_world_state_revisions();
     }
 
     /// Physics-facing revision: chg on structural changes + mutations that may
@@ -365,6 +460,7 @@ impl NodeArena {
     fn bump_mutation_revision(&mut self) {
         self.mutation_revision = self.mutation_revision.wrapping_add(1);
         self.physics_revision = self.physics_revision.wrapping_add(1);
+        self.bump_world_state_revisions();
     }
 
     /// Structural change: bump structural + mutation + physics revisions.
@@ -373,11 +469,19 @@ impl NodeArena {
         self.structural_revision = self.structural_revision.wrapping_add(1);
         self.mutation_revision = self.mutation_revision.wrapping_add(1);
         self.physics_revision = self.physics_revision.wrapping_add(1);
+        self.bump_world_state_revisions();
     }
 
     #[inline]
     fn bump_data_revision_only(&mut self) {
         self.mutation_revision = self.mutation_revision.wrapping_add(1);
+    }
+
+    #[inline]
+    fn bump_world_state_revisions(&mut self) {
+        self.visibility_revision = self.visibility_revision.wrapping_add(1);
+        self.modulate_revision = self.modulate_revision.wrapping_add(1);
+        self.suspension_revision = self.suspension_revision.wrapping_add(1);
     }
 
     /// Per-node change stamp: moves ONLY when this node is written, unlike
@@ -416,6 +520,13 @@ impl NodeArena {
     #[inline]
     fn bump_node_data_only(&mut self, index: usize) {
         self.bump_data_revision_only();
+        self.stamp_node(index);
+    }
+
+    #[inline]
+    fn bump_node_physics_data_only(&mut self, index: usize) {
+        self.bump_data_revision_only();
+        self.physics_revision = self.physics_revision.wrapping_add(1);
         self.stamp_node(index);
     }
 
@@ -560,6 +671,66 @@ impl NodeArena {
     pub(crate) fn get_mut_untracked_non_physics(&mut self, id: NodeID) -> Option<&mut SceneNode> {
         let index = self.valid_slot(id)?;
         self.bump_node_data_only(index);
+        self.bump_world_state_revisions();
+        let node = self.nodes[index].as_ref()?;
+        debug_assert_eq!(self.parents[index], node.parent);
+        debug_assert_eq!(self.node_types[index], node.node_type());
+        self.nodes[index].as_mut()
+    }
+
+    /// Exact typed callback access. Type rejection happens before revision
+    /// bumps or guard arming.
+    #[inline]
+    pub(crate) fn get_mut_scoped_exact_node_api(
+        &mut self,
+        id: NodeID,
+        expected: NodeType,
+    ) -> Option<ScopedNodeMut<'_>> {
+        let index = self.valid_slot(id)?;
+        if self.node_types[index] != expected {
+            return None;
+        }
+        Some(self.scoped_node_api_at(index))
+    }
+
+    /// Base callback access. Returns the concrete type from the same checked
+    /// slot lookup used to create the guard.
+    #[inline]
+    pub(crate) fn get_mut_scoped_base_node_api(
+        &mut self,
+        id: NodeID,
+        base: NodeType,
+    ) -> Option<(NodeType, ScopedNodeMut<'_>)> {
+        let index = self.valid_slot(id)?;
+        let concrete = self.node_types[index];
+        if !concrete.is_a(base) {
+            return None;
+        }
+        Some((concrete, self.scoped_node_api_at(index)))
+    }
+
+    /// Create an armed guard after the caller validates id + type.
+    #[inline]
+    fn scoped_node_api_at(&mut self, index: usize) -> ScopedNodeMut<'_> {
+        self.bump_node_data_only(index);
+        let node = self.nodes[index]
+            .as_ref()
+            .expect("validated scoped node slot stays live");
+        debug_assert_eq!(self.parents[index], node.parent);
+        debug_assert_eq!(self.node_types[index], node.node_type());
+        ScopedNodeMut {
+            arena: self,
+            index,
+            armed: true,
+        }
+    }
+
+    /// Physics pose pullback access. Only transform and runtime velocity fields
+    /// may change; visibility, modulation, sub-view state, and topology must
+    /// stay untouched.
+    pub(crate) fn get_mut_untracked_physics_pose(&mut self, id: NodeID) -> Option<&mut SceneNode> {
+        let index = self.valid_slot(id)?;
+        self.bump_node_physics_data_only(index);
         let node = self.nodes[index].as_ref()?;
         debug_assert_eq!(self.parents[index], node.parent);
         debug_assert_eq!(self.node_types[index], node.node_type());

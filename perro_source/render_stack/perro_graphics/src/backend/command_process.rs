@@ -347,7 +347,6 @@ impl PerroGraphics {
                                 gpu.set_stream_texture(id, true);
                                 gpu.invalidate_texture(id, texture_source.as_deref());
                             }
-                            self.retained_draws_cache_revision = u64::MAX;
                             self.retained_decals_3d_cache_revision = u64::MAX;
                             self.retained_sprites_cache_revision = u64::MAX;
                             self.events.push(RenderEvent::TextureLoaded { id });
@@ -379,7 +378,6 @@ impl PerroGraphics {
                             if let Some(gpu) = self.gpu.as_mut() {
                                 gpu.invalidate_texture(id, texture_source.as_deref());
                             }
-                            self.retained_draws_cache_revision = u64::MAX;
                             self.retained_decals_3d_cache_revision = u64::MAX;
                             self.retained_sprites_cache_revision = u64::MAX;
                             self.events.push(RenderEvent::TextureLoaded { id });
@@ -536,7 +534,6 @@ impl PerroGraphics {
                                 // shader source may differ aft hot reload; re-probe.
                                 self.custom_shader_animated_cache.clear();
                             }
-                            self.retained_draws_cache_revision = u64::MAX;
                             if asset_ready_log_enabled() {
                                 eprintln!(
                                     "[perro][asset-ready] backend material data applied id={id:?}"
@@ -550,9 +547,7 @@ impl PerroGraphics {
                         // cannot change the compiled pipeline, which is the
                         // whole point of this command existing next to
                         // WriteMaterialData.
-                        if self.resources.set_material_param(id, &name, value) {
-                            self.retained_draws_cache_revision = u64::MAX;
-                        }
+                        let _ = self.resources.set_material_param(id, &name, value);
                     }
                     ResourceCommand::SetMeshReserved { id, reserved } => {
                         self.resources.set_mesh_reserved(id, reserved);

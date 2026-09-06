@@ -417,9 +417,17 @@ impl Runtime {
                 rigid
             });
 
-            let Some(global) = self.physics_transform_3d(id) else {
+            let Some(mut global) = self.physics_transform_3d(id) else {
                 continue;
             };
+            // Matrix decomposition introduces a few ULPs of scale noise as a body
+            // rotates. Do not rebuild its colliders (and discard resting contacts)
+            // for that noise. Authored scale changes remain observable at 1e-5.
+            global.scale = Vector3::new(
+                (global.scale.x * 100_000.0).round() / 100_000.0,
+                (global.scale.y * 100_000.0).round() / 100_000.0,
+                (global.scale.z * 100_000.0).round() / 100_000.0,
+            );
             let mut shape_signature = body_signature_seed(kind);
             shape_signature = hash_f32(shape_signature, global.scale.x.to_bits());
             shape_signature = hash_f32(shape_signature, global.scale.y.to_bits());
@@ -781,7 +789,7 @@ impl Runtime {
             // 1 fat-slot touch: parent read + b4 capture + pose/vel write fused
             let Some((parent, before_local, moved)) = self
                 .nodes
-                .get_mut_untracked(pose.id)
+                .get_mut_untracked_physics_pose(pose.id)
                 .and_then(|scene_node| {
                     let parent = scene_node.parent;
                     let SceneNodeData::RigidBody2D(node) = &mut scene_node.data else {
@@ -887,7 +895,7 @@ impl Runtime {
             // 1 fat-slot touch: parent read + b4 capture + pose/vel write fused
             let Some((parent, before_local, moved)) = self
                 .nodes
-                .get_mut_untracked(pose.id)
+                .get_mut_untracked_physics_pose(pose.id)
                 .and_then(|scene_node| {
                     let parent = scene_node.parent;
                     let SceneNodeData::RigidBody3D(node) = &mut scene_node.data else {
@@ -928,6 +936,13 @@ impl Runtime {
                     .unwrap_or(Transform3D::IDENTITY);
                 self.record_physics_pose_3d(pose.id, parent, before, scene_curr);
                 let _ = NodeAPI::set_global_transform_3d(self, pose.id, scene_curr);
+                // Physics integrates pose, not scale. Keep the authored local
+                // scale instead of accumulating matrix-decomposition roundoff.
+                if let Some(node) = self.nodes.get_mut_untracked_physics_pose(pose.id)
+                    && let SceneNodeData::RigidBody3D(body) = &mut node.data
+                {
+                    body.scale = before_local.scale;
+                }
             }
         }
 

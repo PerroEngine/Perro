@@ -336,18 +336,6 @@ pub fn internal_update<RT, R, IP>(
     fire_slot_events(ctx, res, id);
 }
 
-pub fn internal_fixed_update<RT, R, IP>(
-    _run: &mut RuntimeWindow<'_, RT>,
-    _res_w: &ResourceWindow<'_, R>,
-    _ipt_w: &InputWindow<'_, IP>,
-    _id: NodeID,
-) where
-    RT: RuntimeAPI + ?Sized,
-    R: ResourceAPI + ?Sized,
-    IP: InputAPI + ?Sized,
-{
-}
-
 fn sync_slots<RT>(ctx: &mut RuntimeWindow<'_, RT>, id: NodeID, asset: &AnimationTreeAsset)
 where
     RT: RuntimeAPI + ?Sized,

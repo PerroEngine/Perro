@@ -66,19 +66,23 @@ impl PerroGraphics {
     // globals (perro_time/perro_time_phase/perro_delta_time/perro_frame_index)
     // and so needs continuous redraw. probe result cached per shader path;
     // unreadable sources count as animated (conservative = old behavior).
-    // whole answer memoized on (draw revision, material revision): those 2 are
-    // the only inputs, so idle frames never re-walk the draw list.
+    // whole answer memoized on (binding revision, material revision): transform,
+    // pose, and instance-count edits cannot change this answer.
     fn has_retained_animated_custom_material(&mut self) -> bool {
-        let draws_revision = self.renderer_3d.draw_revision();
+        let bindings_revision = self.renderer_3d.resource_binding_revision();
         let material_revision = self.resources.material_revision();
-        if let Some((draws, materials, animated)) = self.retained_animated_material_memo
-            && draws == draws_revision
+        if let Some((bindings, materials, animated)) = self.retained_animated_material_memo
+            && bindings == bindings_revision
             && materials == material_revision
         {
             return animated;
         }
         let cache = &mut self.custom_shader_animated_cache;
         let lookup = self.static_shader_lookup;
+        #[cfg(test)]
+        {
+            self.retained_animated_material_scans += 1;
+        }
         let animated =
             self.renderer_3d
                 .any_retained_custom_material_where(&self.resources, |shader_path| {
@@ -87,7 +91,8 @@ impl PerroGraphics {
                         .entry(key)
                         .or_insert_with(|| custom_shader_reads_frame_globals(shader_path, lookup))
                 });
-        self.retained_animated_material_memo = Some((draws_revision, material_revision, animated));
+        self.retained_animated_material_memo =
+            Some((bindings_revision, material_revision, animated));
         animated
     }
 
@@ -335,6 +340,8 @@ impl PerroGraphics {
         };
         let camera_2d_state = self.renderer_2d.camera();
         let draws_revision = self.renderer_3d.draw_revision();
+        let draw_bindings_revision = self.renderer_3d.resource_binding_revision();
+        let draw_instance_counts_revision = self.renderer_3d.instance_count_revision();
         let point_particles_revision = self.particles_3d.retained_point_particles_revision();
         if point_particles_revision != self.retained_point_particles_cache_revision {
             self.retained_point_particles_cache.clear();
@@ -365,12 +372,16 @@ impl PerroGraphics {
             self.retained_decals_3d_cache_revision = decals_3d_revision;
         }
         let retained_draws_3d = self.renderer_3d.retained_draws_sorted();
-        if draws_revision != self.retained_draws_cache_revision {
+        if draw_instance_counts_revision != self.retained_draw_instance_counts_revision {
             self.retained_draw_instances_cache =
                 retained_draws_3d.iter().fold(0u32, |acc, draw| {
-                    acc.saturating_add(draw_instance_count(draw))
+                    acc.saturating_add(draw.retained_instance_count())
                 });
-            self.retained_draws_cache_revision = draws_revision;
+            self.retained_draw_instance_counts_revision = draw_instance_counts_revision;
+            #[cfg(test)]
+            {
+                self.retained_draw_instance_recounts += 1;
+            }
         }
         let waters_2d_revision = self.renderer_2d.retained_waters_revision();
         if waters_2d_revision != self.retained_waters_2d_cache_revision {
@@ -540,7 +551,7 @@ impl PerroGraphics {
             }
             self.used_ref_sprites_revision = sprites_revision;
         }
-        let draws_refs_changed = self.used_ref_draws_revision != draws_revision;
+        let draws_refs_changed = self.used_ref_draw_bindings_revision != draw_bindings_revision;
         if draws_refs_changed {
             self.used_mesh_refs_cache.clear();
             self.used_material_refs_cache.clear();
@@ -555,7 +566,11 @@ impl PerroGraphics {
                     *self.used_material_refs_cache.entry(material).or_insert(0) += 1;
                 }
             }
-            self.used_ref_draws_revision = draws_revision;
+            self.used_ref_draw_bindings_revision = draw_bindings_revision;
+            #[cfg(test)]
+            {
+                self.retained_draw_resource_ref_recounts += 1;
+            }
         }
 
         // stream upserts add/remove stream output textures referenced by ui

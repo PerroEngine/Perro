@@ -8,7 +8,34 @@ const PHYSICS_POSE_EPS_SQ_2D: f32 = 0.0001;
 const PHYSICS_POSE_EPS_SQ_3D: f32 = 0.0001;
 const PHYSICS_POSE_ROT_EPS: f32 = 0.001;
 
+#[cfg(feature = "bench")]
+std::thread_local! {
+    static TRANSFORM_WORK: std::cell::Cell<Option<[u64; 4]>> = const { std::cell::Cell::new(None) };
+}
+
+#[cfg(feature = "bench")]
+#[inline]
+fn note_transform_work(lane: usize) {
+    TRANSFORM_WORK.with(|work| {
+        if let Some(mut counts) = work.get() {
+            counts[lane] += 1;
+            work.set(Some(counts));
+        }
+    });
+}
+
 impl Runtime {
+    /// Enable current-thread operation counts: dirty visits, queries, cache hits, rebuilt TRS rows.
+    #[cfg(feature = "bench")]
+    pub fn bench_begin_transform_work(&self) {
+        TRANSFORM_WORK.with(|work| work.set(Some([0; 4])));
+    }
+
+    #[cfg(feature = "bench")]
+    pub fn bench_end_transform_work(&self) -> [u64; 4] {
+        TRANSFORM_WORK.with(|work| work.replace(None).unwrap_or_default())
+    }
+
     #[cfg(feature = "bench")]
     pub fn bench_refresh_dirty_global_transforms(&mut self) {
         self.refresh_dirty_global_transforms();
@@ -46,6 +73,8 @@ impl Runtime {
                 }
                 self.transforms.transform_visit_flags[index] = 1;
                 self.transforms.transform_visit_indices.push(index as u32);
+                #[cfg(feature = "bench")]
+                note_transform_work(0);
 
                 let Some(node) = self.nodes.get(id) else {
                     continue;
@@ -203,6 +232,8 @@ impl Runtime {
     }
 
     pub(crate) fn get_global_transform_2d(&mut self, id: NodeID) -> Option<Transform2D> {
+        #[cfg(feature = "bench")]
+        note_transform_work(1);
         if id.is_nil() || self.nodes.get(id).is_none() {
             return None;
         }
@@ -216,6 +247,8 @@ impl Runtime {
         let start_index = id.index() as usize;
         self.ensure_global_2d_capacity(start_index);
         if self.is_global_2d_cached_clean(id) {
+            #[cfg(feature = "bench")]
+            note_transform_work(2);
             return self
                 .transforms
                 .global_transform_2d
@@ -284,6 +317,8 @@ impl Runtime {
                 local
             };
             let index = chain_id.index() as usize;
+            #[cfg(feature = "bench")]
+            note_transform_work(3);
             self.transforms.global_transform_2d[index] = global;
             self.transforms.global_transform_2d_valid[index] = 1;
             self.transforms.global_transform_2d_generation[index] = chain_id.generation();
@@ -302,6 +337,8 @@ impl Runtime {
     }
 
     pub(crate) fn get_global_transform_3d(&mut self, id: NodeID) -> Option<Transform3D> {
+        #[cfg(feature = "bench")]
+        note_transform_work(1);
         if id.is_nil() || self.nodes.get(id).is_none() {
             return None;
         }
@@ -315,6 +352,8 @@ impl Runtime {
         let start_index = id.index() as usize;
         self.ensure_global_3d_capacity(start_index);
         if self.is_global_3d_cached_clean(id) {
+            #[cfg(feature = "bench")]
+            note_transform_work(2);
             return self
                 .transforms
                 .global_transform_3d
@@ -383,6 +422,8 @@ impl Runtime {
                 local
             };
             let index = chain_id.index() as usize;
+            #[cfg(feature = "bench")]
+            note_transform_work(3);
             self.transforms.global_transform_3d[index] = global;
             self.transforms.global_transform_3d_valid[index] = 1;
             self.transforms.global_transform_3d_generation[index] = chain_id.generation();
