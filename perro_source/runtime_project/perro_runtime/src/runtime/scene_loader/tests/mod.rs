@@ -363,11 +363,15 @@ fn apply_route_change_swaps_scene_root() {
     runtime.project = Some(std::rc::Rc::new(project));
     runtime.provider_mode = ProviderMode::Static;
 
-    runtime.active_route_root = Some(runtime.load_scene_at_runtime("100").expect("load home"));
-    runtime.active_route_href = Some("/".to_string());
+    runtime.scene_runtime.active_route_root =
+        Some(runtime.load_scene_at_runtime("100").expect("load home"));
+    runtime.scene_runtime.active_route_href = Some("/".to_string());
 
     runtime.apply_route_change("/docs").expect("route change");
-    assert_eq!(runtime.active_route_href.as_deref(), Some("/docs"));
+    assert_eq!(
+        runtime.scene_runtime.active_route_href.as_deref(),
+        Some("/docs")
+    );
     assert!(
         runtime
             .nodes
@@ -411,8 +415,8 @@ fn failed_route_change_keeps_current_scene_and_route() {
     runtime.provider_mode = ProviderMode::Static;
 
     let home = runtime.load_scene_at_runtime("100").expect("load home");
-    runtime.active_route_root = Some(home);
-    runtime.active_route_href = Some("/".to_string());
+    runtime.scene_runtime.active_route_root = Some(home);
+    runtime.scene_runtime.active_route_href = Some("/".to_string());
     let node_count = runtime.nodes.len();
 
     let err = runtime
@@ -422,8 +426,11 @@ fn failed_route_change_keeps_current_scene_and_route() {
         err.contains("missing_script") || err.contains("script hash"),
         "{err}"
     );
-    assert_eq!(runtime.active_route_href.as_deref(), Some("/"));
-    assert_eq!(runtime.active_route_root, Some(home));
+    assert_eq!(
+        runtime.scene_runtime.active_route_href.as_deref(),
+        Some("/")
+    );
+    assert_eq!(runtime.scene_runtime.active_route_root, Some(home));
     assert!(runtime.nodes.get(home).is_some());
     assert_eq!(runtime.nodes.len(), node_count);
     assert!(
@@ -513,10 +520,10 @@ fn loaded_scene_root_removes_hidden_owner_and_sibling_roots() {
         .load_scene_doc_at_runtime(scene)
         .expect("load sibling scene");
     assert_eq!(runtime.nodes.len(), 3);
-    assert_eq!(runtime.scene_ownership_roots.len(), 1);
+    assert_eq!(runtime.scene_runtime.scene_ownership_roots.len(), 1);
     assert!(NodeAPI::remove_node(&mut runtime, root));
     assert!(runtime.nodes.is_empty());
-    assert!(runtime.scene_ownership_roots.is_empty());
+    assert!(runtime.scene_runtime.scene_ownership_roots.is_empty());
     assert!(runtime.nodes.named_ids("primary").next().is_none());
     assert!(runtime.nodes.named_ids("sibling").next().is_none());
 }
@@ -621,6 +628,7 @@ fn preload_compiles_once_and_spawns_distinct_instances() {
     let mut runtime = Runtime::new();
     runtime.project = Some(std::rc::Rc::new(RuntimeProject::new("Scene Test", ".")));
     runtime
+        .scene_runtime
         .scene_cache
         .borrow_mut()
         .insert(path.to_string(), std::sync::Arc::new(scene));
@@ -628,8 +636,8 @@ fn preload_compiles_once_and_spawns_distinct_instances() {
     let id = runtime
         .preload_scene_blocking_at_runtime(path)
         .expect("test or bench setup must succeed");
-    assert_eq!(runtime.prepared_scene_cache.borrow().len(), 1);
-    assert_eq!(runtime.preloaded_prepared_scenes.len(), 1);
+    assert_eq!(runtime.scene_runtime.prepared_scene_cache.borrow().len(), 1);
+    assert_eq!(runtime.scene_runtime.preloaded_prepared_scenes.len(), 1);
 
     let first = runtime
         .load_preloaded_scene_at_runtime(id)
@@ -638,11 +646,17 @@ fn preload_compiles_once_and_spawns_distinct_instances() {
         .load_preloaded_scene_at_runtime(id)
         .expect("test or bench setup must succeed");
     assert_ne!(first, second);
-    assert_eq!(runtime.prepared_scene_cache.borrow().len(), 1);
+    assert_eq!(runtime.scene_runtime.prepared_scene_cache.borrow().len(), 1);
 
     assert!(runtime.free_preloaded_scene_at_runtime(id));
-    assert!(runtime.preloaded_prepared_scenes.is_empty());
-    assert!(runtime.prepared_scene_cache.borrow().is_empty());
+    assert!(runtime.scene_runtime.preloaded_prepared_scenes.is_empty());
+    assert!(
+        runtime
+            .scene_runtime
+            .prepared_scene_cache
+            .borrow()
+            .is_empty()
+    );
 }
 
 #[test]

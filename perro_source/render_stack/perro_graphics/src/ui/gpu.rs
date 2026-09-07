@@ -90,6 +90,15 @@ struct UiMeshGpu {
 #[derive(Clone, Copy, Default)]
 struct UiPerfCounters {
     draw_calls: u32,
+    mesh_upload_bytes: usize,
+    mesh_upload_calls: u32,
+    patched_primitives: usize,
+}
+
+struct UiPatchSpan {
+    primitives: std::ops::Range<usize>,
+    vertices: std::ops::Range<usize>,
+    indices: std::ops::Range<usize>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -145,8 +154,10 @@ pub struct GpuUi {
     // Keeps every Arc whose pointer the current signature hashed alive until
     // the next signature is computed (ABA guard for the ptr-identity hash).
     signature_pins: Vec<Arc<ClippedPrimitive>>,
+    patch_spans: Vec<UiPatchSpan>,
     prepared_revision: u64,
     prepared_viewport: [u32; 2],
+    prepared_render_viewport: [u32; 2],
     // Retained supersample raster. The target keeps the previous frame's UI
     // pixels, so a frame whose UI did not change re-encodes only the cheap
     // full-screen composite instead of re-rasterizing the UI target.
@@ -477,8 +488,10 @@ impl GpuUi {
             indices: Vec::new(),
             prepared_mesh_signature: None,
             signature_pins: Vec::new(),
+            patch_spans: Vec::new(),
             prepared_revision: u64::MAX,
             prepared_viewport: [0, 0],
+            prepared_render_viewport: [0, 0],
             supersample_dirty: true,
             rasterized_signature: None,
             rasterized_render_viewport: [0, 0],
@@ -534,8 +547,13 @@ impl GpuUi {
             self.max_render_pixels,
         );
         let render_scale = viewport_scale(viewport, render_viewport);
+        self.perf_counters = UiPerfCounters {
+            draw_calls: self.meshes.len() as u32,
+            ..UiPerfCounters::default()
+        };
         if self.prepared_revision == revision
             && self.prepared_viewport == viewport
+            && self.prepared_render_viewport == render_viewport
             && textures_delta.set.is_empty()
             && textures_delta.free.is_empty()
         {
@@ -579,16 +597,28 @@ impl GpuUi {
                 static_texture_lookup,
             },
         );
+        let unchanged = self.prepared_mesh_signature == Some(mesh_signature);
+        let patched = !unchanged
+            && self.patch_mesh_buffers(
+                queue,
+                primitives,
+                primitive_depths,
+                mesh_signature,
+                render_viewport,
+                render_scale,
+            );
         // ABA guard: the signature hashes `Arc::as_ptr` per primitive. Pin the
         // hashed Arcs for as long as the signature can gate a skip, so a
         // dropped primitive's address can never be reused by a different
         // primitive that would then collide with the retained signature.
         self.signature_pins.clear();
         self.signature_pins.extend_from_slice(primitives);
-        if self.prepared_mesh_signature == Some(mesh_signature) {
+        if unchanged || patched {
             self.perf_counters.draw_calls = self.meshes.len() as u32;
+            self.prepared_mesh_signature = Some(mesh_signature);
             self.prepared_revision = revision;
             self.prepared_viewport = viewport;
+            self.prepared_render_viewport = render_viewport;
             return;
         }
         self.meshes.clear();
@@ -674,6 +704,7 @@ impl GpuUi {
         self.prepared_uses_depth_test = uses_depth_test;
         self.prepared_revision = revision;
         self.prepared_viewport = viewport;
+        self.prepared_render_viewport = render_viewport;
     }
 
     pub fn render_pass(
@@ -953,9 +984,144 @@ impl GpuUi {
         })
     }
 
+    /// Keep stable 2D draw ranges and upload only the primitive runs whose
+    /// retained Arcs changed. Depth-projected UI and every layout change use
+    /// the full path, so offsets, clipping and texture grouping stay exact.
+    fn patch_mesh_buffers(
+        &mut self,
+        queue: &wgpu::Queue,
+        primitives: &[Arc<ClippedPrimitive>],
+        primitive_depths: &[Option<Arc<[f32]>>],
+        signature: UiMeshSignature,
+        render_viewport: [u32; 2],
+        render_scale: [f32; 2],
+    ) -> bool {
+        let Some(previous) = self.prepared_mesh_signature else {
+            return false;
+        };
+        if self.prepared_render_viewport != render_viewport
+            || viewport_scale(self.prepared_viewport, self.prepared_render_viewport) != render_scale
+            || self.prepared_uses_depth_test
+            || primitive_depths.iter().any(Option::is_some)
+            || previous.mesh_count != primitives.len()
+            || signature.mesh_count != primitives.len()
+            || self.signature_pins.len() != primitives.len()
+            || previous.vertex_count != signature.vertex_count
+            || previous.index_count != signature.index_count
+            || self.vertices.len() != signature.vertex_count
+            || self.indices.len() != signature.index_count
+        {
+            return false;
+        }
+        let (Some(vertex_buffer), Some(index_buffer)) = (&self.vertex_buffer, &self.index_buffer)
+        else {
+            return false;
+        };
+        self.patch_spans.clear();
+        let (mut vertex_start, mut index_start, mut changed_vertices, mut changed_primitives) =
+            (0, 0, 0, 0);
+        // Validate all offsets before mutating any standing CPU/GPU bytes.
+        for (index, (old, new)) in self.signature_pins.iter().zip(primitives).enumerate() {
+            let (Primitive::Mesh(old_mesh), Primitive::Mesh(mesh)) =
+                (&old.primitive, &new.primitive)
+            else {
+                return false;
+            };
+            if old.clip_rect != new.clip_rect
+                || old_mesh.texture_id != mesh.texture_id
+                || old_mesh.vertices.len() != mesh.vertices.len()
+                || old_mesh.indices.len() != mesh.indices.len()
+            {
+                return false;
+            }
+            let vertex_end = vertex_start + mesh.vertices.len();
+            let index_end = index_start + mesh.indices.len();
+            if !Arc::ptr_eq(old, new) {
+                changed_vertices += mesh.vertices.len();
+                changed_primitives += 1;
+                if let Some(last) = self.patch_spans.last_mut()
+                    && last.primitives.end == index
+                {
+                    last.primitives.end = index + 1;
+                    last.vertices.end = vertex_end;
+                    last.indices.end = index_end;
+                } else {
+                    self.patch_spans.push(UiPatchSpan {
+                        primitives: index..index + 1,
+                        vertices: vertex_start..vertex_end,
+                        indices: index_start..index_end,
+                    });
+                }
+            }
+            vertex_start = vertex_end;
+            index_start = index_end;
+        }
+        // Bound queue-call overhead on widely scattered/all-dynamic edits.
+        if self.patch_spans.is_empty()
+            || self.patch_spans.len() > 8
+            || changed_vertices > self.vertices.len() / 2
+        {
+            return false;
+        }
+        for span in &self.patch_spans {
+            let mut vertex_start = span.vertices.start;
+            let mut index_start = span.indices.start;
+            for index in span.primitives.clone() {
+                let Primitive::Mesh(mesh) = &primitives[index].primitive else {
+                    unreachable!()
+                };
+                for (dst, vertex) in self.vertices[vertex_start..vertex_start + mesh.vertices.len()]
+                    .iter_mut()
+                    .zip(&mesh.vertices)
+                {
+                    *dst = UiVertexGpu {
+                        pos: [
+                            vertex.pos.x * render_scale[0],
+                            vertex.pos.y * render_scale[1],
+                        ],
+                        uv: [vertex.uv.x, vertex.uv.y],
+                        depth_test: [0.0, 0.0],
+                        color: vertex.color.to_array(),
+                    };
+                }
+                for (dst, &index) in self.indices[index_start..index_start + mesh.indices.len()]
+                    .iter_mut()
+                    .zip(&mesh.indices)
+                {
+                    *dst = index.saturating_add(vertex_start.min(u32::MAX as usize) as u32);
+                }
+                vertex_start += mesh.vertices.len();
+                index_start += mesh.indices.len();
+            }
+            let vertices = bytemuck::cast_slice(&self.vertices[span.vertices.clone()]);
+            let indices = bytemuck::cast_slice(&self.indices[span.indices.clone()]);
+            queue.write_buffer(
+                vertex_buffer,
+                (span.vertices.start * std::mem::size_of::<UiVertexGpu>()) as u64,
+                vertices,
+            );
+            queue.write_buffer(
+                index_buffer,
+                (span.indices.start * std::mem::size_of::<u32>()) as u64,
+                indices,
+            );
+            self.perf_counters.mesh_upload_bytes += vertices.len() + indices.len();
+            self.perf_counters.mesh_upload_calls += 2;
+        }
+        self.perf_counters.patched_primitives = changed_primitives;
+        self.shrink_vertices
+            .note_used(self.vertices.len() * std::mem::size_of::<UiVertexGpu>());
+        self.shrink_indices
+            .note_used(self.indices.len() * std::mem::size_of::<u32>());
+        true
+    }
+
     fn upload_mesh_buffers(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         let vertex_bytes: &[u8] = bytemuck::cast_slice(&self.vertices);
         let index_bytes: &[u8] = bytemuck::cast_slice(&self.indices);
+        self.perf_counters.mesh_upload_bytes = vertex_bytes.len() + index_bytes.len();
+        self.perf_counters.mesh_upload_calls =
+            u32::from(!vertex_bytes.is_empty()) + u32::from(!index_bytes.is_empty());
         self.shrink_vertices.note_used(vertex_bytes.len());
         self.shrink_indices.note_used(index_bytes.len());
         self.vertex_buffer = upload_or_grow_buffer(

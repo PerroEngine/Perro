@@ -13,7 +13,7 @@ impl Runtime {
         // memo root inverse per (world, root mat): sync passes cal this / body,
         // root mat rarely chg w/in a pass -> skip per-body inversion.
         let root_mat = root.to_mat3();
-        let root_inv = match self.physics_root_inv_2d {
+        let root_inv = match self.physics_sync.physics_root_inv_2d {
             Some((cached_world, cached_mat, inv))
                 if cached_world == world && cached_mat == root_mat =>
             {
@@ -21,7 +21,7 @@ impl Runtime {
             }
             _ => {
                 let inv = root_mat.inverse();
-                self.physics_root_inv_2d = Some((world, root_mat, inv));
+                self.physics_sync.physics_root_inv_2d = Some((world, root_mat, inv));
                 inv
             }
         };
@@ -40,7 +40,7 @@ impl Runtime {
         };
         // see physics_transform_2d memo note.
         let root_mat = root.to_mat4();
-        let root_inv = match self.physics_root_inv_3d {
+        let root_inv = match self.physics_sync.physics_root_inv_3d {
             Some((cached_world, cached_mat, inv))
                 if cached_world == world && cached_mat == root_mat =>
             {
@@ -48,7 +48,7 @@ impl Runtime {
             }
             _ => {
                 let inv = root_mat.inverse();
-                self.physics_root_inv_3d = Some((world, root_mat, inv));
+                self.physics_sync.physics_root_inv_3d = Some((world, root_mat, inv));
                 inv
             }
         };
@@ -112,7 +112,7 @@ impl Runtime {
         key: u64,
         tileset: &std::rc::Rc<crate::runtime::render_2d::ParsedTileset2D>,
     ) -> u64 {
-        if let Some((cached, hash)) = self.tileset_collision_hash_cache_2d.get(&key)
+        if let Some((cached, hash)) = self.physics_sync.tileset_collision_hash_cache_2d.get(&key)
             && std::rc::Rc::ptr_eq(cached, tileset)
         {
             return *hash;
@@ -124,9 +124,11 @@ impl Runtime {
                 hash = hash_tile_collision_shape_2d(hash, &tile.collision_shape);
             }
         }
-        self.tileset_collision_hash_cache_2d
+        self.physics_sync
+            .tileset_collision_hash_cache_2d
             .retain(|_, (cached, _)| std::rc::Rc::strong_count(cached) > 1);
-        self.tileset_collision_hash_cache_2d
+        self.physics_sync
+            .tileset_collision_hash_cache_2d
             .insert(key, (tileset.clone(), hash));
         hash
     }
@@ -136,7 +138,7 @@ impl Runtime {
         self.physics_collect_calls_2d
             .set(self.physics_collect_calls_2d.get() + 1);
         let node_count = self.internal_updates.physics_body_nodes_2d.len();
-        let mut out = std::mem::take(&mut self.physics_body_descs_2d);
+        let mut out = std::mem::take(&mut self.physics_sync.physics_body_descs_2d);
         out.clear();
         if out.capacity() < node_count {
             out.reserve(node_count - out.capacity());
@@ -346,7 +348,7 @@ impl Runtime {
         self.physics_collect_calls_3d
             .set(self.physics_collect_calls_3d.get() + 1);
         let node_count = self.internal_updates.physics_body_nodes_3d.len();
-        let mut out = std::mem::take(&mut self.physics_body_descs_3d);
+        let mut out = std::mem::take(&mut self.physics_sync.physics_body_descs_3d);
         out.clear();
         if out.capacity() < node_count {
             out.reserve(node_count - out.capacity());
@@ -526,7 +528,7 @@ impl Runtime {
     }
 
     pub(super) fn collect_joint_descs_2d(&mut self) -> Vec<JointDesc2D> {
-        let mut out = std::mem::take(&mut self.physics_joint_descs_2d);
+        let mut out = std::mem::take(&mut self.physics_sync.physics_joint_descs_2d);
         out.clear();
         let node_count = self.internal_updates.physics_joint_nodes_2d.len();
         if out.capacity() < node_count {
@@ -604,7 +606,7 @@ impl Runtime {
     }
 
     pub(super) fn collect_joint_descs_3d(&mut self) -> Vec<JointDesc3D> {
-        let mut out = std::mem::take(&mut self.physics_joint_descs_3d);
+        let mut out = std::mem::take(&mut self.physics_sync.physics_joint_descs_3d);
         out.clear();
         let node_count = self.internal_updates.physics_joint_nodes_3d.len();
         if out.capacity() < node_count {
@@ -679,7 +681,8 @@ impl Runtime {
     }
 
     pub(super) fn sync_world_2d(&mut self, bodies: &[BodyDesc2D]) {
-        let mut handle_updates = std::mem::take(&mut self.physics_handle_updates_scratch_2d);
+        let mut handle_updates =
+            std::mem::take(&mut self.physics_sync.physics_handle_updates_scratch_2d);
         handle_updates.clear();
         self.physics
             .sync_world_2d(bodies, |id, handle| handle_updates.push((id, handle)));
@@ -687,7 +690,7 @@ impl Runtime {
             self.set_body_handle_2d(id, handle);
         }
         handle_updates.clear();
-        self.physics_handle_updates_scratch_2d = handle_updates;
+        self.physics_sync.physics_handle_updates_scratch_2d = handle_updates;
     }
 
     pub(super) fn sync_world_3d(&mut self, bodies: &[BodyDesc3D]) {
@@ -704,7 +707,8 @@ impl Runtime {
                 .project()
                 .and_then(|project| project.static_collision_trimesh_lookup),
         };
-        let mut handle_updates = std::mem::take(&mut self.physics_handle_updates_scratch_3d);
+        let mut handle_updates =
+            std::mem::take(&mut self.physics_sync.physics_handle_updates_scratch_3d);
         handle_updates.clear();
         self.physics.sync_world_3d(bodies, assets, |id, handle| {
             handle_updates.push((id, handle));
@@ -713,7 +717,7 @@ impl Runtime {
             self.set_body_handle_3d(id, handle);
         }
         handle_updates.clear();
-        self.physics_handle_updates_scratch_3d = handle_updates;
+        self.physics_sync.physics_handle_updates_scratch_3d = handle_updates;
     }
 
     pub(super) fn sync_joints_parallel(
@@ -745,7 +749,7 @@ impl Runtime {
         // SoA writeback: stage awake rigid poses frm rapier, sort by slot,
         // then 1 fused fat-slot write / body (parent + b4 + pose + vel).
         // handle write drop: set @ create/rm via sync_world callback.
-        let mut staged = std::mem::take(&mut self.physics_writeback_scratch_2d);
+        let mut staged = std::mem::take(&mut self.physics_sync.physics_writeback_scratch_2d);
         staged.clear();
         for (&id, state) in &mut world.body_map {
             if state.kind != BodyKind::Rigid {
@@ -834,7 +838,7 @@ impl Runtime {
         }
 
         staged.clear();
-        self.physics_writeback_scratch_2d = staged;
+        self.physics_sync.physics_writeback_scratch_2d = staged;
         changed
     }
 
@@ -846,7 +850,7 @@ impl Runtime {
         // SoA writeback: stage awake rigid poses frm rapier, sort by slot,
         // then 1 fused fat-slot write / body (parent + b4 + pose + vel).
         // handle write drop: set @ create/rm via sync_world callback.
-        let mut staged = std::mem::take(&mut self.physics_writeback_scratch_3d);
+        let mut staged = std::mem::take(&mut self.physics_sync.physics_writeback_scratch_3d);
         staged.clear();
         for (&id, state) in &mut world.body_map {
             if state.kind != BodyKind::Rigid {
@@ -947,7 +951,7 @@ impl Runtime {
         }
 
         staged.clear();
-        self.physics_writeback_scratch_3d = staged;
+        self.physics_sync.physics_writeback_scratch_3d = staged;
         changed
     }
 
@@ -957,7 +961,7 @@ impl Runtime {
     pub fn bench_collect_body_descs_2d(&mut self) -> usize {
         let bodies = self.collect_body_descs_2d();
         let len = bodies.len();
-        self.physics_body_descs_2d = bodies;
+        self.physics_sync.physics_body_descs_2d = bodies;
         len
     }
 
@@ -965,7 +969,7 @@ impl Runtime {
     pub fn bench_collect_body_descs_3d(&mut self) -> usize {
         let bodies = self.collect_body_descs_3d();
         let len = bodies.len();
-        self.physics_body_descs_3d = bodies;
+        self.physics_sync.physics_body_descs_3d = bodies;
         len
     }
 

@@ -1,2 +1,4 @@
 # Optional script crate dependencies.
 [dependencies]
+toml = "0.9.12"
+gltf = { version = "1.4", default-features = false }

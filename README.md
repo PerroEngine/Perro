@@ -27,6 +27,7 @@ For more details, see the full documentation: [perroengine.com/docs](https://www
 Local reference:
 
 - [Docs Index](docs/index.md)
+- [Engine architecture + extension paths](docs/project/engine_architecture.md)
 - [WASM / Web Target](docs/WASM.md)
 - [ResPath](docs/resources/respath.md)
 - [`project.toml`](docs/project/project_toml.md)

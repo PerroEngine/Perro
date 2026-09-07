@@ -6,14 +6,10 @@ mod materials {
         let mut runtime = Runtime::new();
         let first_node = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::from(
-                MeshInstance3D::new(),
-            )));
+            .insert(SceneNode::new(SceneNodeData::from(MeshInstance3D::new())));
         let second_node = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::from(
-                MeshInstance3D::new(),
-            )));
+            .insert(SceneNode::new(SceneNodeData::from(MeshInstance3D::new())));
         runtime
             .render_3d
             .mesh_sources
@@ -356,9 +352,7 @@ mod materials {
             .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
         let child = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::from(
-                MeshInstance3D::new(),
-            )));
+            .insert(SceneNode::new(SceneNodeData::from(MeshInstance3D::new())));
         if let Some(mut parent_node) = runtime.nodes.get_mut(parent) {
             parent_node.add_child(child);
         }
@@ -396,9 +390,12 @@ mod materials {
             RenderCommand::ThreeD(command_3d)
                 if matches!(command_3d.as_ref(), Command3D::RemoveNode { node } if *node == child)
         )));
-        assert_eq!(runtime.scene_mesh_refs_cache.get(&mesh), Some(&vec![child]));
         assert_eq!(
-            runtime.scene_material_refs_cache.get(&material),
+            runtime.extraction.scene_mesh_refs_cache.get(&mesh),
+            Some(&vec![child])
+        );
+        assert_eq!(
+            runtime.extraction.scene_material_refs_cache.get(&material),
             Some(&vec![child])
         );
     }
@@ -449,9 +446,7 @@ mod materials {
         let mut runtime = Runtime::new();
         let node = runtime
             .nodes
-            .insert(SceneNode::new(SceneNodeData::from(
-                MeshInstance3D::new(),
-            )));
+            .insert(SceneNode::new(SceneNodeData::from(MeshInstance3D::new())));
         let mesh = MeshID::from_parts(30, 0);
         let material = MaterialID::from_parts(31, 0);
         if let Some(mut scene_node) = runtime.nodes.get_mut(node)

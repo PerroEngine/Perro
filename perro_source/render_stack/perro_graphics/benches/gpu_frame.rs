@@ -28,6 +28,9 @@ const HEIGHT: u32 = 720;
 const WARMUP_FRAMES: usize = 8;
 const SAMPLE_FRAMES: usize = 60;
 
+#[path = "fixtures/audit_gpu.rs"]
+mod audit_gpu;
+
 #[inline]
 fn color(v: [f32; 4]) -> perro_structs::Color {
     v.into()
@@ -255,6 +258,12 @@ struct BenchCase {
     name: &'static str,
     setup: fn(&Arc<Window>) -> PerroGraphics,
     redraw: fn(&mut PerroGraphics),
+}
+
+thread_local! {
+    static RESOURCE_CASE_IDS: std::cell::Cell<Option<(MeshID, MaterialID)>> = const {
+        std::cell::Cell::new(None)
+    };
 }
 
 #[derive(Clone, Copy)]
@@ -616,6 +625,71 @@ fn main() {
                 redraw: redraw_3d,
             },
             BenchCase {
+                name: "resource_noop_material_10k",
+                setup: setup_resource_case,
+                redraw: redraw_noop_material,
+            },
+            BenchCase {
+                name: "audit_lod_mixed_10k",
+                setup: audit_gpu::setup_lod_mixed,
+                redraw: audit_gpu::redraw_lod_camera,
+            },
+            BenchCase {
+                name: "audit_sparse_transform_1k",
+                setup: |w| audit_gpu::setup_sparse_transforms(w, 1_000),
+                redraw: audit_gpu::redraw_sparse_transform,
+            },
+            BenchCase {
+                name: "audit_sparse_transform_10k",
+                setup: |w| audit_gpu::setup_sparse_transforms(w, 10_000),
+                redraw: audit_gpu::redraw_sparse_transform,
+            },
+            BenchCase {
+                name: "audit_ui_sparse_1k",
+                setup: audit_gpu::setup_sparse_ui,
+                redraw: audit_gpu::redraw_sparse_ui,
+            },
+            BenchCase {
+                name: "audit_ui_all_changed_1k",
+                setup: audit_gpu::setup_sparse_ui,
+                redraw: audit_gpu::redraw_all_ui,
+            },
+            BenchCase {
+                name: "audit_water_low_32",
+                setup: |w| audit_gpu::setup_water_tiers(w, 0),
+                redraw: redraw_2d,
+            },
+            BenchCase {
+                name: "audit_water_mixed_32",
+                setup: |w| audit_gpu::setup_water_tiers(w, 1),
+                redraw: redraw_2d,
+            },
+            BenchCase {
+                name: "audit_water_ultra_32",
+                setup: |w| audit_gpu::setup_water_tiers(w, 2),
+                redraw: redraw_2d,
+            },
+            BenchCase {
+                name: "resource_changed_material_10k",
+                setup: setup_resource_case,
+                redraw: redraw_changed_material,
+            },
+            BenchCase {
+                name: "resource_reservation_10k",
+                setup: setup_resource_case,
+                redraw: redraw_mesh_reservation,
+            },
+            BenchCase {
+                name: "shadow_moving_non_caster",
+                setup: |w| setup_caster_motion(w, false),
+                redraw: |g| redraw_caster_motion(g, false),
+            },
+            BenchCase {
+                name: "shadow_moving_caster_control",
+                setup: |w| setup_caster_motion(w, true),
+                redraw: |g| redraw_caster_motion(g, true),
+            },
+            BenchCase {
                 name: "blend_stack_2k_smooth",
                 setup: |w| setup_blend_stack(w, 2_000, 0.0),
                 redraw: redraw_3d,
@@ -845,6 +919,94 @@ fn setup_meshes(window: &Arc<Window>, count: u32) -> PerroGraphics {
     graphics.submit_many((0..count).map(|i| draw_command(i, mesh, material)));
     let _ = graphics.draw_frame_timed();
     graphics
+}
+
+fn setup_resource_case(window: &Arc<Window>) -> PerroGraphics {
+    let mut graphics = base_graphics(window);
+    let (mesh, material) = create_mesh_material(&mut graphics);
+    RESOURCE_CASE_IDS.set(Some((mesh, material)));
+    graphics.submit_many((0..10_000).map(|i| draw_command(i, mesh, material)));
+    graphics.draw_frame();
+    graphics
+}
+
+fn redraw_noop_material(graphics: &mut PerroGraphics) {
+    let (_, material) = RESOURCE_CASE_IDS.get().expect("resource fixture");
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::WriteMaterialData {
+            id: material,
+            material: Material3D::default().into(),
+        },
+    )));
+}
+
+fn redraw_changed_material(graphics: &mut PerroGraphics) {
+    static FRAME: AtomicU32 = AtomicU32::new(0);
+    let (_, material) = RESOURCE_CASE_IDS.get().expect("resource fixture");
+    let phase = (FRAME.fetch_add(1, Ordering::Relaxed) & 1) as f32;
+    let changed = StandardMaterial3D {
+        base_color_factor: [0.5 + phase * 0.25, 0.5, 0.5, 1.0],
+        ..Default::default()
+    };
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::WriteMaterialData {
+            id: material,
+            material: Material3D::Standard(changed).into(),
+        },
+    )));
+}
+
+fn redraw_mesh_reservation(graphics: &mut PerroGraphics) {
+    let (mesh, _) = RESOURCE_CASE_IDS.get().expect("resource fixture");
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::SetMeshReserved {
+            id: mesh,
+            reserved: true,
+        },
+    )));
+}
+
+fn setup_caster_motion(window: &Arc<Window>, casts: bool) -> PerroGraphics {
+    let mut graphics = base_graphics(window);
+    let (mesh, material) = create_mesh_material(&mut graphics);
+    RESOURCE_CASE_IDS.set(Some((mesh, material)));
+    graphics.submit_many((0..256).map(|i| {
+        let mut draw = draw_command(i, mesh, material);
+        if let RenderCommand::ThreeD(command) = &mut draw
+            && let Command3D::Draw { model, .. } = command.as_mut()
+        {
+            *model = glam::Mat4::from_translation(glam::Vec3::new(
+                (i % 16) as f32 * 0.5 - 3.75,
+                0.0,
+                (i / 16) as f32 * 0.5 - 3.75,
+            ))
+            .to_cols_array_2d();
+        }
+        draw
+    }));
+    graphics.submit_many((0..2).map(|i| moving_point_light_command(i, 0.0)));
+    graphics.submit(moving_spot_light_command(0, 0.0));
+    redraw_caster_motion(&mut graphics, casts);
+    graphics.draw_frame();
+    graphics
+}
+
+fn redraw_caster_motion(graphics: &mut PerroGraphics, casts: bool) {
+    static FRAME: AtomicU32 = AtomicU32::new(0);
+    let (mesh, material) = RESOURCE_CASE_IDS.get().expect("caster fixture");
+    let x = (FRAME.fetch_add(1, Ordering::Relaxed) & 1) as f32 * 0.5;
+    let mut command = draw_command(300, mesh, material);
+    if let RenderCommand::ThreeD(command) = &mut command
+        && let Command3D::Draw {
+            model,
+            cast_shadows,
+            ..
+        } = command.as_mut()
+    {
+        *model = glam::Mat4::from_translation(glam::Vec3::new(x, 1.0, 0.0)).to_cols_array_2d();
+        *cast_shadows = casts;
+    }
+    graphics.submit(command);
 }
 
 fn setup_multimesh_dense(window: &Arc<Window>, count: u32) -> PerroGraphics {

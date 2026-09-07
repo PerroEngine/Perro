@@ -3,9 +3,9 @@ use perro_animation::{
     AnimationBoneSelector, AnimationBoneTarget, AnimationClip, AnimationTrackValue,
     AnimationTreeAsset, AnimationTreeGraphNode, AnimationTreeMask, AnimationTreeNodeKind,
 };
-use perro_nodes::AnimationTree;
 use perro_nodes::animation_player::AnimationObjectBinding;
 use perro_nodes::animation_tree::{AnimationTreeRuntimeWeight, AnimationTreeSlotPlayback};
+use perro_nodes::{AnimationTree, Skeleton2D, Skeleton3D};
 use perro_scene::{Node3DField, NodeField};
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -162,10 +162,31 @@ struct EvalScratch {
     visiting: Vec<bool>,
     /// Binding indices sorted by object name (ties by original index).
     binding_order: Vec<u32>,
+    /// Bone tracks grouped by target for one borrow/rerender per skeleton.
+    bone_order: Vec<usize>,
+    blend_pool: Vec<(Vec<Pose>, Vec<f32>)>,
+    graph_plans: Vec<GraphPlan>,
+    active_plan: Option<GraphPlan>,
+    memo: Vec<Option<Pose>>,
 }
+
+#[path = "animation_tree/graph.rs"]
+mod graph;
+use graph::GraphPlan;
 
 impl EvalScratch {
     fn begin_eval(&mut self, node_count: usize) {
+        for index in 0..self.memo.len() {
+            if let Some(pose) = self.memo[index].take() {
+                self.give_pose(pose);
+            }
+        }
+        if let Some(plan) = self.active_plan.take() {
+            if self.graph_plans.len() >= 32 {
+                self.graph_plans.remove(0);
+            }
+            self.graph_plans.push(plan);
+        }
         self.generation += 1;
         self.live.clear();
         self.visiting.clear();
@@ -457,19 +478,15 @@ fn queue_current_slot_event_once(
 fn eval_tree_pose<R>(
     tree: &AnimationTree,
     res: &ResourceWindow<'_, R>,
-    asset: &AnimationTreeAsset,
+    asset: &std::sync::Arc<AnimationTreeAsset>,
 ) -> Pose
 where
     R: ResourceAPI + ?Sized,
 {
-    // Was: fresh name->node `HashMap` per tree per frame + a `String` per visit.
-    // Graph node counts are tiny, so a linear key scan + an index-keyed stamp
-    // beat both. Only graph keys ever stay in `visiting` across recursion (slot
-    // keys were inserted + removed in the same step), so index stamps match the
-    // old string-set semantics exactly.
     EVAL_SCRATCH.with(|cell| {
         let mut scratch = cell.borrow_mut();
         scratch.begin_eval(asset.nodes.len());
+        scratch.prepare_graph(asset);
         let mut sample_slot =
             |name: &str, scratch: &mut EvalScratch| eval_slot_pose(tree, res, name, scratch);
         eval_node(
@@ -490,9 +507,14 @@ fn eval_node(
     scratch: &mut EvalScratch,
     sample_slot: &mut dyn FnMut(&str, &mut EvalScratch) -> Pose,
 ) -> Option<Pose> {
-    let Some(index) = asset.nodes.iter().position(|node| node.key.as_ref() == key) else {
+    let Some(index) = scratch.resolve_graph_node(asset, key) else {
         return Some(sample_slot(key, scratch));
     };
+    if scratch.memo.get(index).is_some_and(Option::is_some) {
+        let mut pose = scratch.take_pose();
+        pose.clone_from(scratch.memo[index].as_ref().expect("memo hit"));
+        return Some(pose);
+    }
     if scratch.visiting[index] {
         return None;
     }
@@ -504,8 +526,7 @@ fn eval_node(
             weights,
             mask,
         } => {
-            let mut poses = Vec::with_capacity(inputs.len());
-            let mut raw_weights = Vec::with_capacity(inputs.len());
+            let (mut poses, mut raw_weights) = scratch.blend_pool.pop().unwrap_or_default();
             for (idx, input) in inputs.iter().enumerate() {
                 if let Some(pose) =
                     eval_node(asset, runtime_weights, input.as_ref(), scratch, sample_slot)
@@ -521,8 +542,12 @@ fn eval_node(
                 }
             }
             let out = blend_poses(&poses, &raw_weights, mask, scratch);
-            for pose in poses {
+            for pose in poses.drain(..) {
                 scratch.give_pose(pose);
+            }
+            raw_weights.clear();
+            if scratch.blend_pool.len() < 32 {
+                scratch.blend_pool.push((poses, raw_weights));
             }
             out
         }
@@ -551,6 +576,15 @@ fn eval_node(
         }
     };
     scratch.visiting[index] = false;
+    if scratch
+        .active_plan
+        .as_ref()
+        .is_some_and(|plan| plan.memoize(index))
+    {
+        let mut cached = scratch.take_pose();
+        cached.clone_from(&pose);
+        scratch.memo[index] = Some(cached);
+    }
     Some(pose)
 }
 
@@ -857,11 +891,22 @@ fn apply_pose<RT, R>(
     R: ResourceAPI + ?Sized,
 {
     EVAL_SCRATCH.with(|cell| {
-        let scratch = cell.borrow();
+        let mut scratch = cell.borrow_mut();
+        let mut bone_order = std::mem::take(&mut scratch.bone_order);
+        bone_order.clear();
         for (local, slot) in pose.iter().enumerate() {
             let Some(track) = slot.as_ref() else {
                 continue;
             };
+            if scratch.key(local).bone.is_some() {
+                if matches!(
+                    track.value,
+                    AnimationTrackValue::Transform2D(_) | AnimationTrackValue::Transform3D(_)
+                ) {
+                    bone_order.push(local);
+                }
+                continue;
+            }
             super::animation_player::apply_track_value(
                 ctx,
                 res,
@@ -874,6 +919,87 @@ fn apply_pose<RT, R>(
                 applied_transforms,
             );
         }
+        // Original local order remains the tie-breaker: separate object names
+        // can resolve to the same skeleton/bone and the last writer must win.
+        bone_order.sort_unstable_by_key(|&local| {
+            (
+                pose[local].as_ref().expect("live bone track").node.as_u64(),
+                local,
+            )
+        });
+        let mut start = 0;
+        while start < bone_order.len() {
+            let node = pose[bone_order[start]]
+                .as_ref()
+                .expect("live bone track")
+                .node;
+            let end = start
+                + bone_order[start..].partition_point(|&local| {
+                    pose[local].as_ref().expect("live bone track").node == node
+                });
+            let indices = &bone_order[start..end];
+            let has_3d = indices.iter().any(|&local| {
+                matches!(
+                    pose[local].as_ref().expect("live bone track").value,
+                    AnimationTrackValue::Transform3D(_)
+                )
+            });
+            let applied_3d = if has_3d {
+                with_base_node_mut!(ctx, Skeleton3D, node, |skeleton| {
+                    let mut applied = false;
+                    for &local in indices {
+                        let track = pose[local].as_ref().expect("live bone track");
+                        if let AnimationTrackValue::Transform3D(value) = &track.value {
+                            super::animation_player::apply_bone_pose_3d(
+                                skeleton,
+                                scratch.key(local).bone.as_ref().expect("bone target"),
+                                *value,
+                                track.transform3d_mask,
+                            );
+                            applied = true;
+                        }
+                    }
+                    applied
+                })
+            } else {
+                None
+            };
+            let has_2d = indices.iter().any(|&local| {
+                matches!(
+                    pose[local].as_ref().expect("live bone track").value,
+                    AnimationTrackValue::Transform2D(_)
+                )
+            });
+            let applied = if let Some(applied) = applied_3d {
+                applied
+            } else if has_2d {
+                with_base_node_mut!(ctx, Skeleton2D, node, |skeleton| {
+                    let mut applied = false;
+                    for &local in indices {
+                        let track = pose[local].as_ref().expect("live bone track");
+                        if let AnimationTrackValue::Transform2D(value) = &track.value {
+                            super::animation_player::apply_bone_pose_2d(
+                                skeleton,
+                                scratch.key(local).bone.as_ref().expect("bone target"),
+                                *value,
+                                track.transform2d_mask,
+                            );
+                            applied = true;
+                        }
+                    }
+                    applied
+                })
+                .unwrap_or(false)
+            } else {
+                false
+            };
+            if applied {
+                let _ = ctx.Nodes().force_rerender(node);
+            }
+            start = end;
+        }
+        bone_order.clear();
+        scratch.bone_order = bone_order;
     });
 }
 

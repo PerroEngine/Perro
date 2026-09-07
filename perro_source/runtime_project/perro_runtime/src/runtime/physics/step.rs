@@ -29,25 +29,27 @@ impl Runtime {
         // reuse cached water id lists; skip full node scan + per-call Vec alloc.
         // mark_needs_rerender only touch dirty state, so taken caches stay valid.
         self.cached_water_ids_2d();
-        let water_ids_2d = std::mem::take(&mut self.water_ids_2d_cache);
+        let water_ids_2d = std::mem::take(&mut self.physics_sync.water_ids_2d_cache);
         for &id in water_ids_2d.iter() {
             self.mark_needs_rerender(id);
         }
-        self.water_ids_2d_cache = water_ids_2d;
+        self.physics_sync.water_ids_2d_cache = water_ids_2d;
         self.cached_water_ids_3d();
-        let water_ids_3d = std::mem::take(&mut self.water_ids_3d_cache);
+        let water_ids_3d = std::mem::take(&mut self.physics_sync.water_ids_3d_cache);
         for &id in water_ids_3d.iter() {
             self.mark_needs_rerender(id);
         }
-        self.water_ids_3d_cache = water_ids_3d;
+        self.physics_sync.water_ids_3d_cache = water_ids_3d;
     }
 
     pub fn physics_paused(&self) -> bool {
         self.physics.all_paused()
     }
 
-    fn physics_fixed_step_active_timed(&mut self) -> RuntimePhysicsStepTiming {
+    pub(super) fn physics_fixed_step_active_timed(&mut self) -> RuntimePhysicsStepTiming {
         let total_start = Instant::now();
+        let before_physics = self.nodes.physics_revision();
+        let before_mutation = self.nodes.mutation_revision();
 
         let pre_transforms_start = Instant::now();
         // capture external chg b4 propagate clear dirty flags. physics-scoped:
@@ -78,10 +80,12 @@ impl Runtime {
         // physics-driven moves land in nodes via sync_world_to_nodes;
         // revision re-record aft post_transforms so internal write-back not invalidate.
         let node_revision = self.nodes.physics_revision();
-        let sync_2d_needed =
-            self.physics_synced_node_revision_2d != Some(node_revision) || had_physics_dirty_2d;
-        let sync_3d_needed =
-            self.physics_synced_node_revision_3d != Some(node_revision) || had_physics_dirty_3d;
+        let sync_2d_needed = self.physics_sync.physics_synced_node_revision_2d
+            != Some(node_revision)
+            || had_physics_dirty_2d;
+        let sync_3d_needed = self.physics_sync.physics_synced_node_revision_3d
+            != Some(node_revision)
+            || had_physics_dirty_3d;
 
         let collect_start = Instant::now();
         let bodies_2d = sync_2d_needed.then(|| self.collect_body_descs_2d());
@@ -93,32 +97,32 @@ impl Runtime {
         let sync_world_start = Instant::now();
         if let Some(bodies) = bodies_2d {
             self.sync_world_2d(&bodies);
-            self.physics_body_descs_2d = bodies;
+            self.physics_sync.physics_body_descs_2d = bodies;
         }
         if let Some(bodies) = bodies_3d {
             self.sync_world_3d(&bodies);
-            self.physics_body_descs_3d = bodies;
+            self.physics_sync.physics_body_descs_3d = bodies;
         }
         match (joints_2d, joints_3d) {
             (Some(joints_2d), Some(joints_3d)) => {
                 self.sync_joints_parallel(&joints_2d, &joints_3d);
-                self.physics_joint_descs_2d = joints_2d;
-                self.physics_joint_descs_3d = joints_3d;
+                self.physics_sync.physics_joint_descs_2d = joints_2d;
+                self.physics_sync.physics_joint_descs_3d = joints_3d;
             }
             (Some(joints_2d), None) => {
                 self.physics.sync_joints_2d(&joints_2d);
-                self.physics_joint_descs_2d = joints_2d;
+                self.physics_sync.physics_joint_descs_2d = joints_2d;
             }
             (None, Some(joints_3d)) => {
                 self.physics.sync_joints_3d(&joints_3d);
-                self.physics_joint_descs_3d = joints_3d;
+                self.physics_sync.physics_joint_descs_3d = joints_3d;
             }
             (None, None) => {}
         }
         // world fresh vs nodes til next node chg; query path skip re-sync
         let synced_revision = Some(self.nodes.physics_revision());
-        self.physics_synced_node_revision_2d = synced_revision;
-        self.physics_synced_node_revision_3d = synced_revision;
+        self.physics_sync.physics_synced_node_revision_2d = synced_revision;
+        self.physics_sync.physics_synced_node_revision_3d = synced_revision;
         let sync_world = sync_world_start.elapsed();
 
         if self.physics.paused {
@@ -175,8 +179,10 @@ impl Runtime {
         // internal write-back (world -> nodes, emitter age) bump arena revision;
         // nodes still mirror world -> re-record so next step / query skip
         let synced_revision = Some(self.nodes.physics_revision());
-        self.physics_synced_node_revision_2d = synced_revision;
-        self.physics_synced_node_revision_3d = synced_revision;
+        self.physics_sync.physics_synced_node_revision_2d = synced_revision;
+        self.physics_sync.physics_synced_node_revision_3d = synced_revision;
+
+        self.forward_unaffected_physics_world_epochs(before_physics, before_mutation);
 
         self.prune_character_sweep_hits();
 
@@ -206,8 +212,9 @@ impl Runtime {
         // only on structural chg. topology-stable steps reuse the sorted list
         // + skip the 2 stale-world retain passes below.
         let structural_revision = self.nodes.structural_revision();
-        let rebuild_worlds = self.physics_world_ids_revision != Some(structural_revision);
-        let mut worlds = std::mem::take(&mut self.physics_world_ids_scratch);
+        let rebuild_worlds =
+            self.physics_sync.physics_world_ids_revision != Some(structural_revision);
+        let mut worlds = std::mem::take(&mut self.physics_sync.physics_world_ids_scratch);
         if rebuild_worlds {
             worlds.clear();
             for id in self
@@ -225,6 +232,7 @@ impl Runtime {
             }
             worlds.sort_unstable_by_key(|id| (id.index(), id.generation()));
             worlds.dedup();
+            self.refresh_physics_world_ancestors(&worlds);
         }
 
         let mut total = RuntimePhysicsStepTiming {
@@ -256,17 +264,19 @@ impl Runtime {
             // / synced-revision entries can only appear 4 members of the list:
             // an unchanged list has nothing stale 2 prune.
             self.physics.retain_worlds(&worlds);
-            self.physics_synced_world_revisions.retain(|world, _| {
-                world.is_nil()
-                    || worlds
-                        .binary_search_by_key(&(world.index(), world.generation()), |id| {
-                            (id.index(), id.generation())
-                        })
-                        .is_ok()
-            });
-            self.physics_world_ids_revision = Some(structural_revision);
+            self.physics_sync
+                .physics_synced_world_revisions
+                .retain(|world, _| {
+                    world.is_nil()
+                        || worlds
+                            .binary_search_by_key(&(world.index(), world.generation()), |id| {
+                                (id.index(), id.generation())
+                            })
+                            .is_ok()
+                });
+            self.physics_sync.physics_world_ids_revision = Some(structural_revision);
         }
-        self.physics_world_ids_scratch = worlds;
+        self.physics_sync.physics_world_ids_scratch = worlds;
         total.total = total_start.elapsed();
         total
     }
@@ -278,26 +288,26 @@ impl Runtime {
     pub(super) fn can_skip_physics_fixed_step_pre_sync(&self) -> bool {
         self.schedules.fixed_slots_empty()
             && !self.has_physics_joint_nodes()
-            && self.physics_synced_node_revision_2d == Some(self.nodes.physics_revision())
-            && self.physics_synced_node_revision_3d == Some(self.nodes.physics_revision())
+            && self.physics_sync.physics_synced_node_revision_2d == Some(self.nodes.physics_revision())
+            && self.physics_sync.physics_synced_node_revision_3d == Some(self.nodes.physics_revision())
             && (self.internal_updates.physics_body_nodes_2d.is_empty()
                 || self.physics.world_2d.is_some())
             && (self.internal_updates.physics_body_nodes_3d.is_empty()
                 || self.physics.world_3d.is_some())
             && !self.dirty.has_transform_dirty_any()
-            && self.pending_force_emitters_2d.is_empty()
-            && self.pending_force_emitters_3d.is_empty()
-            && self.force_water_impacts_2d.is_empty()
-            && self.force_water_impacts_3d.is_empty()
-            && self.water_samples.is_empty()
-            && self.water_sample_times.is_empty()
-            && self.water_body_samples.is_empty()
+            && self.physics_sync.pending_force_emitters_2d.is_empty()
+            && self.physics_sync.pending_force_emitters_3d.is_empty()
+            && self.physics_sync.force_water_impacts_2d.is_empty()
+            && self.physics_sync.force_water_impacts_3d.is_empty()
+            && self.physics_sync.water_samples.is_empty()
+            && self.physics_sync.water_sample_times.is_empty()
+            && self.physics_sync.water_body_samples.is_empty()
             // drained entries are dropped (see queue_water_forces_2d), so a
             // non-empty map always means live data: no per-entry scan needed.
-            && self.pending_water_queries_2d.is_empty()
-            && self.pending_water_queries_3d.is_empty()
-            && self.water_contacts_2d.is_empty()
-            && self.water_contacts_3d.is_empty()
+            && self.physics_sync.pending_water_queries_2d.is_empty()
+            && self.physics_sync.pending_water_queries_3d.is_empty()
+            && self.physics_sync.water_contacts_2d.is_empty()
+            && self.physics_sync.water_contacts_3d.is_empty()
             && self.physics.active_area_overlaps_2d.is_empty()
             && self.physics.active_area_overlaps_3d.is_empty()
             && self.physics.can_skip_step()
@@ -313,7 +323,7 @@ impl Runtime {
     pub(crate) fn ensure_physics_world_synced_2d(&mut self) {
         // physics-scoped gate: only 2d physics node moves (or unpropagated
         // roots) invalidate; non-physics tweens skip the full collect+sync.
-        if self.physics_synced_node_revision_2d == Some(self.nodes.physics_revision())
+        if self.physics_sync.physics_synced_node_revision_2d == Some(self.nodes.physics_revision())
             && !self.dirty.has_physics_transform_dirty_2d()
         {
             return;
@@ -322,13 +332,13 @@ impl Runtime {
         self.refresh_dirty_global_transforms();
         let bodies_2d = self.collect_body_descs_2d();
         self.sync_world_2d(&bodies_2d);
-        self.physics_body_descs_2d = bodies_2d;
-        self.physics_synced_node_revision_2d = Some(self.nodes.physics_revision());
+        self.physics_sync.physics_body_descs_2d = bodies_2d;
+        self.physics_sync.physics_synced_node_revision_2d = Some(self.nodes.physics_revision());
     }
 
     pub(crate) fn ensure_physics_world_synced_3d(&mut self) {
         // physics-scoped gate: see ensure_physics_world_synced_2d.
-        if self.physics_synced_node_revision_3d == Some(self.nodes.physics_revision())
+        if self.physics_sync.physics_synced_node_revision_3d == Some(self.nodes.physics_revision())
             && !self.dirty.has_physics_transform_dirty_3d()
         {
             return;
@@ -337,13 +347,13 @@ impl Runtime {
         self.refresh_dirty_global_transforms();
         let bodies_3d = self.collect_body_descs_3d();
         self.sync_world_3d(&bodies_3d);
-        self.physics_body_descs_3d = bodies_3d;
-        self.physics_synced_node_revision_3d = Some(self.nodes.physics_revision());
+        self.physics_sync.physics_body_descs_3d = bodies_3d;
+        self.physics_sync.physics_synced_node_revision_3d = Some(self.nodes.physics_revision());
     }
 
     pub(crate) fn invalidate_physics_query_sync(&mut self) {
-        self.physics_synced_node_revision_2d = None;
-        self.physics_synced_node_revision_3d = None;
+        self.physics_sync.physics_synced_node_revision_2d = None;
+        self.physics_sync.physics_synced_node_revision_3d = None;
     }
 
     pub(crate) fn queue_impulse_2d(&mut self, id: NodeID, impulse: Vector2) -> bool {
@@ -391,25 +401,27 @@ impl Runtime {
     }
 
     pub(crate) fn emit_force_2d(&mut self, emitter: perro_nodes::PhysicsForceEmitter2D) -> bool {
-        self.pending_force_emitters_2d
+        self.physics_sync
+            .pending_force_emitters_2d
             .push((self.free_physics_query_world(), emitter));
         true
     }
 
     pub(crate) fn emit_force_3d(&mut self, emitter: perro_nodes::PhysicsForceEmitter3D) -> bool {
-        self.pending_force_emitters_3d
+        self.physics_sync
+            .pending_force_emitters_3d
             .push((self.free_physics_query_world(), emitter));
         true
     }
 
     pub(crate) fn clear_physics(&mut self) {
         self.physics.clear_all();
-        self.physics_synced_world_revisions.clear();
-        self.physics_world_ids_revision = None;
-        self.character_fall_speed_2d.clear();
-        self.character_fall_speed_3d.clear();
-        self.character_sweep_hit_2d.clear();
-        self.character_sweep_hit_3d.clear();
+        self.physics_sync.physics_synced_world_revisions.clear();
+        self.physics_sync.physics_world_ids_revision = None;
+        self.physics_sync.character_fall_speed_2d.clear();
+        self.physics_sync.character_fall_speed_3d.clear();
+        self.physics_sync.character_sweep_hit_2d.clear();
+        self.physics_sync.character_sweep_hit_3d.clear();
         self.invalidate_physics_query_sync();
     }
 }

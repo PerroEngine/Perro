@@ -34,3 +34,7 @@ harness = false
 [[bench]]
 name = "variant_hotpaths"
 harness = false
+
+[[bench]]
+name = "nested_fallback_audit"
+harness = false

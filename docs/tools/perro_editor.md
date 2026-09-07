@@ -13,11 +13,13 @@
 | Main Shortcuts | [Main Shortcuts](#main-shortcuts) |
 | Safety | [Safety](#safety) |
 | Animation And GLB | [Animation And GLB](#animation-and-glb) |
+| Selection And Scene Reuse | [Selection And Scene Reuse](#selection-and-scene-reuse) |
+| Asset Moves And Tool Options | [Asset Moves And Tool Options](#asset-moves-and-tool-options) |
 | Release Gate | [Release Gate](#release-gate) |
 
 ## Purpose
 
-The Perro editor is a visual authoring tool — itself a Perro project in `perro_editor` — for building and previewing scenes without hand-writing `.scn` text. It gives you a node tree, 2D/3D/UI viewports, an inspector for node fields and script vars, animation editing, GLB inspection, undo/redo, file watching, and multi-scene tabs. Lay out and tweak scenes visually here, then run and ship them with the CLI. It is an in-development milestone: play/build launch and a full import pipeline are still follow-up work.
+The Perro editor is a visual authoring tool — itself a Perro project in `perro_editor` — for building and previewing scenes without hand-writing `.scn` text. It gives you a node tree, 2D/3D/UI viewports, an inspector for node fields and script vars, animation editing, GLB inspection, undo/redo, file watching, and multi-scene tabs. Lay out and tweak scenes visually here, then run and ship them with the CLI. It is an in-development milestone: play/build launch and stable packaging remain follow-up work. Assets use direct disk refs; animation conversion stays explicit.
 
 ## Use Cases
 
@@ -46,7 +48,7 @@ The editor is an in-development Perro project in `perro_editor`.
 
 The current milestone supports project selection, scene and asset authoring, 2D/3D/UI previews, inspector edits, animation editing, GLB inspection, undo/redo, file watching, and multi-scene tabs.
 
-Play/build launch, a full import pipeline, and stable release packaging remain follow-up work.
+Play/build launch and stable release packaging remain follow-up work. Assets stay on disk with direct refs; there is no import database or automatic reimport queue.
 
 ## Start
 
@@ -117,6 +119,34 @@ Save or copy work before resolving an external-change conflict. The editor keeps
 Select an `AnimationPlayer` to open its animation workflow. The dock supports clip selection, playhead control, key insertion/deletion, interpolation/ease changes, and undo/redo.
 
 Opening a `.glb` or `.gltf` switches to the 3D model viewer. The viewer frames the model and exposes mesh, material, animation, skeleton, and texture summaries. Bracket shortcuts cycle embedded refs.
+
+## Selection And Scene Reuse
+
+- Use `Ctrl` + click to toggle tree selection; `Shift` + click to select a visible range.
+- Use copy/paste, duplicate, delete, and reparent in/out on the selection. Selected parents absorb selected descendants for subtree edits.
+- Keep one undo record per batch. Undo/redo and scene tabs retain the selection.
+- Copy captures scene data, so paste also works after deleting the source or switching scene tabs. Internal node refs follow the copied nodes.
+- Edit shared scalar/vector/ref fields in the inspector. Mixed values show `(mixed)`; incompatible fields and containers stay out of the shared inspector.
+- Use move/rotate/scale in 2D and 3D. Drag projected axes or hold `X`/`Y`/`Z` at drag start; local/world and snap controls apply. Scale is uniform. Rotate/scale reject nonuniform parent scale; zero parent scale blocks all transforms.
+- Use UI move/resize/rotate on free-layout nodes. Parent layout ownership blocks direct transforms. A drag commits once; `Escape` restores its start state.
+- Use the command palette to save one branch as a new `.scn`, open an instance source, or instance the active scene asset. Branch save picks a fresh filename and retains the original scene.
+- Keep existing `root_of` behavior. Edit instance contents in their source scene; no instance-child override layer is added. Scene instance creation rejects dependency cycles.
+
+2D viewport picking currently uses node origins within a small screen radius; 3D uses mesh picking. Tree selection also supports nodes without drawable geometry. Reparent in/out preserves authored local transforms, so world poses can change.
+
+## Asset Moves And Tool Options
+
+Use Rename or the command palette's move-to-folder action for files and folders under `res/`. A background scan stages reference changes in scenes, `project.toml`, and saved tool options. Commit validates reference bytes, writes staged files, and moves the asset. Failure restores prior reference bytes where possible and reports rollback failures.
+
+Save affected dirty scenes first. Unsupported text refs and glTF relative dependencies block unsafe moves. Linked paths and existing destinations also block moves. Scene/TOML serialization may reformat changed files; review their diffs. Filesystem moves are separate from scene undo.
+
+Asset pickers enumerate GLB/glTF mesh, material, texture, and rig subrefs from metadata in a background job. Selection still writes ordinary `res://...:mesh[n]`, `:mat[n]`, `:tex[n]`, or `:rig[n]` refs. Metadata scans do not decode textures or generate assets.
+
+Open Animation Tools from the command palette. Set input, output, clip, FPS, skeleton, and optional retarget map/target rig. Choose a Perro CLI executable when automatic discovery cannot find one. Convert runs `import_anim` as an explicit background process and reports its output.
+
+Save/Load applies only to these conversion options. Store versioned TOML under `editor_tools/`; paths resolve from the project root. Convert uses current fields and does not silently save them. The CLI path stays in `user://editor_cli.txt`, outside the portable options file. See [CLI animation options](perro_cli.md#import_anim).
+
+See [editor workflow measurements](../project/editor_workflow_parity_2026-09-06.md) for scoped-view timings and verification limits.
 
 ## Release Gate
 

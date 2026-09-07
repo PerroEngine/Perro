@@ -1106,21 +1106,24 @@ impl ResourceStore {
         let Some(material) = self.material_by.get_mut(&id) else {
             return false;
         };
-        let Material3D::Custom(custom) = Arc::make_mut(material) else {
+        let Material3D::Custom(custom) = material.as_ref() else {
             return false;
         };
-        let Some(param) = custom
+        let Some(index) = custom
             .params
-            .to_mut()
-            .iter_mut()
-            .find(|param| param.name.as_deref() == Some(name))
+            .iter()
+            .position(|param| param.name.as_deref() == Some(name))
         else {
             return false;
         };
-        if param.value == value {
+        if custom.params[index].value == value {
             return false;
         }
-        param.value = value;
+        // Delay copy-on-write until the read-only probe proves an actual edit.
+        let Material3D::Custom(custom) = Arc::make_mut(material) else {
+            unreachable!("material kind was checked above")
+        };
+        custom.params.to_mut()[index].value = value;
         self.material_revision = self.material_revision.wrapping_add(1);
         true
     }
@@ -1133,7 +1136,15 @@ impl ResourceStore {
         if !self.has_material(id) {
             return false;
         }
-        self.material_by.insert(id, material.into());
+        let material = material.into();
+        if self.material_by.get(&id).is_some_and(|previous| {
+            Arc::ptr_eq(previous, &material) || previous.as_ref() == material.as_ref()
+        }) {
+            // Preserve the public setter's successful-write result and loaded
+            // event, but do not invalidate render state for identical content.
+            return true;
+        }
+        self.material_by.insert(id, material);
         self.material_revision = self.material_revision.wrapping_add(1);
         true
     }

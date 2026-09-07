@@ -264,7 +264,12 @@ fn build_gltf_skeleton_entries(
     res_path: &str,
     rel: &str,
 ) -> io::Result<Vec<(SkeletonRef, Vec<u8>)>> {
-    let (doc, buffers, _images) = gltf::import(path)
+    let gltf::Gltf {
+        document: doc,
+        blob,
+    } = gltf::Gltf::open(path)
+        .map_err(|err| io::Error::other(format!("failed to import model `{res_path}`: {err}")))?;
+    let buffers = gltf::import_buffers(&doc, path.parent(), blob)
         .map_err(|err| io::Error::other(format!("failed to import model `{res_path}`: {err}")))?;
 
     let mut entries = Vec::<(SkeletonRef, Vec<u8>)>::new();

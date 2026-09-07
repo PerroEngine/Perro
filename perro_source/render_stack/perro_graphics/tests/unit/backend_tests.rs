@@ -17,6 +17,162 @@ use perro_render_bridge::{
 use perro_structs::{BitMask, Color, ColorBlindFilter, PostProcessEffect, PostProcessSet};
 use std::sync::Arc;
 
+#[test]
+fn material_noops_keep_revision_and_shared_payload_and_idle_frame() {
+    use perro_render_bridge::{CustomMaterialParam3D, RenderEvent};
+    use perro_structs::ConstParamValue;
+    let mut graphics = PerroGraphics::new();
+    let shared = Arc::new(Material3D::Custom(CustomMaterial3D::with_params(
+        "res://shaders/static.wgsl",
+        vec![CustomMaterialParam3D {
+            name: Some("gain".into()),
+            value: ConstParamValue::F32(1.0),
+        }],
+    )));
+    let material = graphics
+        .resources
+        .create_material(shared.clone(), None, true);
+    graphics.submit(RenderCommand::TwoD(Command2D::UpsertRect {
+        node: NodeID::from_parts(1, 0),
+        rect: Rect2DCommand {
+            center: [0.0, 0.0],
+            size: [2.0, 2.0],
+            color: Color::WHITE,
+            z_index: 0,
+        },
+    }));
+    graphics.draw_frame();
+    graphics.redraw_requested = false;
+    let revision = graphics.resources.material_revision();
+    let no_op = || {
+        RenderCommand::Resource(Box::new(ResourceCommand::WriteMaterialParam {
+            id: material,
+            name: Arc::from("gain"),
+            value: ConstParamValue::F32(1.0),
+        }))
+    };
+    graphics.submit(no_op());
+    assert!(
+        graphics
+            .draw_frame_timed()
+            .expect("frame timing")
+            .idle_clear
+    );
+    assert_eq!(graphics.resources.material_revision(), revision);
+    assert!(Arc::ptr_eq(
+        &graphics
+            .resources
+            .material(material)
+            .expect("created material"),
+        &shared
+    ));
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::WriteMaterialData {
+            id: material,
+            material: Arc::new(shared.as_ref().clone()),
+        },
+    )));
+    assert!(
+        graphics
+            .draw_frame_timed()
+            .expect("frame timing")
+            .idle_clear
+    );
+    assert_eq!(graphics.resources.material_revision(), revision);
+    assert!(graphics.events.iter().any(|event| matches!(event,
+        RenderEvent::MaterialLoaded { id } if *id == material)));
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::WriteMaterialParam {
+            id: material,
+            name: Arc::from("gain"),
+            value: ConstParamValue::F32(2.0),
+        },
+    )));
+    assert!(
+        !graphics
+            .draw_frame_timed()
+            .expect("frame timing")
+            .idle_clear
+    );
+    assert_eq!(graphics.resources.material_revision(), revision + 1);
+    assert_ne!(
+        graphics.resources.material_ref(material),
+        Some(shared.as_ref())
+    );
+}
+
+#[test]
+fn resource_metadata_keeps_reference_work_without_gpu_resource_dirt() {
+    use super::{DIRTY_RESOURCE_REFS, DIRTY_RESOURCES, resolve_material_dirty_bits};
+    let id = MeshID::from_parts(1, 0);
+    let command = RenderCommand::Resource(Box::new(ResourceCommand::SetMeshReserved {
+        id,
+        reserved: true,
+    }));
+    assert_eq!(command_dirty_bits(&command), DIRTY_RESOURCE_REFS);
+    let refs = RenderCommand::Resource(Box::new(ResourceCommand::SetSceneResourceRefs {
+        textures: vec![],
+        meshes: vec![(id, vec![NodeID::from_parts(1, 0)])],
+        materials: vec![],
+    }));
+    assert_eq!(command_dirty_bits(&refs), DIRTY_RESOURCE_REFS);
+    // Full resource traffic must survive a simultaneous no-op material write.
+    assert_eq!(
+        resolve_material_dirty_bits(DIRTY_RESOURCES, 1, 1),
+        DIRTY_RESOURCES
+    );
+    let mut graphics = PerroGraphics::new();
+    let mesh = graphics.resources.create_mesh("__cube__", true);
+    assert_eq!(mesh, id);
+    graphics.submit(refs);
+    graphics.draw_frame();
+    assert_eq!(graphics.resources.mesh_ref_count(mesh), 1);
+}
+
+#[path = "../../benches/fixtures/mesh_load.rs"]
+mod mesh_load_fixture;
+
+#[test]
+fn mesh_create_decodes_once_and_preserves_failure_and_builtin_events() {
+    use perro_render_bridge::{RenderEvent, RenderRequestID};
+    use std::sync::atomic::Ordering;
+    let (triangles, source) = mesh_load_fixture::SOURCES[0];
+    let mut graphics = PerroGraphics::new().with_static_mesh_lookup(mesh_load_fixture::mesh_lookup);
+    mesh_load_fixture::LOOKUPS.store(0, Ordering::Relaxed);
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::CreateMesh {
+            request: RenderRequestID::new(101),
+            id: MeshID::nil(),
+            source: source.into(),
+            reserved: false,
+        },
+    )));
+    graphics.draw_frame();
+    assert_eq!(mesh_load_fixture::LOOKUPS.load(Ordering::Relaxed), 1);
+    assert!(graphics.events.iter().any(|event| matches!(event,
+        RenderEvent::MeshCreated { mesh: Some(mesh), .. }
+            if mesh.vertices.len() == triangles * 3 && mesh.indices.len() == triangles * 3)));
+    graphics.events.clear();
+    for (request, source) in [(102, "res://bench/invalid.pmesh"), (103, "__cube__")] {
+        graphics.submit(RenderCommand::Resource(Box::new(
+            ResourceCommand::CreateMesh {
+                request: RenderRequestID::new(request),
+                id: MeshID::nil(),
+                source: source.into(),
+                reserved: false,
+            },
+        )));
+    }
+    graphics.draw_frame();
+    assert!(graphics.events.iter().any(|event| matches!(event,
+        RenderEvent::Failed { request, reason }
+            if *request == RenderRequestID::new(102)
+                && reason == "mesh source failed to decode: res://bench/invalid.pmesh")));
+    assert!(graphics.events.iter().any(|event| matches!(event,
+        RenderEvent::MeshCreated { request, mesh: None, .. }
+            if *request == RenderRequestID::new(103))));
+}
+
 fn surfaces_for(material: MaterialID) -> Arc<[MeshSurfaceBinding3D]> {
     Arc::from([MeshSurfaceBinding3D {
         material: Some(material),

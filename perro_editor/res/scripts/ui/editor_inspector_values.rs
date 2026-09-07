@@ -3919,6 +3919,56 @@ pub fn value_path_key(path: &[ValuePathStep]) -> String {
     out
 }
 
+pub fn apply_shared_inspector_value(
+    state: &mut EditorState,
+    row: &InspectorValueRow,
+    value: &SceneValue,
+) -> bool {
+    let selected = crate::scripts::scene::editor_selection::keys(state);
+    let mut doc = cached_scene_doc(&state.doc_text);
+    for key in &selected {
+        let Some(node) = doc
+            .scene
+            .nodes
+            .to_mut()
+            .iter_mut()
+            .find(|n| n.key.as_u32() == *key)
+        else {
+            return false;
+        };
+        let rows = inspector_display_rows_for_node(state, node);
+        let Some(target) = rows.iter().find(|r| {
+            r.path.len() == 1
+                && r.source == row.source
+                && r.name == row.name
+                && r.kind == row.kind
+                && r.editable
+        }) else {
+            return false;
+        };
+        let path = target.path.clone();
+        if row.source == "script" {
+            let defaults = inspector_script_var_default_fields_for_node(state, node);
+            let mut fields = inspector_script_var_fields_for_node(state, node);
+            if !set_value_at_path(&mut fields, &path, value.clone()) {
+                return false;
+            }
+            if !write_script_var_override(node.script_vars.to_mut(), &defaults, &fields, &path) {
+                return false;
+            }
+        } else {
+            let mut fields = inspector_scene_value_fields_for_node(node);
+            if !set_value_at_path(&mut fields, &path, value.clone()) {
+                return false;
+            }
+            if !write_scene_field_override(node.data.fields.to_mut(), &fields, &path) {
+                return false;
+            }
+        }
+    }
+    crate::scripts::scene::editor_batch::commit(state, &doc, selected)
+}
+
 pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     idx: usize,
@@ -3932,7 +3982,8 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
             .iter()
             .find(|node| node.key.as_u32() == key)?;
         Some(inspector_visible_rows_for_node(state, node))
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     let Some(rows) = rows else {
         return;
     };
@@ -3993,7 +4044,8 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
         }
         let euler = with_state!(ctx.run, EditorState, ctx.id, |state| {
             state.inspector_rotation_mode == "euler"
-        }).unwrap_or_default();
+        })
+        .unwrap_or_default();
         if euler {
             let [x, y, z] = values.as_slice() else {
                 set_log(ctx, "script var parse fail\nbad euler component count");
@@ -4099,6 +4151,21 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
         }
     };
     let value = coerce_scene_value_to_kind(value, &row.kind);
+    let batch = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        crate::scripts::scene::editor_selection::keys(state).len() > 1
+    })
+    .unwrap_or(false);
+    if batch {
+        let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+            apply_shared_inspector_value(state, &row, &value)
+        })
+        .unwrap_or(false);
+        if changed {
+            rebuild_preview(ctx);
+            refresh_selection_panels(ctx);
+        }
+        return;
+    }
     let value_for_preview = value.clone();
     let script_preview = if row.source == "script" {
         with_state!(ctx.run, EditorState, ctx.id, |state| {
@@ -4113,7 +4180,8 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
             let member = script_member_path_for_row(&fields, &row.path)?;
             let variant = scene_value_to_preview_variant(&value_for_preview, &doc, state);
             Some((key, member, variant))
-        }).unwrap_or_default()
+        })
+        .unwrap_or_default()
     } else {
         None
     };
@@ -4163,7 +4231,9 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
                 return false;
             }
         }
-        set_state_scene_doc(state, &doc);
+        if !set_state_scene_doc(state, &doc) {
+            return false;
+        }
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -4333,7 +4403,8 @@ pub fn mutate_selected_inspector_array<API: ScriptAPI + ?Sized>(
         inspector_visible_rows_for_node(state, node)
             .get(idx)
             .cloned()
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     let Some(row) = row else {
         return;
     };
@@ -4390,7 +4461,9 @@ pub fn mutate_selected_inspector_array<API: ScriptAPI + ?Sized>(
                 return false;
             }
         }
-        set_state_scene_doc(state, &doc);
+        if !set_state_scene_doc(state, &doc) {
+            return false;
+        }
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -4426,10 +4499,64 @@ pub fn reset_selected_inspector_value<API: ScriptAPI + ?Sized>(
         inspector_visible_rows_for_node(state, node)
             .get(idx)
             .cloned()
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     let Some(row) = row else {
         return;
     };
+    let multiple = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        crate::scripts::scene::editor_selection::keys(state).len() > 1
+    })
+    .unwrap_or(false);
+    if multiple {
+        let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+            let selected = crate::scripts::scene::editor_selection::keys(state);
+            let mut doc = cached_scene_doc(&state.doc_text);
+            for key in &selected {
+                let Some(node) = doc
+                    .scene
+                    .nodes
+                    .to_mut()
+                    .iter_mut()
+                    .find(|n| n.key.as_u32() == *key)
+                else {
+                    return false;
+                };
+                let rows = inspector_display_rows_for_node(state, node);
+                let Some(target) = rows.iter().find(|r| {
+                    r.path.len() == 1
+                        && r.name == row.name
+                        && r.source == row.source
+                        && r.kind == row.kind
+                }) else {
+                    return false;
+                };
+                let fields = if row.source == "script" {
+                    inspector_script_var_fields_for_node(state, node)
+                } else {
+                    inspector_scene_value_fields_for_node(node)
+                };
+                let Some(ValuePathStep::Root(index)) = target.path.first() else {
+                    return false;
+                };
+                let Some((name, _)) = fields.get(*index) else {
+                    return false;
+                };
+                if row.source == "script" {
+                    node.script_vars.to_mut().retain(|(field, _)| field != name);
+                } else {
+                    node.data.fields.to_mut().retain(|(field, _)| field != name);
+                }
+            }
+            crate::scripts::scene::editor_batch::commit(state, &doc, selected)
+        })
+        .unwrap_or(false);
+        if changed {
+            rebuild_preview(ctx);
+            refresh_selection_panels(ctx);
+        }
+        return;
+    }
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let Some(key) = state.selected_key else {
             return false;
@@ -4482,7 +4609,9 @@ pub fn reset_selected_inspector_value<API: ScriptAPI + ?Sized>(
             }
             _ => return false,
         }
-        set_state_scene_doc(state, &doc);
+        if !set_state_scene_doc(state, &doc) {
+            return false;
+        }
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -4579,7 +4708,8 @@ fn current_inspector_bitmask<API: ScriptAPI + ?Sized>(
             return None;
         }
         Some(scene_value_bitmask_from_text(&row.value))
-    }).unwrap_or_default()
+    })
+    .unwrap_or_default()
 }
 
 fn write_selected_inspector_bitmask<API: ScriptAPI + ?Sized>(
@@ -4598,11 +4728,27 @@ fn write_selected_inspector_bitmask<API: ScriptAPI + ?Sized>(
         inspector_visible_rows_for_node(state, node)
             .get(idx)
             .cloned()
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     let Some(row) = row else {
         return;
     };
     let scene_value = SceneValue::Key(SceneValueKey::from(bitmask_scene_text(value)));
+    if with_state!(ctx.run, EditorState, ctx.id, |state| {
+        crate::scripts::scene::editor_selection::keys(state).len() > 1
+    })
+    .unwrap_or(false)
+    {
+        let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+            apply_shared_inspector_value(state, &row, &scene_value)
+        })
+        .unwrap_or(false);
+        if changed {
+            rebuild_preview(ctx);
+            refresh_selection_panels(ctx);
+        }
+        return;
+    }
     let value_for_preview = scene_value.clone();
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let Some(key) = state.selected_key else {
@@ -4637,7 +4783,9 @@ fn write_selected_inspector_bitmask<API: ScriptAPI + ?Sized>(
                 return false;
             }
         }
-        set_state_scene_doc(state, &doc);
+        if !set_state_scene_doc(state, &doc) {
+            return false;
+        }
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)

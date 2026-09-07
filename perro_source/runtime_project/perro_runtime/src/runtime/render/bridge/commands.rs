@@ -231,7 +231,7 @@ impl Runtime {
     }
 
     pub fn drain_render_commands(&mut self, out: &mut Vec<RenderCommand>) {
-        let mut captures = std::mem::take(&mut self.pending_camera_capture_removals);
+        let mut captures = std::mem::take(&mut self.extraction.pending_camera_capture_removals);
         for (camera, delay) in captures.drain(..) {
             if delay == 0 {
                 self.render.queue_command(RenderCommand::CameraStream(
@@ -239,7 +239,8 @@ impl Runtime {
                 ));
                 self.resource_api.release_camera_capture_texture(camera);
             } else {
-                self.pending_camera_capture_removals
+                self.extraction
+                    .pending_camera_capture_removals
                     .push((camera, delay - 1));
             }
         }
@@ -250,26 +251,35 @@ impl Runtime {
         // gate scan: node data / structure changes bump arena mutation_revision;
         // resource events (pending resolve / retained invalidation) set dirty.
         let arena_version = self.nodes.mutation_revision();
-        if self.scene_resource_refs_dirty
-            || arena_version != self.scene_resource_refs_scanned_version
+        if self.extraction.scene_resource_refs_dirty
+            || arena_version != self.extraction.scene_resource_refs_scanned_version
         {
-            let mut scratch = std::mem::take(&mut self.scene_resource_refs_scratch);
+            let mut scratch = std::mem::take(&mut self.extraction.scene_resource_refs_scratch);
             self.count_scene_resource_refs_into(
                 &mut scratch.textures,
                 &mut scratch.meshes,
                 &mut scratch.materials,
             );
-            self.scene_resource_refs_scanned_version = arena_version;
-            self.scene_resource_refs_dirty = false;
-            if scratch.textures != self.scene_texture_refs_cache
-                || scratch.meshes != self.scene_mesh_refs_cache
-                || scratch.materials != self.scene_material_refs_cache
+            self.extraction.scene_resource_refs_scanned_version = arena_version;
+            self.extraction.scene_resource_refs_dirty = false;
+            if scratch.textures != self.extraction.scene_texture_refs_cache
+                || scratch.meshes != self.extraction.scene_mesh_refs_cache
+                || scratch.materials != self.extraction.scene_material_refs_cache
             {
                 // swap scratch <-> cache: new refs become cache, old refs recycle
                 // into scratch. no deep clone of the three maps.
-                std::mem::swap(&mut scratch.textures, &mut self.scene_texture_refs_cache);
-                std::mem::swap(&mut scratch.meshes, &mut self.scene_mesh_refs_cache);
-                std::mem::swap(&mut scratch.materials, &mut self.scene_material_refs_cache);
+                std::mem::swap(
+                    &mut scratch.textures,
+                    &mut self.extraction.scene_texture_refs_cache,
+                );
+                std::mem::swap(
+                    &mut scratch.meshes,
+                    &mut self.extraction.scene_mesh_refs_cache,
+                );
+                std::mem::swap(
+                    &mut scratch.materials,
+                    &mut self.extraction.scene_material_refs_cache,
+                );
                 // single copy per ref list: clone each Vec straight into the
                 // payload (no intermediate AHashMap clone + re-collect).
                 fn refs_payload<T: Copy>(refs: &AHashMap<T, Vec<NodeID>>) -> Vec<(T, Vec<NodeID>)> {
@@ -279,13 +289,13 @@ impl Runtime {
                 }
                 queued_resource_commands.push(RenderCommand::Resource(Box::new(
                     ResourceCommand::SetSceneResourceRefs {
-                        textures: refs_payload(&self.scene_texture_refs_cache),
-                        meshes: refs_payload(&self.scene_mesh_refs_cache),
-                        materials: refs_payload(&self.scene_material_refs_cache),
+                        textures: refs_payload(&self.extraction.scene_texture_refs_cache),
+                        meshes: refs_payload(&self.extraction.scene_mesh_refs_cache),
+                        materials: refs_payload(&self.extraction.scene_material_refs_cache),
                     },
                 )));
             }
-            self.scene_resource_refs_scratch = scratch;
+            self.extraction.scene_resource_refs_scratch = scratch;
         }
         if !queued_resource_commands.is_empty() {
             self.render.queue_commands(&mut queued_resource_commands);
@@ -313,15 +323,16 @@ impl Runtime {
             for sample in samples.iter() {
                 let sample_time = self.time.elapsed;
                 let velocity_y = self
+                    .physics_sync
                     .water_samples
                     .get(&sample.node)
-                    .zip(self.water_sample_times.get(&sample.node))
+                    .zip(self.physics_sync.water_sample_times.get(&sample.node))
                     .and_then(|(prev, prev_time)| {
                         let dt = (sample_time - *prev_time).max(0.0);
                         (dt > 1.0e-5).then_some((sample.height - prev.height) / dt)
                     })
                     .unwrap_or(0.0);
-                self.water_samples.insert(
+                self.physics_sync.water_samples.insert(
                     sample.node,
                     perro_nodes::WaterPhysicsSample {
                         height: sample.height,
@@ -329,13 +340,16 @@ impl Runtime {
                         foam: sample.foam,
                     },
                 );
-                self.water_sample_times.insert(sample.node, sample_time);
+                self.physics_sync
+                    .water_sample_times
+                    .insert(sample.node, sample_time);
             }
         }
         if let RenderEvent::WaterBodySamples { samples } = &event {
             for sample in samples.iter() {
                 let sample_time = self.time.elapsed;
                 let velocity_y = self
+                    .physics_sync
                     .water_body_samples
                     .get(&crate::runtime::WaterBodySampleKey {
                         water: sample.water,
@@ -354,7 +368,7 @@ impl Runtime {
                         }
                     })
                     .unwrap_or(0.0);
-                self.water_body_samples.insert(
+                self.physics_sync.water_body_samples.insert(
                     crate::runtime::WaterBodySampleKey {
                         water: sample.water,
                         body: sample.body,
@@ -400,9 +414,9 @@ impl Runtime {
         }
         if let RenderEvent::MaterialLoaded { id } = &event
             && !id.is_nil()
-            && !self.pending_material_invalidations.contains(id)
+            && !self.extraction.pending_material_invalidations.contains(id)
         {
-            self.pending_material_invalidations.push(*id);
+            self.extraction.pending_material_invalidations.push(*id);
         }
         if matches!(
             event,
@@ -415,7 +429,7 @@ impl Runtime {
             // deferred to flush_resource_event_batch: a load storm delivers
             // many of these in one apply batch; the SubView scan + material
             // invalidation are O(all nodes) so run them once per batch.
-            self.resource_event_scan_pending = true;
+            self.extraction.resource_event_scan_pending = true;
         }
         // resource lifecycle events resolve pending resources / invalidate
         // retained draws, which arena mutation_revision can't see. force
@@ -433,7 +447,7 @@ impl Runtime {
                 | RenderEvent::WaterBodySamples { .. }
                 | RenderEvent::TextureTexelsUpdated { .. }
         ) {
-            self.scene_resource_refs_dirty = true;
+            self.extraction.scene_resource_refs_dirty = true;
         }
         self.resource_api.apply_render_event(&event);
         self.render.apply_event(event);
@@ -452,29 +466,29 @@ impl Runtime {
     // once-per-batch tail of apply_render_event(s): retained-draw invalidation
     // 4 every material that loaded this batch + SubView dirty-mark scan.
     fn flush_resource_event_batch(&mut self) {
-        if !self.pending_material_invalidations.is_empty() {
-            let materials = std::mem::take(&mut self.pending_material_invalidations);
+        if !self.extraction.pending_material_invalidations.is_empty() {
+            let materials = std::mem::take(&mut self.extraction.pending_material_invalidations);
             self.invalidate_3d_mesh_draws_using_materials(&materials);
             let mut materials = materials;
             materials.clear();
-            self.pending_material_invalidations = materials;
+            self.extraction.pending_material_invalidations = materials;
         }
-        if !self.resource_event_scan_pending {
+        if !self.extraction.resource_event_scan_pending {
             return;
         }
-        self.resource_event_scan_pending = false;
+        self.extraction.resource_event_scan_pending = false;
         self.request_full_2d_scan_once();
         self.request_full_3d_scan_once();
         // Stream/sub-view nodes own a retained camera-stream snapshot.
         // Resource completion must rebuild those snapshots too; a global
         // 2D/3D scan does not revisit UI-local mesh descendants, and stream
         // rebuild is dirty-gated, so mark every stream node dirty here.
-        let mut stream_nodes = std::mem::take(&mut self.stream_node_scratch);
+        let mut stream_nodes = std::mem::take(&mut self.extraction.stream_node_scratch);
         self.fill_stream_nodes(&mut stream_nodes);
         for node in stream_nodes.drain(..) {
             self.mark_ui_dirty(node, Self::UI_DIRTY_COMMANDS);
         }
-        self.stream_node_scratch = stream_nodes;
+        self.extraction.stream_node_scratch = stream_nodes;
     }
 
     pub fn take_render_result(&mut self, request: RenderRequestID) -> Option<RuntimeRenderResult> {
@@ -626,7 +640,7 @@ impl Runtime {
         self.render_ui.note_removed_node(node);
         // retained stream lanes / whole states / skinning palettes drop with
         // the node (covers stream + sub-view + skeleton keys).
-        self.stream_retention.note_removed_node(node);
+        self.extraction.stream_retention.note_removed_node(node);
         // Request ids carry the node id + generation, so nothing takes these
         // results once the node is gone; drop them with the node.
         self.render.remove_node_requests(node);
@@ -644,8 +658,8 @@ impl Runtime {
             // unconditional (not gated on camera_stream_active): webcam nodes
             // never enter the active set, and removal must always clear any
             // gpu-side state for the slot.
-            self.camera_stream_active.remove(&node);
-            self.ui_stream_render_info.remove(&node);
+            self.extraction.camera_stream_active.remove(&node);
+            self.extraction.ui_stream_render_info.remove(&node);
             self.queue_render_command(RenderCommand::CameraStream(
                 CameraStreamCommand::RemoveNode { node },
             ));
@@ -657,7 +671,7 @@ impl Runtime {
             ty,
             NodeType::Camera2D | NodeType::Camera3D | NodeType::Webcam
         ) {
-            self.camera_postfx_cache.remove(&node);
+            self.extraction.camera_postfx_cache.remove(&node);
             self.mark_camera_stream_users_dirty(node);
         }
         if matches!(ty.get_renderable(), Renderable::True) {

@@ -9,7 +9,7 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::scripts::assets::editor_assets::*;
-use crate::scripts::assets::editor_file_watch as editor_file_watch;
+use crate::scripts::assets::editor_file_watch;
 use crate::scripts::scene::editor_animation::*;
 use crate::scripts::scene::editor_nav::*;
 use crate::scripts::scene::editor_nodes::*;
@@ -136,20 +136,25 @@ pub fn cached_scene_node(text: &str, key: u32) -> Option<SceneNodeEntry> {
     node
 }
 
-pub fn set_state_scene_doc(state: &mut EditorState, doc: &SceneDoc) {
+pub fn set_state_scene_doc(state: &mut EditorState, doc: &SceneDoc) -> bool {
     let next = doc.to_text();
-    if state.doc_text != next {
-        push_scene_undo_snapshot(state);
-        state.scene_redo_stack.clear();
-        state.doc_text = next;
+    if state.doc_text == next {
+        return false;
     }
+    push_scene_undo_snapshot(state);
+    state.scene_redo_stack.clear();
+    state.scene_redo_selection.clear();
+    state.doc_text = next;
     store_scene_doc_cache(&state.doc_text, doc);
+    true
 }
 
 pub fn set_state_scene_doc_loaded(state: &mut EditorState, doc: &SceneDoc) {
     state.doc_text = doc.to_text();
     state.scene_undo_stack.clear();
+    state.scene_undo_selection.clear();
     state.scene_redo_stack.clear();
+    state.scene_redo_selection.clear();
     store_scene_doc_cache(&state.doc_text, doc);
 }
 
@@ -164,9 +169,15 @@ fn push_scene_undo_snapshot(state: &mut EditorState) {
     {
         return;
     }
+    state
+        .scene_undo_selection
+        .push(crate::scripts::scene::editor_selection::keys(state));
     state.scene_undo_stack.push(state.doc_text.clone());
     if state.scene_undo_stack.len() > MAX_SCENE_UNDO {
         state.scene_undo_stack.remove(0);
+        if !state.scene_undo_selection.is_empty() {
+            state.scene_undo_selection.remove(0);
+        }
     }
 }
 
@@ -176,9 +187,15 @@ pub fn undo_scene_doc(state: &mut EditorState) -> bool {
         return false;
     };
     if !state.doc_text.is_empty() {
+        state
+            .scene_redo_selection
+            .push(crate::scripts::scene::editor_selection::keys(state));
         state.scene_redo_stack.push(state.doc_text.clone());
     }
     state.doc_text = prev;
+    let selected = state.scene_undo_selection.pop().unwrap_or_default();
+    crate::scripts::scene::editor_selection::replace(state, selected);
+    crate::scripts::scene::editor_selection::prune(state);
     let _ = cached_scene_doc_shared(&state.doc_text);
     state.dirty = true;
     mark_active_scene_dirty(state);
@@ -193,6 +210,9 @@ pub fn redo_scene_doc(state: &mut EditorState) -> bool {
     };
     push_scene_undo_snapshot(state);
     state.doc_text = next;
+    let selected = state.scene_redo_selection.pop().unwrap_or_default();
+    crate::scripts::scene::editor_selection::replace(state, selected);
+    crate::scripts::scene::editor_selection::prune(state);
     let _ = cached_scene_doc_shared(&state.doc_text);
     state.dirty = true;
     mark_active_scene_dirty(state);
@@ -333,9 +353,13 @@ pub struct SceneSession {
     pub path: String,
     pub doc_text: String,
     pub undo: Vec<String>,
+    pub undo_selection: Vec<Vec<u32>>,
+    pub redo_selection: Vec<Vec<u32>>,
     pub redo: Vec<String>,
     pub dirty: bool,
     pub selected_key: Option<u32>,
+    pub selected_keys: Vec<u32>,
+    pub selection_anchor: Option<u32>,
     pub collapsed_scene_keys: Vec<u32>,
     pub inspector_expanded_paths: Vec<String>,
     pub inspector_collapsed_sections: Vec<String>,
@@ -359,13 +383,22 @@ pub fn capture_active_scene_session(state: &mut EditorState) -> bool {
     let Some(path) = state.open_paths.get(state.active_open).cloned() else {
         return false;
     };
+    let selected_keys = crate::scripts::scene::editor_selection::keys(state);
     let Some(session) = state.scene_sessions.get_mut(state.active_open) else {
         return false;
     };
     session.path = path.clone();
     session.doc_text.clone_from(&state.doc_text);
+    session.selected_keys = selected_keys;
+    session.selection_anchor = state.selection_anchor;
     session.undo.clone_from(&state.scene_undo_stack);
     session.redo.clone_from(&state.scene_redo_stack);
+    session
+        .undo_selection
+        .clone_from(&state.scene_undo_selection);
+    session
+        .redo_selection
+        .clone_from(&state.scene_redo_selection);
     session.dirty = state.dirty_scene_paths.iter().any(|dirty| dirty == &path) || state.dirty;
     session.selected_key = state.selected_key;
     session
@@ -403,8 +436,12 @@ pub fn restore_scene_session(state: &mut EditorState, idx: usize) -> bool {
     }
     state.active_open = idx;
     state.doc_text = session.doc_text;
+    state.selected_keys = session.selected_keys;
+    state.selection_anchor = session.selection_anchor;
     state.scene_undo_stack = session.undo;
     state.scene_redo_stack = session.redo;
+    state.scene_undo_selection = session.undo_selection;
+    state.scene_redo_selection = session.redo_selection;
     state.selected_key = session.selected_key;
     state.collapsed_scene_keys = session.collapsed_scene_keys;
     state.inspector_expanded_paths = session.inspector_expanded_paths;
@@ -433,9 +470,7 @@ pub fn restore_scene_session(state: &mut EditorState, idx: usize) -> bool {
             state.dirty_scene_paths.push(session.path);
         }
     } else {
-        state
-            .dirty_scene_paths
-            .retain(|path| path != &session.path);
+        state.dirty_scene_paths.retain(|path| path != &session.path);
     }
     true
 }
@@ -460,6 +495,11 @@ pub struct EditorState {
     pub active_asset_path: String,
     pub active_open: usize,
     pub doc_text: String,
+    pub animation_tool_open: bool,
+    pub copied_scene_text: String,
+    pub copied_scene_keys: Vec<u32>,
+    pub scene_undo_selection: Vec<Vec<u32>>,
+    pub scene_redo_selection: Vec<Vec<u32>>,
     pub scene_undo_stack: Vec<String>,
     pub scene_redo_stack: Vec<String>,
     pub preview_scene_paths: Vec<String>,
@@ -481,9 +521,13 @@ pub struct EditorState {
     pub last_scene_row_click_slot: Option<usize>,
     pub preview_serial: u64,
     pub selected_key: Option<u32>,
+    pub selected_keys: Vec<u32>,
+    pub selection_anchor: Option<u32>,
     pub collapsed_scene_keys: Vec<u32>,
     pub copied_node_key: Option<u32>,
     pub ui_drag_key: Option<u32>,
+    pub ui_drag_was_dirty: bool,
+    pub ui_drag_dirty_paths: Vec<String>,
     pub ui_drag_mode: String,
     pub ui_drag_last_x: f32,
     pub ui_drag_last_y: f32,
@@ -501,6 +545,7 @@ pub struct EditorState {
     pub inspector_picker_kind: String,
     pub inspector_picker_offset: usize,
     pub inspector_picker_filter: String,
+    pub inspector_asset_subrefs: Vec<String>,
     pub inspector_expanded_paths: Vec<String>,
     pub inspector_collapsed_sections: Vec<String>,
     pub scene_filter: String,
@@ -630,9 +675,13 @@ lifecycle!({
     }
 
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        crate::scripts::assets::editor_animation_tool::tick(ctx);
+        crate::scripts::assets::editor_asset_picker::tick(ctx);
+        crate::scripts::assets::editor_asset_move::tick(ctx);
         update_freecam(ctx);
         update_ui_canvas(ctx);
         draw_preview_2d_gizmos(ctx);
+        crate::scripts::scene::editor_spatial_tools::update(ctx);
         update_preview_pick(ctx);
         update_ui_drag(ctx);
         update_editor_cursor(ctx);
@@ -653,7 +702,8 @@ methods!({
             .and_then(|slot| {
                 with_state!(ctx.run, EditorState, ctx.id, |state| {
                     visible_tab_index(state.open_paths.len(), state.active_open, slot)
-                }).unwrap_or_default()
+                })
+                .unwrap_or_default()
             })
             .map(|idx| format!("scene_tab_close_{idx}"))
             .unwrap_or_else(|| name.clone());
@@ -671,6 +721,9 @@ methods!({
         });
 
         match name.as_str() {
+            "tool_save" | "tool_load" | "tool_run" | "tool_pick_cli" | "tool_close" => {
+                crate::scripts::assets::editor_animation_tool::action(ctx, &name)
+            }
             "open_project_button" => {
                 refresh_recent_projects(ctx);
                 set_project_manager(ctx, true);
@@ -687,7 +740,8 @@ methods!({
             "manager_close_button" => {
                 let has_editor = with_state!(ctx.run, EditorState, ctx.id, |state| {
                     state.editor_shell_root != 0
-                }).unwrap_or_default();
+                })
+                .unwrap_or_default();
                 if has_editor {
                     set_project_manager(ctx, false);
                 }
@@ -699,7 +753,8 @@ methods!({
             "add_node_sibling_button" => open_add_node_sibling_popup(ctx),
             "add_node_cancel_button" => {
                 if with_state!(ctx.run, EditorState, ctx.id, |state| state
-                    .inspector_picker_open).unwrap_or_default()
+                    .inspector_picker_open)
+                .unwrap_or_default()
                 {
                     set_inspector_picker(ctx, false);
                 } else {
@@ -712,7 +767,8 @@ methods!({
             "inspector_pick_filter_box" => update_inspector_picker_filter(ctx),
             "add_node_prev_button" => {
                 if with_state!(ctx.run, EditorState, ctx.id, |state| state
-                    .inspector_picker_open).unwrap_or_default()
+                    .inspector_picker_open)
+                .unwrap_or_default()
                 {
                     shift_inspector_picker(ctx, -1);
                 } else {
@@ -721,7 +777,8 @@ methods!({
             }
             "add_node_next_button" => {
                 if with_state!(ctx.run, EditorState, ctx.id, |state| state
-                    .inspector_picker_open).unwrap_or_default()
+                    .inspector_picker_open)
+                .unwrap_or_default()
                 {
                     shift_inspector_picker(ctx, 1);
                 } else {
@@ -753,7 +810,9 @@ methods!({
             "distraction_free_button" => toggle_distraction_free(ctx),
             "command_palette_button" => set_command_palette(ctx, true),
             "command_palette_filter_box" => update_command_palette_filter(ctx),
-            "command_palette_close_button" | "command_palette_scrim" => set_command_palette(ctx, false),
+            "command_palette_close_button" | "command_palette_scrim" => {
+                set_command_palette(ctx, false)
+            }
             "scene_filter_box" => update_scene_filter(ctx),
             "file_filter_box" => update_file_filter(ctx),
             "file_new_scene_button" => create_quick_asset(ctx, "scene"),
@@ -841,7 +900,8 @@ methods!({
             "inspector_vars_box" => edit_selected_script_vars(ctx),
             "add_node_search_box" => {
                 if with_state!(ctx.run, EditorState, ctx.id, |state| state
-                    .inspector_picker_open).unwrap_or_default()
+                    .inspector_picker_open)
+                .unwrap_or_default()
                 {
                     update_inspector_picker_filter_from(ctx, "add_node_search_box");
                 } else {
@@ -859,7 +919,8 @@ methods!({
                     open_recent_project(ctx, idx);
                 } else if let Some(idx) = suffix_index(&name, "add_node_type_") {
                     if with_state!(ctx.run, EditorState, ctx.id, |state| state
-                        .inspector_picker_open).unwrap_or_default()
+                        .inspector_picker_open)
+                    .unwrap_or_default()
                     {
                         choose_inspector_picker_row(ctx, idx);
                     } else {
@@ -910,14 +971,16 @@ methods!({
                 } else if let Some(slot) = suffix_index(&name, "scene_tab_close_") {
                     let idx = with_state!(ctx.run, EditorState, ctx.id, |state| {
                         visible_tab_index(state.open_paths.len(), state.active_open, slot)
-                    }).unwrap_or_default();
+                    })
+                    .unwrap_or_default();
                     if let Some(idx) = idx {
                         close_scene_tab(ctx, idx);
                     }
                 } else if let Some(slot) = suffix_index(&name, "scene_tab_") {
                     let idx = with_state!(ctx.run, EditorState, ctx.id, |state| {
                         visible_tab_index(state.open_paths.len(), state.active_open, slot)
-                    }).unwrap_or_default();
+                    })
+                    .unwrap_or_default();
                     if let Some(idx) = idx {
                         set_active_tab(ctx, idx);
                     }
@@ -1010,7 +1073,8 @@ methods!({
         });
         let Some(path) = with_state!(ctx.run, EditorState, ctx.id, |state| {
             filtered_file_paths(state).get(idx as usize).cloned()
-        }).unwrap_or_default() else {
+        })
+        .unwrap_or_default() else {
             return;
         };
         let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
@@ -1202,6 +1266,11 @@ fn connect_editor_signals<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
             signal!("editor_recent_2"),
             signal!("editor_recent_3"),
             signal!("editor_recent_4"),
+            signal!("editor_tool_save"),
+            signal!("editor_tool_load"),
+            signal!("editor_tool_run"),
+            signal!("editor_tool_pick_cli"),
+            signal!("editor_tool_close"),
             signal!("editor_save_scene"),
             signal!("editor_add_node"),
             signal!("editor_add_node_sibling"),

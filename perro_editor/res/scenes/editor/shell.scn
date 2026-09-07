@@ -7340,3 +7340,41 @@ parent = @inspector_pick_cancel_button
     [/UiLabel]
 [/inspector_pick_cancel_label]
 
+
+[animation_tools]
+parent = @editor_root
+root_of = "res://scenes/editor/animation_tools.scn"
+[/animation_tools]
+
+[spatial_axis_x]
+parent = @editor_root
+[UiPanel]
+visible = false
+input_enabled = false
+mouse_filter = "pass"
+z_index = 100.0
+style = { fill = "#D95F5F", stroke = "#00000000", stroke_width = 0.0, radius = 0.0 }
+[/UiPanel]
+[/spatial_axis_x]
+
+[spatial_axis_y]
+parent = @editor_root
+[UiPanel]
+visible = false
+input_enabled = false
+mouse_filter = "pass"
+z_index = 100.0
+style = { fill = "#5EA868", stroke = "#00000000", stroke_width = 0.0, radius = 0.0 }
+[/UiPanel]
+[/spatial_axis_y]
+
+[spatial_axis_z]
+parent = @editor_root
+[UiPanel]
+visible = false
+input_enabled = false
+mouse_filter = "pass"
+z_index = 100.0
+style = { fill = "#5A91DD", stroke = "#00000000", stroke_width = 0.0, radius = 0.0 }
+[/UiPanel]
+[/spatial_axis_z]

@@ -1,30 +1,29 @@
-use crate::scripts::app::editor_app as editor_app;
-use crate::scripts::app::editor_manager as editor_manager;
-use crate::scripts::app::editor_project as editor_project;
+use crate::scripts::app::editor_app;
+use crate::scripts::app::editor_manager;
+use crate::scripts::app::editor_project;
 use crate::scripts::assets::editor_assets::*;
-use crate::scripts::assets::editor_file_watch as editor_file_watch;
-use crate::scripts::assets::editor_files as editor_files;
+use crate::scripts::assets::editor_file_watch;
+use crate::scripts::assets::editor_files;
 use crate::scripts::editor::main::{
     EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_INSPECTOR_PICKER_ROWS,
     MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_OUTPUT_MESSAGES, MAX_RECENT, MAX_TABS,
-    RECENT_PROJECTS_PATH, cached_scene_doc,
-    cached_scene_doc_shared, cached_scene_node,
+    RECENT_PROJECTS_PATH, cached_scene_doc, cached_scene_doc_shared, cached_scene_node,
 };
 use crate::scripts::scene::editor_animation::*;
-use crate::scripts::scene::editor_gizmos as editor_gizmos;
+use crate::scripts::scene::editor_gizmos;
 use crate::scripts::scene::editor_nav::*;
 use crate::scripts::scene::editor_nodes::*;
-use crate::scripts::scene::editor_scene_deps as editor_scene_deps;
-use crate::scripts::scene::editor_scene as editor_scene;
+use crate::scripts::scene::editor_scene;
+use crate::scripts::scene::editor_scene_deps;
 use crate::scripts::scene::editor_viewport::*;
 use crate::scripts::ui::bitmask::{ensure_inspector_bitmask_grid, update_inspector_bitmask_grid};
 use crate::scripts::ui::editor_inspector_values::*;
-use crate::scripts::ui::editor_view as editor_view;
-use crate::scripts::ui::theme as theme;
+use crate::scripts::ui::editor_view;
 use crate::scripts::ui::inspector_value_row::{
     apply_inspector_value_row_panel, clear_inspector_value_rows, ensure_inspector_matrix_grid,
     ensure_inspector_value_row, hide_inspector_value_rows_from, place_inspector_value_row,
 };
+use crate::scripts::ui::theme;
 use perro_api::prelude::*;
 use perro_api::scene::{
     SceneDoc, SceneFieldName, SceneKey, SceneNodeData, SceneNodeEntry, SceneValue, SceneValueKey,
@@ -83,7 +82,9 @@ pub fn capture_editor_output_state(state: &mut EditorState) {
         }
         return;
     }
-    state.output_levels.push(classify_editor_log(&state.log).to_string());
+    state
+        .output_levels
+        .push(classify_editor_log(&state.log).to_string());
     state.output_messages.push(state.log.clone());
     state.output_repeats.push(1);
     if state.output_messages.len() > MAX_OUTPUT_MESSAGES {
@@ -113,15 +114,27 @@ pub fn filtered_editor_output(state: &EditorState) -> String {
             visible && (filter.is_empty() || text.to_ascii_lowercase().contains(&filter))
         })
         .map(|((text, level), repeat)| {
-            let icon = match level.as_str() { "error" => "[x]", "warn" => "[!]", _ => "[i]" };
+            let icon = match level.as_str() {
+                "error" => "[x]",
+                "warn" => "[!]",
+                _ => "[i]",
+            };
             let text = text.replace('\n', "  ");
-            if *repeat > 1 { format!("{icon} {text}  x{repeat}") } else { format!("{icon} {text}") }
+            if *repeat > 1 {
+                format!("{icon} {text}  x{repeat}")
+            } else {
+                format!("{icon} {text}")
+            }
         })
         .collect::<Vec<_>>();
     if lines.len() > 24 {
         lines.drain(0..lines.len() - 24);
     }
-    if lines.is_empty() { "No output".to_string() } else { lines.join("\n") }
+    if lines.is_empty() {
+        "No output".to_string()
+    } else {
+        lines.join("\n")
+    }
 }
 
 pub fn clear_editor_output<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
@@ -163,25 +176,102 @@ pub struct EditorCommand {
 }
 
 pub fn editor_commands(query: &str) -> Vec<EditorCommand> {
-    const COMMANDS: [EditorCommand; 12] = [
-        EditorCommand { id: "save", label: "Save Scene", hint: "Ctrl+S" },
-        EditorCommand { id: "save_all", label: "Save All Scenes", hint: "Ctrl+Shift+S" },
-        EditorCommand { id: "add", label: "Add Child Node", hint: "Ctrl+A" },
-        EditorCommand { id: "mode_ui", label: "Switch Viewport to UI", hint: "3" },
-        EditorCommand { id: "mode_2d", label: "Switch Viewport to 2D", hint: "1" },
-        EditorCommand { id: "mode_3d", label: "Switch Viewport to 3D", hint: "2" },
-        EditorCommand { id: "focus", label: "Toggle Distraction Free", hint: "Ctrl+Shift+F11" },
-        EditorCommand { id: "output", label: "Toggle Output", hint: "" },
-        EditorCommand { id: "inspect_open", label: "Inspector Expand All", hint: "" },
-        EditorCommand { id: "inspect_close", label: "Inspector Collapse All", hint: "" },
-        EditorCommand { id: "refresh", label: "Refresh Project Assets", hint: "Ctrl+R" },
-        EditorCommand { id: "frame", label: "Frame Selected", hint: "F" },
+    const COMMANDS: [EditorCommand; 17] = [
+        EditorCommand {
+            id: "move_asset",
+            label: "Move Selected Asset / Folder",
+            hint: "",
+        },
+        EditorCommand {
+            id: "save_branch",
+            label: "Save Branch as Scene",
+            hint: "",
+        },
+        EditorCommand {
+            id: "open_source",
+            label: "Open Source Scene",
+            hint: "",
+        },
+        EditorCommand {
+            id: "instance",
+            label: "Instance Selected Scene Asset",
+            hint: "",
+        },
+        EditorCommand {
+            id: "animation_tool",
+            label: "Convert Animation / Saved Options",
+            hint: "",
+        },
+        EditorCommand {
+            id: "save",
+            label: "Save Scene",
+            hint: "Ctrl+S",
+        },
+        EditorCommand {
+            id: "save_all",
+            label: "Save All Scenes",
+            hint: "Ctrl+Shift+S",
+        },
+        EditorCommand {
+            id: "add",
+            label: "Add Child Node",
+            hint: "Ctrl+A",
+        },
+        EditorCommand {
+            id: "mode_ui",
+            label: "Switch Viewport to UI",
+            hint: "3",
+        },
+        EditorCommand {
+            id: "mode_2d",
+            label: "Switch Viewport to 2D",
+            hint: "1",
+        },
+        EditorCommand {
+            id: "mode_3d",
+            label: "Switch Viewport to 3D",
+            hint: "2",
+        },
+        EditorCommand {
+            id: "focus",
+            label: "Toggle Distraction Free",
+            hint: "Ctrl+Shift+F11",
+        },
+        EditorCommand {
+            id: "output",
+            label: "Toggle Output",
+            hint: "",
+        },
+        EditorCommand {
+            id: "inspect_open",
+            label: "Inspector Expand All",
+            hint: "",
+        },
+        EditorCommand {
+            id: "inspect_close",
+            label: "Inspector Collapse All",
+            hint: "",
+        },
+        EditorCommand {
+            id: "refresh",
+            label: "Refresh Project Assets",
+            hint: "Ctrl+R",
+        },
+        EditorCommand {
+            id: "frame",
+            label: "Frame Selected",
+            hint: "F",
+        },
     ];
-    let tokens = query.split_whitespace().map(str::to_ascii_lowercase).collect::<Vec<_>>();
+    let tokens = query
+        .split_whitespace()
+        .map(str::to_ascii_lowercase)
+        .collect::<Vec<_>>();
     COMMANDS
         .into_iter()
         .filter(|command| {
-            let haystack = format!("{} {} {}", command.label, command.hint, command.id).to_ascii_lowercase();
+            let haystack =
+                format!("{} {} {}", command.label, command.hint, command.id).to_ascii_lowercase();
             tokens.iter().all(|token| haystack.contains(token))
         })
         .collect()
@@ -190,7 +280,9 @@ pub fn editor_commands(query: &str) -> Vec<EditorCommand> {
 pub fn set_command_palette<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, open: bool) {
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         state.command_palette_open = open;
-        if !open { state.command_palette_filter.clear(); }
+        if !open {
+            state.command_palette_filter.clear();
+        }
     });
     refresh_all(ctx);
 }
@@ -209,22 +301,54 @@ pub fn execute_command_palette_row<API: ScriptAPI + ?Sized>(
     idx: usize,
 ) {
     let command = with_state!(ctx.run, EditorState, ctx.id, |state| {
-        editor_commands(&state.command_palette_filter).get(idx).copied()
-    }).unwrap_or_default();
+        editor_commands(&state.command_palette_filter)
+            .get(idx)
+            .copied()
+    })
+    .unwrap_or_default();
     set_command_palette(ctx, false);
     match command.map(|item| item.id) {
-        Some("save") => { save_active_scene(ctx); }
-        Some("save_all") => { let _ = save_all_scenes(ctx); }
-        Some("add") => { open_add_node_popup(ctx); }
-        Some("mode_ui") => { set_mode(ctx, "UI"); }
-        Some("mode_2d") => { set_mode(ctx, "2D"); }
-        Some("mode_3d") => { set_mode(ctx, "3D"); }
-        Some("focus") => { toggle_distraction_free(ctx); }
-        Some("output") => { toggle_bottom_dock(ctx, false); }
-        Some("inspect_open") => { set_all_inspector_sections(ctx, false); }
-        Some("inspect_close") => { set_all_inspector_sections(ctx, true); }
-        Some("refresh") => { refresh_project_assets(ctx); }
-        Some("frame") => { frame_selected_node(ctx); }
+        Some("move_asset") => move_active_asset(ctx),
+        Some("save_branch") => crate::scripts::scene::editor_reuse::save_branch(ctx),
+        Some("open_source") => crate::scripts::scene::editor_reuse::open_source(ctx),
+        Some("instance") => make_node_from_active_asset(ctx),
+        Some("animation_tool") => crate::scripts::assets::editor_animation_tool::open(ctx),
+        Some("save") => {
+            save_active_scene(ctx);
+        }
+        Some("save_all") => {
+            let _ = save_all_scenes(ctx);
+        }
+        Some("add") => {
+            open_add_node_popup(ctx);
+        }
+        Some("mode_ui") => {
+            set_mode(ctx, "UI");
+        }
+        Some("mode_2d") => {
+            set_mode(ctx, "2D");
+        }
+        Some("mode_3d") => {
+            set_mode(ctx, "3D");
+        }
+        Some("focus") => {
+            toggle_distraction_free(ctx);
+        }
+        Some("output") => {
+            toggle_bottom_dock(ctx, false);
+        }
+        Some("inspect_open") => {
+            set_all_inspector_sections(ctx, false);
+        }
+        Some("inspect_close") => {
+            set_all_inspector_sections(ctx, true);
+        }
+        Some("refresh") => {
+            refresh_project_assets(ctx);
+        }
+        Some("frame") => {
+            frame_selected_node(ctx);
+        }
         _ => {}
     }
 }
@@ -232,7 +356,8 @@ pub fn execute_command_palette_row<API: ScriptAPI + ?Sized>(
 pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     capture_editor_output(ctx);
     sync_selected_skeleton_bones(ctx);
-    let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state).unwrap_or_default();
+    let view =
+        with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state).unwrap_or_default();
     refresh_chrome_view(ctx, &view);
     refresh_manager_view(ctx, &view);
     refresh_node_picker_view(ctx, &view);
@@ -248,7 +373,10 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
 /// File panel + status only (folder expand/collapse, file-local ops).
 pub fn refresh_file_panel<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     capture_editor_output(ctx);
-    let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state).unwrap_or_default();
+    let view = with_state!(ctx.run, EditorState, ctx.id, |state| EditorView::for_parts(
+        state, 2
+    ))
+    .unwrap_or_default();
     refresh_files_view(ctx, &view);
     refresh_status_view(ctx, &view);
 }
@@ -256,7 +384,10 @@ pub fn refresh_file_panel<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
 /// Scene tree pane + status only (node expand/collapse).
 pub fn refresh_scene_panel<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     capture_editor_output(ctx);
-    let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state).unwrap_or_default();
+    let view = with_state!(ctx.run, EditorState, ctx.id, |state| EditorView::for_parts(
+        state, 1
+    ))
+    .unwrap_or_default();
     refresh_scene_pane_view(ctx, &view);
     refresh_status_view(ctx, &view);
 }
@@ -267,7 +398,10 @@ pub fn refresh_selection_panels<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext
     capture_editor_output(ctx);
     sync_selected_skeleton_bones(ctx);
     reset_inspector_for_selection(ctx);
-    let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state).unwrap_or_default();
+    let view = with_state!(ctx.run, EditorState, ctx.id, |state| EditorView::for_parts(
+        state, 13
+    ))
+    .unwrap_or_default();
     refresh_chrome_view(ctx, &view);
     // Picker labels reference the selected node ("add child of X").
     refresh_node_picker_view(ctx, &view);
@@ -279,18 +413,28 @@ pub fn refresh_selection_panels<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext
 pub fn refresh_asset_panels<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     capture_editor_output(ctx);
     sync_selected_skeleton_bones(ctx);
-    let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state).unwrap_or_default();
+    let view = with_state!(ctx.run, EditorState, ctx.id, |state| EditorView::for_parts(
+        state, 14
+    ))
+    .unwrap_or_default();
     refresh_chrome_view(ctx, &view);
     refresh_files_view(ctx, &view);
     refresh_inspector_view(ctx, &view);
 }
 
-fn refresh_chrome_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, view: &EditorView) {
+fn refresh_chrome_view<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    view: &EditorView,
+) {
     let layout = editor_layout_metrics(view.bottom_dock_open, view.distraction_free);
     set_button_fill(
         ctx,
         "distraction_free_button",
-        if view.distraction_free { theme::ACCENT } else { theme::BG_WIDGET },
+        if view.distraction_free {
+            theme::ACCENT
+        } else {
+            theme::BG_WIDGET
+        },
     );
     set_label(
         ctx,
@@ -299,68 +443,120 @@ fn refresh_chrome_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
     );
     set_label(ctx, "status_bar", &view.status);
     set_label(ctx, "log_text", &view.log);
-    set_label(ctx, "bottom_log_label", &format!("Output  {}", view.output_count));
+    set_label(
+        ctx,
+        "bottom_log_label",
+        &format!("Output  {}", view.output_count),
+    );
     set_text_box(ctx, "output_filter_box", &view.output_filter);
     for (name, visible) in [
         ("output_info_button", view.output_info_visible),
         ("output_warn_button", view.output_warn_visible),
         ("output_error_button", view.output_error_visible),
     ] {
-        set_button_fill(ctx, name, if visible { theme::ACCENT } else { theme::BG_WIDGET });
+        set_button_fill(
+            ctx,
+            name,
+            if visible {
+                theme::ACCENT
+            } else {
+                theme::BG_WIDGET
+            },
+        );
     }
     apply_script_reload_popup(ctx, view.script_schema_reloading);
     set_label(ctx, "viewport_label", &view.viewport);
     clear_viewport_label_memo(ctx);
     set_ui_display(ctx, "command_palette_scrim", view.command_palette_open);
     set_ui_display(ctx, "command_palette_panel", view.command_palette_open);
-    set_text_box(ctx, "command_palette_filter_box", &view.command_palette_filter);
+    set_text_box(
+        ctx,
+        "command_palette_filter_box",
+        &view.command_palette_filter,
+    );
     for idx in 0..8 {
         let row = view.command_palette_rows.get(idx);
-        set_ui_display(ctx, &format!("command_palette_row_{idx}"), view.command_palette_open && row.is_some());
+        set_ui_display(
+            ctx,
+            &format!("command_palette_row_{idx}"),
+            view.command_palette_open && row.is_some(),
+        );
         set_label(
             ctx,
             &format!("command_palette_row_{idx}_label"),
             row.map(String::as_str).unwrap_or("-"),
         );
     }
-    let active_tool = if view.viewport_tool.is_empty() { "select" } else { &view.viewport_tool };
+    let active_tool = if view.viewport_tool.is_empty() {
+        "select"
+    } else {
+        &view.viewport_tool
+    };
     for tool in ["select", "move", "rotate", "scale"] {
         set_button_fill(
             ctx,
             &format!("viewport_tool_{tool}_button"),
-            if active_tool == tool { theme::ACCENT } else { theme::BG_WIDGET },
+            if active_tool == tool {
+                theme::ACCENT
+            } else {
+                theme::BG_WIDGET
+            },
         );
     }
     set_button_fill(
         ctx,
         "viewport_snap_button",
-        if view.viewport_snap { theme::ACCENT } else { theme::BG_WIDGET },
+        if view.viewport_snap {
+            theme::ACCENT
+        } else {
+            theme::BG_WIDGET
+        },
     );
     set_label(
         ctx,
         "viewport_space_label",
-        if view.viewport_local { "Local" } else { "Global" },
+        if view.viewport_local {
+            "Local"
+        } else {
+            "Global"
+        },
     );
     let glb_mode = view.activity_mode == "glb";
     set_button_fill(
         ctx,
         "activity_scene_button",
-        if glb_mode { theme::BG_WIDGET } else { theme::ACCENT },
+        if glb_mode {
+            theme::BG_WIDGET
+        } else {
+            theme::ACCENT
+        },
     );
     set_button_fill(
         ctx,
         "activity_glb_button",
-        if glb_mode { theme::ACCENT } else { theme::BG_WIDGET },
+        if glb_mode {
+            theme::ACCENT
+        } else {
+            theme::BG_WIDGET
+        },
     );
     set_image_tint(
         ctx,
         "activity_scene_icon",
-        if glb_mode { theme::TEXT_DIM } else { theme::TEXT },
+        if glb_mode {
+            theme::TEXT_DIM
+        } else {
+            theme::TEXT
+        },
     );
     set_image_tint(
         ctx,
         "activity_glb_icon",
-        if glb_mode { theme::TEXT } else { theme::TEXT_DIM },
+        if glb_mode {
+            theme::TEXT
+        } else {
+            theme::TEXT_DIM
+        },
     );
     set_button_fill(
         ctx,
@@ -414,10 +610,7 @@ fn refresh_chrome_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
     set_ui_node_size(
         ctx,
         "viewport_panel",
-        (
-            1.0,
-            if glb_mode { 0.70 } else { layout.viewport_h },
-        ),
+        (1.0, if glb_mode { 0.70 } else { layout.viewport_h }),
     );
     let anim_open = view.bottom_dock_open && view.anim_drawer_open;
     set_ui_node_size(
@@ -509,7 +702,11 @@ fn refresh_chrome_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
     set_text_box(ctx, "file_filter_box", &view.file_filter);
     set_ui_display(ctx, "file_scroll", true);
     set_ui_node_size(ctx, "scene_tools_row", (1.0, 0.032));
-    set_ui_node_size(ctx, "scene_scroll", (1.0, if glb_mode { 0.0 } else { 0.312 }));
+    set_ui_node_size(
+        ctx,
+        "scene_scroll",
+        (1.0, if glb_mode { 0.0 } else { 0.312 }),
+    );
     set_ui_node_size(ctx, "file_action_row", (1.0, 0.034));
     set_ui_node_size(ctx, "file_tools_row", (1.0, 0.032));
     set_ui_node_size(ctx, "file_ops_row", (1.0, 0.032));
@@ -520,7 +717,10 @@ fn refresh_chrome_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
     );
 }
 
-fn refresh_manager_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, view: &EditorView) {
+fn refresh_manager_view<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    view: &EditorView,
+) {
     for idx in 0..MAX_RECENT {
         let has_recent = view.recent_projects.get(idx).is_some();
         let text = view
@@ -545,7 +745,10 @@ fn refresh_manager_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API
     );
 }
 
-fn refresh_node_picker_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, view: &EditorView) {
+fn refresh_node_picker_view<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    view: &EditorView,
+) {
     set_label(ctx, "add_node_page_label", &view.node_picker_page);
     set_label(ctx, "add_node_parent_label", &view.node_picker_parent);
     set_text_box(ctx, "add_node_search_box", &view.node_picker_filter);
@@ -559,7 +762,10 @@ fn refresh_node_picker_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
     }
 }
 
-fn refresh_files_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, view: &EditorView) {
+fn refresh_files_view<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    view: &EditorView,
+) {
     apply_file_tree_layout(ctx);
     set_label(
         ctx,
@@ -623,11 +829,7 @@ fn refresh_tabs_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, 
         } else {
             "x"
         };
-        set_label(
-            ctx,
-            &format!("scene_tab_close_{slot}_label"),
-            close_label,
-        );
+        set_label(ctx, &format!("scene_tab_close_{slot}_label"), close_label);
         set_button_fill(
             ctx,
             &format!("scene_tab_{slot}"),
@@ -640,7 +842,10 @@ fn refresh_tabs_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, 
     }
 }
 
-fn refresh_scene_pane_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, view: &EditorView) {
+fn refresh_scene_pane_view<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    view: &EditorView,
+) {
     apply_scene_list_layout(ctx);
     set_scene_tree_list(ctx, view);
     apply_viewport_mode(ctx, &view.viewport_mode);
@@ -649,7 +854,10 @@ fn refresh_scene_pane_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
     sync_selected_preview_gizmo(ctx);
 }
 
-fn refresh_inspector_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, view: &EditorView) {
+fn refresh_inspector_view<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    view: &EditorView,
+) {
     if take_inspector_layout_pass(ctx) {
         apply_inspector_static_layout(ctx);
         remove_legacy_transform_rows(ctx);
@@ -659,7 +867,11 @@ fn refresh_inspector_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
     set_button_fill(
         ctx,
         "inspector_modified_button",
-        if view.inspector_modified_only { theme::ACCENT } else { theme::BG_WIDGET },
+        if view.inspector_modified_only {
+            theme::ACCENT
+        } else {
+            theme::BG_WIDGET
+        },
     );
     set_label(ctx, "inspector_title", "Name");
     set_label(ctx, "inspector_name", "Type");
@@ -1120,7 +1332,10 @@ fn refresh_inspector_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
     }
 }
 
-fn refresh_status_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, view: &EditorView) {
+fn refresh_status_view<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    view: &EditorView,
+) {
     set_label(
         ctx,
         "project_status",
@@ -1178,7 +1393,8 @@ pub fn refresh_status<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>)
                 format!("{} Viewport", state.viewport_mode),
                 state.script_schema_reload_frames > 0,
             )
-        }).unwrap_or_default();
+        })
+        .unwrap_or_default();
     set_label(
         ctx,
         "project_status",
@@ -1216,14 +1432,19 @@ pub fn set_all_inspector_sections<API: ScriptAPI + ?Sized>(
     });
     if collapse {
         let paths = with_state!(ctx.run, EditorState, ctx.id, |state| {
-            let Some(key) = state.selected_key else { return Vec::new() };
-            let Some(node) = cached_scene_node(&state.doc_text, key) else { return Vec::new() };
+            let Some(key) = state.selected_key else {
+                return Vec::new();
+            };
+            let Some(node) = cached_scene_node(&state.doc_text, key) else {
+                return Vec::new();
+            };
             inspector_display_rows_for_node(state, &node)
                 .iter()
                 .filter(|row| row.source == "section")
                 .map(|row| row.path_key.clone())
                 .collect::<Vec<_>>()
-        }).unwrap_or_default();
+        })
+        .unwrap_or_default();
         let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
             state.inspector_collapsed_sections = paths;
         });
@@ -1739,6 +1960,11 @@ impl InspectorViewData {
         let script_fields = inspector_script_var_fields_for_node(state, node);
         view.vars_text = script_vars_edit_text(&script_fields);
         view.script_vars = inspector_visible_rows_for_node(state, node);
+        let selected = crate::scripts::scene::editor_selection::keys(state);
+        if selected.len() > 1 {
+            view.title = format!("Inspector — {} nodes", selected.len());
+            view.name = "Shared fields; <mixed> needs explicit value".into();
+        }
         view.apply_asset_actions(state);
         view
     }
@@ -1778,44 +2004,115 @@ impl InspectorViewData {
 }
 
 pub fn inspector_visible_rows_for_node(
-    _state: &EditorState,
-    node: &perro_api::scene::SceneNodeEntry,
+    state: &EditorState,
+    node: &SceneNodeEntry,
 ) -> Arc<[InspectorValueRow]> {
-    inspector_display_rows_for_node(_state, node)
+    let primary = inspector_display_rows_for_node(state, node);
+    let selected = crate::scripts::scene::editor_selection::keys(state);
+    if selected.len() < 2 {
+        return primary;
+    }
+    let doc = cached_scene_doc_shared(&state.doc_text);
+    let peers = selected
+        .iter()
+        .filter(|key| **key != node.key.as_u32())
+        .filter_map(|key| doc.scene.nodes.iter().find(|n| n.key.as_u32() == *key))
+        .map(|n| inspector_display_rows_for_node(state, n))
+        .collect::<Vec<_>>();
+    let mut rows = Vec::new();
+    for row in primary.iter().filter(|r| {
+        r.path.len() == 1
+            && (r.source == "scene" || r.source == "script")
+            && r.editable
+            && !r.expandable
+    }) {
+        let mut mixed = false;
+        if !peers.iter().all(|rows| {
+            rows.iter().any(|other| {
+                let same = other.path.len() == 1
+                    && other.source == row.source
+                    && other.name == row.name
+                    && other.kind == row.kind
+                    && other.editable
+                    && other.enum_options == row.enum_options;
+                if same {
+                    mixed |= other.value != row.value || other.components != row.components;
+                }
+                same
+            })
+        }) {
+            continue;
+        }
+        let mut row = row.clone();
+        row.depth = 0;
+        row.addable = false;
+        row.removable = false;
+        if mixed {
+            row.value = "<mixed>".into();
+            row.color_preview = None;
+            for component in &mut row.components {
+                *component = "<mixed>".into();
+            }
+        }
+        rows.push(row);
+    }
+    rows.into()
 }
 
 impl EditorView {
     fn from_state(state: &EditorState) -> Self {
+        Self::for_parts(state, 15)
+    }
+
+    // 1 = scene tree, 2 = files, 4 = inspector, 8 = chrome/pickers.
+    fn for_parts(state: &EditorState, parts: u8) -> Self {
         let mut nodes = Vec::new();
         let mut node_icons = Vec::new();
         let mut scene_disclosures = Vec::new();
         let mut scene_depths = Vec::new();
         let mut selected_row = None;
-        let mut inspector = InspectorViewData::for_asset(state);
+        let mut inspector = if parts & 4 != 0 {
+            InspectorViewData::for_asset(state)
+        } else {
+            InspectorViewData::default()
+        };
         let mut gizmo = editor_gizmos::GizmoView::default();
         let mut selected_ui_rect = None;
         let mut glb_title = "GLB Viewer".to_string();
         let mut glb_summary = "select .glb asset".to_string();
 
-        if !state.doc_text.is_empty() {
+        if parts & 5 != 0 && !state.doc_text.is_empty() {
             let doc = cached_scene_doc_shared(&state.doc_text);
-            let tree = scene_tree_view(
-                doc.as_ref(),
-                state.selected_key,
-                &state.scene_filter,
-                &state.collapsed_scene_keys,
-            );
+            let tree = if parts & 1 != 0 {
+                scene_tree_view(
+                    doc.as_ref(),
+                    state.selected_key,
+                    &state.scene_filter,
+                    &state.collapsed_scene_keys,
+                )
+            } else {
+                SceneTreeRows::default()
+            };
             gizmo = editor_gizmos::gizmo_view(doc.as_ref(), state.selected_key);
             selected_ui_rect = state
                 .selected_key
                 .and_then(|key| doc_ui_rect(doc.as_ref(), key));
             nodes = tree.labels;
+            let selected = crate::scripts::scene::editor_selection::keys(state);
+            if selected.len() > 1 {
+                for (label, key) in nodes.iter_mut().zip(&tree.keys) {
+                    if selected.contains(key) {
+                        *label = format!("• {label}");
+                    }
+                }
+            }
             node_icons = tree.icons;
             scene_disclosures = tree.disclosures;
             scene_depths = tree.depths;
             selected_row = tree.selected_row;
 
-            if let Some(key) = state.selected_key
+            if parts & 4 != 0
+                && let Some(key) = state.selected_key
                 && let Some(node) = cached_scene_node(&state.doc_text, key)
             {
                 inspector = InspectorViewData::for_node(doc.as_ref(), &node, state);
@@ -1844,17 +2141,32 @@ impl EditorView {
             state.viewport_mode, state.cam_x, state.cam_y, state.cam_z
         );
         let (anim_title, anim_status, anim_tracks, anim_can_create, anim_can_add_track) =
-            animation_drawer_text(state);
-        let node_picker_rows =
-            picker_rows(state, &state.node_picker_filter, state.node_picker_offset);
+            if parts & 8 != 0 {
+                animation_drawer_text(state)
+            } else {
+                Default::default()
+            };
+        let node_picker_rows = if parts & 8 != 0 {
+            picker_rows(state, &state.node_picker_filter, state.node_picker_offset)
+        } else {
+            Vec::new()
+        };
         let page = (state.node_picker_offset / MAX_NODE_PICKER_ROWS) + 1;
         let picker_count = picker_node_types(state, &state.node_picker_filter)
             .len()
             .max(1);
         let page_count = picker_count.div_ceil(MAX_NODE_PICKER_ROWS);
         let node_picker_parent = picker_parent_text(state);
-        let inspector_picker_rows = inspector_picker_rows(state);
-        let inspector_picker_count = inspector_picker_entries(state).len().max(1);
+        let inspector_picker_rows = if parts & 8 != 0 && state.inspector_picker_open {
+            inspector_picker_rows(state)
+        } else {
+            Vec::new()
+        };
+        let inspector_picker_count = if parts & 8 != 0 && state.inspector_picker_open {
+            inspector_picker_entries(state).len().max(1)
+        } else {
+            1
+        };
         let inspector_picker_page = (state.inspector_picker_offset / MAX_INSPECTOR_PICKER_ROWS) + 1;
         let inspector_picker_page_count =
             inspector_picker_count.div_ceil(MAX_INSPECTOR_PICKER_ROWS);
@@ -1872,11 +2184,23 @@ impl EditorView {
                 state.create_parent_dir.clone()
             },
             recent_projects: state.recent_projects.clone(),
-            file_paths: filtered_file_paths(state),
+            file_paths: if parts & 2 != 0 {
+                filtered_file_paths(state)
+            } else {
+                Vec::new()
+            },
             file_filter: state.file_filter.clone(),
             file_scope: state.file_scope.clone(),
-            file_expanded_paths: state.file_expanded_paths.clone(),
-            file_dirs_with_children: file_dirs_with_children(state),
+            file_expanded_paths: if parts & 2 != 0 {
+                state.file_expanded_paths.clone()
+            } else {
+                Vec::new()
+            },
+            file_dirs_with_children: if parts & 2 != 0 {
+                file_dirs_with_children(state)
+            } else {
+                Default::default()
+            },
             file_title: file_panel_title(state),
             active_asset_path: state.active_asset_path.clone(),
             scene_paths: state.scene_paths.clone(),
@@ -1914,7 +2238,13 @@ impl EditorView {
             command_palette_rows: editor_commands(&state.command_palette_filter)
                 .into_iter()
                 .take(8)
-                .map(|item| if item.hint.is_empty() { item.label.to_string() } else { format!("{}    {}", item.label, item.hint) })
+                .map(|item| {
+                    if item.hint.is_empty() {
+                        item.label.to_string()
+                    } else {
+                        format!("{}    {}", item.label, item.hint)
+                    }
+                })
                 .collect(),
             anim_title,
             anim_status,
@@ -2236,7 +2566,8 @@ fn inspector_override_view<API: ScriptAPI + ?Sized>(
             scene_defaults: inspector_scene_default_value_fields_for_type(node_ref.data.node_type),
             node,
         }
-    }).unwrap_or_default()
+    })
+    .unwrap_or_default()
 }
 
 fn inspector_row_has_override(view: &InspectorOverrideView, row: &InspectorValueRow) -> bool {
@@ -2283,6 +2614,9 @@ fn inspector_row_has_override(view: &InspectorOverrideView, row: &InspectorValue
 }
 
 fn inspector_row_display_name(row: &InspectorValueRow) -> String {
+    if row.value == "<mixed>" {
+        return format!("{} (mixed)", row.name);
+    }
     let indent = row.name.chars().take_while(|ch| ch.is_whitespace()).count();
     let label = row.name.trim();
     if row.source == "section" {
@@ -2381,23 +2715,19 @@ fn apply_inspector_value_row_text_layout<API: ScriptAPI + ?Sized>(
     set_label_text_ratio(ctx, &name_label, name_text_ratio);
     set_label_size_ratio(ctx, &name_label, (name_ratio, 1.0));
     if row.kind == "Quat" {
-        set_ui_node_size(
-            ctx,
-            &format!("inspector_var_{idx}_components"),
-            (0.68, 1.0),
-        );
-        set_ui_node_size(
-            ctx,
-            &format!("inspector_var_{idx}_quat_mode"),
-            (0.30, 0.32),
-        );
+        set_ui_node_size(ctx, &format!("inspector_var_{idx}_components"), (0.68, 1.0));
+        set_ui_node_size(ctx, &format!("inspector_var_{idx}_quat_mode"), (0.30, 0.32));
     }
     if row.source == "section" {
         // Categories stay centered like Godot; nested section headers hug
         // the left edge next to their disclosure marker.
         let marker = row.value.trim();
         let text = if marker.is_empty() {
-            row.name.clone()
+            if row.value == "<mixed>" {
+                format!("{} (mixed)", row.name)
+            } else {
+                row.name.clone()
+            }
         } else {
             format!("{marker}  {}", row.name)
         };
@@ -2578,7 +2908,9 @@ fn inspector_anim_field_picker_entries(state: &EditorState) -> Vec<InspectorPick
     );
     entries
         .into_iter()
-        .filter(|entry| filter.is_empty() || entry.label.to_ascii_lowercase().contains(filter.as_str()))
+        .filter(|entry| {
+            filter.is_empty() || entry.label.to_ascii_lowercase().contains(filter.as_str())
+        })
         .collect()
 }
 
@@ -2737,16 +3069,28 @@ fn inspector_asset_picker_entries(state: &EditorState) -> Vec<InspectorPickerEnt
     };
     let filter = NodePickerFilter::parse(&state.inspector_picker_filter);
     let filters = editor_asset_filters(kind);
+    let subkind = match kind {
+        perro_scene::SceneAssetKind::Mesh => Some(":mesh["),
+        perro_scene::SceneAssetKind::Material => Some(":mat["),
+        perro_scene::SceneAssetKind::Texture => Some(":tex["),
+        perro_scene::SceneAssetKind::Skeleton => Some(":rig["),
+        _ => None,
+    };
     state
         .file_paths
         .iter()
         .filter(|path| {
             !path.ends_with('/')
+                && !(subkind.is_some() && is_gltf_path(path))
                 && inspector_asset_path_matches(path, filters)
                 && (filter.is_empty() || file_path_matches_filter(path, &filter))
         })
+        .chain(state.inspector_asset_subrefs.iter().filter(|path| {
+            subkind.is_some_and(|suffix| path.contains(suffix))
+                && (filter.is_empty() || file_path_matches_filter(path, &filter))
+        }))
         .map(|path| {
-            let value = inspector_asset_picker_value(path, kind, state.active_glb_mesh_index);
+            let value = path.clone();
             let label = format!(
                 "{}  {}",
                 editor_files::display_kind_label(path),
@@ -3209,6 +3553,171 @@ pub struct SceneDocIndex {
     roots: Vec<u32>,
 }
 
+/// Read-only preview work shares an index with its immutable scene snapshot.
+/// Bound this cache separately from undo history: retain at most eight indexes
+/// and keep only weak document references so closed scenes can be released.
+pub fn cached_scene_doc_index(doc: &Arc<SceneDoc>) -> Arc<SceneDocIndex> {
+    type Entry = (std::sync::Weak<SceneDoc>, Arc<SceneDocIndex>);
+    static CACHE: OnceLock<Mutex<Vec<Entry>>> = OnceLock::new();
+    let mut cache = CACHE
+        .get_or_init(|| Mutex::new(Vec::new()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    cache.retain(|(owner, _)| owner.strong_count() != 0);
+    let owner = Arc::downgrade(doc);
+    if let Some(pos) = cache.iter().position(|(cached, _)| cached.ptr_eq(&owner)) {
+        let entry = cache.remove(pos);
+        let index = Arc::clone(&entry.1);
+        cache.push(entry);
+        return index;
+    }
+    let index = Arc::new(SceneDocIndex::new(doc.as_ref()));
+    cache.push((owner, Arc::clone(&index)));
+    if cache.len() > 8 {
+        cache.remove(0);
+    }
+    index
+}
+
+#[cfg(test)]
+mod editor_index_audit {
+    use super::*;
+    use crate::scripts::editor::main::{
+        EditorState, cached_scene_doc_shared, redo_scene_doc, set_state_scene_doc,
+        set_state_scene_doc_loaded, undo_scene_doc,
+    };
+    use std::fmt::Write as _;
+    use std::hint::black_box;
+    use std::time::Instant;
+
+    fn scene(count: usize, all_roots: bool) -> Arc<SceneDoc> {
+        let mut text = String::from("$root = @n0\n");
+        for i in 0..count {
+            writeln!(text, "[n{i}]").expect("text");
+            if !all_roots && i != 0 {
+                writeln!(text, "parent = @n0").expect("text");
+            }
+            writeln!(text, "[Node2D]\n[/Node2D]\n[/n{i}]").expect("text");
+        }
+        let doc = Arc::new(SceneDoc::parse(&text));
+        assert_eq!(doc.scene.nodes.len(), count);
+        doc
+    }
+
+    #[test]
+    fn cached_index_tracks_document_identity_and_keeps_order() {
+        let first = scene(32, false);
+        let index = cached_scene_doc_index(&first);
+        assert!(Arc::ptr_eq(&index, &cached_scene_doc_index(&first)));
+        let expected = SceneDocIndex::new(first.as_ref());
+        assert_eq!(index.node_indices, expected.node_indices);
+        assert_eq!(index.children, expected.children);
+        assert_eq!(index.roots, expected.roots);
+        let changed = scene(32, true);
+        let changed_index = cached_scene_doc_index(&changed);
+        assert!(!Arc::ptr_eq(&index, &changed_index));
+        assert_eq!(changed_index.roots.len(), 32);
+        let weak = Arc::downgrade(&changed);
+        drop(changed);
+        assert!(
+            weak.upgrade().is_none(),
+            "index cache must not pin source docs"
+        );
+    }
+
+    #[test]
+    #[ignore = "manual view latency probe"]
+    fn audit_editor_views() {
+        for count in [100, 1_000, 10_000] {
+            let doc = scene(count, false);
+            let state = EditorState {
+                doc_text: doc.to_text(),
+                selected_key: Some(1),
+                file_paths: (0..10_000)
+                    .map(|n| format!("res://assets/image{n}.png"))
+                    .collect(),
+                ..Default::default()
+            };
+            for (label, parts) in [("full", 15), ("selection", 13), ("files", 2)] {
+                let _ = super::EditorView::for_parts(&state, parts);
+                let mut samples = Vec::new();
+                for _ in 0..21 {
+                    let start = Instant::now();
+                    black_box(super::EditorView::for_parts(&state, parts));
+                    samples.push(start.elapsed().as_micros());
+                }
+                samples.sort();
+                eprintln!(
+                    "view {label} nodes={count} files=10000 p50={}us p95={}us",
+                    samples[10], samples[19]
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "manual release performance probe"]
+    fn audit_editor_index() {
+        for count in [1_000, 10_000] {
+            let doc = scene(count, false);
+            let _ = cached_scene_doc_index(&doc);
+            let mut samples = Vec::new();
+            for _ in 0..15 {
+                let begin = Instant::now();
+                for _ in 0..100 {
+                    black_box(cached_scene_doc_index(black_box(&doc)));
+                }
+                samples.push(begin.elapsed().as_nanos());
+            }
+            println!("AUDIT editor_index nodes={count} operations=100 samples_ns={samples:?}");
+        }
+    }
+
+    #[test]
+    fn no_op_scene_write_keeps_cache_and_undo_history() {
+        let doc = scene(12, false);
+        let changed = scene(15, false);
+        let mut state = EditorState::default();
+        set_state_scene_doc_loaded(&mut state, &doc);
+        let cached = cached_scene_doc_shared(&state.doc_text);
+        state.scene_redo_stack.push("redo sentinel".to_owned());
+        set_state_scene_doc(&mut state, &doc);
+        assert!(Arc::ptr_eq(
+            &cached,
+            &cached_scene_doc_shared(&state.doc_text)
+        ));
+        assert!(state.scene_undo_stack.is_empty());
+        assert_eq!(state.scene_redo_stack, ["redo sentinel"]);
+        set_state_scene_doc(&mut state, &changed);
+        assert_eq!(state.scene_undo_stack, [doc.to_text()]);
+        assert!(state.scene_redo_stack.is_empty());
+        assert!(undo_scene_doc(&mut state));
+        assert_eq!(state.doc_text, doc.to_text());
+        assert!(redo_scene_doc(&mut state));
+        assert_eq!(state.doc_text, changed.to_text());
+    }
+
+    #[test]
+    #[ignore = "manual release performance probe"]
+    fn audit_editor_noop_write() {
+        for count in [1_000, 10_000] {
+            let doc = scene(count, false);
+            let mut state = EditorState::default();
+            set_state_scene_doc_loaded(&mut state, &doc);
+            let mut samples = Vec::new();
+            for _ in 0..15 {
+                let begin = Instant::now();
+                for _ in 0..20 {
+                    set_state_scene_doc(black_box(&mut state), black_box(&doc));
+                }
+                samples.push(begin.elapsed().as_nanos());
+            }
+            assert!(state.scene_undo_stack.is_empty());
+            println!("AUDIT editor_noop nodes={count} operations=20 samples_ns={samples:?}");
+        }
+    }
+}
+
 impl SceneDocIndex {
     pub fn new(doc: &SceneDoc) -> Self {
         let mut node_indices = Vec::with_capacity(doc.scene.nodes.len());
@@ -3219,8 +3728,10 @@ impl SceneDocIndex {
 
         let mut children = vec![Vec::new(); doc.scene.nodes.len()];
         let mut roots = Vec::new();
+        let mut root_keys = std::collections::HashSet::new();
         if let Some(root) = doc.scene.root {
             roots.push(root.as_u32());
+            root_keys.insert(root.as_u32());
         }
         for node in doc.scene.nodes.iter() {
             let key = node.key.as_u32();
@@ -3231,7 +3742,7 @@ impl SceneDocIndex {
                     let parent_idx = node_indices[pos].1;
                     children[parent_idx].push(key);
                 }
-            } else if !roots.contains(&key) {
+            } else if root_keys.insert(key) {
                 roots.push(key);
             }
         }
@@ -4174,7 +4685,8 @@ pub fn tick_script_schema_reload<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
     if changed {
         let visible = with_state!(ctx.run, EditorState, ctx.id, |state| {
             state.script_schema_reload_frames > 0
-        }).unwrap_or_default();
+        })
+        .unwrap_or_default();
         apply_script_reload_popup(ctx, visible);
     }
 }
@@ -4271,7 +4783,8 @@ pub fn set_text_box<API: ScriptAPI + ?Sized>(
 ) {
     let focused = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.focused_inspector_box == name
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     if focused {
         return;
     }
@@ -4290,9 +4803,7 @@ pub fn read_text_box<API: ScriptAPI + ?Sized>(
     name: &str,
 ) -> Option<String> {
     let id = find_named(ctx, name)?;
-    Some(with_node!(ctx.run, UiTextBox, id, |node| node
-        .text
-        .to_string()).unwrap_or_default())
+    Some(with_node!(ctx.run, UiTextBox, id, |node| node.text.to_string()).unwrap_or_default())
 }
 
 pub fn set_text_box_interactive<API: ScriptAPI + ?Sized>(
@@ -4393,7 +4904,8 @@ pub fn read_color_picker_value<API: ScriptAPI + ?Sized>(
     name: &str,
 ) -> Option<String> {
     let id = find_named(ctx, name)?;
-    let [r, g, b, a] = with_node!(ctx.run, UiColorPicker, id, |node| node.color.to_rgba()).unwrap_or_default();
+    let [r, g, b, a] =
+        with_node!(ctx.run, UiColorPicker, id, |node| node.color.to_rgba()).unwrap_or_default();
     Some(format!(
         "({}, {}, {}, {})",
         format_compact_f32(r),
@@ -4636,7 +5148,11 @@ pub fn set_row_state<API: ScriptAPI + ?Sized>(
     selected: bool,
     indicator: RowIndicator,
 ) {
-    set_button_fill(ctx, name, if selected { theme::ACCENT } else { "#00000000" });
+    set_button_fill(
+        ctx,
+        name,
+        if selected { theme::ACCENT } else { "#00000000" },
+    );
     set_indicator_shape(ctx, &format!("{name}_indicator"), indicator);
 }
 
@@ -4704,7 +5220,8 @@ pub fn apply_selected_ui_overlay<API: ScriptAPI + ?Sized>(
         } else {
             viewport_stream_size_ratio(window_aspect)
         }
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     if let Some(id) = find_named(ctx, "selected_outline") {
         let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
             node.layout.anchor = UiAnchor::Center;
@@ -4900,12 +5417,26 @@ pub fn set_panel_size<API: ScriptAPI + ?Sized>(
 }
 
 const CANVAS_V_LINES: [&str; 9] = [
-    "canvas_v_0", "canvas_v_1", "canvas_v_2", "canvas_v_3", "canvas_v_4", "canvas_v_5",
-    "canvas_v_6", "canvas_v_7", "canvas_v_8",
+    "canvas_v_0",
+    "canvas_v_1",
+    "canvas_v_2",
+    "canvas_v_3",
+    "canvas_v_4",
+    "canvas_v_5",
+    "canvas_v_6",
+    "canvas_v_7",
+    "canvas_v_8",
 ];
 const CANVAS_H_LINES: [&str; 9] = [
-    "canvas_h_0", "canvas_h_1", "canvas_h_2", "canvas_h_3", "canvas_h_4", "canvas_h_5",
-    "canvas_h_6", "canvas_h_7", "canvas_h_8",
+    "canvas_h_0",
+    "canvas_h_1",
+    "canvas_h_2",
+    "canvas_h_3",
+    "canvas_h_4",
+    "canvas_h_5",
+    "canvas_h_6",
+    "canvas_h_7",
+    "canvas_h_8",
 ];
 
 /// Drops the [`apply_viewport_canvas`] memo. Call after the editor ui shell or
@@ -4930,7 +5461,11 @@ pub fn apply_viewport_canvas<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
         with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
             let (pan_x, pan_y, zoom) = if state.viewport_mode == "2D" {
                 let zoom = state.cam2_zoom.max(0.05);
-                (-state.cam2_x * zoom / 960.0, state.cam2_y * zoom / 540.0, zoom)
+                (
+                    -state.cam2_x * zoom / 960.0,
+                    state.cam2_y * zoom / 540.0,
+                    zoom,
+                )
             } else {
                 (0.0, 0.0, state.ui_canvas_zoom.max(0.25))
             };
@@ -5050,7 +5585,8 @@ pub fn apply_ui_preview_canvas_transform<API: ScriptAPI + ?Sized>(
             (state.preview_root != 0).then(|| NodeID::from_u64(state.preview_root)),
             editor_layout(state),
         )
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     let Some(root) = root else {
         return;
     };
@@ -5146,7 +5682,10 @@ pub fn modified_inspector_rows_for_node(
         .collect()
 }
 
-pub fn editor_layout_metrics(bottom_dock_open: bool, distraction_free: bool) -> EditorLayoutMetrics {
+pub fn editor_layout_metrics(
+    bottom_dock_open: bool,
+    distraction_free: bool,
+) -> EditorLayoutMetrics {
     editor_layout_metrics_full(bottom_dock_open, false, distraction_free)
 }
 
@@ -5355,7 +5894,8 @@ fn refresh_bone_panel<API: ScriptAPI + ?Sized>(
                 state.inspector_bone_rot.clone(),
                 state.inspector_bone_scale.clone(),
             )
-        }).unwrap_or_default();
+        })
+        .unwrap_or_default();
     let has_bones = node_actions && !names.is_empty();
     set_ui_display(ctx, "inspector_bones_header", has_bones);
     set_ui_display(ctx, "inspector_bone_rows", has_bones);
@@ -5678,7 +6218,8 @@ pub fn read_dropdown_value<API: ScriptAPI + ?Sized>(
             .get(node.selected_index)
             .and_then(|option| option.value.as_str())
             .map(str::to_string)
-    }).unwrap_or_default()
+    })
+    .unwrap_or_default()
 }
 
 pub fn set_add_node_popup<API: ScriptAPI + ?Sized>(

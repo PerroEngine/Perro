@@ -54,6 +54,52 @@ pub enum InternalFixedUpdate {
     True,
 }
 
+/// Built-in behavior keys. Data-only: implementation stays in perro_internal_updates.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum UpdateHook {
+    None,
+    AnimationPlayer,
+    AnimationTree,
+    AnimatedSprite2D,
+    UiAnimatedImage,
+    VideoPlayer,
+    IkTarget2D,
+    IkTarget3D,
+    BoneAttachment2D,
+    BoneAttachment3D,
+    ParticleEmitter2D,
+    ParticleEmitter3D,
+}
+
+/// World steps and per-node callbacks have distinct scheduling semantics.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum FixedUpdateHook {
+    None,
+    PhysicsWorld,
+    PhysicsBoneChain2D,
+    PhysicsBoneChain3D,
+}
+
+impl FixedUpdateHook {
+    pub const fn is_node_callback(self) -> bool {
+        matches!(self, Self::PhysicsBoneChain2D | Self::PhysicsBoneChain3D)
+    }
+}
+
+/// Membership owned by world services rather than per-node behavior.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum NodeService {
+    None,
+    Body2D,
+    Body3D,
+    Joint2D,
+    Joint3D,
+    Button2D,
+}
+
 #[macro_export]
 /// Storage marker → concrete enum payload type. `Boxed` variants keep the
 /// `SceneNodeData` stride small; access still auto-derefs, only construction
@@ -226,10 +272,10 @@ macro_rules! __impl_exact_node_base_dispatch_ui {
 macro_rules! define_scene_nodes {
     (
         base: { $($base_variant:ident $(=> $base_ty:ty)?),* $(,)? }
-        2d: { $($variant_2d:ident => ($parent_2d:ident, $ty_2d:ty, $storage_2d:ident, $renderable_2d:expr, $internal_update_2d:expr, $internal_fixed_update_2d:expr)),* $(,)? }
-        3d: { $($variant_3d:ident => ($parent_3d:ident, $ty_3d:ty, $storage_3d:ident, $renderable_3d:expr, $internal_update_3d:expr, $internal_fixed_update_3d:expr)),* $(,)? }
-        ui: { $($variant_ui:ident => ($parent_ui:ident, $ty_ui:ty, $storage_ui:ident, $renderable_ui:expr, $internal_update_ui:expr, $internal_fixed_update_ui:expr)),* $(,)? }
-        resource: { $($variant_resource:ident => ($parent_resource:ident, $ty_resource:ty, $storage_resource:ident, $renderable_resource:expr, $internal_update_resource:expr, $internal_fixed_update_resource:expr)),* $(,)? }
+        2d: { $($variant_2d:ident => ($parent_2d:ident, $ty_2d:ty, $storage_2d:ident, $renderable_2d:expr, $internal_update_2d:expr, $internal_fixed_update_2d:expr, $service_2d:expr)),* $(,)? }
+        3d: { $($variant_3d:ident => ($parent_3d:ident, $ty_3d:ty, $storage_3d:ident, $renderable_3d:expr, $internal_update_3d:expr, $internal_fixed_update_3d:expr, $service_3d:expr)),* $(,)? }
+        ui: { $($variant_ui:ident => ($parent_ui:ident, $ty_ui:ty, $storage_ui:ident, $renderable_ui:expr, $internal_update_ui:expr, $internal_fixed_update_ui:expr, $service_ui:expr)),* $(,)? }
+        resource: { $($variant_resource:ident => ($parent_resource:ident, $ty_resource:ty, $storage_resource:ident, $renderable_resource:expr, $internal_update_resource:expr, $internal_fixed_update_resource:expr, $service_resource:expr)),* $(,)? }
     ) => {
         #[derive(Clone, Debug)]
         pub struct SceneNode {
@@ -559,8 +605,15 @@ macro_rules! define_scene_nodes {
             }
 
             pub const fn get_internal_update(&self) -> InternalUpdate {
+                match self.update_hook() {
+                    UpdateHook::None => InternalUpdate::False,
+                    _ => InternalUpdate::True,
+                }
+            }
+
+            pub const fn update_hook(&self) -> UpdateHook {
                 match self {
-                    $(NodeType::$base_variant => InternalUpdate::False,)*
+                    $(NodeType::$base_variant => UpdateHook::None,)*
                     $(NodeType::$variant_2d => $internal_update_2d,)*
                     $(NodeType::$variant_3d => $internal_update_3d,)*
                     $(NodeType::$variant_ui => $internal_update_ui,)*
@@ -579,12 +632,29 @@ macro_rules! define_scene_nodes {
             }
 
             pub const fn get_internal_fixed_update(&self) -> InternalFixedUpdate {
+                match self.fixed_update_hook() {
+                    FixedUpdateHook::None => InternalFixedUpdate::False,
+                    _ => InternalFixedUpdate::True,
+                }
+            }
+
+            pub const fn fixed_update_hook(&self) -> FixedUpdateHook {
                 match self {
-                    $(NodeType::$base_variant => InternalFixedUpdate::False,)*
+                    $(NodeType::$base_variant => FixedUpdateHook::None,)*
                     $(NodeType::$variant_2d => $internal_fixed_update_2d,)*
                     $(NodeType::$variant_3d => $internal_fixed_update_3d,)*
                     $(NodeType::$variant_ui => $internal_fixed_update_ui,)*
                     $(NodeType::$variant_resource => $internal_fixed_update_resource,)*
+                }
+            }
+
+            pub const fn service(&self) -> NodeService {
+                match self {
+                    $(NodeType::$base_variant => NodeService::None,)*
+                    $(NodeType::$variant_2d => $service_2d,)*
+                    $(NodeType::$variant_3d => $service_3d,)*
+                    $(NodeType::$variant_ui => $service_ui,)*
+                    $(NodeType::$variant_resource => $service_resource,)*
                 }
             }
 
@@ -639,8 +709,8 @@ macro_rules! define_scene_nodes {
             const NODE_TYPE: NodeType = NodeType::$variant_2d;
             const SPATIAL: Spatial = Spatial::TwoD;
             const RENDERABLE: Renderable = $renderable_2d;
-            const INTERNAL_UPDATE: InternalUpdate = $internal_update_2d;
-            const INTERNAL_FIXED_UPDATE: InternalFixedUpdate = $internal_fixed_update_2d;
+            const INTERNAL_UPDATE: InternalUpdate = NodeType::$variant_2d.get_internal_update();
+            const INTERNAL_FIXED_UPDATE: InternalFixedUpdate = NodeType::$variant_2d.get_internal_fixed_update();
             type TransformSnapshot = Transform2D;
 
             fn with_ref<R>(data: &SceneNodeData, f: impl FnOnce(&Self) -> R) -> Option<R> {
@@ -670,8 +740,8 @@ macro_rules! define_scene_nodes {
             const NODE_TYPE: NodeType = NodeType::$variant_3d;
             const SPATIAL: Spatial = Spatial::ThreeD;
             const RENDERABLE: Renderable = $renderable_3d;
-            const INTERNAL_UPDATE: InternalUpdate = $internal_update_3d;
-            const INTERNAL_FIXED_UPDATE: InternalFixedUpdate = $internal_fixed_update_3d;
+            const INTERNAL_UPDATE: InternalUpdate = NodeType::$variant_3d.get_internal_update();
+            const INTERNAL_FIXED_UPDATE: InternalFixedUpdate = NodeType::$variant_3d.get_internal_fixed_update();
             type TransformSnapshot = Transform3D;
 
             fn with_ref<R>(data: &SceneNodeData, f: impl FnOnce(&Self) -> R) -> Option<R> {
@@ -701,8 +771,8 @@ macro_rules! define_scene_nodes {
             const NODE_TYPE: NodeType = NodeType::$variant_ui;
             const SPATIAL: Spatial = Spatial::None;
             const RENDERABLE: Renderable = $renderable_ui;
-            const INTERNAL_UPDATE: InternalUpdate = $internal_update_ui;
-            const INTERNAL_FIXED_UPDATE: InternalFixedUpdate = $internal_fixed_update_ui;
+            const INTERNAL_UPDATE: InternalUpdate = NodeType::$variant_ui.get_internal_update();
+            const INTERNAL_FIXED_UPDATE: InternalFixedUpdate = NodeType::$variant_ui.get_internal_fixed_update();
             type TransformSnapshot = ();
 
             fn with_ref<R>(data: &SceneNodeData, f: impl FnOnce(&Self) -> R) -> Option<R> {
@@ -727,8 +797,8 @@ macro_rules! define_scene_nodes {
             const NODE_TYPE: NodeType = NodeType::$variant_resource;
             const SPATIAL: Spatial = Spatial::None;
             const RENDERABLE: Renderable = $renderable_resource;
-            const INTERNAL_UPDATE: InternalUpdate = $internal_update_resource;
-            const INTERNAL_FIXED_UPDATE: InternalFixedUpdate = $internal_fixed_update_resource;
+            const INTERNAL_UPDATE: InternalUpdate = NodeType::$variant_resource.get_internal_update();
+            const INTERNAL_FIXED_UPDATE: InternalFixedUpdate = NodeType::$variant_resource.get_internal_fixed_update();
             type TransformSnapshot = ();
 
             fn with_ref<R>(data: &SceneNodeData, f: impl FnOnce(&Self) -> R) -> Option<R> {
@@ -853,143 +923,143 @@ define_scene_nodes! {
     }
     2d: {
         // core
-        Node2D => (None, Node2D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        Node2D => (None, Node2D, Inline, Renderable::False, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
 
         // camera
-        Camera2D => (Node2D, Camera2D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        Camera2D => (Node2D, Camera2D, Inline, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
 
         // visual
-        SubView2D => (Node2D, SubView2D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        CameraStream2D => (Node2D, CameraStream2D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        Button2D => (Node2D, Button2D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        ImageButton2D => (Node2D, ImageButton2D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        NineSliceButton2D => (Node2D, NineSliceButton2D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        Sprite2D => (Node2D, Sprite2D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        VideoPlayer2D => (Node2D, VideoPlayer2D, Inline, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
-        Label2D => (Node2D, Label2D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        NineSlice2D => (Node2D, NineSlice2D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        AnimatedSprite2D => (Node2D, AnimatedSprite2D, Boxed, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
-        TileMap2D => (Node2D, TileMap2D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::True),
-        ParticleEmitter2D => (Node2D, ParticleEmitter2D, Boxed, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
-        WaterBody2D => (Node2D, WaterBody2D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::True),
+        SubView2D => (Node2D, SubView2D, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        CameraStream2D => (Node2D, CameraStream2D, Inline, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        Button2D => (Node2D, Button2D, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::Button2D),
+        ImageButton2D => (Node2D, ImageButton2D, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::Button2D),
+        NineSliceButton2D => (Node2D, NineSliceButton2D, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::Button2D),
+        Sprite2D => (Node2D, Sprite2D, Inline, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        VideoPlayer2D => (Node2D, VideoPlayer2D, Inline, Renderable::True, UpdateHook::VideoPlayer, FixedUpdateHook::None, NodeService::None),
+        Label2D => (Node2D, Label2D, Inline, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        NineSlice2D => (Node2D, NineSlice2D, Inline, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        AnimatedSprite2D => (Node2D, AnimatedSprite2D, Boxed, Renderable::True, UpdateHook::AnimatedSprite2D, FixedUpdateHook::None, NodeService::None),
+        TileMap2D => (Node2D, TileMap2D, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::PhysicsWorld, NodeService::Body2D),
+        ParticleEmitter2D => (Node2D, ParticleEmitter2D, Boxed, Renderable::True, UpdateHook::ParticleEmitter2D, FixedUpdateHook::None, NodeService::None),
+        WaterBody2D => (Node2D, WaterBody2D, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::PhysicsWorld, NodeService::Body2D),
 
         // lights
-        AmbientLight2D => (None, AmbientLight2D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        RayLight2D => (Node2D, RayLight2D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        PointLight2D => (Node2D, PointLight2D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        SpotLight2D => (Node2D, SpotLight2D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        AmbientLight2D => (None, AmbientLight2D, Inline, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        RayLight2D => (Node2D, RayLight2D, Inline, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        PointLight2D => (Node2D, PointLight2D, Inline, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        SpotLight2D => (Node2D, SpotLight2D, Inline, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
 
         // skeletal
-        Skeleton2D => (Node2D, Skeleton2D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        BoneAttachment2D => (Node2D, BoneAttachment2D, Inline, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False),
-        IKTarget2D => (Node2D, IKTarget2D, Inline, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False),
-        PhysicsBoneChain2D => (Node2D, PhysicsBoneChain2D, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
-        BoneCollider2D => (Node2D, BoneCollider2D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        Skeleton2D => (Node2D, Skeleton2D, Inline, Renderable::False, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        BoneAttachment2D => (Node2D, BoneAttachment2D, Inline, Renderable::False, UpdateHook::BoneAttachment2D, FixedUpdateHook::None, NodeService::None),
+        IKTarget2D => (Node2D, IKTarget2D, Inline, Renderable::False, UpdateHook::IkTarget2D, FixedUpdateHook::None, NodeService::None),
+        PhysicsBoneChain2D => (Node2D, PhysicsBoneChain2D, Boxed, Renderable::False, UpdateHook::None, FixedUpdateHook::PhysicsBoneChain2D, NodeService::None),
+        BoneCollider2D => (Node2D, BoneCollider2D, Inline, Renderable::False, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
 
         // physics
-        CollisionShape2D => (Node2D, CollisionShape2D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        StaticBody2D => (Node2D, StaticBody2D, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
-        Area2D => (Node2D, Area2D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
-        RigidBody2D => (Node2D, RigidBody2D, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
-        CharacterBody2D => (Node2D, CharacterBody2D, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
-        PhysicsForceEmitter2D => (Node2D, PhysicsForceEmitter2D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
-        PinJoint2D => (Node2D, PinJoint2D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
-        DistanceJoint2D => (Node2D, DistanceJoint2D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
-        FixedJoint2D => (Node2D, FixedJoint2D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
+        CollisionShape2D => (Node2D, CollisionShape2D, Inline, Renderable::False, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        StaticBody2D => (Node2D, StaticBody2D, Boxed, Renderable::False, UpdateHook::None, FixedUpdateHook::PhysicsWorld, NodeService::Body2D),
+        Area2D => (Node2D, Area2D, Inline, Renderable::False, UpdateHook::None, FixedUpdateHook::PhysicsWorld, NodeService::Body2D),
+        RigidBody2D => (Node2D, RigidBody2D, Boxed, Renderable::False, UpdateHook::None, FixedUpdateHook::PhysicsWorld, NodeService::Body2D),
+        CharacterBody2D => (Node2D, CharacterBody2D, Boxed, Renderable::False, UpdateHook::None, FixedUpdateHook::PhysicsWorld, NodeService::Body2D),
+        PhysicsForceEmitter2D => (Node2D, PhysicsForceEmitter2D, Inline, Renderable::False, UpdateHook::None, FixedUpdateHook::PhysicsWorld, NodeService::None),
+        PinJoint2D => (Node2D, PinJoint2D, Inline, Renderable::False, UpdateHook::None, FixedUpdateHook::PhysicsWorld, NodeService::Joint2D),
+        DistanceJoint2D => (Node2D, DistanceJoint2D, Inline, Renderable::False, UpdateHook::None, FixedUpdateHook::PhysicsWorld, NodeService::Joint2D),
+        FixedJoint2D => (Node2D, FixedJoint2D, Inline, Renderable::False, UpdateHook::None, FixedUpdateHook::PhysicsWorld, NodeService::Joint2D),
 
         // audio
-        AudioMask2D => (Node2D, AudioMask2D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        AudioEffectZone2D => (Node2D, AudioEffectZone2D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        AudioPortal2D => (Node2D, AudioPortal2D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        AudioMask2D => (Node2D, AudioMask2D, Inline, Renderable::False, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        AudioEffectZone2D => (Node2D, AudioEffectZone2D, Inline, Renderable::False, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        AudioPortal2D => (Node2D, AudioPortal2D, Inline, Renderable::False, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
     }
     3d: {
         // core
-        Node3D => (None, Node3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        Node3D => (None, Node3D, Inline, Renderable::False, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
 
         // camera
-        Camera3D => (Node3D, Camera3D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        Camera3D => (Node3D, Camera3D, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
 
         // visual
-        SubView3D => (Node3D, SubView3D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        CameraStream3D => (Node3D, CameraStream3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        MeshInstance3D => (Node3D, MeshInstance3D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        MultiMeshInstance3D => (Node3D, MultiMeshInstance3D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        Sprite3D => (Node3D, Sprite3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        VideoPlayer3D => (Node3D, VideoPlayer3D, Boxed, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
-        Label3D => (Node3D, Label3D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        ParticleEmitter3D => (Node3D, ParticleEmitter3D, Boxed, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
-        WaterBody3D => (Node3D, WaterBody3D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::True),
-        Decal3D => (Node3D, Decal3D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        Sky3D => (None, Sky3D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        SubView3D => (Node3D, SubView3D, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        CameraStream3D => (Node3D, CameraStream3D, Inline, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        MeshInstance3D => (Node3D, MeshInstance3D, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        MultiMeshInstance3D => (Node3D, MultiMeshInstance3D, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        Sprite3D => (Node3D, Sprite3D, Inline, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        VideoPlayer3D => (Node3D, VideoPlayer3D, Boxed, Renderable::True, UpdateHook::VideoPlayer, FixedUpdateHook::None, NodeService::None),
+        Label3D => (Node3D, Label3D, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        ParticleEmitter3D => (Node3D, ParticleEmitter3D, Boxed, Renderable::True, UpdateHook::ParticleEmitter3D, FixedUpdateHook::None, NodeService::None),
+        WaterBody3D => (Node3D, WaterBody3D, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::PhysicsWorld, NodeService::Body3D),
+        Decal3D => (Node3D, Decal3D, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        Sky3D => (None, Sky3D, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
 
         // lights
-        AmbientLight3D => (None, AmbientLight3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        RayLight3D => (Node3D, RayLight3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        PointLight3D => (Node3D, PointLight3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        SpotLight3D => (Node3D, SpotLight3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        AmbientLight3D => (None, AmbientLight3D, Inline, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        RayLight3D => (Node3D, RayLight3D, Inline, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        PointLight3D => (Node3D, PointLight3D, Inline, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        SpotLight3D => (Node3D, SpotLight3D, Inline, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
 
         // skeletal
-        Skeleton3D => (Node3D, Skeleton3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        BoneAttachment3D => (Node3D, BoneAttachment3D, Inline, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False),
-        IKTarget3D => (Node3D, IKTarget3D, Inline, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False),
-        PhysicsBoneChain3D => (Node3D, PhysicsBoneChain3D, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
-        BoneCollider3D => (Node3D, BoneCollider3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        Skeleton3D => (Node3D, Skeleton3D, Inline, Renderable::False, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        BoneAttachment3D => (Node3D, BoneAttachment3D, Inline, Renderable::False, UpdateHook::BoneAttachment3D, FixedUpdateHook::None, NodeService::None),
+        IKTarget3D => (Node3D, IKTarget3D, Inline, Renderable::False, UpdateHook::IkTarget3D, FixedUpdateHook::None, NodeService::None),
+        PhysicsBoneChain3D => (Node3D, PhysicsBoneChain3D, Boxed, Renderable::False, UpdateHook::None, FixedUpdateHook::PhysicsBoneChain3D, NodeService::None),
+        BoneCollider3D => (Node3D, BoneCollider3D, Inline, Renderable::False, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
 
         // physics
-        CollisionShape3D => (Node3D, CollisionShape3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        StaticBody3D => (Node3D, StaticBody3D, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
-        Area3D => (Node3D, Area3D, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
-        RigidBody3D => (Node3D, RigidBody3D, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
-        CharacterBody3D => (Node3D, CharacterBody3D, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
-        PhysicsForceEmitter3D => (Node3D, PhysicsForceEmitter3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
-        BallJoint3D => (Node3D, BallJoint3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
-        HingeJoint3D => (Node3D, HingeJoint3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
-        FixedJoint3D => (Node3D, FixedJoint3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
+        CollisionShape3D => (Node3D, CollisionShape3D, Inline, Renderable::False, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        StaticBody3D => (Node3D, StaticBody3D, Boxed, Renderable::False, UpdateHook::None, FixedUpdateHook::PhysicsWorld, NodeService::Body3D),
+        Area3D => (Node3D, Area3D, Boxed, Renderable::False, UpdateHook::None, FixedUpdateHook::PhysicsWorld, NodeService::Body3D),
+        RigidBody3D => (Node3D, RigidBody3D, Boxed, Renderable::False, UpdateHook::None, FixedUpdateHook::PhysicsWorld, NodeService::Body3D),
+        CharacterBody3D => (Node3D, CharacterBody3D, Boxed, Renderable::False, UpdateHook::None, FixedUpdateHook::PhysicsWorld, NodeService::Body3D),
+        PhysicsForceEmitter3D => (Node3D, PhysicsForceEmitter3D, Inline, Renderable::False, UpdateHook::None, FixedUpdateHook::PhysicsWorld, NodeService::None),
+        BallJoint3D => (Node3D, BallJoint3D, Inline, Renderable::False, UpdateHook::None, FixedUpdateHook::PhysicsWorld, NodeService::Joint3D),
+        HingeJoint3D => (Node3D, HingeJoint3D, Inline, Renderable::False, UpdateHook::None, FixedUpdateHook::PhysicsWorld, NodeService::Joint3D),
+        FixedJoint3D => (Node3D, FixedJoint3D, Inline, Renderable::False, UpdateHook::None, FixedUpdateHook::PhysicsWorld, NodeService::Joint3D),
 
         // audio
-        AudioMask3D => (Node3D, AudioMask3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        AudioEffectZone3D => (Node3D, AudioEffectZone3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        AudioPortal3D => (Node3D, AudioPortal3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        AudioMask3D => (Node3D, AudioMask3D, Inline, Renderable::False, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        AudioEffectZone3D => (Node3D, AudioEffectZone3D, Inline, Renderable::False, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        AudioPortal3D => (Node3D, AudioPortal3D, Inline, Renderable::False, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
     }
     ui: {
         // core
-        UiNode => (None, UiNode, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        UiNode => (None, UiNode, Boxed, Renderable::False, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
 
         // visual
-        UiCameraStream => (UiNode, UiCameraStream, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiSubView => (UiNode, UiSubView, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiPanel => (UiNode, UiPanel, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiProgressBar => (UiNode, UiProgressBar, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiButton => (UiNode, UiButton, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiDropdown => (UiNode, UiDropdown, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiColorPicker => (UiNode, UiColorPicker, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiShape => (UiNode, UiShape, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiCheckbox => (UiNode, UiCheckbox, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiImage => (UiNode, UiImage, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiVideoPlayer => (UiNode, UiVideoPlayer, Boxed, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
-        UiImageButton => (UiNode, UiImageButton, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiNineSliceButton => (UiNode, UiNineSliceButton, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiNineSlice => (UiNode, UiNineSlice, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiAnimatedImage => (UiNode, UiAnimatedImage, Boxed, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
-        UiLabel => (UiNode, UiLabel, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiTextBox => (UiNode, UiTextBox, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiTextBlock => (UiNode, UiTextBlock, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiCameraStream => (UiNode, UiCameraStream, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        UiSubView => (UiNode, UiSubView, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        UiPanel => (UiNode, UiPanel, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        UiProgressBar => (UiNode, UiProgressBar, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        UiButton => (UiNode, UiButton, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        UiDropdown => (UiNode, UiDropdown, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        UiColorPicker => (UiNode, UiColorPicker, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        UiShape => (UiNode, UiShape, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        UiCheckbox => (UiNode, UiCheckbox, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        UiImage => (UiNode, UiImage, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        UiVideoPlayer => (UiNode, UiVideoPlayer, Boxed, Renderable::True, UpdateHook::VideoPlayer, FixedUpdateHook::None, NodeService::None),
+        UiImageButton => (UiNode, UiImageButton, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        UiNineSliceButton => (UiNode, UiNineSliceButton, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        UiNineSlice => (UiNode, UiNineSlice, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        UiAnimatedImage => (UiNode, UiAnimatedImage, Boxed, Renderable::True, UpdateHook::UiAnimatedImage, FixedUpdateHook::None, NodeService::None),
+        UiLabel => (UiNode, UiLabel, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        UiTextBox => (UiNode, UiTextBox, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        UiTextBlock => (UiNode, UiTextBlock, Boxed, Renderable::True, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
 
         // layout
-        UiScrollContainer => (UiNode, UiScrollContainer, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        UiLayout => (UiNode, UiLayout, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        UiHLayout => (UiNode, UiHLayout, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        UiVLayout => (UiNode, UiVLayout, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        UiGrid => (UiNode, UiGrid, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        UiTreeList => (UiNode, UiTreeList, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False)
+        UiScrollContainer => (UiNode, UiScrollContainer, Boxed, Renderable::False, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        UiLayout => (UiNode, UiLayout, Boxed, Renderable::False, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        UiHLayout => (UiNode, UiHLayout, Boxed, Renderable::False, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        UiVLayout => (UiNode, UiVLayout, Boxed, Renderable::False, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        UiGrid => (UiNode, UiGrid, Boxed, Renderable::False, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
+        UiTreeList => (UiNode, UiTreeList, Boxed, Renderable::False, UpdateHook::None, FixedUpdateHook::None, NodeService::None)
     }
     resource: {
         // capture
-        Webcam => (None, Webcam, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        Webcam => (None, Webcam, Inline, Renderable::False, UpdateHook::None, FixedUpdateHook::None, NodeService::None),
 
         // animation
-        AnimationPlayer => (None, AnimationPlayer, Boxed, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False),
-        AnimationTree => (None, AnimationTree, Boxed, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False)
+        AnimationPlayer => (None, AnimationPlayer, Boxed, Renderable::False, UpdateHook::AnimationPlayer, FixedUpdateHook::None, NodeService::None),
+        AnimationTree => (None, AnimationTree, Boxed, Renderable::False, UpdateHook::AnimationTree, FixedUpdateHook::None, NodeService::None)
     }
 }
 
@@ -1025,5 +1095,65 @@ impl NodeType {
                 | NodeType::PhysicsBoneChain3D
                 | NodeType::BoneCollider3D
         )
+    }
+}
+
+#[cfg(test)]
+mod schedule_compat_tests {
+    use super::*;
+    #[test]
+    fn legacy_schedule_membership_stays_compatible() {
+        let expected = [
+            NodeType::VideoPlayer2D,
+            NodeType::AnimatedSprite2D,
+            NodeType::ParticleEmitter2D,
+            NodeType::BoneAttachment2D,
+            NodeType::IKTarget2D,
+            NodeType::VideoPlayer3D,
+            NodeType::ParticleEmitter3D,
+            NodeType::BoneAttachment3D,
+            NodeType::IKTarget3D,
+            NodeType::UiVideoPlayer,
+            NodeType::UiAnimatedImage,
+            NodeType::AnimationPlayer,
+            NodeType::AnimationTree,
+        ];
+        for &ty in NodeType::ALL {
+            assert_eq!(
+                matches!(ty.get_internal_update(), InternalUpdate::True),
+                expected.contains(&ty),
+                "{ty:?}"
+            );
+        }
+        let expected = [
+            NodeType::TileMap2D,
+            NodeType::WaterBody2D,
+            NodeType::PhysicsBoneChain2D,
+            NodeType::StaticBody2D,
+            NodeType::Area2D,
+            NodeType::RigidBody2D,
+            NodeType::CharacterBody2D,
+            NodeType::PhysicsForceEmitter2D,
+            NodeType::PinJoint2D,
+            NodeType::DistanceJoint2D,
+            NodeType::FixedJoint2D,
+            NodeType::WaterBody3D,
+            NodeType::PhysicsBoneChain3D,
+            NodeType::StaticBody3D,
+            NodeType::Area3D,
+            NodeType::RigidBody3D,
+            NodeType::CharacterBody3D,
+            NodeType::PhysicsForceEmitter3D,
+            NodeType::BallJoint3D,
+            NodeType::HingeJoint3D,
+            NodeType::FixedJoint3D,
+        ];
+        for &ty in NodeType::ALL {
+            assert_eq!(
+                matches!(ty.get_internal_fixed_update(), InternalFixedUpdate::True),
+                expected.contains(&ty),
+                "{ty:?}"
+            );
+        }
     }
 }

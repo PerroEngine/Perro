@@ -228,6 +228,98 @@ struct Collider {
     inv_world_mat: Mat4,
     max_scale: f32,
     shape: Shape3D,
+    bounds: Option<ColliderBounds>,
+}
+
+#[derive(Clone, Copy)]
+struct ColliderBounds {
+    center: Vec3,
+    half: Vec3,
+    probe: Vec3,
+}
+
+impl ColliderBounds {
+    fn new(world: Transform3D, world_mat: Mat4, inverse: Mat4, shape: &Shape3D) -> Option<Self> {
+        let center = Vec3::from(world.position);
+        let scale = max_abs_component(world.scale);
+        if !center.is_finite() || !scale.is_finite() {
+            return None;
+        }
+        if let Shape3D::Sphere { radius } = shape {
+            let half = Vec3::splat(radius.abs() * scale);
+            return Self::padded(center, half, Vec3::ONE, 1.0);
+        }
+        if matches!(shape, Shape3D::TriMesh { .. }) {
+            return Self::padded(center, Vec3::splat(0.5 * scale), Vec3::ONE, 1.0);
+        }
+        // Preserve the narrowphase's behavior for singular/ill-conditioned
+        // transforms, nonfinite sizes and polyhedra with expanded face planes.
+        if !world_mat.is_finite() || !inverse.is_finite() {
+            return None;
+        }
+        let x = world_mat.x_axis.truncate().abs();
+        let y = world_mat.y_axis.truncate().abs();
+        let z = world_mat.z_axis.truncate().abs();
+        let condition = (x.length() + y.length() + z.length())
+            * (inverse.x_axis.truncate().length()
+                + inverse.y_axis.truncate().length()
+                + inverse.z_axis.truncate().length());
+        if !condition.is_finite() || condition > 10_000.0 {
+            return None;
+        }
+        let (half, probe) = match shape {
+            Shape3D::Cube { size } => (Vec3::from(*size).abs() * 0.5, 1.0),
+            Shape3D::Capsule {
+                radius,
+                half_height,
+            } => (
+                Vec3::new(radius.abs(), half_height.abs() + radius.abs(), radius.abs()),
+                scale.max(0.0001).recip(),
+            ),
+            Shape3D::Cylinder {
+                radius,
+                half_height,
+            } => (
+                Vec3::new(radius.abs(), half_height.abs(), radius.abs()),
+                scale.max(0.0001).recip(),
+            ),
+            Shape3D::Cone {
+                radius,
+                half_height,
+            } => (
+                Vec3::new(radius.abs(), half_height.abs().max(0.0001), radius.abs()),
+                scale.max(0.0001).recip(),
+            ),
+            _ => return None,
+        };
+        Self::padded(
+            center,
+            x * half.x + y * half.y + z * half.z,
+            (x + y + z) * probe,
+            condition,
+        )
+    }
+
+    fn padded(center: Vec3, half: Vec3, probe: Vec3, condition: f32) -> Option<Self> {
+        if !half.is_finite() || !probe.is_finite() {
+            return None;
+        }
+        let slack = 128.0 * f32::EPSILON * condition.max(1.0);
+        Some(Self {
+            center,
+            half: half + (center.abs() + half + Vec3::ONE) * slack,
+            probe: probe * (1.0 + slack),
+        })
+    }
+
+    fn excludes(self, point: Vector3, radius: f32) -> bool {
+        radius.is_finite()
+            && radius >= 0.0
+            && (Vec3::from(point) - self.center)
+                .abs()
+                .cmpgt(self.half + self.probe * radius)
+                .any()
+    }
 }
 
 fn collect_chain(skeleton: &Skeleton3D, end: usize, max_len: usize, out: &mut Vec<usize>) {
@@ -309,11 +401,13 @@ where
             };
             let world = Transform3D::from_mat4(collider_world.to_mat4() * shape_local.to_mat4());
             let world_mat = world.to_mat4();
+            let inv_world_mat = world_mat.inverse();
             out.push(Collider {
                 world,
                 world_mat,
-                inv_world_mat: world_mat.inverse(),
+                inv_world_mat,
                 max_scale: max_abs_component(world.scale),
+                bounds: ColliderBounds::new(world, world_mat, inv_world_mat, &shape),
                 shape,
             });
         }
@@ -430,6 +524,12 @@ fn normalized_delta_3d(delta: Vector3) -> Vector3 {
 fn collide_positions(positions: &mut [Vector3], radius: f32, colliders: &[Collider]) {
     for pos in positions.iter_mut().skip(1) {
         for collider in colliders {
+            if collider
+                .bounds
+                .is_some_and(|bounds| bounds.excludes(*pos, radius))
+            {
+                continue;
+            }
             *pos = collide_point(*pos, radius, collider);
         }
     }
@@ -754,6 +854,82 @@ mod tests {
     use perro_nodes::skeleton_3d::Bone3D;
     use std::borrow::Cow;
 
+    #[test]
+    fn cached_bounds_preserve_primitive_collision_and_push_order() {
+        let shapes = [
+            Shape3D::Sphere { radius: 0.7 },
+            Shape3D::Cube {
+                size: Vector3::new(1.0, 2.0, 3.0),
+            },
+            Shape3D::Capsule {
+                radius: 0.7,
+                half_height: 1.0,
+            },
+            Shape3D::Cylinder {
+                radius: 0.7,
+                half_height: 1.0,
+            },
+            Shape3D::Cone {
+                radius: 0.7,
+                half_height: 1.0,
+            },
+            Shape3D::TriPrism {
+                size: Vector3::new(1.0, 2.0, 3.0),
+            },
+        ];
+        let mut colliders = Vec::new();
+        for (index, shape) in shapes.into_iter().enumerate() {
+            let world = Transform3D::new(
+                Vector3::new(index as f32 * 0.4, 0.2, -0.3),
+                perro_runtime_api::perro_structs::Quaternion::from_euler_xyz(0.4, 0.7, -0.2),
+                Vector3::new(-2.0, 0.3, 1.5),
+            );
+            let world_mat = world.to_mat4();
+            let inv_world_mat = world_mat.inverse();
+            colliders.push(Collider {
+                world,
+                world_mat,
+                inv_world_mat,
+                max_scale: max_abs_component(world.scale),
+                bounds: ColliderBounds::new(world, world_mat, inv_world_mat, &shape),
+                shape,
+            });
+        }
+        let mut seed = 0x1279_6523u32;
+        for radius in [0.0, 0.01, 0.3, 10.0] {
+            for _ in 0..2048 {
+                let mut coord = || {
+                    seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                    (seed >> 8) as f32 / 16777216.0 * 20.0 - 10.0
+                };
+                let point = Vector3::new(coord(), coord(), coord());
+                let mut expected = point;
+                for collider in &colliders {
+                    expected = collide_point(expected, radius, collider);
+                }
+                let mut actual = [Vector3::ZERO, point];
+                collide_positions(&mut actual, radius, &colliders);
+                assert_eq!(actual[1], expected, "radius={radius}, point={point:?}");
+            }
+        }
+        let singular = Transform3D {
+            scale: Vector3::ZERO,
+            ..Transform3D::IDENTITY
+        };
+        let mat = singular.to_mat4();
+        assert!(
+            ColliderBounds::new(
+                singular,
+                mat,
+                mat.inverse(),
+                &Shape3D::Cube {
+                    size: Vector3::new(1.0, 1.0, 1.0)
+                }
+            )
+            .is_none()
+        );
+    }
+
     fn bone(parent: i32, y: f32) -> Bone3D {
         Bone3D {
             name: Cow::Borrowed("b"),
@@ -778,6 +954,7 @@ mod tests {
             world_mat,
             inv_world_mat: world_mat.inverse(),
             max_scale: max_abs_component(world.scale),
+            bounds: ColliderBounds::new(world, world_mat, world_mat.inverse(), &shape),
             shape,
         }
     }

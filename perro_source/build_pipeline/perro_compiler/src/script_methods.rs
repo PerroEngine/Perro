@@ -1106,7 +1106,12 @@ fn generate_var_match_fns(
         out.push_str(&format!(
             "fn __perro_set_nested_var(state: &mut {state_ty}, var: ScriptMemberID, value: Variant) -> bool {{\n"
         ));
-        out.push_str("    let mut value = Some(value);\n");
+        if public_fields
+            .iter()
+            .any(|field| !variant_type_is_leaf(&normalize_type(&field.ty)))
+        {
+            out.push_str("    let mut value = Some(value);\n");
+        }
         for field in public_fields {
             let ty = normalize_type(&field.ty);
             if variant_type_is_leaf(&ty) {
@@ -1127,7 +1132,12 @@ fn generate_var_match_fns(
         out.push_str(&format!(
             "fn __perro_set_nested_scene_var(state: &mut {state_ty}, var: ScriptMemberID, value: Variant, resolver: &mut dyn perro_api::variant::SceneVariantResolver) -> bool {{\n"
         ));
-        out.push_str("    let mut value = Some(value);\n");
+        if scene_fields
+            .iter()
+            .any(|field| !variant_type_is_leaf(&normalize_type(&field.ty)))
+        {
+            out.push_str("    let mut value = Some(value);\n");
+        }
         for field in scene_fields {
             let ty = normalize_type(&field.ty);
             if variant_type_is_leaf(&ty) {

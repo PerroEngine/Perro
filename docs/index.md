@@ -95,6 +95,10 @@ Avoid using history pages as current guidance.
 - [Web release](../perro_book/demos_web.md)
 - [Performance + release](../perro_book/performance_release.md)
 
+### Engine contributors
+
+- [Engine architecture + extension paths](project/engine_architecture.md)
+
 ### Reference
 
 - [Scene node specs](project/scene_node_specs.md)

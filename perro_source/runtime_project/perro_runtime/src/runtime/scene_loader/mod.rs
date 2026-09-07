@@ -261,8 +261,12 @@ impl Runtime {
         path_hash: u64,
         path: &str,
     ) -> Result<Arc<Scene>, String> {
-        if let Some(id) = self.preloaded_scene_paths.get(&path_hash).copied()
-            && let Some(scene) = self.preloaded_scenes.get(&id)
+        if let Some(id) = self
+            .scene_runtime
+            .preloaded_scene_paths
+            .get(&path_hash)
+            .copied()
+            && let Some(scene) = self.scene_runtime.preloaded_scenes.get(&id)
         {
             return Ok(scene.clone());
         }
@@ -285,12 +289,13 @@ impl Runtime {
     }
 
     fn get_or_load_dynamic_scene_cached(&self, path: &str) -> Result<Arc<Scene>, String> {
-        if let Some(scene) = self.scene_cache.borrow_mut().get(path) {
+        if let Some(scene) = self.scene_runtime.scene_cache.borrow_mut().get(path) {
             return Ok(scene);
         }
         let (scene, _) = load_runtime_scene_from_disk(path)?;
         let scene = Arc::new(scene);
-        self.scene_cache
+        self.scene_runtime
+            .scene_cache
             .borrow_mut()
             .insert(path.to_string(), scene.clone());
         Ok(scene)
@@ -329,18 +334,18 @@ impl Runtime {
 
     fn apply_route_change(&mut self, next_href: &str) -> Result<(), String> {
         let next_href = perro_project::normalize_route_href(next_href);
-        if self.active_route_href.as_deref() == Some(next_href.as_str()) {
+        if self.scene_runtime.active_route_href.as_deref() == Some(next_href.as_str()) {
             return Ok(());
         }
         let Some(scene_path) = self.route_scene_path(&next_href) else {
             return Err(format!("route `{next_href}` not found"));
         };
         let root = self.load_scene_at_runtime(&scene_path)?;
-        if let Some(old_root) = self.active_route_root {
+        if let Some(old_root) = self.scene_runtime.active_route_root {
             let _ = NodeAPI::remove_node(self, old_root);
         }
-        self.active_route_href = Some(next_href);
-        self.active_route_root = Some(root);
+        self.scene_runtime.active_route_href = Some(next_href);
+        self.scene_runtime.active_route_root = Some(root);
         Ok(())
     }
 
@@ -356,7 +361,8 @@ impl Runtime {
             let _ = NodeAPI::remove_node(self, ownership_root);
             return Err(err);
         }
-        self.scene_ownership_roots
+        self.scene_runtime
+            .scene_ownership_roots
             .insert(scene_root, ownership_root);
         Ok(scene_root)
     }
@@ -377,7 +383,12 @@ impl Runtime {
         path: &str,
         scene: &Scene,
     ) -> Result<Arc<prepare::PreparedScene>, String> {
-        if let Some(prepared) = self.prepared_scene_cache.borrow_mut().get(path) {
+        if let Some(prepared) = self
+            .scene_runtime
+            .prepared_scene_cache
+            .borrow_mut()
+            .get(path)
+        {
             return Ok(prepared);
         }
         let prepared = Arc::new(
@@ -385,7 +396,8 @@ impl Runtime {
                 self.resolve_scene_by_path(import_path)
             })?,
         );
-        self.prepared_scene_cache
+        self.scene_runtime
+            .prepared_scene_cache
             .borrow_mut()
             .insert(path.to_string(), prepared.clone());
         Ok(prepared)
@@ -407,33 +419,43 @@ impl Runtime {
         path_hash: u64,
         path: &str,
     ) -> Result<PreloadedSceneID, String> {
-        if let Some(existing) = self.preloaded_scene_paths.get(&path_hash).copied() {
+        if let Some(existing) = self
+            .scene_runtime
+            .preloaded_scene_paths
+            .get(&path_hash)
+            .copied()
+        {
             return Ok(existing);
         }
         // Adopt a handle already in flight for this path, so waiting on a
         // background preload never mints a second id for the same scene. The
         // worker's late result is dropped by the poll guard.
-        let in_flight = self.pending_preload_paths.remove(&path_hash);
+        let in_flight = self.scene_runtime.pending_preload_paths.remove(&path_hash);
         if let Some(pending) = in_flight {
-            self.pending_preloads.remove(&pending);
+            self.scene_runtime.pending_preloads.remove(&pending);
         }
         let scene = self.resolve_scene_by_hash_and_path(path_hash, path)?;
         let id = match in_flight {
             Some(pending) => pending,
             None => {
-                let mut next = self.next_preloaded_scene_id;
+                let mut next = self.scene_runtime.next_preloaded_scene_id;
                 if next == 0 {
                     next = 1;
                 }
-                self.next_preloaded_scene_id = next.saturating_add(1);
+                self.scene_runtime.next_preloaded_scene_id = next.saturating_add(1);
                 PreloadedSceneID::from_u64(next)
             }
         };
         let prepared = self.get_or_prepare_scene_cached(path, scene.as_ref())?;
-        self.preloaded_scenes.insert(id, scene);
-        self.preloaded_prepared_scenes.insert(id, prepared);
-        self.preloaded_scene_paths.insert(path_hash, id);
-        self.preloaded_scene_reverse_paths
+        self.scene_runtime.preloaded_scenes.insert(id, scene);
+        self.scene_runtime
+            .preloaded_prepared_scenes
+            .insert(id, prepared);
+        self.scene_runtime
+            .preloaded_scene_paths
+            .insert(path_hash, id);
+        self.scene_runtime
+            .preloaded_scene_reverse_paths
             .insert(id, path.to_string());
         Ok(id)
     }
@@ -462,20 +484,34 @@ impl Runtime {
         path_hash: u64,
         path: &str,
     ) -> PreloadedSceneID {
-        if let Some(existing) = self.preloaded_scene_paths.get(&path_hash).copied() {
+        if let Some(existing) = self
+            .scene_runtime
+            .preloaded_scene_paths
+            .get(&path_hash)
+            .copied()
+        {
             return existing;
         }
-        if let Some(pending) = self.pending_preload_paths.get(&path_hash).copied() {
+        if let Some(pending) = self
+            .scene_runtime
+            .pending_preload_paths
+            .get(&path_hash)
+            .copied()
+        {
             return pending;
         }
-        let mut next = self.next_preloaded_scene_id;
+        let mut next = self.scene_runtime.next_preloaded_scene_id;
         if next == 0 {
             next = 1;
         }
         let id = PreloadedSceneID::from_u64(next);
-        self.next_preloaded_scene_id = next.saturating_add(1);
-        self.pending_preload_paths.insert(path_hash, id);
-        self.pending_preloads.insert(id, path.to_string());
+        self.scene_runtime.next_preloaded_scene_id = next.saturating_add(1);
+        self.scene_runtime
+            .pending_preload_paths
+            .insert(path_hash, id);
+        self.scene_runtime
+            .pending_preloads
+            .insert(id, path.to_string());
         self.spawn_scene_preload(id, path_hash, path.to_string());
         id
     }
@@ -483,7 +519,7 @@ impl Runtime {
     #[cfg(not(target_arch = "wasm32"))]
     fn spawn_scene_preload(&mut self, id: PreloadedSceneID, path_hash: u64, path: String) {
         let context = self.background_scene_context();
-        let tx = self.scene_preload_tx.clone();
+        let tx = self.scene_runtime.scene_preload_tx.clone();
         rayon::spawn(move || {
             let prepared = context.load_and_prepare(path.as_str());
             let _ = tx.send(background::BackgroundPreloadResult {
@@ -512,26 +548,37 @@ impl Runtime {
 
     /// Install finished background preloads. Runs once per update tick.
     pub(crate) fn poll_async_scene_preloads(&mut self) {
-        while let Ok(result) = self.scene_preload_rx.try_recv() {
+        while let Ok(result) = self.scene_runtime.scene_preload_rx.try_recv() {
             self.install_preload_result(result);
         }
     }
 
     fn install_preload_result(&mut self, result: background::BackgroundPreloadResult) {
-        self.pending_preloads.remove(&result.id);
+        self.scene_runtime.pending_preloads.remove(&result.id);
         // A drop (or a blocking load that adopted the handle) between spawn and
         // completion retires the id, which makes this result stale.
-        if self.pending_preload_paths.get(&result.path_hash) != Some(&result.id) {
+        if self
+            .scene_runtime
+            .pending_preload_paths
+            .get(&result.path_hash)
+            != Some(&result.id)
+        {
             return;
         }
-        self.pending_preload_paths.remove(&result.path_hash);
+        self.scene_runtime
+            .pending_preload_paths
+            .remove(&result.path_hash);
         match result.prepared {
             Ok((scene, prepared)) => {
-                self.preloaded_scenes.insert(result.id, scene);
-                self.preloaded_prepared_scenes.insert(result.id, prepared);
-                self.preloaded_scene_paths
+                self.scene_runtime.preloaded_scenes.insert(result.id, scene);
+                self.scene_runtime
+                    .preloaded_prepared_scenes
+                    .insert(result.id, prepared);
+                self.scene_runtime
+                    .preloaded_scene_paths
                     .insert(result.path_hash, result.id);
-                self.preloaded_scene_reverse_paths
+                self.scene_runtime
+                    .preloaded_scene_reverse_paths
                     .insert(result.id, result.path);
             }
             Err(err) => {
@@ -554,8 +601,9 @@ impl Runtime {
         self.poll_async_scene_preloads();
 
         #[cfg(not(target_arch = "wasm32"))]
-        while self.pending_preloads.contains_key(&id) {
+        while self.scene_runtime.pending_preloads.contains_key(&id) {
             match self
+                .scene_runtime
                 .scene_preload_rx
                 .recv_timeout(std::time::Duration::from_secs(5))
             {
@@ -563,10 +611,14 @@ impl Runtime {
                 Err(_) => break,
             }
         }
-        if self.preloaded_prepared_scenes.contains_key(&id) {
+        if self
+            .scene_runtime
+            .preloaded_prepared_scenes
+            .contains_key(&id)
+        {
             return true;
         }
-        let Some(path) = self.pending_preloads.get(&id).cloned() else {
+        let Some(path) = self.scene_runtime.pending_preloads.get(&id).cloned() else {
             return false;
         };
         self.preload_scene_blocking_at_runtime(path.as_str())
@@ -576,25 +628,36 @@ impl Runtime {
     /// Whether a handle finished loading. Nil for an unknown handle too: both
     /// mean "not usable with `scene_load_preloaded`".
     pub(crate) fn preloaded_scene_ready_at_runtime(&self, id: PreloadedSceneID) -> bool {
-        self.preloaded_prepared_scenes.contains_key(&id)
+        self.scene_runtime
+            .preloaded_prepared_scenes
+            .contains_key(&id)
     }
 
     /// Whether a handle is still being loaded on a worker.
     pub(crate) fn preloaded_scene_pending_at_runtime(&self, id: PreloadedSceneID) -> bool {
-        self.pending_preloads.contains_key(&id)
+        self.scene_runtime.pending_preloads.contains_key(&id)
     }
 
     pub(crate) fn free_preloaded_scene_at_runtime(&mut self, id: PreloadedSceneID) -> bool {
         if id.is_nil() {
             return false;
         }
-        let removed = self.preloaded_scenes.remove(&id).is_some();
-        self.preloaded_prepared_scenes.remove(&id);
-        if let Some(path) = self.preloaded_scene_reverse_paths.remove(&id) {
-            self.preloaded_scene_paths
+        let removed = self.scene_runtime.preloaded_scenes.remove(&id).is_some();
+        self.scene_runtime.preloaded_prepared_scenes.remove(&id);
+        if let Some(path) = self.scene_runtime.preloaded_scene_reverse_paths.remove(&id) {
+            self.scene_runtime
+                .preloaded_scene_paths
                 .remove(&Self::source_hash(path.as_str()));
-            let _ = self.scene_cache.borrow_mut().remove(path.as_str());
-            let _ = self.prepared_scene_cache.borrow_mut().remove(path.as_str());
+            let _ = self
+                .scene_runtime
+                .scene_cache
+                .borrow_mut()
+                .remove(path.as_str());
+            let _ = self
+                .scene_runtime
+                .prepared_scene_cache
+                .borrow_mut()
+                .remove(path.as_str());
         }
         removed
     }
@@ -609,13 +672,21 @@ impl Runtime {
         path: &str,
     ) -> bool {
         let mut removed = false;
-        if let Some(id) = self.preloaded_scene_paths.remove(&path_hash) {
-            removed |= self.preloaded_scenes.remove(&id).is_some();
-            self.preloaded_prepared_scenes.remove(&id);
-            self.preloaded_scene_reverse_paths.remove(&id);
+        if let Some(id) = self.scene_runtime.preloaded_scene_paths.remove(&path_hash) {
+            removed |= self.scene_runtime.preloaded_scenes.remove(&id).is_some();
+            self.scene_runtime.preloaded_prepared_scenes.remove(&id);
+            self.scene_runtime.preloaded_scene_reverse_paths.remove(&id);
         }
-        removed |= self.scene_cache.borrow_mut().remove(path).is_some();
-        self.prepared_scene_cache.borrow_mut().remove(path);
+        removed |= self
+            .scene_runtime
+            .scene_cache
+            .borrow_mut()
+            .remove(path)
+            .is_some();
+        self.scene_runtime
+            .prepared_scene_cache
+            .borrow_mut()
+            .remove(path);
         removed
     }
 
@@ -624,6 +695,7 @@ impl Runtime {
         id: PreloadedSceneID,
     ) -> Result<NodeID, String> {
         let prepared = self
+            .scene_runtime
             .preloaded_prepared_scenes
             .get(&id)
             .cloned()
@@ -773,21 +845,21 @@ impl Runtime {
         }
 
         self.nodes.clear();
-        self.scene_ownership_roots.clear();
+        self.scene_runtime.scene_ownership_roots.clear();
         self.clear_physics();
-        self.force_water_impacts_2d.clear();
-        self.force_water_impacts_3d.clear();
-        self.water_entry_states_3d.clear();
+        self.physics_sync.force_water_impacts_2d.clear();
+        self.physics_sync.force_water_impacts_3d.clear();
+        self.physics_sync.water_entry_states_3d.clear();
         // Readback caches keyed by (dead) water / body node ids. Left behind
         // they also pin `can_skip_physics_fixed_step_pre_sync` off forever.
-        self.water_samples.clear();
-        self.water_sample_times.clear();
-        self.water_body_samples.clear();
+        self.physics_sync.water_samples.clear();
+        self.physics_sync.water_sample_times.clear();
+        self.physics_sync.water_body_samples.clear();
         self.pending_skeleton_sources_2d.clear();
         self.pending_skeleton_sources_3d.clear();
         self.mesh_query_node_cache.clear();
-        self.pending_force_emitters_2d.clear();
-        self.pending_force_emitters_3d.clear();
+        self.physics_sync.pending_force_emitters_2d.clear();
+        self.physics_sync.pending_force_emitters_3d.clear();
         self.scripts = Default::default();
         self.script_runtime.pending_start_scripts.clear();
         self.script_runtime.pending_start_flags.clear();
@@ -858,7 +930,7 @@ impl Runtime {
         // Per-node stream texture info + render request ids: both are keyed by
         // node id, and `nodes.clear()` above skips the per-node teardown that
         // normally drops them.
-        self.ui_stream_render_info.clear();
+        self.extraction.ui_stream_render_info.clear();
         self.render.clear_requests();
         self.locale_text.bindings.clear();
         self.locale_text.last_epoch = self.resource_api.localization_epoch();
@@ -870,8 +942,8 @@ impl Runtime {
         self.script_runtime.script_instance_dlc_mounts.clear();
         self.script_runtime.script_behavior_cache.clear();
         self.script_runtime.script_libraries.clear();
-        self.active_route_href = None;
-        self.active_route_root = None;
+        self.scene_runtime.active_route_href = None;
+        self.scene_runtime.active_route_root = None;
         perro_structs::structs::boot_log::mark("runtime_scene_state_cleared");
         let mode_label;
         #[cfg(feature = "profile")]
@@ -952,8 +1024,8 @@ impl Runtime {
             }
         }
         let scene_root = self.finish_scene_merge(merged)?;
-        self.active_route_href = boot_route_href;
-        self.active_route_root = Some(scene_root);
+        self.scene_runtime.active_route_href = boot_route_href;
+        self.scene_runtime.active_route_root = Some(scene_root);
         #[cfg(not(feature = "profile"))]
         {
             let _ = mode_label;

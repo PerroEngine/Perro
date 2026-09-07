@@ -10,21 +10,22 @@ use perro_runtime_api::sub_apis::{PreloadedSceneID, WindowRequest};
 use perro_scene::Scene;
 use perro_scripting::{DynamicScriptConstructor, ScriptAPI, ScriptBehavior, ScriptConstructor};
 use std::time::Duration;
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::Instant;
 use std::{cell::RefCell, rc::Rc, sync::Arc};
-#[cfg(target_arch = "wasm32")]
-use web_time::Instant;
 
 const STARTUP_INPUT_CLEAR_FRAMES: u32 = 100;
 
 // Runtime subsystem leaves. Public API glue stays here; heavy behavior lives in folders.
 mod audio;
+#[path = "runtime/render/state.rs"]
+mod extraction_state;
 mod input_bridge;
 mod internal_updates;
 mod mesh_query;
 pub(crate) mod navmesh;
+mod phases;
 mod physics;
+#[path = "runtime/physics/state.rs"]
+mod physics_sync_state;
 #[path = "runtime/render/two_d.rs"]
 mod render_2d;
 #[path = "runtime/render/three_d.rs"]
@@ -34,6 +35,8 @@ mod render_bridge;
 #[path = "runtime/render/ui.rs"]
 mod render_ui;
 mod scene_loader;
+#[path = "runtime/scene_loader/state.rs"]
+mod scene_state;
 mod scheduling;
 pub(crate) mod state;
 mod timers;
@@ -41,12 +44,15 @@ mod transforms;
 mod world_state;
 
 use audio::AudioPropagationState;
+use extraction_state::ExtractionState;
+use physics_sync_state::PhysicsSyncState;
 pub(crate) use scene_loader::PendingScriptAttach;
 #[cfg(feature = "bench")]
 pub use scene_loader::{
     BenchPreparedScene, BenchSceneSpawner, bench_compile_scene, bench_merge_compiled_scene,
     bench_prepare_and_merge_scene, bench_prepare_merge_extract_scene, bench_prepare_scene,
 };
+use scene_state::SceneRuntimeState;
 pub(crate) use state::CollisionDebugState;
 pub(crate) use state::ScriptCallbackContext;
 use state::{
@@ -258,84 +264,22 @@ pub(crate) struct WorldMembershipCache {
 /// Keeps scene nodes, script schedules, resource APIs, input snapshots,
 /// physics state, audio propagation, and retained render state in one owner.
 pub struct Runtime {
-    pub time: Timing,
-    pub(crate) timer_runtime: TimerRuntimeState,
-    provider_mode: ProviderMode,
-    project: Option<Rc<RuntimeProject>>,
-    pub(crate) active_route_href: Option<String>,
-    pub(crate) active_route_root: Option<NodeID>,
-    pub(crate) scene_ownership_roots: AHashMap<NodeID, NodeID>,
-    pub(crate) scene_cache: RefCell<ScenePathLruCache<Scene>>,
-    pub(crate) prepared_scene_cache:
-        RefCell<ScenePathLruCache<scene_loader::prepare::PreparedScene>>,
-    pub(crate) preloaded_scenes: AHashMap<PreloadedSceneID, Arc<Scene>>,
-    pub(crate) preloaded_prepared_scenes:
-        AHashMap<PreloadedSceneID, Arc<scene_loader::prepare::PreparedScene>>,
-    pub(crate) preloaded_scene_paths: AHashMap<u64, PreloadedSceneID>,
-    pub(crate) preloaded_scene_reverse_paths: AHashMap<PreloadedSceneID, String>,
-    pub(crate) next_preloaded_scene_id: u64,
-    /// Handles whose load + prepare is running on a worker, by id and by path
-    /// hash (the second one dedupes repeat requests for one path).
-    pub(crate) pending_preloads: AHashMap<PreloadedSceneID, String>,
-    pub(crate) pending_preload_paths: AHashMap<u64, PreloadedSceneID>,
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-    pub(crate) scene_preload_tx:
-        std::sync::mpsc::Sender<scene_loader::background::BackgroundPreloadResult>,
-    pub(crate) scene_preload_rx:
-        std::sync::mpsc::Receiver<scene_loader::background::BackgroundPreloadResult>,
-
+    // Keep per-callback state together; cold service caches follow.
     pub nodes: NodeArena,
     pub(crate) scripts: ScriptCollection,
     schedules: ScriptSchedules,
     pub(crate) script_runtime: ScriptRuntimeState,
     pub(crate) active_runtime_nodes: Vec<NodeID>,
+    pub time: Timing,
+    pub(crate) input: InputSnapshot,
+
+    pub(crate) timer_runtime: TimerRuntimeState,
+    provider_mode: ProviderMode,
+    project: Option<Rc<RuntimeProject>>,
+    pub(crate) scene_runtime: SceneRuntimeState,
+
     pub(crate) render: RenderState,
-    scene_texture_refs_cache: AHashMap<TextureID, Vec<NodeID>>,
-    scene_mesh_refs_cache: AHashMap<MeshID, Vec<NodeID>>,
-    scene_material_refs_cache: AHashMap<MaterialID, Vec<NodeID>>,
-    /// last arena mutation_revision seen by resource-ref scan. gate re-scan.
-    scene_resource_refs_scanned_version: u64,
-    /// force resource-ref re-scan next drain. set on resource render events
-    /// (pending resolve / retained invalidation) that arena version misses.
-    scene_resource_refs_dirty: bool,
-    /// reusable scratch maps 4 resource-ref scan; avoid per-frame alloc + clone.
-    scene_resource_refs_scratch: SceneResourceRefsScratch,
-    /// resource event seen since last flush; batch SubView dirty-mark scan
-    /// once per apply batch instead of once per event (load storm = N events).
-    resource_event_scan_pending: bool,
-    /// materials loaded since last flush; batched retained-draw invalidation
-    /// does 1 node pass 4 all of them instead of 1 pass per material.
-    pending_material_invalidations: Vec<MaterialID>,
-    /// shared member list 4 camera-stream collectors; refcount view of the
-    /// world-membership cache, reassigned once per stream rebuild.
-    camera_stream_node_scratch: Arc<[NodeID]>,
-    /// reusable set: worlds holding >=1 dirty node this pass (+ sub-view owner
-    /// chain). gates stream/sub-view state rebuild to changed worlds only.
-    dirty_world_scratch: AHashSet<NodeID>,
-    /// reusable stream-node candidate list per extraction pass.
-    stream_node_scratch: Vec<NodeID>,
-    /// per-camera flattened post-processing cache: (source set, effects Arc).
-    /// unchanged sets hand out refcount clones instead of re-flattening +
-    /// re-allocating the effects slice every extraction pass.
-    pub(crate) camera_postfx_cache: AHashMap<
-        NodeID,
-        (
-            perro_structs::PostProcessSet,
-            Arc<[perro_structs::PostProcessEffect]>,
-        ),
-    >,
-    /// stream/sub-view nodes with a live gpu-side CameraStream upsert. gates
-    /// redundant RemoveNode traffic (each command wakes a full gpu frame).
-    pub(crate) camera_stream_active: AHashSet<NodeID>,
-    /// cross-refresh Arc retention 4 stream/sub-view lanes + whole states +
-    /// skinning palettes; see [`world_state::StreamRetention`].
-    pub(crate) stream_retention: world_state::StreamRetention,
-    /// last built (output_texture, resolution, ui rect size) per ui stream /
-    /// sub-view node. lets input-refresh command visits reuse the previous
-    /// output w/o re-collecting the watched world; rect-size change (auto
-    /// resolution) forces rebuild.
-    pub(crate) ui_stream_render_info: AHashMap<NodeID, (TextureID, [u32; 2], [f32; 2])>,
-    pub(crate) pending_camera_capture_removals: Vec<(NodeID, u8)>,
+    pub(crate) extraction: ExtractionState,
     pub(crate) world_membership: RefCell<WorldMembershipCache>,
     /// Split-revision memo for effective visibility + ancestor modulation.
     /// RefCell lets read-only per-frame query paths stamp results.
@@ -368,7 +312,6 @@ pub struct Runtime {
     pub(crate) node_index: NodeIndexState,
     pub(crate) node_api_scratch: NodeApiScratchState,
     pub(crate) resource_api: Rc<RuntimeResourceApi>,
-    pub(crate) input: InputSnapshot,
     /// Deferred-boot flag: ctor skip load_boot_scene -> runner load it aft
     /// window+splash up (see `load_boot_scene_if_pending`). Sync ctors kp false.
     boot_scene_pending: bool,
@@ -379,100 +322,13 @@ pub struct Runtime {
     pub(crate) physics_gravity_override: Option<f32>,
     pub(crate) physics_coef_override: Option<f32>,
     physics: physics::PhysicsState,
-    /// arena mutation revision @ last node->world sync; match + no dirty => skip re-sync
-    physics_synced_node_revision_2d: Option<u64>,
-    physics_synced_node_revision_3d: Option<u64>,
-    physics_synced_world_revisions: AHashMap<NodeID, (Option<u64>, Option<u64>)>,
-    physics_body_descs_2d: Vec<perro_physics::BodyDesc2D>,
-    physics_body_descs_3d: Vec<perro_physics::BodyDesc3D>,
-    physics_joint_descs_2d: Vec<perro_physics::JointDesc2D>,
-    physics_joint_descs_3d: Vec<perro_physics::JointDesc3D>,
-    /// internal fall speed per char body 4 script-invoked apply_gravity;
-    /// ! exposed on node (char body has no velocity state)
-    character_fall_speed_2d: AHashMap<NodeID, f32>,
-    character_fall_speed_3d: AHashMap<NodeID, f32>,
-    /// last sweep hit per char body (node, point, normal); merged -> contacts_*
-    /// cuz kinematic-vs-fixed pairs never activate in solver narrow phase
-    character_sweep_hit_2d:
-        AHashMap<NodeID, (NodeID, perro_structs::Vector2, perro_structs::Vector2)>,
-    character_sweep_hit_3d:
-        AHashMap<NodeID, (NodeID, perro_structs::Vector3, perro_structs::Vector3)>,
-    water_samples: AHashMap<NodeID, perro_nodes::WaterPhysicsSample>,
-    water_sample_times: AHashMap<NodeID, f32>,
-    water_body_samples: AHashMap<WaterBodySampleKey, WaterBodySampleCache>,
-    pending_water_queries_2d: AHashMap<NodeID, Vec<PendingWaterQuery>>,
-    pending_water_queries_3d: AHashMap<NodeID, Vec<PendingWaterQuery>>,
-    water_contacts_2d: AHashMap<NodeID, Vec<WaterBodyContact2D>>,
-    water_contacts_3d: AHashMap<NodeID, Vec<WaterBodyContact3D>>,
-    /// Entry splash gate. Bodies must stay clear of water before another
-    /// surface crossing counts as a foreign-body impact.
-    water_entry_states_3d: AHashMap<NodeID, WaterEntryState3D>,
-    water_rigid_body_ids_2d_cache: Vec<NodeID>,
-    water_rigid_body_ids_3d_cache: Vec<NodeID>,
-    water_collision_body_ids_2d_cache: Vec<NodeID>,
-    water_collision_body_ids_3d_cache: Vec<NodeID>,
-    water_ids_2d_cache: Vec<NodeID>,
-    water_ids_3d_cache: Vec<NodeID>,
-    /// `nodes.physics_revision()` snapshot @ last fill of each cache above.
-    /// `None` means unfilled. Lets empty-result scenes cache too (`is_empty`
-    /// used 2 be the unfilled sentinel, so 0-water scenes rescanned forever).
-    water_rigid_body_ids_2d_cache_version: Option<u64>,
-    water_rigid_body_ids_3d_cache_version: Option<u64>,
-    water_collision_body_ids_2d_cache_version: Option<u64>,
-    water_collision_body_ids_3d_cache_version: Option<u64>,
-    water_ids_2d_cache_version: Option<u64>,
-    water_ids_3d_cache_version: Option<u64>,
+    pub(crate) physics_sync: PhysicsSyncState,
     // Value = (asset source, scene-authored bone pose overrides applied
     // after the async bone load lands).
     pending_skeleton_sources_2d:
         AHashMap<NodeID, (String, Vec<scene_loader::prepare::PendingBonePoseOverride>)>,
     pending_skeleton_sources_3d:
         AHashMap<NodeID, (String, Vec<scene_loader::prepare::PendingBonePoseOverride>)>,
-    pub(crate) force_water_impacts_2d: Vec<ForceWaterImpact2D>,
-    pub(crate) force_water_impacts_3d: Vec<ForceWaterImpact3D>,
-    pub(crate) pending_force_emitters_2d: Vec<(NodeID, perro_nodes::PhysicsForceEmitter2D)>,
-    pub(crate) pending_force_emitters_3d: Vec<(NodeID, perro_nodes::PhysicsForceEmitter3D)>,
-    /// reusable body-handle update buf 4 sync_world_2d/3d; avoid per-frame alloc.
-    physics_handle_updates_scratch_2d: Vec<(NodeID, Option<u64>)>,
-    physics_handle_updates_scratch_3d: Vec<(NodeID, Option<u64>)>,
-    /// reusable staged-pose buf 4 sync_world_to_nodes_2d/3d writeback.
-    physics_writeback_scratch_2d: Vec<physics::StagedBodyPose2D>,
-    physics_writeback_scratch_3d: Vec<physics::StagedBodyPose3D>,
-    /// reusable force-emitter stage buf 4 queue_physics_force_emitters_2d/3d;
-    /// stage (pos, node id) only -- emitter data re-read in apply loop, no clone.
-    physics_force_emitters_scratch_2d: Vec<(perro_structs::Vector2, NodeID)>,
-    physics_force_emitters_scratch_3d: Vec<(perro_structs::Vector3, NodeID)>,
-    /// reusable emitter-id scan buf 4 queue_physics_force_emitters_2d/3d;
-    /// avoid per-step alloc on the type-lane scan result.
-    physics_force_emitter_ids_scratch_2d: Vec<NodeID>,
-    physics_force_emitter_ids_scratch_3d: Vec<NodeID>,
-    /// reusable water-index input buf 4 queue_water_forces_2d/3d.
-    physics_waters_scratch_2d: Vec<physics::RuntimeWater2D>,
-    physics_waters_scratch_3d: Vec<physics::RuntimeWater3D>,
-    /// reusable rigid-body sample buf 4 queue_water_forces_2d/3d.
-    physics_water_bodies_scratch_2d: Vec<physics::RuntimeWaterBody2D>,
-    physics_water_bodies_scratch_3d: Vec<physics::RuntimeWaterBody3D>,
-    /// reusable water spatial-bin storage 4 queue_water_forces_2d/3d.
-    physics_water_bins_scratch_2d: Vec<Vec<usize>>,
-    physics_water_bins_scratch_3d: Vec<Vec<usize>>,
-    /// reusable per-tick water force collect buf 4 queue_water_forces_2d/3d.
-    physics_water_forces_scratch_2d: Vec<physics::WaterBodyForce2D>,
-    physics_water_forces_scratch_3d: Vec<physics::WaterBodyForce3D>,
-    /// memo 4 physics root inverse (world id, root mat, inv); kill per-body
-    /// per-tileset fold of collision tiles: (parsed tileset, hash). parsed
-    /// tilesets are immutable, so Rc identity gate the memo; kp the Rc so a
-    /// reused address can't read as a hit. Entries self-drop when the tileset
-    /// cache releases the tileset.
-    tileset_collision_hash_cache_2d: AHashMap<u64, (Rc<render_2d::ParsedTileset2D>, u64)>,
-    /// matrix inversion in physics_transform_2d/3d.
-    physics_root_inv_2d: Option<(NodeID, glam::Mat3, glam::Mat3)>,
-    physics_root_inv_3d: Option<(NodeID, glam::Mat4, glam::Mat4)>,
-    /// reusable sorted world list 4 fixed-step dispatch + stale-world prune.
-    physics_world_ids_scratch: Vec<NodeID>,
-    /// `nodes.structural_revision()` @ last build of the list above. body/joint
-    /// node sets + node_world both move only on structural chg, so a match let
-    /// the fixed step reuse the list + skip the 2 stale-world retain passes.
-    physics_world_ids_revision: Option<u64>,
     /// reusable subtree-walk stack 4 force_rerender; avoid per-node
     /// children_slice().to_vec() alloc on every visited node.
     force_rerender_stack_scratch: Vec<NodeID>,
@@ -664,8 +520,10 @@ impl Runtime {
     }
 
     pub fn new() -> Self {
-        let (scene_preload_tx, scene_preload_rx) = std::sync::mpsc::channel();
         Self {
+            physics_sync: PhysicsSyncState::new(),
+            extraction: ExtractionState::new(),
+            scene_runtime: SceneRuntimeState::new(),
             time: Timing {
                 fixed_delta: 0.0,
                 delta: 0.0,
@@ -697,20 +555,6 @@ impl Runtime {
             },
             timer_runtime: TimerRuntimeState::new(),
             provider_mode: ProviderMode::Dynamic,
-            active_route_href: None,
-            active_route_root: None,
-            scene_ownership_roots: AHashMap::new(),
-            scene_cache: RefCell::new(ScenePathLruCache::default()),
-            prepared_scene_cache: RefCell::new(ScenePathLruCache::default()),
-            preloaded_scenes: AHashMap::new(),
-            preloaded_prepared_scenes: AHashMap::new(),
-            pending_preloads: AHashMap::new(),
-            pending_preload_paths: AHashMap::new(),
-            scene_preload_tx,
-            scene_preload_rx,
-            preloaded_scene_paths: AHashMap::new(),
-            preloaded_scene_reverse_paths: AHashMap::new(),
-            next_preloaded_scene_id: 1,
             nodes: NodeArena::new(),
             scripts: ScriptCollection::new(),
             schedules: ScriptSchedules::new(),
@@ -718,22 +562,6 @@ impl Runtime {
             active_runtime_nodes: Vec::new(),
             project: None,
             render: RenderState::new(),
-            scene_texture_refs_cache: AHashMap::new(),
-            scene_mesh_refs_cache: AHashMap::new(),
-            scene_material_refs_cache: AHashMap::new(),
-            scene_resource_refs_scanned_version: u64::MAX,
-            scene_resource_refs_dirty: true,
-            scene_resource_refs_scratch: SceneResourceRefsScratch::default(),
-            resource_event_scan_pending: false,
-            pending_material_invalidations: Vec::new(),
-            camera_stream_node_scratch: perro_render_bridge::empty_arc_slice(),
-            dirty_world_scratch: AHashSet::new(),
-            stream_node_scratch: Vec::new(),
-            camera_postfx_cache: AHashMap::new(),
-            camera_stream_active: AHashSet::new(),
-            stream_retention: world_state::StreamRetention::default(),
-            ui_stream_render_info: AHashMap::new(),
-            pending_camera_capture_removals: Vec::new(),
             world_membership: RefCell::new(WorldMembershipCache::default()),
             vis_memo: RefCell::new(world_state::VisibilityModulateMemo::default()),
             suspension_memo: RefCell::new(world_state::SuspensionMemo::default()),
@@ -763,64 +591,8 @@ impl Runtime {
             physics_gravity_override: None,
             physics_coef_override: None,
             physics: physics::PhysicsState::new(),
-            physics_synced_node_revision_2d: None,
-            physics_synced_node_revision_3d: None,
-            physics_synced_world_revisions: AHashMap::new(),
-            physics_body_descs_2d: Vec::new(),
-            physics_body_descs_3d: Vec::new(),
-            physics_joint_descs_2d: Vec::new(),
-            physics_joint_descs_3d: Vec::new(),
-            character_fall_speed_2d: AHashMap::new(),
-            character_fall_speed_3d: AHashMap::new(),
-            character_sweep_hit_2d: AHashMap::new(),
-            character_sweep_hit_3d: AHashMap::new(),
-            water_samples: AHashMap::new(),
-            water_sample_times: AHashMap::new(),
-            water_body_samples: AHashMap::new(),
-            pending_water_queries_2d: AHashMap::new(),
-            pending_water_queries_3d: AHashMap::new(),
-            water_contacts_2d: AHashMap::new(),
-            water_contacts_3d: AHashMap::new(),
-            water_entry_states_3d: AHashMap::new(),
-            water_rigid_body_ids_2d_cache: Vec::new(),
-            water_rigid_body_ids_3d_cache: Vec::new(),
-            water_collision_body_ids_2d_cache: Vec::new(),
-            water_collision_body_ids_3d_cache: Vec::new(),
-            water_ids_2d_cache: Vec::new(),
-            water_ids_3d_cache: Vec::new(),
-            water_rigid_body_ids_2d_cache_version: None,
-            water_rigid_body_ids_3d_cache_version: None,
-            water_collision_body_ids_2d_cache_version: None,
-            water_collision_body_ids_3d_cache_version: None,
-            water_ids_2d_cache_version: None,
-            water_ids_3d_cache_version: None,
             pending_skeleton_sources_2d: AHashMap::new(),
             pending_skeleton_sources_3d: AHashMap::new(),
-            force_water_impacts_2d: Vec::new(),
-            force_water_impacts_3d: Vec::new(),
-            pending_force_emitters_2d: Vec::new(),
-            pending_force_emitters_3d: Vec::new(),
-            physics_handle_updates_scratch_2d: Vec::new(),
-            physics_handle_updates_scratch_3d: Vec::new(),
-            physics_writeback_scratch_2d: Vec::new(),
-            physics_writeback_scratch_3d: Vec::new(),
-            physics_force_emitters_scratch_2d: Vec::new(),
-            physics_force_emitters_scratch_3d: Vec::new(),
-            physics_force_emitter_ids_scratch_2d: Vec::new(),
-            physics_force_emitter_ids_scratch_3d: Vec::new(),
-            physics_waters_scratch_2d: Vec::new(),
-            physics_waters_scratch_3d: Vec::new(),
-            physics_water_bodies_scratch_2d: Vec::new(),
-            physics_water_bodies_scratch_3d: Vec::new(),
-            physics_water_bins_scratch_2d: Vec::new(),
-            physics_water_bins_scratch_3d: Vec::new(),
-            physics_water_forces_scratch_2d: Vec::new(),
-            physics_water_forces_scratch_3d: Vec::new(),
-            tileset_collision_hash_cache_2d: AHashMap::new(),
-            physics_root_inv_2d: None,
-            physics_root_inv_3d: None,
-            physics_world_ids_scratch: Vec::new(),
-            physics_world_ids_revision: None,
             force_rerender_stack_scratch: Vec::new(),
             ui_node_ids_scratch: Vec::new(),
             audio: AudioPropagationState::new(),
@@ -931,32 +703,32 @@ impl Runtime {
 
     pub(crate) fn cached_rigid_body_ids_2d(&mut self) -> &[NodeID] {
         let version = self.nodes.physics_revision();
-        if self.water_rigid_body_ids_2d_cache_version != Some(version) {
-            self.water_rigid_body_ids_2d_cache.clear();
+        if self.physics_sync.water_rigid_body_ids_2d_cache_version != Some(version) {
+            self.physics_sync.water_rigid_body_ids_2d_cache.clear();
             scan_node_type_slots(
                 &self.nodes,
                 perro_nodes::NodeType::RigidBody2D,
                 |node| matches!(&node.data, perro_nodes::SceneNodeData::RigidBody2D(body) if body.enabled),
-                &mut self.water_rigid_body_ids_2d_cache,
+                &mut self.physics_sync.water_rigid_body_ids_2d_cache,
             );
-            self.water_rigid_body_ids_2d_cache_version = Some(version);
+            self.physics_sync.water_rigid_body_ids_2d_cache_version = Some(version);
         }
-        &self.water_rigid_body_ids_2d_cache
+        &self.physics_sync.water_rigid_body_ids_2d_cache
     }
 
     pub(crate) fn cached_rigid_body_ids_3d(&mut self) -> &[NodeID] {
         let version = self.nodes.physics_revision();
-        if self.water_rigid_body_ids_3d_cache_version != Some(version) {
-            self.water_rigid_body_ids_3d_cache.clear();
+        if self.physics_sync.water_rigid_body_ids_3d_cache_version != Some(version) {
+            self.physics_sync.water_rigid_body_ids_3d_cache.clear();
             scan_node_type_slots(
                 &self.nodes,
                 perro_nodes::NodeType::RigidBody3D,
                 |node| matches!(&node.data, perro_nodes::SceneNodeData::RigidBody3D(body) if body.enabled),
-                &mut self.water_rigid_body_ids_3d_cache,
+                &mut self.physics_sync.water_rigid_body_ids_3d_cache,
             );
-            self.water_rigid_body_ids_3d_cache_version = Some(version);
+            self.physics_sync.water_rigid_body_ids_3d_cache_version = Some(version);
         }
-        &self.water_rigid_body_ids_3d_cache
+        &self.physics_sync.water_rigid_body_ids_3d_cache
     }
 
     /// Coastline scan candidates: StaticBody2D + RigidBody2D + CharacterBody2D.
@@ -964,8 +736,8 @@ impl Runtime {
     /// so it self-invalidates on physics_revision like the rigid-body caches.
     pub(crate) fn cached_water_collision_body_ids_2d(&mut self) -> &[NodeID] {
         let version = self.nodes.physics_revision();
-        if self.water_collision_body_ids_2d_cache_version != Some(version) {
-            self.water_collision_body_ids_2d_cache.clear();
+        if self.physics_sync.water_collision_body_ids_2d_cache_version != Some(version) {
+            self.physics_sync.water_collision_body_ids_2d_cache.clear();
             scan_node_type_slots_any(
                 &self.nodes,
                 &[
@@ -973,18 +745,18 @@ impl Runtime {
                     perro_nodes::NodeType::RigidBody2D,
                     perro_nodes::NodeType::CharacterBody2D,
                 ],
-                &mut self.water_collision_body_ids_2d_cache,
+                &mut self.physics_sync.water_collision_body_ids_2d_cache,
             );
-            self.water_collision_body_ids_2d_cache_version = Some(version);
+            self.physics_sync.water_collision_body_ids_2d_cache_version = Some(version);
         }
-        &self.water_collision_body_ids_2d_cache
+        &self.physics_sync.water_collision_body_ids_2d_cache
     }
 
     /// Coastline scan candidates: StaticBody3D + RigidBody3D + CharacterBody3D.
     pub(crate) fn cached_water_collision_body_ids_3d(&mut self) -> &[NodeID] {
         let version = self.nodes.physics_revision();
-        if self.water_collision_body_ids_3d_cache_version != Some(version) {
-            self.water_collision_body_ids_3d_cache.clear();
+        if self.physics_sync.water_collision_body_ids_3d_cache_version != Some(version) {
+            self.physics_sync.water_collision_body_ids_3d_cache.clear();
             scan_node_type_slots_any(
                 &self.nodes,
                 &[
@@ -992,41 +764,41 @@ impl Runtime {
                     perro_nodes::NodeType::RigidBody3D,
                     perro_nodes::NodeType::CharacterBody3D,
                 ],
-                &mut self.water_collision_body_ids_3d_cache,
+                &mut self.physics_sync.water_collision_body_ids_3d_cache,
             );
-            self.water_collision_body_ids_3d_cache_version = Some(version);
+            self.physics_sync.water_collision_body_ids_3d_cache_version = Some(version);
         }
-        &self.water_collision_body_ids_3d_cache
+        &self.physics_sync.water_collision_body_ids_3d_cache
     }
 
     pub(crate) fn cached_water_ids_2d(&mut self) -> &[NodeID] {
         let version = self.nodes.physics_revision();
-        if self.water_ids_2d_cache_version != Some(version) {
-            self.water_ids_2d_cache.clear();
+        if self.physics_sync.water_ids_2d_cache_version != Some(version) {
+            self.physics_sync.water_ids_2d_cache.clear();
             scan_node_type_slots(
                 &self.nodes,
                 perro_nodes::NodeType::WaterBody2D,
                 |node| matches!(node.data, perro_nodes::SceneNodeData::WaterBody2D(_)),
-                &mut self.water_ids_2d_cache,
+                &mut self.physics_sync.water_ids_2d_cache,
             );
-            self.water_ids_2d_cache_version = Some(version);
+            self.physics_sync.water_ids_2d_cache_version = Some(version);
         }
-        &self.water_ids_2d_cache
+        &self.physics_sync.water_ids_2d_cache
     }
 
     pub(crate) fn cached_water_ids_3d(&mut self) -> &[NodeID] {
         let version = self.nodes.physics_revision();
-        if self.water_ids_3d_cache_version != Some(version) {
-            self.water_ids_3d_cache.clear();
+        if self.physics_sync.water_ids_3d_cache_version != Some(version) {
+            self.physics_sync.water_ids_3d_cache.clear();
             scan_node_type_slots(
                 &self.nodes,
                 perro_nodes::NodeType::WaterBody3D,
                 |node| matches!(node.data, perro_nodes::SceneNodeData::WaterBody3D(_)),
-                &mut self.water_ids_3d_cache,
+                &mut self.physics_sync.water_ids_3d_cache,
             );
-            self.water_ids_3d_cache_version = Some(version);
+            self.physics_sync.water_ids_3d_cache_version = Some(version);
         }
-        &self.water_ids_3d_cache
+        &self.physics_sync.water_ids_3d_cache
     }
 
     pub(crate) fn apply_loaded_skeleton_bones(&mut self) {
@@ -1206,119 +978,6 @@ impl Runtime {
 
     pub fn provider_mode(&self) -> ProviderMode {
         self.provider_mode
-    }
-
-    #[inline]
-    pub fn update(&mut self, delta_time: f32) {
-        self.clear_startup_keyboard_mouse();
-        self.time.delta = delta_time;
-        self.advance_timers(delta_time);
-        self.flush_queued_ui_signals();
-        self.process_pending_web_route_change();
-        self.apply_loaded_skeleton_bones();
-        self.poll_async_scene_preloads();
-        self.run_start_schedule();
-        self.schedules.snapshot_update(&self.scripts);
-        self.run_update_schedule();
-        #[cfg(feature = "steamworks")]
-        let _ = perro_steamworks::runtime::run_callbacks();
-        self.run_internal_update_schedule();
-        self.nodes.refresh_packed_children();
-        self.propagate_pending_transform_dirty();
-        self.update_audio_propagation(delta_time);
-    }
-
-    #[inline]
-    pub fn update_timed(&mut self, delta_time: f32) -> RuntimeUpdateTiming {
-        let total_start = Instant::now();
-        self.clear_startup_keyboard_mouse();
-        self.time.delta = delta_time;
-        self.advance_timers(delta_time);
-        self.flush_queued_ui_signals();
-        self.process_pending_web_route_change();
-        self.apply_loaded_skeleton_bones();
-        self.poll_async_scene_preloads();
-
-        let start_schedule_start = Instant::now();
-        self.run_start_schedule();
-        let start_schedule = start_schedule_start.elapsed();
-
-        let snapshot_start = Instant::now();
-        self.schedules.snapshot_update(&self.scripts);
-        let snapshot_update = snapshot_start.elapsed();
-
-        let update_schedule = self.run_update_schedule_timed();
-
-        #[cfg(feature = "steamworks")]
-        let _ = perro_steamworks::runtime::run_callbacks();
-
-        let internal_start = Instant::now();
-        self.run_internal_update_schedule();
-        let internal_update = internal_start.elapsed();
-        self.nodes.refresh_packed_children();
-        self.propagate_pending_transform_dirty();
-        self.update_audio_propagation(delta_time);
-
-        RuntimeUpdateTiming {
-            start_schedule,
-            snapshot_update,
-            update_schedule,
-            internal_update,
-            total: total_start.elapsed(),
-        }
-    }
-
-    #[inline]
-    pub fn fixed_update(&mut self, fixed_delta_time: f32) {
-        self.clear_startup_keyboard_mouse();
-        self.time.fixed_delta = fixed_delta_time;
-        self.schedules.snapshot_fixed(&self.scripts);
-        self.run_fixed_schedule();
-        self.nodes.refresh_packed_children();
-        self.physics_fixed_step();
-        self.run_internal_fixed_update_schedule();
-        self.nodes.refresh_packed_children();
-        self.propagate_pending_transform_dirty();
-    }
-
-    #[inline]
-    pub fn fixed_update_timed(&mut self, fixed_delta_time: f32) -> RuntimeFixedUpdateTiming {
-        let total_start = Instant::now();
-        self.clear_startup_keyboard_mouse();
-        self.time.fixed_delta = fixed_delta_time;
-
-        let snapshot_start = Instant::now();
-        self.schedules.snapshot_fixed(&self.scripts);
-        let snapshot_update = snapshot_start.elapsed();
-
-        let script_fixed_start = Instant::now();
-        self.run_fixed_schedule();
-        let script_fixed_update = script_fixed_start.elapsed();
-
-        self.nodes.refresh_packed_children();
-        let physics_timing = self.physics_fixed_step_timed();
-
-        let internal_fixed_start = Instant::now();
-        self.run_internal_fixed_update_schedule();
-        let internal_fixed_update = internal_fixed_start.elapsed();
-        self.nodes.refresh_packed_children();
-        self.propagate_pending_transform_dirty();
-
-        RuntimeFixedUpdateTiming {
-            snapshot_update,
-            script_fixed_update,
-            physics: physics_timing.total,
-            physics_pre_transforms: physics_timing.pre_transforms,
-            physics_collect: physics_timing.collect,
-            physics_sync_world: physics_timing.sync_world,
-            physics_apply_forces_impulses: physics_timing.apply_forces_impulses,
-            physics_step: physics_timing.step,
-            physics_sync_nodes: physics_timing.sync_nodes,
-            physics_post_transforms: physics_timing.post_transforms,
-            physics_signals: physics_timing.signals,
-            internal_fixed_update,
-            total: total_start.elapsed(),
-        }
     }
 }
 

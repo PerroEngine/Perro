@@ -27,10 +27,6 @@ impl Runtime {
         let slot_count = self.nodes.slot_count();
         let mut pos_2d = std::mem::take(&mut self.node_index.query_spatial_pos_2d);
         let mut pos_3d = std::mem::take(&mut self.node_index.query_spatial_pos_3d);
-        pos_2d.clear();
-        pos_3d.clear();
-        pos_2d.resize(slot_count, None);
-        pos_3d.resize(slot_count, None);
 
         // Root-scope queries w/ a small candidate set (rare tag/name index)
         // only need positions for those ids -- filling every occupied slot
@@ -43,8 +39,25 @@ impl Runtime {
             });
 
         if use_candidate_fill {
+            // Only candidate slots can be read by this query. Retain other
+            // slots and reset the queried lanes individually, including type
+            // changes and reused generations. Avoid clearing the entire arena
+            // for a rare-tag query and allocate only requested dimensions.
+            if needs_2d {
+                pos_2d.resize(slot_count, None);
+            }
+            if needs_3d {
+                pos_3d.resize(slot_count, None);
+            }
             let ids = candidates.expect("checked by use_candidate_fill");
             for &id in ids {
+                let slot = id.index() as usize;
+                if let Some(position) = pos_2d.get_mut(slot) {
+                    *position = None;
+                }
+                if let Some(position) = pos_3d.get_mut(slot) {
+                    *position = None;
+                }
                 let Some(node) = self.nodes.get(id) else {
                     continue;
                 };
@@ -61,6 +74,11 @@ impl Runtime {
             }
             return Some(super::super::query::QuerySpatialIndex { pos_2d, pos_3d });
         }
+
+        pos_2d.clear();
+        pos_3d.clear();
+        pos_2d.resize(slot_count, None);
+        pos_3d.resize(slot_count, None);
 
         match scope {
             QueryScope::Root => {
@@ -209,5 +227,49 @@ impl Runtime {
             self.node_index.query_spatial_pos_2d = index.pos_2d;
             self.node_index.query_spatial_pos_3d = index.pos_3d;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use perro_ids::TagID;
+    use perro_nodes::{Node2D, Node3D};
+    use perro_runtime_api::sub_apis::{NodeQuery, QueryBounds};
+
+    #[test]
+    fn sparse_spatial_fill_tracks_moves_removed_tags_and_reused_dimensions() {
+        let mut runtime = Runtime::new();
+        let tag = TagID::from_string("sparse_spatial");
+        for _ in 0..64 {
+            NodeAPI::create::<Node3D>(&mut runtime);
+        }
+        let first = NodeAPI::create::<Node3D>(&mut runtime);
+        assert!(runtime.add_node_tag(first, tag));
+        let query = NodeQuery {
+            expr: Some(QueryExpr::All(vec![
+                QueryExpr::Tags(vec![tag]),
+                QueryExpr::Within(QueryBounds::Box3D {
+                    origin: Vector3::ZERO,
+                    size: Vector3::new(2.0, 2.0, 2.0),
+                }),
+            ])),
+            scope: QueryScope::Root,
+        };
+        assert_eq!(runtime.query_first_node(query.as_view()), Some(first));
+        assert!(runtime.node_index.query_spatial_pos_2d.is_empty());
+        let _ = runtime.with_node_mut::<Node3D, _, _>(first, |node| node.position.x = 10.0);
+        assert_eq!(runtime.query_first_node(query.as_view()), None);
+        assert!(runtime.remove_node(first));
+        let second = NodeAPI::create::<Node2D>(&mut runtime);
+        assert_eq!(first.index(), second.index());
+        assert!(runtime.add_node_tag(second, tag));
+        assert_eq!(runtime.query_first_node(query.as_view()), None);
+        assert!(runtime.remove_node(second));
+        let third = NodeAPI::create::<Node3D>(&mut runtime);
+        assert!(runtime.add_node_tag(third, tag));
+        assert_eq!(runtime.query_nodes(query.as_view()), vec![third]);
+        assert!(runtime.remove_node_tag(third, tag));
+        assert_eq!(runtime.query_first_node(query.as_view()), None);
     }
 }

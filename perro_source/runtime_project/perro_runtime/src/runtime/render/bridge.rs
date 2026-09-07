@@ -250,13 +250,14 @@ impl Runtime {
         node: NodeID,
         set: &perro_structs::PostProcessSet,
     ) -> Arc<[perro_structs::PostProcessEffect]> {
-        if let Some((cached_set, cached)) = self.camera_postfx_cache.get(&node)
+        if let Some((cached_set, cached)) = self.extraction.camera_postfx_cache.get(&node)
             && cached_set == set
         {
             return cached.clone();
         }
         let effects = arc_slice_from_vec(set.to_effects_vec());
-        self.camera_postfx_cache
+        self.extraction
+            .camera_postfx_cache
             .insert(node, (set.clone(), effects.clone()));
         effects
     }
@@ -278,14 +279,17 @@ impl Runtime {
         // upserted Arc, so the gpu-side upsert hits Arc::ptr_eq instead of a
         // deep compare. Value-gated (never skips the command), so streams can
         // never go stale through this path.
-        let state = match self.stream_retention.states.get(&node) {
+        let state = match self.extraction.stream_retention.states.get(&node) {
             Some(prev) if camera_stream_state_matches(prev, &state) => prev.clone(),
             _ => {
-                self.stream_retention.states.insert(node, state.clone());
+                self.extraction
+                    .stream_retention
+                    .states
+                    .insert(node, state.clone());
                 state
             }
         };
-        self.camera_stream_active.insert(node);
+        self.extraction.camera_stream_active.insert(node);
         self.queue_render_command(RenderCommand::CameraStream(CameraStreamCommand::Upsert {
             node,
             state: state.clone(),
@@ -294,7 +298,7 @@ impl Runtime {
     }
 
     pub(crate) fn queue_camera_stream_remove(&mut self, node: NodeID) {
-        if self.camera_stream_active.remove(&node) {
+        if self.extraction.camera_stream_active.remove(&node) {
             self.queue_render_command(RenderCommand::CameraStream(
                 CameraStreamCommand::RemoveNode { node },
             ));
@@ -307,10 +311,10 @@ impl Runtime {
     /// stream nodes already sit in the traversal, and full scans include
     /// everything, so callers skip this when include_all is set.
     fn append_dirty_world_stream_nodes(&mut self, traversal: &mut Vec<NodeID>, two_d: bool) {
-        let mut dirty_worlds = std::mem::take(&mut self.dirty_world_scratch);
+        let mut dirty_worlds = std::mem::take(&mut self.extraction.dirty_world_scratch);
         self.collect_dirty_worlds(&mut dirty_worlds);
         if !dirty_worlds.is_empty() {
-            let mut stream_nodes = std::mem::take(&mut self.stream_node_scratch);
+            let mut stream_nodes = std::mem::take(&mut self.extraction.stream_node_scratch);
             self.fill_stream_nodes(&mut stream_nodes);
             for node in stream_nodes.drain(..) {
                 let Some(scene_node) = self.nodes.get(node) else {
@@ -335,10 +339,10 @@ impl Runtime {
                 }
             }
             stream_nodes.clear();
-            self.stream_node_scratch = stream_nodes;
+            self.extraction.stream_node_scratch = stream_nodes;
         }
         dirty_worlds.clear();
-        self.dirty_world_scratch = dirty_worlds;
+        self.extraction.dirty_world_scratch = dirty_worlds;
     }
 
     pub(crate) fn append_dirty_world_stream_nodes_2d(&mut self, traversal: &mut Vec<NodeID>) {
@@ -451,8 +455,11 @@ impl Runtime {
         palette_scratch: &mut Vec<[[f32; 4]; 3]>,
     ) -> Option<perro_render_bridge::SkeletonPalette> {
         let stamp = self.nodes.node_change_stamp(skeleton_id)?;
-        if let Some((cached_stamp, palette)) =
-            self.stream_retention.skeleton_palettes.get(&skeleton_id)
+        if let Some((cached_stamp, palette)) = self
+            .extraction
+            .stream_retention
+            .skeleton_palettes
+            .get(&skeleton_id)
             && *cached_stamp == stamp
         {
             return Some(palette.clone());
@@ -463,13 +470,19 @@ impl Runtime {
             global_scratch,
             palette_scratch,
         )?;
-        let palette = match self.stream_retention.skeleton_palettes.get(&skeleton_id) {
+        let palette = match self
+            .extraction
+            .stream_retention
+            .skeleton_palettes
+            .get(&skeleton_id)
+        {
             Some((_, prev)) if prev.matrices.as_ref() == palette_scratch.as_slice() => prev.clone(),
             _ => perro_render_bridge::SkeletonPalette {
                 matrices: Arc::from(palette_scratch.as_slice()),
             },
         };
-        self.stream_retention
+        self.extraction
+            .stream_retention
             .skeleton_palettes
             .insert(skeleton_id, (stamp, palette.clone()));
         Some(palette)
@@ -516,20 +529,20 @@ mod tests {
         // first load: full 2d + 3d scan + resource-ref recount.
         runtime.render_2d.force_full_scan_once = false;
         runtime.render_3d.force_full_scan_once = false;
-        runtime.scene_resource_refs_dirty = false;
+        runtime.extraction.scene_resource_refs_dirty = false;
         runtime.apply_render_event(RenderEvent::TextureLoaded { id: texture });
         assert!(runtime.render_2d.full_scan_pending());
         assert!(runtime.render_3d.full_scan_pending());
-        assert!(runtime.scene_resource_refs_dirty);
+        assert!(runtime.extraction.scene_resource_refs_dirty);
 
         // repeat texel write: no rescan, no ref recount.
         runtime.render_2d.force_full_scan_once = false;
         runtime.render_3d.force_full_scan_once = false;
-        runtime.scene_resource_refs_dirty = false;
+        runtime.extraction.scene_resource_refs_dirty = false;
         runtime.apply_render_event(RenderEvent::TextureTexelsUpdated { id: texture });
         assert!(!runtime.render_2d.full_scan_pending());
         assert!(!runtime.render_3d.full_scan_pending());
-        assert!(!runtime.scene_resource_refs_dirty);
+        assert!(!runtime.extraction.scene_resource_refs_dirty);
     }
 
     #[test]
@@ -564,6 +577,7 @@ mod tests {
         });
 
         let cached = runtime
+            .physics_sync
             .water_body_samples
             .get(&crate::runtime::WaterBodySampleKey {
                 water,

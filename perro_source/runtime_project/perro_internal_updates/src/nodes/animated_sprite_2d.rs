@@ -1,15 +1,13 @@
 use crate::prelude::*;
 use perro_nodes::AnimatedSprite2D;
 
-pub fn internal_update<RT, R, IP>(
+pub fn internal_update<RT, R: ?Sized, IP: InputAPI + ?Sized>(
     ctx: &mut RuntimeWindow<'_, RT>,
     _res: &ResourceWindow<'_, R>,
     _ipt: &InputWindow<'_, IP>,
     id: NodeID,
 ) where
-    RT: RuntimeAPI + ?Sized,
-    R: ResourceAPI + ?Sized,
-    IP: InputAPI + ?Sized,
+    RT: perro_runtime_api::sub_apis::NodeAPI + perro_runtime_api::sub_apis::TimeAPI + ?Sized,
 {
     let delta = delta_time!(ctx).max(0.0);
     let changed = with_node_mut!(ctx, AnimatedSprite2D, id, |sprite| {

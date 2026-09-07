@@ -13,6 +13,7 @@ readme.workspace = true
 workspace = true
 
 [dependencies]
+toml.workspace = true
 perro_compiler.workspace = true
 perro_project.workspace = true
 perro_scene.workspace = true

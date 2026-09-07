@@ -4,10 +4,14 @@ use perro_runtime_api::sub_apis::{
     NavMeshQueryOptions,
 };
 use perro_structs::{BitMask, Vector3};
+use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
 
 const POINT_EPSILON: f32 = 0.0001;
+
+mod spatial;
+use spatial::TriangleIndex;
 
 #[derive(Clone, Copy)]
 struct ProjectedPoint {
@@ -34,6 +38,37 @@ pub(crate) struct SearchGraph {
     centroids: Vec<Vector3>,
     areas: Vec<u8>,
     has_off_mesh_links: bool,
+    valid: bool,
+    scratch: RefCell<SearchScratch>,
+    triangles: TriangleIndex,
+}
+
+/// Query-local state reused by the immutable cached graph. Searches invoke
+/// no callbacks, so a graph cannot be reentered while the scratch is borrowed.
+#[derive(Default)]
+struct SearchScratch {
+    open: BinaryHeap<OpenEntry>,
+    epoch: u32,
+    seen: Vec<u32>,
+    closed: Vec<u32>,
+    came_from: Vec<Option<(usize, Transition)>>,
+    g_score: Vec<f32>,
+}
+
+impl SearchScratch {
+    fn begin(&mut self, count: usize) {
+        self.open.clear();
+        self.epoch = self.epoch.wrapping_add(1);
+        if self.epoch == 0 {
+            self.seen.fill(0);
+            self.closed.fill(0);
+            self.epoch = 1;
+        }
+        self.seen.resize(count, 0);
+        self.closed.resize(count, 0);
+        self.came_from.resize(count, None);
+        self.g_score.resize(count, f32::INFINITY);
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -66,7 +101,8 @@ impl Ord for OpenEntry {
     }
 }
 
-pub(crate) fn project_point_3d(
+#[cfg(test)]
+fn project_point_3d(
     navmesh: &NavMesh3D,
     point: Vector3,
     max_distance: f32,
@@ -76,6 +112,22 @@ pub(crate) fn project_point_3d(
         return None;
     }
     nearest_triangle_point(navmesh, point, max_distance, layers, &[])
+        .map(|projected| projected.point)
+}
+
+pub(crate) fn project_point_3d_prepared(
+    navmesh: &NavMesh3D,
+    graph: &SearchGraph,
+    point: Vector3,
+    max_distance: f32,
+    layers: BitMask,
+) -> Option<Vector3> {
+    if !graph.valid || !vector_is_finite(point) || max_distance.is_nan() {
+        return None;
+    }
+    graph
+        .triangles
+        .nearest(navmesh, point, max_distance, layers, &[])
         .map(|projected| projected.point)
 }
 
@@ -121,7 +173,7 @@ pub(crate) fn find_path_query_3d_prepared(
     query: NavMeshQueryOptions,
 ) -> NavMeshPath3D {
     let opts = query.path;
-    if resource.validate().is_err()
+    if !graph.valid
         || opts.layers.is_empty()
         || !vector_is_finite(start)
         || !vector_is_finite(end)
@@ -132,7 +184,7 @@ pub(crate) fn find_path_query_3d_prepared(
     }
 
     let blocked = blocked_triangles(&resource.mesh, &query.obstacles);
-    let start = match nearest_triangle_point(
+    let start = match graph.triangles.nearest(
         &resource.mesh,
         start,
         opts.max_snap_distance,
@@ -142,7 +194,7 @@ pub(crate) fn find_path_query_3d_prepared(
         Some(projected) => projected,
         None => return NavMeshPath3D::failed(),
     };
-    let end = match nearest_triangle_point(
+    let end = match graph.triangles.nearest(
         &resource.mesh,
         end,
         opts.max_snap_distance,
@@ -215,6 +267,7 @@ fn path_from_points(mut points: Vec<Vector3>, opts: NavMeshPathOptions) -> NavMe
     }
 }
 
+#[cfg(test)]
 fn nearest_triangle_point(
     navmesh: &NavMesh3D,
     point: Vector3,
@@ -299,7 +352,21 @@ fn vector_is_finite(value: Vector3) -> bool {
 
 impl SearchGraph {
     pub(crate) fn new(resource: &NavMeshResource3D, layers: BitMask) -> Self {
+        // Validate once for this resource/layer graph, rather than once per
+        // agent query. Resource replacement always replaces its graph cache.
+        if resource.validate().is_err() {
+            return Self {
+                adjacency: Vec::new(),
+                centroids: Vec::new(),
+                areas: Vec::new(),
+                has_off_mesh_links: false,
+                valid: false,
+                scratch: RefCell::new(SearchScratch::default()),
+                triangles: TriangleIndex::default(),
+            };
+        }
         let navmesh = &resource.mesh;
+        let triangles = TriangleIndex::new(navmesh);
         let mut adjacency = vec![Vec::new(); navmesh.triangles.len()];
         let centroids: Vec<_> = (0..navmesh.triangles.len())
             .map(|triangle| centroid(navmesh, triangle))
@@ -339,12 +406,11 @@ impl SearchGraph {
                 continue;
             }
             let Some(from) =
-                nearest_triangle_point(navmesh, link.start, link.snap_distance, layers, &[])
+                triangles.nearest(navmesh, link.start, link.snap_distance, layers, &[])
             else {
                 continue;
             };
-            let Some(to) =
-                nearest_triangle_point(navmesh, link.end, link.snap_distance, layers, &[])
+            let Some(to) = triangles.nearest(navmesh, link.end, link.snap_distance, layers, &[])
             else {
                 continue;
             };
@@ -379,6 +445,9 @@ impl SearchGraph {
             centroids,
             areas: resource.triangle_areas.clone(),
             has_off_mesh_links,
+            valid: true,
+            scratch: RefCell::new(SearchScratch::default()),
+            triangles,
         }
     }
 }
@@ -435,13 +504,22 @@ fn astar(
     use_off_mesh_links: bool,
     obstacles: &[NavMeshObstacle3D],
 ) -> Option<Vec<Transition>> {
-    let mut open = BinaryHeap::new();
-    let mut closed = vec![false; graph.adjacency.len()];
-    let mut came_from = vec![None; graph.adjacency.len()];
-    let mut g_score = vec![f32::INFINITY; graph.adjacency.len()];
+    let mut scratch = graph.scratch.borrow_mut();
+    scratch.begin(graph.adjacency.len());
+    let SearchScratch {
+        open,
+        epoch,
+        seen,
+        closed,
+        came_from,
+        g_score,
+    } = &mut *scratch;
+    let epoch = *epoch;
     let min_area_cost = area_costs.iter().copied().fold(1.0, f32::min);
     let use_heuristic = !(use_off_mesh_links && graph.has_off_mesh_links);
     g_score[start] = 0.0;
+    seen[start] = epoch;
+    came_from[start] = None;
     open.push(OpenEntry {
         triangle: start,
         estimated_cost: heuristic(graph, start, end, min_area_cost, use_heuristic),
@@ -451,15 +529,15 @@ fn astar(
         triangle: current, ..
     }) = open.pop()
     {
-        if closed[current] {
+        if closed[current] == epoch {
             continue;
         }
         if current == end {
             return Some(reconstruct(came_from, current));
         }
-        closed[current] = true;
+        closed[current] = epoch;
         for edge in &graph.adjacency[current] {
-            if closed[edge.to] || blocked.get(edge.to).copied().unwrap_or(false) {
+            if closed[edge.to] == epoch || blocked.get(edge.to).copied().unwrap_or(false) {
                 continue;
             }
             if matches!(edge.transition, Transition::OffMesh { .. })
@@ -469,7 +547,13 @@ fn astar(
             }
             let area = graph.areas[edge.to] as usize - 1;
             let tentative = g_score[current] + edge.base_cost * area_costs[area];
-            if tentative < g_score[edge.to] {
+            let previous = if seen[edge.to] == epoch {
+                g_score[edge.to]
+            } else {
+                f32::INFINITY
+            };
+            if tentative < previous {
+                seen[edge.to] = epoch;
                 came_from[edge.to] = Some((current, edge.transition));
                 g_score[edge.to] = tentative;
                 open.push(OpenEntry {
@@ -497,7 +581,7 @@ fn heuristic(
     }
 }
 
-fn reconstruct(came_from: Vec<Option<(usize, Transition)>>, mut current: usize) -> Vec<Transition> {
+fn reconstruct(came_from: &[Option<(usize, Transition)>], mut current: usize) -> Vec<Transition> {
     let mut transitions = Vec::new();
     while let Some((previous, transition)) = came_from[current] {
         transitions.push(transition);
@@ -612,6 +696,9 @@ fn points_equal_xz(a: Vector3, b: Vector3) -> bool {
 }
 
 fn blocked_triangles(navmesh: &NavMesh3D, obstacles: &[NavMeshObstacle3D]) -> Vec<bool> {
+    if obstacles.is_empty() {
+        return Vec::new();
+    }
     (0..navmesh.triangles.len())
         .map(|triangle| {
             let [a, b, c] = triangle_points(navmesh, triangle);
@@ -700,6 +787,79 @@ fn dedup_points(points: &mut Vec<Vector3>) {
 mod tests {
     use super::*;
     use perro_resource_api::sub_apis::{NavMeshLink3D, NavMeshTriangle3D};
+
+    #[test]
+    fn triangle_index_matches_linear_projection_with_ties_layers_and_obstacles() {
+        let mut mesh = strip_navmesh(128);
+        // Include overlapping triangle ties with differing Y and masks. The
+        // projection metric intentionally uses XZ, so lowest source ID wins.
+        mesh.triangles.extend(mesh.triangles[..4].to_vec());
+        mesh.triangles[1].layers = BitMask::layer(2);
+        let index = TriangleIndex::new(&mesh);
+        let mut seed = 1u64;
+        for round in 0..2048 {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let x = (seed >> 32) as u32 as f32 / u32::MAX as f32 * 132.0 - 2.0;
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let z = (seed >> 32) as u32 as f32 / u32::MAX as f32 * 3.0 - 1.0;
+            let point = if round % 16 == 0 {
+                Vector3::new((round % 128) as f32, 9.0, -0.00001)
+            } else {
+                Vector3::new(x, 9.0, z)
+            };
+            let layers = if round % 3 == 0 {
+                BitMask::layer(2)
+            } else {
+                BitMask::ALL
+            };
+            let blocked: Vec<_> = (0..mesh.triangles.len())
+                .map(|i| round % 7 == 0 && i % 5 == 0)
+                .collect();
+            let distance = [0.0, 0.01, 0.5, f32::INFINITY][round % 4];
+            let expected = nearest_triangle_point(&mesh, point, distance, layers, &blocked)
+                .map(|p| (p.triangle, p.point, p.distance2));
+            let actual = index
+                .nearest(&mesh, point, distance, layers, &blocked)
+                .map(|p| (p.triangle, p.point, p.distance2));
+            assert_eq!(actual, expected, "projection round {round}");
+        }
+    }
+
+    #[test]
+    fn warm_queries_and_epoch_wrap_match_fresh_search() {
+        let resource = NavMeshResource3D::from_mesh(strip_navmesh(32));
+        let graph = SearchGraph::new(&resource, BitMask::ALL);
+        for round in 0..40 {
+            if round == 20 {
+                graph.scratch.borrow_mut().epoch = u32::MAX;
+            }
+            let start = Vector3::new((round % 8) as f32 + 0.1, 0.0, 0.2);
+            let end = Vector3::new(31.8 - (round % 7) as f32, 0.0, 0.8);
+            let query = NavMeshQueryOptions {
+                obstacles: if round % 3 == 0 {
+                    vec![NavMeshObstacle3D::Circle {
+                        center: Vector3::new(16.0, 0.0, 0.5),
+                        radius: 0.6,
+                    }]
+                } else {
+                    Vec::new()
+                },
+                ..Default::default()
+            };
+            let fresh = SearchGraph::new(&resource, BitMask::ALL);
+            let expected =
+                find_path_query_3d_prepared(&resource, &fresh, start, end, query.clone());
+            let actual = find_path_query_3d_prepared(&resource, &graph, start, end, query);
+            assert_eq!(actual.status, expected.status);
+            assert_eq!(actual.points, expected.points);
+            assert_eq!(actual.distance, expected.distance);
+        }
+    }
+
+    #[test]
+    fn empty_obstacles_need_no_triangle_mask() {
+        assert!(blocked_triangles(&strip_navmesh(32), &[]).is_empty());
+    }
 
     #[test]
     fn same_poly_returns_direct_path() {

@@ -291,6 +291,7 @@ impl BarkPlayer {
         now: Instant,
     ) -> Playback {
         let removed = state.playbacks.swap_remove(index);
+        state.playback_lookup.invalidate();
         if let Some(entry) = state.cache.get_mut(&removed.source_hash)
             && entry.asset_epoch == removed.asset_epoch
         {
@@ -342,6 +343,7 @@ impl BarkPlayer {
         while i < state.midi_playbacks.len() {
             if state.midi_playbacks[i].sink.empty() {
                 state.midi_playbacks.swap_remove(i);
+                state.midi_playback_lookup.invalidate();
             } else {
                 i += 1;
             }

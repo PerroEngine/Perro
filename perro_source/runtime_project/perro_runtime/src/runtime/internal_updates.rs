@@ -1,7 +1,9 @@
 use super::Runtime;
 use perro_ids::NodeID;
 use perro_input_api::InputWindow;
-use perro_nodes::{InternalFixedUpdate, InternalUpdate, NodeType};
+use perro_nodes::{
+    FixedUpdateHook, InternalFixedUpdate, InternalUpdate, NodeService, NodeType, UpdateHook,
+};
 use perro_resource_api::ResourceWindow;
 use perro_runtime_api::RuntimeWindow;
 use std::rc::Rc;
@@ -69,40 +71,20 @@ impl Runtime {
     }
 
     pub(crate) fn unregister_internal_node_schedules(&mut self, id: NodeID, ty: NodeType) {
-        match ty {
-            NodeType::StaticBody2D
-            | NodeType::Area2D
-            | NodeType::RigidBody2D
-            | NodeType::CharacterBody2D
-            | NodeType::WaterBody2D
-            | NodeType::TileMap2D
-            | NodeType::StaticBody3D
-            | NodeType::Area3D
-            | NodeType::RigidBody3D
-            | NodeType::CharacterBody3D
-            | NodeType::WaterBody3D
-            | NodeType::PinJoint2D
-            | NodeType::DistanceJoint2D
-            | NodeType::FixedJoint2D
-            | NodeType::BallJoint3D
-            | NodeType::HingeJoint3D
-            | NodeType::FixedJoint3D => self.invalidate_physics_query_sync(),
-            _ => {}
+        if matches!(
+            ty.service(),
+            NodeService::Body2D | NodeService::Body3D | NodeService::Joint2D | NodeService::Joint3D
+        ) {
+            self.invalidate_physics_query_sync();
         }
 
         self.unregister_physics_body(id);
 
-        if matches!(
-            ty,
-            NodeType::Button2D | NodeType::ImageButton2D | NodeType::NineSliceButton2D
-        ) {
+        if matches!(ty.service(), NodeService::Button2D) {
             self.unregister_button_2d(id);
         }
 
-        if matches!(
-            ty,
-            NodeType::PhysicsBoneChain2D | NodeType::PhysicsBoneChain3D
-        ) {
+        if ty.fixed_update_hook().is_node_callback() {
             let old_len = self.internal_updates.internal_fixed_dispatch_nodes.len();
             self.internal_updates
                 .internal_fixed_dispatch_nodes
@@ -115,13 +97,13 @@ impl Runtime {
             }
         }
 
-        match ty {
-            NodeType::PinJoint2D | NodeType::DistanceJoint2D | NodeType::FixedJoint2D => {
+        match ty.service() {
+            NodeService::Joint2D => {
                 self.internal_updates
                     .physics_joint_nodes_2d
                     .retain(|&node_id| node_id != id);
             }
-            NodeType::BallJoint3D | NodeType::HingeJoint3D | NodeType::FixedJoint3D => {
+            NodeService::Joint3D => {
                 self.internal_updates
                     .physics_joint_nodes_3d
                     .retain(|&node_id| node_id != id);
@@ -220,10 +202,7 @@ impl Runtime {
     }
 
     fn register_internal_fixed_dispatch(&mut self, id: NodeID, ty: NodeType) {
-        if !matches!(
-            ty,
-            NodeType::PhysicsBoneChain2D | NodeType::PhysicsBoneChain3D
-        ) {
+        if !ty.fixed_update_hook().is_node_callback() {
             return;
         }
         if !self
@@ -240,13 +219,9 @@ impl Runtime {
     }
 
     fn register_physics_joint(&mut self, id: NodeID, ty: NodeType) {
-        let nodes = match ty {
-            NodeType::PinJoint2D | NodeType::DistanceJoint2D | NodeType::FixedJoint2D => {
-                &mut self.internal_updates.physics_joint_nodes_2d
-            }
-            NodeType::BallJoint3D | NodeType::HingeJoint3D | NodeType::FixedJoint3D => {
-                &mut self.internal_updates.physics_joint_nodes_3d
-            }
+        let nodes = match ty.service() {
+            NodeService::Joint2D => &mut self.internal_updates.physics_joint_nodes_2d,
+            NodeService::Joint3D => &mut self.internal_updates.physics_joint_nodes_3d,
             _ => return,
         };
         if !nodes.contains(&id) {
@@ -255,13 +230,8 @@ impl Runtime {
     }
 
     fn register_physics_body(&mut self, id: NodeID, ty: NodeType) {
-        match ty {
-            NodeType::StaticBody2D
-            | NodeType::Area2D
-            | NodeType::RigidBody2D
-            | NodeType::CharacterBody2D
-            | NodeType::WaterBody2D
-            | NodeType::TileMap2D => {
+        match ty.service() {
+            NodeService::Body2D => {
                 let slot = id.index() as usize;
                 if self.internal_updates.physics_body_pos_2d.len() <= slot {
                     self.internal_updates
@@ -274,11 +244,7 @@ impl Runtime {
                     self.internal_updates.physics_body_pos_2d[slot] = pos as u32;
                 }
             }
-            NodeType::StaticBody3D
-            | NodeType::Area3D
-            | NodeType::RigidBody3D
-            | NodeType::CharacterBody3D
-            | NodeType::WaterBody3D => {
+            NodeService::Body3D => {
                 let slot = id.index() as usize;
                 if self.internal_updates.physics_body_pos_3d.len() <= slot {
                     self.internal_updates
@@ -296,10 +262,7 @@ impl Runtime {
     }
 
     fn register_button_2d(&mut self, id: NodeID, ty: NodeType) {
-        if !matches!(
-            ty,
-            NodeType::Button2D | NodeType::ImageButton2D | NodeType::NineSliceButton2D
-        ) {
+        if !matches!(ty.service(), NodeService::Button2D) {
             return;
         }
         let slot = id.index() as usize;
@@ -419,10 +382,14 @@ impl Runtime {
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
         let ipt = unsafe { InputWindow::new(&*input_ptr) };
         for id in dispatch.iter().copied() {
-            if self.nodes.get(id).is_none() || self.is_suspended_by_sub_view(id) {
+            let Some(node) = self.nodes.get(id) else {
+                continue;
+            };
+            let hook = node.node_type().update_hook();
+            if self.is_suspended_by_sub_view(id) {
                 continue;
             }
-            self.call_internal_update_node_with_context(id, &res, &ipt);
+            self.call_internal_update_node_with_context(id, hook, &res, &ipt);
         }
     }
 
@@ -443,17 +410,15 @@ impl Runtime {
         if dispatch.is_empty() {
             return;
         }
-        let resource_api = self.resource_api.clone();
-        let res = ResourceWindow::new(resource_api.as_ref());
-        let input_ptr = std::ptr::addr_of!(self.input);
-        // SAFETY: During callback dispatch, input is treated as immutable runtime state.
-        // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
-        let ipt = unsafe { InputWindow::new(&*input_ptr) };
         for id in dispatch.iter().copied() {
-            if self.nodes.get(id).is_none() || self.is_suspended_by_sub_view(id) {
+            let Some(node) = self.nodes.get(id) else {
+                continue;
+            };
+            let hook = node.node_type().fixed_update_hook();
+            if self.is_suspended_by_sub_view(id) {
                 continue;
             }
-            self.call_internal_fixed_update_node_with_context(id, &res, &ipt);
+            self.call_internal_fixed_update_node_with_context(id, hook);
         }
     }
 
@@ -474,30 +439,22 @@ impl Runtime {
     fn call_internal_update_node_with_context(
         &mut self,
         id: NodeID,
+        hook: UpdateHook,
         res: &ResourceWindow<'_, crate::RuntimeResourceApi>,
         ipt: &InputWindow<'_, perro_input_api::InputSnapshot>,
     ) {
-        if self.nodes.get(id).is_none() {
-            return;
-        }
+        // Caller validates the generational ID before entering this callback.
         self.active_runtime_nodes.push(id);
         let mut ctx = RuntimeWindow::new(self);
-        perro_internal_updates::internal_update_node(&mut ctx, res, ipt, id);
+        perro_internal_updates::dispatch_update(hook, &mut ctx, res, ipt, id);
         let _ = self.active_runtime_nodes.pop();
     }
 
-    fn call_internal_fixed_update_node_with_context(
-        &mut self,
-        id: NodeID,
-        res: &ResourceWindow<'_, crate::RuntimeResourceApi>,
-        ipt: &InputWindow<'_, perro_input_api::InputSnapshot>,
-    ) {
-        if self.nodes.get(id).is_none() {
-            return;
-        }
+    fn call_internal_fixed_update_node_with_context(&mut self, id: NodeID, hook: FixedUpdateHook) {
+        // Caller validates the generational ID before entering this callback.
         self.active_runtime_nodes.push(id);
         let mut ctx = RuntimeWindow::new(self);
-        perro_internal_updates::internal_fixed_update_node(&mut ctx, res, ipt, id);
+        perro_internal_updates::dispatch_fixed_update(hook, &mut ctx, id);
         let _ = self.active_runtime_nodes.pop();
     }
 }
@@ -505,6 +462,82 @@ impl Runtime {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tree_bone_batch_keeps_name_index_masks_and_missing_targets() {
+        use perro_nodes::{AnimationTree, Bone3D, Skeleton3D};
+        use perro_resource_api::sub_apis::{AnimationAPI, AnimationTreeAPI};
+        use perro_runtime_api::sub_apis::NodeAPI;
+        use perro_structs::{Transform3D, Vector3};
+        let mut runtime = Runtime::new();
+        let skeleton = NodeAPI::create::<Skeleton3D>(&mut runtime);
+        let tree = NodeAPI::create::<AnimationTree>(&mut runtime);
+        let rest = Transform3D {
+            position: Vector3::new(3.0, 4.0, 5.0),
+            scale: Vector3::new(2.0, 2.0, 2.0),
+            ..Transform3D::IDENTITY
+        };
+        let _ = runtime.with_node_mut::<Skeleton3D, _, _>(skeleton, |node| {
+            node.bones = vec![
+                Bone3D {
+                    name: "Head".into(),
+                    rest,
+                    pose: rest,
+                    ..Bone3D::new()
+                },
+                Bone3D::new(),
+            ];
+        });
+        let clip = runtime.resource_api.create_animation_from_bytes(
+            br#"
+[Animation]
+name="Batch"
+fps=60
+[/Animation]
+[Objects]
+Rig=Skeleton3D
+[/Objects]
+[Frame0]
+@Rig {
+    bone["Head"].position=(9,8,7)
+    bone[1].scale=(3,4,5)
+    bone[99].position=(1,1,1)
+}
+[/Frame0]
+"#,
+        );
+        let asset = runtime.resource_api.create_animation_tree_from_bytes(
+            br#"
+[AnimationTree]
+name="BatchTree"
+[/AnimationTree]
+[AnimationSlots]
+Base
+[/AnimationSlots]
+[Output]
+input=@Base
+[/Output]
+"#,
+        );
+        assert!(!clip.is_nil() && !asset.is_nil());
+        let _ = runtime.with_node_mut::<AnimationTree, _, _>(tree, |node| {
+            node.set_tree(asset);
+            node.set_clip_by_index(0, clip);
+            node.set_slot_binding(0, "Rig", skeleton);
+        });
+        for _ in 0..3 {
+            runtime.update(1.0 / 60.0);
+            runtime
+                .with_node::<Skeleton3D, _>(skeleton, |node| {
+                    assert_eq!(node.bones[0].pose.position, Vector3::new(9.0, 8.0, 7.0));
+                    assert_eq!(node.bones[0].pose.scale, rest.scale);
+                    assert_eq!(node.bones[0].rest, rest);
+                    assert_eq!(node.bones[1].pose.scale, Vector3::new(3.0, 4.0, 5.0));
+                    assert_eq!(node.bones[1].pose.position, Vector3::ZERO);
+                })
+                .expect("skeleton remains live");
+        }
+    }
 
     #[test]
     fn dispatch_snapshot_keeps_same_pass_order_when_callback_changes_membership() {

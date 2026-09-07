@@ -1,21 +1,21 @@
 use super::*;
 
 pub struct NetworkWorld {
-    tcp_hosts: Vec<Option<TcpHost>>,
-    tcp_connections: Vec<Option<TcpConnection>>,
-    udp_endpoints: Vec<Option<UdpEndpoint>>,
-    websocket_hosts: Vec<Option<WebSocketHost>>,
-    websocket_connections: Vec<Option<WebSocketConnection>>,
+    tcp_hosts: Slots<TcpHost>,
+    tcp_connections: Slots<TcpConnection>,
+    udp_endpoints: Slots<UdpEndpoint>,
+    websocket_hosts: Slots<WebSocketHost>,
+    websocket_connections: Slots<WebSocketConnection>,
 }
 
 impl NetworkWorld {
     pub fn new() -> Self {
         Self {
-            tcp_hosts: Vec::new(),
-            tcp_connections: Vec::new(),
-            udp_endpoints: Vec::new(),
-            websocket_hosts: Vec::new(),
-            websocket_connections: Vec::new(),
+            tcp_hosts: Slots::default(),
+            tcp_connections: Slots::default(),
+            udp_endpoints: Slots::default(),
+            websocket_hosts: Slots::default(),
+            websocket_connections: Slots::default(),
         }
     }
 
@@ -87,13 +87,12 @@ impl NetworkWorld {
         options: WebSocketConnectOptions,
     ) -> NetResult<()> {
         let connection = WebSocketConnection::connect_with_options(url, options)?;
-        let slot = self
-            .websocket_connections
-            .get_mut(id.0 as usize)
-            .ok_or_else(|| {
-                NetError::new(NetErrorKind::MissingHandle, "missing websocket connection")
-            })?;
-        *slot = Some(connection);
+        if !self.websocket_connections.replace(id.0, connection) {
+            return Err(NetError::new(
+                NetErrorKind::MissingHandle,
+                "missing websocket connection",
+            ));
+        }
         Ok(())
     }
 
@@ -281,8 +280,11 @@ impl NetworkWorld {
     }
 
     fn poll_accepts(&mut self, max_per_socket: usize, events: &mut Vec<NetworkEvent>) {
-        for host_index in 0..self.tcp_hosts.len() {
-            let Some(host) = self.tcp_hosts[host_index].as_ref() else {
+        let Some(host_ids) = self.tcp_hosts.live_ids() else {
+            return;
+        };
+        for &host_index in host_ids.iter() {
+            let Some(host) = self.tcp_hosts.get(host_index) else {
                 continue;
             };
             for _ in 0..max_per_socket {
@@ -298,7 +300,7 @@ impl NetworkWorld {
                     Ok(None) => break,
                     Err(err) => {
                         events.push(net_error_event(
-                            NetSource::TcpHost(TcpHostId(host_index as u32)),
+                            NetSource::TcpHost(TcpHostId(host_index)),
                             "tcp_accept",
                             err,
                         ));
@@ -315,11 +317,14 @@ impl NetworkWorld {
         max_bytes: usize,
         events: &mut Vec<NetworkEvent>,
     ) {
-        for i in 0..self.tcp_connections.len() {
-            let Some(connection) = self.tcp_connections[i].as_mut() else {
+        let Some(ids) = self.tcp_connections.live_ids() else {
+            return;
+        };
+        for &i in ids.iter() {
+            let Some(connection) = self.tcp_connections.get_mut(i) else {
                 continue;
             };
-            let id = TcpConnectionId(i as u32);
+            let id = TcpConnectionId(i);
             for _ in 0..max_per_socket {
                 match connection.poll_event(max_bytes) {
                     Ok(Some(event)) => {
@@ -329,7 +334,7 @@ impl NetworkWorld {
                             event,
                         });
                         if disconnected {
-                            self.tcp_connections[i] = None;
+                            remove_slot(&mut self.tcp_connections, i);
                             break;
                         }
                     }
@@ -353,11 +358,14 @@ impl NetworkWorld {
         max_frame_bytes: usize,
         events: &mut Vec<NetworkEvent>,
     ) {
-        for i in 0..self.tcp_connections.len() {
-            let Some(connection) = self.tcp_connections[i].as_mut() else {
+        let Some(ids) = self.tcp_connections.live_ids() else {
+            return;
+        };
+        for &i in ids.iter() {
+            let Some(connection) = self.tcp_connections.get_mut(i) else {
                 continue;
             };
-            let id = TcpConnectionId(i as u32);
+            let id = TcpConnectionId(i);
             for _ in 0..max_per_socket {
                 match connection.poll_frame_event(max_frame_bytes) {
                     Ok(Some(event)) => {
@@ -367,7 +375,7 @@ impl NetworkWorld {
                             event,
                         });
                         if disconnected {
-                            self.tcp_connections[i] = None;
+                            remove_slot(&mut self.tcp_connections, i);
                             break;
                         }
                     }
@@ -391,11 +399,14 @@ impl NetworkWorld {
         max_bytes: usize,
         events: &mut Vec<NetworkEvent>,
     ) {
-        for i in 0..self.udp_endpoints.len() {
-            let Some(endpoint) = self.udp_endpoints[i].as_ref() else {
+        let Some(ids) = self.udp_endpoints.live_ids() else {
+            return;
+        };
+        for &i in ids.iter() {
+            let Some(endpoint) = self.udp_endpoints.get(i) else {
                 continue;
             };
-            let id = UdpEndpointId(i as u32);
+            let id = UdpEndpointId(i);
             for _ in 0..max_per_socket {
                 match endpoint.poll_event(max_bytes) {
                     Ok(Some(event)) => events.push(NetworkEvent {
@@ -413,8 +424,11 @@ impl NetworkWorld {
     }
 
     fn poll_websocket_accepts(&mut self, max_per_socket: usize, events: &mut Vec<NetworkEvent>) {
-        for host_index in 0..self.websocket_hosts.len() {
-            let Some(host) = self.websocket_hosts[host_index].as_ref() else {
+        let Some(host_ids) = self.websocket_hosts.live_ids() else {
+            return;
+        };
+        for &host_index in host_ids.iter() {
+            let Some(host) = self.websocket_hosts.get(host_index) else {
                 continue;
             };
             for _ in 0..max_per_socket {
@@ -432,7 +446,7 @@ impl NetworkWorld {
                     Ok(None) => break,
                     Err(err) => {
                         events.push(net_error_event(
-                            NetSource::WebSocketHost(WebSocketHostId(host_index as u32)),
+                            NetSource::WebSocketHost(WebSocketHostId(host_index)),
                             "websocket_accept",
                             err,
                         ));
@@ -449,11 +463,14 @@ impl NetworkWorld {
         max_bytes: usize,
         events: &mut Vec<NetworkEvent>,
     ) {
-        for i in 0..self.websocket_connections.len() {
-            let Some(connection) = self.websocket_connections[i].as_mut() else {
+        let Some(ids) = self.websocket_connections.live_ids() else {
+            return;
+        };
+        for &i in ids.iter() {
+            let Some(connection) = self.websocket_connections.get_mut(i) else {
                 continue;
             };
-            let id = WebSocketConnectionId(i as u32);
+            let id = WebSocketConnectionId(i);
             for _ in 0..max_per_socket {
                 match connection.poll_event(max_bytes) {
                     Ok(Some(event)) => {
@@ -463,7 +480,7 @@ impl NetworkWorld {
                             event,
                         });
                         if disconnected {
-                            self.websocket_connections[i] = None;
+                            remove_slot(&mut self.websocket_connections, i);
                             break;
                         }
                     }
@@ -487,11 +504,14 @@ impl NetworkWorld {
         max_bytes: usize,
         events: &mut Vec<NetworkEvent>,
     ) {
-        for i in 0..self.websocket_connections.len() {
-            let Some(connection) = self.websocket_connections[i].as_mut() else {
+        let Some(ids) = self.websocket_connections.live_ids() else {
+            return;
+        };
+        for &i in ids.iter() {
+            let Some(connection) = self.websocket_connections.get_mut(i) else {
                 continue;
             };
-            let id = WebSocketConnectionId(i as u32);
+            let id = WebSocketConnectionId(i);
             for _ in 0..max_per_socket {
                 match connection.poll_variant_event(max_bytes) {
                     Ok(Some(event)) => {
@@ -501,7 +521,7 @@ impl NetworkWorld {
                             event,
                         });
                         if disconnected {
-                            self.websocket_connections[i] = None;
+                            remove_slot(&mut self.websocket_connections, i);
                             break;
                         }
                     }
@@ -566,3 +586,11 @@ fn net_error_event(source: NetSource, op: &str, err: NetError) -> NetworkEvent {
         },
     }
 }
+
+#[cfg(test)]
+#[path = "world_slot_tests.rs"]
+mod slot_tests;
+
+#[cfg(test)]
+#[path = "world_perf_tests.rs"]
+mod perf_tests;

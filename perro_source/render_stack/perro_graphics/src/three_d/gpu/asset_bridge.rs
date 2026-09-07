@@ -152,13 +152,6 @@ pub(super) fn select_mesh_lod<'a>(
     }
 }
 
-pub(crate) fn validate_mesh_source(
-    source: &str,
-    static_mesh_lookup: Option<StaticMeshLookup>,
-) -> Result<(), String> {
-    perro_graphics_assets::validate_mesh_source(source, static_mesh_lookup)
-}
-
 pub(crate) fn load_mesh3d_from_source(
     source: &str,
     static_mesh_lookup: Option<StaticMeshLookup>,

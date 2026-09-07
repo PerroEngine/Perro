@@ -1,4 +1,3 @@
-use perro_api::scene::SceneDoc;
 use std::path::Path;
 
 #[derive(Default)]
@@ -46,7 +45,14 @@ fn collect_inner(
             }
         },
     };
-    let doc = SceneDoc::parse(&text);
+    let doc = match perro_api::scene::Parser::new(&text).try_parse_scene_doc() {
+        Ok(doc) => doc,
+        Err(err) => {
+            out.error = Some(format!("{path}: {err}"));
+            stack.pop();
+            return;
+        }
+    };
     for node in doc.scene.nodes.iter() {
         let Some(root_of) = node.root_of.as_deref() else {
             continue;

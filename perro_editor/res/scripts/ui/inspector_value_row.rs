@@ -1,7 +1,7 @@
-use crate::scripts::app::editor_app as editor_app;
+use crate::scripts::app::editor_app;
 use crate::scripts::ui::editor_inspector_values::InspectorValueRow;
 use crate::scripts::ui::editor_ui::{find_named, set_ui_display};
-use crate::scripts::ui::theme as theme;
+use crate::scripts::ui::theme;
 use perro_api::prelude::*;
 use std::borrow::Cow;
 use std::sync::{Mutex, OnceLock};
@@ -108,8 +108,7 @@ fn ensure_inspector_default_button<API: ScriptAPI + ?Sized>(
     // to cover the whole expanded subtree, so anchoring there blows the
     // button up to subtree height.
     let names = inspector_row_names(idx);
-    let Some(parent) = find_named(ctx, &names.inner).or_else(|| find_named(ctx, &names.row))
-    else {
+    let Some(parent) = find_named(ctx, &names.inner).or_else(|| find_named(ctx, &names.row)) else {
         return;
     };
     let button = ctx.run.Nodes().create::<UiButton>();

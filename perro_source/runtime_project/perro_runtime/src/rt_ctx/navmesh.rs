@@ -40,9 +40,15 @@ impl NavMeshAPI for Runtime {
         point: Vector3,
         max_distance: f32,
     ) -> Option<Vector3> {
-        let (data, _) = self
+        let (data, graph) = self
             .resource_api
             .navmesh_query_data(navmesh, BitMask::ALL)?;
-        crate::runtime::navmesh::project_point_3d(&data.mesh, point, max_distance, BitMask::ALL)
+        crate::runtime::navmesh::project_point_3d_prepared(
+            &data.mesh,
+            &graph,
+            point,
+            max_distance,
+            BitMask::ALL,
+        )
     }
 }

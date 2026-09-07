@@ -205,6 +205,7 @@ impl BarkPlayer {
             entry.active_uses = entry.active_uses.saturating_add(1);
             entry.last_touched = Instant::now();
         }
+        state.playback_lookup.invalidate();
         state.playbacks.push(Playback {
             id,
             source: source_key,
@@ -306,6 +307,7 @@ impl BarkPlayer {
 
         let source_hash = perro_ids::string_to_u64(source);
         let source_key: Arc<str> = Arc::from(source);
+        state.playback_lookup.invalidate();
         state.playbacks.push(Playback {
             id: 0,
             source: source_key,
@@ -516,6 +518,7 @@ impl BarkPlayer {
                 .is_some_and(|stored| stored.as_ref() == source)
             {
                 let removed = state.midi_playbacks.swap_remove(i);
+                state.midi_playback_lookup.invalidate();
                 let _ = removed.control.send(MidiControl::Stop);
                 removed.sink.stop();
                 removed_any = true;
@@ -603,6 +606,7 @@ impl BarkPlayer {
         while i < state.midi_playbacks.len() {
             if state.midi_playbacks[i].id == id {
                 let removed = state.midi_playbacks.swap_remove(i);
+                state.midi_playback_lookup.invalidate();
                 let _ = removed.control.send(MidiControl::Stop);
                 removed.sink.stop();
                 Self::evict_unreserved_unused_locked(&mut state, now);
@@ -636,7 +640,7 @@ impl BarkPlayer {
             return false;
         };
         let master_volume = state.master_volume.max(0.0);
-        let Some(index) = state.playbacks.iter().position(|p| p.id == id) else {
+        let Some(index) = state.playback_position(id) else {
             return Self::update_midi_spatial_locked(&mut state, id, params);
         };
         let playback_bus_id = state.playbacks[index].bus_id;
@@ -663,7 +667,7 @@ impl BarkPlayer {
         params: SpatialAudioParams,
     ) -> bool {
         let master_volume = state.master_volume.max(0.0);
-        let Some(index) = state.midi_playbacks.iter().position(|p| p.id == id) else {
+        let Some(index) = state.midi_playback_position(id) else {
             return Self::update_midi_note_mixer_spatial_locked(state, id, params, master_volume);
         };
         let playback_bus_id = state.midi_playbacks[index].bus_id;
@@ -746,6 +750,7 @@ impl BarkPlayer {
             }
             while !state.midi_playbacks.is_empty() {
                 let playback = state.midi_playbacks.swap_remove(0);
+                state.midi_playback_lookup.invalidate();
                 let _ = playback.control.send(MidiControl::Stop);
                 playback.sink.stop();
             }
@@ -901,6 +906,7 @@ impl BarkPlayer {
         while i < state.midi_playbacks.len() {
             if state.midi_playbacks[i].bus_id == Some(bus_id) {
                 let removed = state.midi_playbacks.swap_remove(i);
+                state.midi_playback_lookup.invalidate();
                 let _ = removed.control.send(MidiControl::Stop);
                 removed.sink.stop();
                 removed_any = true;

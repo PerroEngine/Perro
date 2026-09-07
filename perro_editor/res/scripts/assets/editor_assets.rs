@@ -1,25 +1,25 @@
-use crate::scripts::app::editor_app as editor_app;
-use crate::scripts::app::editor_manager as editor_manager;
-use crate::scripts::app::editor_project as editor_project;
-use crate::scripts::assets::editor_file_watch as editor_file_watch;
-use crate::scripts::assets::editor_files as editor_files;
+use crate::scripts::app::editor_app;
+use crate::scripts::app::editor_manager;
+use crate::scripts::app::editor_project;
+use crate::scripts::assets::editor_file_watch;
+use crate::scripts::assets::editor_files;
 use crate::scripts::editor::main::{
     EditorState, FILE_WATCH_INTERVAL_FRAMES, LIST_DOUBLE_CLICK_FRAMES, MAX_FILES,
-    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
-    SceneSession, arm_or_confirm_destructive_action, cached_scene_doc, cached_scene_doc_shared,
+    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, SceneSession,
+    arm_or_confirm_destructive_action, cached_scene_doc, cached_scene_doc_shared,
     cached_scene_node, cancel_destructive_confirmation_for_action, capture_active_scene_session,
     clear_destructive_confirmation, clear_scene_doc_cache, restore_scene_session,
     set_state_scene_doc, set_state_scene_doc_loaded,
 };
 use crate::scripts::scene::editor_animation::*;
-use crate::scripts::scene::editor_gizmos as editor_gizmos;
+use crate::scripts::scene::editor_gizmos;
 use crate::scripts::scene::editor_nav::*;
 use crate::scripts::scene::editor_nodes::*;
-use crate::scripts::scene::editor_scene_deps as editor_scene_deps;
-use crate::scripts::scene::editor_scene as editor_scene;
+use crate::scripts::scene::editor_scene;
+use crate::scripts::scene::editor_scene_deps;
 use crate::scripts::scene::editor_viewport::*;
 use crate::scripts::ui::editor_ui::*;
-use crate::scripts::ui::editor_view as editor_view;
+use crate::scripts::ui::editor_view;
 use perro_api::prelude::*;
 use perro_api::scene::{
     SceneDoc, SceneFieldName, SceneKey, SceneNodeData, SceneNodeEntry, SceneValue, SceneValueKey,
@@ -82,6 +82,11 @@ pub fn open_project<API: ScriptAPI + ?Sized>(
         state.doc_text.clear();
         state.scene_undo_stack.clear();
         state.scene_redo_stack.clear();
+        state.scene_undo_selection.clear();
+        state.scene_redo_selection.clear();
+        state.selected_keys.clear();
+        state.selection_anchor = None;
+        state.animation_tool_open = false;
         state.preview_scene_paths.clear();
         state.preview_root = 0;
         state.preview_camera_2d = 0;
@@ -92,7 +97,7 @@ pub fn open_project<API: ScriptAPI + ?Sized>(
         state.dirty_scene_paths.clear();
         state.file_watch_frame = 0;
         state.preview_serial = 0;
-        state.selected_key = None;
+        crate::scripts::scene::editor_selection::replace(state, Vec::new());
         state.collapsed_scene_keys.clear();
         state.inspector_expanded_paths.clear();
         state.inspector_collapsed_sections.clear();
@@ -193,7 +198,8 @@ pub fn choose_create_location<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
 pub fn create_project_from_manager<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let parent = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.create_parent_dir.clone()
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     if parent.trim().is_empty() {
         set_log(ctx, "create project fail\npick location first");
         return;
@@ -230,7 +236,8 @@ pub fn create_project_from_manager<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCont
 pub fn open_recent_project<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, idx: usize) {
     let path = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.recent_projects.get(idx).cloned()
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     let Some(path) = path else {
         return;
     };
@@ -310,7 +317,8 @@ fn add_parent_folders(out: &mut Vec<String>) {
 pub fn refresh_project_assets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let root = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.project_root.clone()
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     if root.is_empty() {
         set_log(ctx, "refresh fail\nopen project first");
         refresh_all(ctx);
@@ -354,7 +362,8 @@ pub fn open_file_slot<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>,
     });
     let res_path = with_state!(ctx.run, EditorState, ctx.id, |state| {
         filtered_file_paths(state).get(idx).cloned()
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     let Some(scene_path) = res_path else {
         return;
     };
@@ -408,13 +417,15 @@ pub fn click_or_open_file_slot<API: ScriptAPI + ?Sized>(
     });
     let res_path = with_state!(ctx.run, EditorState, ctx.id, |state| {
         filtered_file_paths(state).get(idx).cloned()
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     let Some(scene_path) = res_path else {
         return;
     };
     let was_selected = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.active_asset_path == scene_path
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         state.active_asset_path = scene_path.clone();
         state.sidebar_mode = "files".to_string();
@@ -585,7 +596,10 @@ pub fn open_scene_path<API: ScriptAPI + ?Sized>(
         return;
     }
     let restored = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        let idx = state.open_paths.iter().position(|path| path == scene_path)?;
+        let idx = state
+            .open_paths
+            .iter()
+            .position(|path| path == scene_path)?;
         capture_active_scene_session(state);
         if !restore_scene_session(state, idx) {
             return None;
@@ -605,7 +619,8 @@ pub fn open_scene_path<API: ScriptAPI + ?Sized>(
     }
     let root = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.project_root.clone()
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     let abs = res_to_abs(&root, scene_path);
     let text = match FileMod::load_string(&abs) {
         Ok(text) => text,
@@ -629,7 +644,7 @@ pub fn open_scene_path<API: ScriptAPI + ?Sized>(
         state.activity_mode = "scene".to_string();
         state.sidebar_mode = "scene".to_string();
         set_state_scene_doc_loaded(state, &doc);
-        state.selected_key = first_key;
+        crate::scripts::scene::editor_selection::replace(state, first_key.into_iter().collect());
         state.collapsed_scene_keys.clear();
         state.inspector_expanded_paths.clear();
         state.inspector_collapsed_sections.clear();
@@ -656,7 +671,8 @@ pub fn open_animation_path<API: ScriptAPI + ?Sized>(
 ) {
     let root = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.project_root.clone()
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     let abs = res_to_abs(&root, anim_path);
     match FileMod::load_string(&abs) {
         Ok(text) => {
@@ -672,10 +688,7 @@ pub fn open_animation_path<API: ScriptAPI + ?Sized>(
                 crate::scripts::scene::editor_animation::load_anim_text_into_state(
                     state, anim_path, text,
                 );
-                state.log = format!(
-                    "open animation\n{}",
-                    editor_files::rel_label(anim_path)
-                );
+                state.log = format!("open animation\n{}", editor_files::rel_label(anim_path));
             });
             refresh_all(ctx);
         }
@@ -738,7 +751,8 @@ pub fn cycle_active_glb_ref<API: ScriptAPI + ?Sized>(
         } else {
             Some(state.active_glb_path.clone())
         }
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     let Some(path) = path else {
         return;
     };
@@ -822,7 +836,8 @@ pub fn shift_visible_tab_page<API: ScriptAPI + ?Sized>(
 ) {
     let idx = with_state!(ctx.run, EditorState, ctx.id, |state| {
         visible_tab_page_target(state.open_paths.len(), state.active_open, dir)
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     if let Some(idx) = idx {
         set_active_tab(ctx, idx);
     }
@@ -857,7 +872,8 @@ pub fn cycle_scene_tab<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
             return None;
         }
         Some(wrap_index(state.active_open, state.open_paths.len(), dir))
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     if let Some(idx) = idx {
         set_active_tab(ctx, idx);
     }
@@ -866,7 +882,8 @@ pub fn cycle_scene_tab<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
 pub fn close_active_scene_tab<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let idx = with_state!(ctx.run, EditorState, ctx.id, |state| {
         (!state.open_paths.is_empty()).then_some(state.active_open)
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     if let Some(idx) = idx {
         close_scene_tab(ctx, idx);
     }
@@ -885,7 +902,7 @@ pub fn close_all_scene_tabs<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
         state.dirty_scene_paths.clear();
         state.active_open = 0;
         state.doc_text.clear();
-        state.selected_key = None;
+        crate::scripts::scene::editor_selection::replace(state, Vec::new());
         state.dirty = false;
         state.log = format!("close all tabs\n{closed}");
         closed
@@ -923,7 +940,8 @@ pub fn close_scene_tab<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
     if with_state!(ctx.run, EditorState, ctx.id, |state| state
         .dirty_scene_paths
         .iter()
-        .any(|path| path == &target)).unwrap_or_default()
+        .any(|path| path == &target))
+    .unwrap_or_default()
     {
         if !active {
             set_log(
@@ -957,7 +975,7 @@ pub fn close_scene_tab<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
         if state.open_paths.is_empty() {
             state.active_open = 0;
             state.doc_text.clear();
-            state.selected_key = None;
+            crate::scripts::scene::editor_selection::replace(state, Vec::new());
             state.dirty = false;
             state.log = format!("close tab\n{closed}");
             return Some(None);
@@ -997,7 +1015,8 @@ pub fn open_first_scene<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API
             .file_paths
             .iter()
             .position(|path| path.ends_with(".scn"))
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     if let Some(slot) = slot {
         open_file_slot(ctx, slot);
     }
@@ -1030,7 +1049,8 @@ pub fn create_quick_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
             _ => return None,
         };
         Some((state.project_root.clone(), path, text, kind.to_string()))
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     let Some((root, path, text, kind)) = request else {
         set_log(ctx, "new asset fail\nopen project first");
         return;
@@ -1076,7 +1096,8 @@ pub fn create_quick_folder<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
         let dir = quick_asset_dir(state, "folder");
         let path = unique_res_folder_path(&state.project_root, &dir, "new_folder");
         Some((state.project_root.clone(), path))
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     let Some((root, path)) = request else {
         set_log(ctx, "new folder fail\nopen project first");
         return;
@@ -1112,7 +1133,8 @@ pub fn duplicate_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
         }
         let target = duplicate_res_target(&state.project_root, &source)?;
         Some((state.project_root.clone(), source, target))
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     let Some((root, source, target)) = request else {
         set_log(ctx, "dup asset fail\nselect asset");
         return;
@@ -1267,7 +1289,8 @@ pub fn delete_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
             return Some((state.project_root.clone(), path, true));
         }
         Some((state.project_root.clone(), path, false))
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     let Some((root, path, dirty_blocked)) = request else {
         set_log(ctx, "delete asset fail\nselect asset");
         return;
@@ -1341,7 +1364,7 @@ pub fn delete_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
                         return (Some(next), true);
                     }
                     state.doc_text.clear();
-                    state.selected_key = None;
+                    crate::scripts::scene::editor_selection::replace(state, Vec::new());
                     state.dirty = false;
                 }
                 (None, removed_active_open)
@@ -1364,7 +1387,8 @@ pub fn delete_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
 pub fn rename_inspector_selection<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let rename_asset = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.sidebar_mode == "files" && !state.active_asset_path.is_empty()
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     if rename_asset {
         rename_active_asset(ctx);
     } else {
@@ -1373,115 +1397,165 @@ pub fn rename_inspector_selection<API: ScriptAPI + ?Sized>(ctx: &mut ScriptConte
 }
 
 pub fn rename_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
-    let Some(raw_name) = read_text_box(ctx, "inspector_name_box") else {
+    let Some(name) = read_text_box(ctx, "inspector_name_box") else {
         return;
     };
-    let request = with_state!(ctx.run, EditorState, ctx.id, |state| {
-        if state.project_root.is_empty() || state.active_asset_path.is_empty() {
-            return None;
-        }
-        let source = state.active_asset_path.clone();
-        if source == "res://" || state.dirty_scene_paths.iter().any(|dirty| dirty == &source) {
-            return Some((state.project_root.clone(), source, String::new(), true));
-        }
-        let target = rename_res_target(&state.project_root, &source, &raw_name)?;
-        Some((state.project_root.clone(), source, target, false))
-    }).unwrap_or_default();
-    let Some((root, source, target, blocked)) = request else {
-        set_log(ctx, "rename asset fail\nbad name");
+    let target = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        rename_res_target(&state.project_root, &state.active_asset_path, &name)
+    })
+    .unwrap_or_default();
+    if let Some(target) = target {
+        move_active_asset_to(ctx, target);
+    }
+}
+
+pub fn move_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let Some(folder) = FileMod::pick_folder("Move asset: choose folder under res") else {
         return;
     };
-    if blocked {
-        set_log(ctx, &format!("rename asset blocked\nsave first\n{source}"));
-        return;
-    }
-    if source == target {
-        set_log(ctx, &format!("rename asset\nno change\n{source}"));
-        refresh_all(ctx);
-        return;
-    }
-    let source_abs = res_to_abs(&root, &source);
-    let target_abs = res_to_abs(&root, &target);
-    if Path::new(&target_abs).exists() {
-        set_log(ctx, &format!("rename asset fail\nexists\n{target}"));
-        return;
-    }
-    if let Some(parent) = Path::new(&target_abs).parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    match fs::rename(&source_abs, &target_abs) {
-        Ok(()) => {
-            let (next_open, scene_paths, dirty_paths) =
-                with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-                    for item in state.open_paths.iter_mut() {
-                        if item == &source {
-                            *item = target.clone();
-                        }
-                    }
-                    for session in state.scene_sessions.iter_mut() {
-                        if session.path == source {
-                            session.path.clone_from(&target);
-                        }
-                    }
-                    for item in state.dirty_scene_paths.iter_mut() {
-                        if item == &source {
-                            *item = target.clone();
-                        }
-                    }
-                    let active_open_path = state.open_paths.get(state.active_open).cloned();
-                    if !state.doc_text.is_empty() {
-                        let mut doc = cached_scene_doc(&state.doc_text);
-                        if rewrite_asset_refs_in_doc(&mut doc, &source, &target) {
-                            set_state_scene_doc(state, &doc);
-                            if let Some(path) = active_open_path.clone()
-                                && !state.dirty_scene_paths.iter().any(|item| item == &path)
-                            {
-                                state.dirty_scene_paths.push(path);
-                            }
-                            state.dirty = true;
-                        }
-                    }
-                    if let Ok(paths) = scan_res_paths(Path::new(&state.project_root)) {
-                        state.file_paths = paths;
-                        state.scene_paths = state
-                            .file_paths
-                            .iter()
-                            .filter(|path| path.ends_with(".scn"))
-                            .cloned()
-                            .collect();
-                    }
-                    state.active_asset_path = target.clone();
-                    state.file_scope = parent_res_folder(&target);
-                    reveal_file_path_in_tree(state, &target);
-                    state.log = format!("rename asset\n{source} -> {target}");
-                    let next_open = state
-                        .open_paths
-                        .get(state.active_open)
-                        .filter(|open| *open == &target)
-                        .cloned();
-                    (
-                        next_open,
-                        state.scene_paths.clone(),
-                        state.dirty_scene_paths.clone(),
-                    )
-                })
-                .unwrap_or((None, Vec::new(), Vec::new()));
-            let rewrite_count =
-                rewrite_clean_scene_asset_refs(&root, &scene_paths, &dirty_paths, &source, &target);
-            if rewrite_count > 0 {
-                let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-                    state.project_file_sigs = editor_file_watch::scan_project(Path::new(&root));
-                    state.log =
-                        format!("rename asset\n{source} -> {target}\nupd refs={rewrite_count}");
-                });
-            }
-            if let Some(next) = next_open {
-                open_scene_path(ctx, &next);
+    let target = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        let res = Path::new(&state.project_root)
+            .join("res")
+            .canonicalize()
+            .ok()?;
+        let folder = Path::new(&folder).canonicalize().ok()?;
+        let relative = folder.strip_prefix(res).ok()?;
+        let name = state
+            .active_asset_path
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()?;
+        let path = relative.join(name).to_string_lossy().replace('\\', "/");
+        Some(format!(
+            "res://{path}{}",
+            if state.active_asset_path.ends_with('/') {
+                "/"
             } else {
-                refresh_all(ctx);
+                ""
+            }
+        ))
+    })
+    .unwrap_or_default();
+    if let Some(target) = target {
+        move_active_asset_to(ctx, target);
+    } else {
+        set_log(ctx, "move fail\nchoose folder under res");
+    }
+}
+
+pub fn move_active_asset_to<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    target: String,
+) {
+    let request = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        capture_active_scene_session(state);
+        let source = state.active_asset_path.clone();
+        for session in &state.scene_sessions {
+            if !session.dirty {
+                continue;
+            }
+            let mut doc = cached_scene_doc(&session.doc_text);
+            if renamed_asset_ref(&session.path, &source, &target).is_some()
+                || rewrite_asset_refs_in_doc(&mut doc, &source, &target)
+            {
+                return Err(format!("save affected scene first: {}", session.path));
             }
         }
-        Err(err) => set_log(ctx, &format!("rename asset fail\n{source}\n{err}")),
+        Ok((
+            state.project_root.clone(),
+            source,
+            state.dirty_scene_paths.clone(),
+        ))
+    })
+    .unwrap_or_else(|| Err("missing editor".into()));
+    let (root, source, dirty) = match request {
+        Ok(r) => r,
+        Err(e) => {
+            set_log(ctx, &e);
+            return;
+        }
+    };
+    if source == target {
+        return;
+    }
+    match crate::scripts::assets::editor_asset_move::start(root, source, target, dirty) {
+        Ok(()) => set_log(ctx, "scan asset refs"),
+        Err(err) => set_log(ctx, &err),
+    }
+}
+
+pub fn asset_move_ready(state: &mut EditorState, root: &str, source: &str, target: &str) -> bool {
+    if state.project_root != root {
+        return false;
+    }
+    capture_active_scene_session(state);
+    !state
+        .scene_sessions
+        .iter()
+        .filter(|s| s.dirty)
+        .any(|session| {
+            renamed_asset_ref(&session.path, source, target).is_some()
+                || rewrite_asset_refs_in_doc(
+                    &mut cached_scene_doc(&session.doc_text),
+                    source,
+                    target,
+                )
+        })
+}
+
+pub fn finish_asset_move<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    source: String,
+    target: String,
+    result: Result<String, String>,
+) {
+    match result {
+        Err(err) => set_log(ctx, &format!("move fail\n{err}")),
+        Ok(log) => {
+            let rewrite_text = |text: &mut String| {
+                if text.is_empty() {
+                    return;
+                }
+                let mut doc = cached_scene_doc(text);
+                if rewrite_asset_refs_in_doc(&mut doc, &source, &target) {
+                    *text = doc.to_text();
+                }
+            };
+            let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+                for path in state
+                    .open_paths
+                    .iter_mut()
+                    .chain(state.dirty_scene_paths.iter_mut())
+                {
+                    if let Some(next) = renamed_asset_ref(path, &source, &target) {
+                        *path = next;
+                    }
+                }
+                for session in &mut state.scene_sessions {
+                    if let Some(next) = renamed_asset_ref(&session.path, &source, &target) {
+                        session.path = next;
+                    }
+                    rewrite_text(&mut session.doc_text);
+                    for text in session.undo.iter_mut().chain(session.redo.iter_mut()) {
+                        rewrite_text(text);
+                    }
+                }
+                rewrite_text(&mut state.doc_text);
+                rewrite_text(&mut state.copied_scene_text);
+                for text in state
+                    .scene_undo_stack
+                    .iter_mut()
+                    .chain(state.scene_redo_stack.iter_mut())
+                {
+                    rewrite_text(text);
+                }
+                state.active_asset_path = target.clone();
+            });
+            clear_scene_doc_cache();
+            refresh_project_assets(ctx);
+            rebuild_preview(ctx);
+            set_log(ctx, &log);
+        }
     }
 }
 
@@ -1564,16 +1638,22 @@ pub fn rewrite_asset_refs_in_value(value: &mut SceneValue, source: &str, target:
         SceneValue::Object(fields) => fields
             .to_mut()
             .iter_mut()
-            .any(|(_field, value)| rewrite_asset_refs_in_value(value, source, target)),
-        SceneValue::Array(values) => values
-            .to_mut()
-            .iter_mut()
-            .any(|value| rewrite_asset_refs_in_value(value, source, target)),
+            .fold(false, |changed, (_field, value)| {
+                rewrite_asset_refs_in_value(value, source, target) | changed
+            }),
+        SceneValue::Array(values) => values.to_mut().iter_mut().fold(false, |changed, value| {
+            rewrite_asset_refs_in_value(value, source, target) | changed
+        }),
         _ => false,
     }
 }
 
 pub fn renamed_asset_ref(path: &str, source: &str, target: &str) -> Option<String> {
+    if source.ends_with('/')
+        && let Some(tail) = path.strip_prefix(source)
+    {
+        return Some(format!("{target}{tail}"));
+    }
     if path == source {
         return Some(target.to_string());
     }
@@ -1790,7 +1870,8 @@ pub fn export_selected_glb_animation<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCo
             state.active_glb_anim_index,
             state.active_anim_player_key,
         ))
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     let Some((root, glb_path, anim_index, player_key)) = request else {
         set_log(ctx, "glb anim fail\nselect glb");
         return;
@@ -1851,7 +1932,8 @@ pub fn export_selected_glb_material<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCon
             state.active_glb_mat_index,
             state.selected_key,
         ))
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     let Some((root, glb_path, mat_index, selected_key)) = request else {
         set_log(ctx, "glb mat fail\nselect glb");
         return;

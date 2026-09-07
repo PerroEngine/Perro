@@ -152,6 +152,126 @@ fn unchanged_ui_skips_the_supersample_raster() {
 }
 
 #[test]
+fn sparse_ui_patch_matches_full_geometry_and_falls_back_on_layout_changes() {
+    pollster::block_on(async {
+        let Some((device, queue)) = test_device().await else {
+            eprintln!("skip sparse UI patch test: no wgpu adapter");
+            return;
+        };
+        let mut ui = GpuUi::new(&device, OUTPUT_FORMAT, TextureFilterMode::Linear);
+        let view = output_view(&device);
+        let mut primitives: Vec<_> = (0..64).map(|i| quad((i % 8) as f32 * 8.0)).collect();
+        cycle(&mut ui, &device, &queue, &view, &primitives, 1);
+        let full_bytes = ui.perf_counters.mesh_upload_bytes;
+        primitives[17] = quad(3.0);
+        cycle(&mut ui, &device, &queue, &view, &primitives, 2);
+        assert_eq!(ui.perf_counters.patched_primitives, 1);
+        assert_eq!(ui.perf_counters.mesh_upload_calls, 2);
+        assert_eq!(ui.perf_counters.mesh_upload_bytes * 64, full_bytes);
+        assert_eq!(ui.ui_supersample_redraws(), 2);
+        let mut reference = GpuUi::new(&device, OUTPUT_FORMAT, TextureFilterMode::Linear);
+        cycle(&mut reference, &device, &queue, &view, &primitives, 2);
+        assert_eq!(
+            bytemuck::cast_slice::<_, u8>(&ui.vertices),
+            bytemuck::cast_slice::<_, u8>(&reference.vertices)
+        );
+        assert_eq!(ui.indices, reference.indices);
+        assert_eq!(ui.meshes, reference.meshes);
+
+        // Adjacent changed primitives coalesce into one pair of queue writes.
+        primitives[17] = quad(4.0);
+        primitives[18] = quad(5.0);
+        cycle(&mut ui, &device, &queue, &view, &primitives, 3);
+        assert_eq!(ui.perf_counters.patched_primitives, 2);
+        assert_eq!(ui.perf_counters.mesh_upload_calls, 2);
+
+        let mut changed_clip = (*quad(6.0)).clone();
+        changed_clip.clip_rect.max.x = 32.0;
+        primitives[17] = Arc::new(changed_clip);
+        cycle(&mut ui, &device, &queue, &view, &primitives, 4);
+        assert_eq!(ui.perf_counters.patched_primitives, 0);
+        assert_eq!(ui.perf_counters.mesh_upload_bytes, full_bytes);
+        primitives.push(quad(7.0));
+        cycle(&mut ui, &device, &queue, &view, &primitives, 5);
+        assert_eq!(ui.perf_counters.patched_primitives, 0);
+        assert!(ui.perf_counters.mesh_upload_bytes > full_bytes);
+
+        // A source Arc change plus projected depth must use the full packer.
+        primitives[17] = quad(7.5);
+        let mut depths = vec![None; primitives.len()];
+        depths[17] = Some(Arc::from([0.25, 0.5, 0.75]));
+        let resources = ResourceStore::new();
+        let mut shared_textures = SharedTextureStore::default();
+        ui.prepare(
+            &device,
+            &queue,
+            UiPrepareInput {
+                resources: &resources,
+                shared_textures: &mut shared_textures,
+                viewport: VIEWPORT,
+                primitives: &primitives,
+                primitive_depths: &depths,
+                textures_delta: &TexturesDelta::default(),
+                texture_size: [0, 0],
+                revision: 6,
+                static_texture_lookup: None,
+            },
+        );
+        assert_eq!(ui.perf_counters.patched_primitives, 0);
+        assert!(ui.prepared_uses_depth_test);
+        assert_eq!(ui.vertices[17 * 3].depth_test, [0.25, 1.0]);
+    });
+}
+
+#[test]
+fn sparse_ui_resize_under_pixel_cap_rebuilds_all_scaled_vertices() {
+    pollster::block_on(async {
+        let Some((device, queue)) = test_device().await else {
+            eprintln!("skip capped UI resize test: no wgpu adapter");
+            return;
+        };
+        let mut ui = GpuUi::new(&device, OUTPUT_FORMAT, TextureFilterMode::Linear);
+        ui.set_max_render_pixels(u64::from(VIEWPORT[0] * VIEWPORT[1]));
+        let view = output_view(&device);
+        let mut primitives: Vec<_> = (0..64).map(|i| quad((i % 8) as f32 * 8.0)).collect();
+        cycle(&mut ui, &device, &queue, &view, &primitives, 1);
+        let old_render_size = ui.prepared_render_viewport;
+        let old_position = ui.vertices[6].pos;
+        primitives[17] = quad(3.0);
+        let resources = ResourceStore::new();
+        let mut shared_textures = SharedTextureStore::default();
+        ui.prepare(
+            &device,
+            &queue,
+            UiPrepareInput {
+                resources: &resources,
+                shared_textures: &mut shared_textures,
+                viewport: [VIEWPORT[0] * 2, VIEWPORT[1] * 2],
+                primitives: &primitives,
+                primitive_depths: &[],
+                textures_delta: &TexturesDelta::default(),
+                texture_size: [0, 0],
+                revision: 2,
+                static_texture_lookup: None,
+            },
+        );
+        assert_eq!(
+            ui.prepared_render_viewport, old_render_size,
+            "test must keep same capped render target"
+        );
+        assert_eq!(ui.perf_counters.patched_primitives, 0);
+        assert_eq!(
+            ui.vertices[6].pos,
+            [old_position[0] * 0.5, old_position[1] * 0.5]
+        );
+        assert_eq!(
+            ui.perf_counters.mesh_upload_bytes,
+            64 * (3 * std::mem::size_of::<UiVertexGpu>() + 3 * std::mem::size_of::<u32>())
+        );
+    });
+}
+
+#[test]
 fn idle_external_camera_target_skips_raster_until_written() {
     pollster::block_on(async {
         let Some((device, queue)) = test_device().await else {

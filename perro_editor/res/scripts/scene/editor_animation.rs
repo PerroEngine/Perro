@@ -1,25 +1,25 @@
-use crate::scripts::app::editor_app as editor_app;
-use crate::scripts::app::editor_manager as editor_manager;
-use crate::scripts::app::editor_project as editor_project;
+use crate::scripts::app::editor_app;
+use crate::scripts::app::editor_manager;
+use crate::scripts::app::editor_project;
 use crate::scripts::assets::editor_assets::*;
-use crate::scripts::assets::editor_file_watch as editor_file_watch;
-use crate::scripts::assets::editor_files as editor_files;
+use crate::scripts::assets::editor_file_watch;
+use crate::scripts::assets::editor_files;
 use crate::scripts::editor::main::{
     EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_ANIM_MARKERS, MAX_ANIM_TRACKS, MAX_ANIM_UNDO,
     MAX_FILES, MAX_INSPECTOR_PICKER_ROWS, MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS,
     RECENT_PROJECTS_PATH, cached_scene_doc, cached_scene_doc_shared, set_state_scene_doc,
 };
-use crate::scripts::scene::editor_gizmos as editor_gizmos;
-use crate::scripts::scene::editor_panim as panim;
-use crate::scripts::ui::theme as theme;
+use crate::scripts::scene::editor_gizmos;
 use crate::scripts::scene::editor_nav::*;
 use crate::scripts::scene::editor_nodes::*;
-use crate::scripts::scene::editor_scene_deps as editor_scene_deps;
-use crate::scripts::scene::editor_scene as editor_scene;
+use crate::scripts::scene::editor_panim as panim;
+use crate::scripts::scene::editor_scene;
+use crate::scripts::scene::editor_scene_deps;
 use crate::scripts::scene::editor_viewport::*;
 use crate::scripts::ui::editor_inspector_values::*;
 use crate::scripts::ui::editor_ui::*;
-use crate::scripts::ui::editor_view as editor_view;
+use crate::scripts::ui::editor_view;
+use crate::scripts::ui::theme;
 use perro_api::prelude::*;
 use perro_api::scene::{
     Parser, SceneDoc, SceneFieldName, SceneKey, SceneNodeData, SceneNodeEntry, SceneValue,
@@ -453,7 +453,8 @@ pub fn edit_selected_rotation<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
         } else {
             "rotation"
         }
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     edit_selected_transform(ctx, field, "inspector_rotation_box");
 }
 
@@ -539,7 +540,11 @@ pub fn selected_skeleton_kind(state: &EditorState) -> Option<(u32, bool)> {
         return None;
     }
     let doc = cached_scene_doc_shared(&state.doc_text);
-    let node = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key)?;
+    let node = doc
+        .scene
+        .nodes
+        .iter()
+        .find(|node| node.key.as_u32() == key)?;
     let node_type = node.data.node_type;
     if node_type.is_a(perro_scene::NodeType::Skeleton2D) {
         Some((key, true))
@@ -571,7 +576,8 @@ fn bone_chain_depths(parents: &[i32]) -> Vec<u32> {
 // selected bone's pose into `EditorState`. Reconciles the selected bone by
 // name so it survives structural bone reorders.
 pub fn sync_selected_skeleton_bones<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
-    let Some((key, is_2d)) = with_state!(ctx.run, EditorState, ctx.id, selected_skeleton_kind).unwrap_or_default()
+    let Some((key, is_2d)) =
+        with_state!(ctx.run, EditorState, ctx.id, selected_skeleton_kind).unwrap_or_default()
     else {
         let _ = with_state_mut!(ctx.run, EditorState, ctx.id, clear_bone_snapshot);
         return;
@@ -588,13 +594,15 @@ pub fn sync_selected_skeleton_bones<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCon
             .bones
             .iter()
             .map(|bone| (bone.name.to_string(), bone.parent))
-            .collect::<Vec<_>>()).unwrap_or_default()
+            .collect::<Vec<_>>())
+        .unwrap_or_default()
     } else {
         with_node!(ctx.run, Skeleton3D, preview_id, |node| node
             .bones
             .iter()
             .map(|bone| (bone.name.to_string(), bone.parent))
-            .collect::<Vec<_>>()).unwrap_or_default()
+            .collect::<Vec<_>>())
+        .unwrap_or_default()
     };
     if bones.is_empty() {
         let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
@@ -622,7 +630,8 @@ pub fn sync_selected_skeleton_bones<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCon
             return Some(idx);
         }
         None
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
 
     // Read the selected bone's live pose components as editable-box text.
     let pose = selected.and_then(|idx| {
@@ -644,7 +653,8 @@ pub fn sync_selected_skeleton_bones<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCon
                             format_compact_f32(bone.pose.scale.y)
                         ),
                     )
-                })).unwrap_or_default()
+                }))
+            .unwrap_or_default()
         } else {
             with_node!(ctx.run, Skeleton3D, preview_id, |node| node
                 .bones
@@ -671,7 +681,8 @@ pub fn sync_selected_skeleton_bones<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCon
                             format_compact_f32(bone.pose.scale.z)
                         ),
                     )
-                })).unwrap_or_default()
+                }))
+            .unwrap_or_default()
         }
     });
 
@@ -733,13 +744,19 @@ pub fn edit_selected_bone_pose<API: ScriptAPI + ?Sized>(
     sub_field: &str,
     text_box: &str,
 ) {
-    let Some(values) = read_text_box(ctx, text_box).and_then(|text| parse_number_list(&text)) else {
+    let Some(values) = read_text_box(ctx, text_box).and_then(|text| parse_number_list(&text))
+    else {
         set_log(ctx, "bone pose edit fail\nbad number list");
         return;
     };
     let Some((bone, key, is_2d)) = with_state!(ctx.run, EditorState, ctx.id, |state| {
-        Some((state.anim_selected_bone?, state.selected_key?, state.inspector_bone_is_2d))
-    }).unwrap_or_default() else {
+        Some((
+            state.anim_selected_bone?,
+            state.selected_key?,
+            state.inspector_bone_is_2d,
+        ))
+    })
+    .unwrap_or_default() else {
         return;
     };
     let Some(preview_id) = preview_node_for_key(ctx, key) else {
@@ -953,7 +970,8 @@ pub fn preview_bone_pose_panim_value<API: ScriptAPI + ?Sized>(
                 "scale" => Some(format!("({}, {})", bone.pose.scale.x, bone.pose.scale.y)),
                 "rotation" => Some(format!("{}", bone.pose.rotation - bone.rest.rotation)),
                 _ => None,
-            })).unwrap_or_default()
+            }))
+        .unwrap_or_default()
     } else {
         with_node!(ctx.run, Skeleton3D, preview_id, |node| node
             .bones
@@ -969,15 +987,16 @@ pub fn preview_bone_pose_panim_value<API: ScriptAPI + ?Sized>(
                     bone.pose.scale.x, bone.pose.scale.y, bone.pose.scale.z
                 )),
                 "rotation" => {
-                    let delta = (bone.rest.rotation.inverse().mul_quat(bone.pose.rotation))
-                        .normalized();
+                    let delta =
+                        (bone.rest.rotation.inverse().mul_quat(bone.pose.rotation)).normalized();
                     Some(format!(
                         "({}, {}, {}, {})",
                         delta.x, delta.y, delta.z, delta.w
                     ))
                 }
                 _ => None,
-            })).unwrap_or_default()
+            }))
+        .unwrap_or_default()
     }
 }
 
@@ -1028,7 +1047,8 @@ pub fn reset_selected_transform<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext
     if changed {
         let mode = with_state!(ctx.run, EditorState, ctx.id, |state| {
             state.viewport_mode.clone()
-        }).unwrap_or_default();
+        })
+        .unwrap_or_default();
         let fields: &[&str] = if mode == "3D" || mode == "2D" {
             &["position", "rotation", "scale"]
         } else {
@@ -1103,7 +1123,8 @@ pub fn nudge_selected_node<API: ScriptAPI + ?Sized>(
     if changed {
         let mode = with_state!(ctx.run, EditorState, ctx.id, |state| {
             state.viewport_mode.clone()
-        }).unwrap_or_default();
+        })
+        .unwrap_or_default();
         let field = if mode == "UI" {
             "translation_ratio"
         } else {
@@ -1545,7 +1566,7 @@ pub fn pick_selected_script_var_ref<API: ScriptAPI + ?Sized>(
             .nodes
             .iter()
             .find(|node| node.key.as_u32() == key)?;
-        let rows = inspector_display_rows_for_node(state, node);
+        let rows = inspector_visible_rows_for_node(state, node);
         let row = rows.get(idx)?;
         if row.source == "section" {
             if let Some(pos) = state
@@ -1582,6 +1603,10 @@ pub fn pick_selected_script_var_ref<API: ScriptAPI + ?Sized>(
             return Some(true);
         }
         if row.kind == "Bool" {
+            if crate::scripts::scene::editor_selection::keys(state).len() > 1 {
+                apply_shared_inspector_value(state, row, &SceneValue::Bool(row.value != "true"));
+                return Some(false);
+            }
             let mut doc = cached_scene_doc(&state.doc_text);
             let node = doc
                 .scene
@@ -1658,6 +1683,7 @@ pub fn pick_selected_script_var_ref<API: ScriptAPI + ?Sized>(
         return;
     }
     set_inspector_picker(ctx, true);
+    crate::scripts::assets::editor_asset_picker::start(ctx);
     refresh_all(ctx);
 }
 
@@ -1718,7 +1744,8 @@ pub fn choose_inspector_picker_row<API: ScriptAPI + ?Sized>(
             state.inspector_picker_kind.clone(),
             entry.value,
         ))
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     let Some((field, picker_kind, value)) = pick else {
         return;
     };
@@ -1732,6 +1759,47 @@ pub fn choose_inspector_picker_row<API: ScriptAPI + ?Sized>(
         });
         set_inspector_picker(ctx, false);
         add_anim_track_field(ctx, &value);
+        return;
+    }
+    let batch = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        crate::scripts::scene::editor_selection::keys(state).len() > 1
+    })
+    .unwrap_or(false);
+    if batch && picker_kind.starts_with("value_") {
+        let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+            let Some(key) = state.selected_key else {
+                return false;
+            };
+            let doc = cached_scene_doc_shared(&state.doc_text);
+            let Some(node) = doc.scene.nodes.iter().find(|n| n.key.as_u32() == key) else {
+                return false;
+            };
+            let Ok(idx) = field.parse::<usize>() else {
+                return false;
+            };
+            let rows = inspector_visible_rows_for_node(state, node);
+            let Some(row) = rows.get(idx) else {
+                return false;
+            };
+            let val = if picker_kind == "value_asset" {
+                SceneValue::Str(Cow::Owned(value.clone()))
+            } else {
+                row.enum_values
+                    .iter()
+                    .find(|(name, _)| *name == value)
+                    .map(|(_, v)| v.clone())
+                    .unwrap_or_else(|| SceneValue::Key(SceneValueKey::from(value.clone())))
+            };
+            crate::scripts::ui::editor_inspector_values::apply_shared_inspector_value(
+                state, row, &val,
+            )
+        })
+        .unwrap_or(false);
+        set_inspector_picker(ctx, false);
+        if changed {
+            rebuild_preview(ctx);
+        }
+        refresh_selection_panels(ctx);
         return;
     }
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
@@ -2088,12 +2156,7 @@ pub fn follow_player_selection<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
             return (None, false);
         }
         let doc = cached_scene_doc_shared(&state.doc_text);
-        let Some(node) = doc
-            .scene
-            .nodes
-            .iter()
-            .find(|node| node.key.as_u32() == key)
-        else {
+        let Some(node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
             return (None, false);
         };
         if node.data.type_name() != "AnimationPlayer" {
@@ -2148,7 +2211,8 @@ pub fn try_open_selected_player_clip<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCo
         };
         let path = path.to_string();
         (!path.is_empty() && path != "-").then_some(path)
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     if let Some(path) = path {
         open_animation_path(ctx, &path);
     }
@@ -2203,7 +2267,8 @@ pub fn bind_anim_selection<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
             return true;
         }
         let Some(player_key) = state.active_anim_player_key else {
-            state.log = "bind fail\nattach AnimationPlayer first\n(select player, press Bind)".to_string();
+            state.log =
+                "bind fail\nattach AnimationPlayer first\n(select player, press Bind)".to_string();
             return false;
         };
         let clip = cached_anim_doc(state);
@@ -2335,7 +2400,10 @@ pub fn resolve_anim_object_keys(state: &EditorState, clip: &panim::PanimDoc) -> 
         else {
             continue;
         };
-        if let Some(pos) = name_to_key.iter().position(|(name, _)| *name == target_name) {
+        if let Some(pos) = name_to_key
+            .iter()
+            .position(|(name, _)| *name == target_name)
+        {
             out.push((object.clone(), name_to_key[pos].1));
         }
     }
@@ -2403,14 +2471,18 @@ pub fn ensure_anim_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
     let clip_doc = panim::parse_panim(&text);
     let objects = with_state!(ctx.run, EditorState, ctx.id, |state| {
         resolve_anim_object_keys(state, &clip_doc)
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     for (object, key) in objects {
         if let Some(node) = preview_node_for_key(ctx, key) {
             let _ = ctx.run.AnimPlayer().bind(player_id, &object, node);
         }
     }
     let _ = ctx.run.AnimPlayer().pause(player_id, true);
-    let _ = ctx.run.AnimPlayer().seek_frame(player_id, playhead.max(0.0) as u32);
+    let _ = ctx
+        .run
+        .AnimPlayer()
+        .seek_frame(player_id, playhead.max(0.0) as u32);
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         state.anim_preview_player = player_id.as_u64();
         state.anim_preview_clip = clip.as_u64();
@@ -2421,7 +2493,8 @@ pub fn ensure_anim_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
 fn seek_anim_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, frame: u32) {
     let player = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.anim_preview_player
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     if player != 0 {
         let player = NodeID::from_u64(player);
         let _ = ctx.run.AnimPlayer().pause(player, true);
@@ -2468,7 +2541,11 @@ pub fn anim_total_frames(state: &EditorState) -> u32 {
 
 // Resolved timeline view window (start, len) in frame units for `state`.
 pub fn resolve_anim_view(state: &EditorState) -> (f32, f32) {
-    panim::anim_view_window(state.anim_view_start, state.anim_view_len, anim_total_frames(state))
+    panim::anim_view_window(
+        state.anim_view_start,
+        state.anim_view_len,
+        anim_total_frames(state),
+    )
 }
 
 // Center of `frame` mapped to a [0,1] ratio across the visible window.
@@ -2782,7 +2859,8 @@ pub fn save_anim_doc<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) 
             state.active_anim_path.clone(),
             state.anim_doc_text.clone(),
         ))
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     let Some((abs, path, text)) = request else {
         set_log(ctx, "anim save fail\nno open animation");
         return;
@@ -2873,9 +2951,13 @@ pub fn insert_anim_key<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
             let doc = cached_anim_doc(state);
             let track = doc.tracks.get(state.anim_selected_track).cloned()?;
             let frame = state.anim_playhead.round().max(0.0) as u32;
-            let object_type = doc.object_type(&track.object).unwrap_or("Node3D").to_string();
+            let object_type = doc
+                .object_type(&track.object)
+                .unwrap_or("Node3D")
+                .to_string();
             Some((track.object, track.field, frame, object_type, doc))
-        }).unwrap_or_default()
+        })
+        .unwrap_or_default()
     else {
         set_log(ctx, "key fail\nselect track");
         return;
@@ -2889,12 +2971,14 @@ pub fn insert_anim_key<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
                 .into_iter()
                 .find(|(name, _)| *name == object)
                 .map(|(_, key)| key)
-        }).unwrap_or_default()
+        })
+        .unwrap_or_default()
         .and_then(|key| preview_bone_pose_panim_value(ctx, key, is_2d, &bone_name, sub_field))
     } else {
         with_state!(ctx.run, EditorState, ctx.id, |state| {
             anim_key_value_from_scene(state, &clip, &object, &field)
-        }).unwrap_or_default()
+        })
+        .unwrap_or_default()
     }
     .unwrap_or_else(|| panim::default_field_value_text(&object_type, &field).to_string());
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
@@ -2926,7 +3010,11 @@ fn anim_key_value_from_scene(
         .find(|(name, _)| name == object)
         .map(|(_, key)| *key)?;
     let doc = cached_scene_doc_shared(&state.doc_text);
-    let node = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key)?;
+    let node = doc
+        .scene
+        .nodes
+        .iter()
+        .find(|node| node.key.as_u32() == key)?;
     let value = doc_field_value(&node.data, field)?;
     scene_value_to_panim_text(&value)
 }
@@ -2940,9 +3028,10 @@ pub fn delete_anim_key<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
             return false;
         };
         let playhead = state.anim_playhead.round().max(0.0) as u32;
-        let Some(frame) = doc.key_near(track_idx, playhead).filter(|frame| {
-            frame.abs_diff(playhead) <= 2
-        }) else {
+        let Some(frame) = doc
+            .key_near(track_idx, playhead)
+            .filter(|frame| frame.abs_diff(playhead) <= 2)
+        else {
             state.log = "del key fail\nno key near playhead".to_string();
             return false;
         };
@@ -2998,16 +3087,19 @@ pub fn add_anim_track_field<API: ScriptAPI + ?Sized>(
 ) {
     // Bone-path fields read the live preview pose before the state borrow.
     let bone_initial = panim::parse_bone_field(field).and_then(|(bone_name, sub_field)| {
-        let (key, is_2d) = with_state!(ctx.run, EditorState, ctx.id, selected_skeleton_kind).unwrap_or_default()?;
+        let (key, is_2d) = with_state!(ctx.run, EditorState, ctx.id, selected_skeleton_kind)
+            .unwrap_or_default()?;
         preview_bone_pose_panim_value(ctx, key, is_2d, &bone_name, sub_field)
     });
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         if state.anim_doc_text.is_empty() {
-            state.log = "track fail\nno clip open\nselect AnimationPlayer, press New .panim".to_string();
+            state.log =
+                "track fail\nno clip open\nselect AnimationPlayer, press New .panim".to_string();
             return false;
         }
         let Some(player_key) = state.active_anim_player_key else {
-            state.log = "track fail\nno AnimationPlayer attached\nselect player, press Bind".to_string();
+            state.log =
+                "track fail\nno AnimationPlayer attached\nselect player, press Bind".to_string();
             return false;
         };
         let Some(key) = state.selected_key else {
@@ -3096,7 +3188,8 @@ pub fn update_anim_editor<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
             state.anim_ruler_drag,
             state.anim_playing,
         )
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     if !open {
         return;
     }
@@ -3148,7 +3241,12 @@ const ANIM_PLAYHEAD_W: f32 = 0.0035;
 // (object, field, key_count, [(frame, open)], bound).
 type AnimTrackRow = (String, String, usize, Vec<(u32, bool)>, bool);
 
-fn style_anim_marker<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, id: NodeID, height: f32, z: i32) {
+fn style_anim_marker<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    id: NodeID,
+    height: f32,
+    z: i32,
+) {
     let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
         node.base.layout.anchor = UiAnchor::Left;
         node.base.layout.size = UiVector2::ratio(ANIM_MARKER_W, height);
@@ -3163,7 +3261,8 @@ fn style_anim_marker<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, 
 
 // Creates the runtime-only marker/playhead panels once per shell load.
 fn ensure_anim_marker_nodes<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) -> bool {
-    let playhead = with_state!(ctx.run, EditorState, ctx.id, |state| state.anim_playhead_id).unwrap_or_default();
+    let playhead = with_state!(ctx.run, EditorState, ctx.id, |state| state.anim_playhead_id)
+        .unwrap_or_default();
     if node_exists(ctx, playhead) {
         return true;
     }
@@ -3225,14 +3324,27 @@ pub fn sync_anim_transport_widgets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCont
                 view_start,
                 view_len,
             )
-        }).unwrap_or_default();
-    set_label(ctx, "anim_play_label", if playing { "Pause" } else { "Play" });
+        })
+        .unwrap_or_default();
+    set_label(
+        ctx,
+        "anim_play_label",
+        if playing { "Pause" } else { "Play" },
+    );
     set_button_fill(
         ctx,
         "anim_loop_button",
-        if looping { theme::ACCENT } else { theme::BG_WIDGET },
+        if looping {
+            theme::ACCENT
+        } else {
+            theme::BG_WIDGET
+        },
     );
-    set_text_box(ctx, "anim_frame_box", &format!("{}", playhead.round() as u32));
+    set_text_box(
+        ctx,
+        "anim_frame_box",
+        &format!("{}", playhead.round() as u32),
+    );
     set_label(ctx, "anim_len_label", &format!("/ {}", total - 1));
     if playhead_id != 0 {
         let center = anim_frame_to_ratio(playhead, view_start, view_len);
@@ -3252,7 +3364,8 @@ pub fn sync_anim_transport_widgets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCont
 pub fn refresh_anim_drawer_widgets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let open = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.anim_drawer_open && state.bottom_dock_open
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     if !open {
         return;
     }
@@ -3288,11 +3401,7 @@ pub fn refresh_anim_drawer_widgets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCont
                     track.object.clone(),
                     track.field.clone(),
                     track.keys.len(),
-                    track
-                        .keys
-                        .iter()
-                        .map(|key| (key.frame, key.open))
-                        .collect(),
+                    track.keys.iter().map(|key| (key.frame, key.open)).collect(),
                     bound,
                 )
             })
@@ -3314,7 +3423,8 @@ pub fn refresh_anim_drawer_widgets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCont
             view,
             active_frame,
         )
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     let (view_start, view_len) = view;
     let title = if path.is_empty() {
         "Animation".to_string()
@@ -3336,7 +3446,11 @@ pub fn refresh_anim_drawer_widgets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCont
     set_button_fill(
         ctx,
         "anim_save_button",
-        if dirty { theme::REVERT } else { theme::BG_WIDGET },
+        if dirty {
+            theme::REVERT
+        } else {
+            theme::BG_WIDGET
+        },
     );
     let accent = Color::from_hex(theme::ACCENT);
     let key_color = Color::from_hex(theme::TEXT_DIM);
@@ -3455,17 +3569,26 @@ fn refresh_anim_key_controls<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
                 doc.tracks.len(),
                 state.anim_track_scroll,
             )
-        }).unwrap_or_default();
+        })
+        .unwrap_or_default();
     match &active {
         Some((frame, interp, ease, value, open)) => {
             set_label(ctx, "anim_active_label", &format!("Key @ {frame}"));
-            set_label(ctx, "anim_interp_label", panim::interp_label(interp.as_deref()));
+            set_label(
+                ctx,
+                "anim_interp_label",
+                panim::interp_label(interp.as_deref()),
+            );
             set_label(ctx, "anim_ease_label", panim::ease_label(ease.as_deref()));
             set_text_box(ctx, "anim_value_box", value);
             set_button_fill(
                 ctx,
                 "anim_open_button",
-                if *open { theme::ACCENT } else { theme::BG_WIDGET },
+                if *open {
+                    theme::ACCENT
+                } else {
+                    theme::BG_WIDGET
+                },
             );
         }
         None => {
@@ -3479,12 +3602,20 @@ fn refresh_anim_key_controls<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
     set_button_fill(
         ctx,
         "anim_undo_button",
-        if undo_len > 0 { theme::BG_WIDGET } else { theme::STROKE_SOFT },
+        if undo_len > 0 {
+            theme::BG_WIDGET
+        } else {
+            theme::STROKE_SOFT
+        },
     );
     set_button_fill(
         ctx,
         "anim_redo_button",
-        if redo_len > 0 { theme::BG_WIDGET } else { theme::STROKE_SOFT },
+        if redo_len > 0 {
+            theme::BG_WIDGET
+        } else {
+            theme::STROKE_SOFT
+        },
     );
     // Track-scroll buttons only matter past the visible-row budget.
     let scrollable = track_count > MAX_ANIM_TRACKS;
@@ -3569,7 +3700,10 @@ mod anim_undo_tests {
         // Oldest entries dropped; newest retained.
         let last = format!("version-{}", MAX_ANIM_UNDO + 20 - 1);
         assert_eq!(
-            state.anim_undo_stack.last().expect("undo stack must have entry"),
+            state
+                .anim_undo_stack
+                .last()
+                .expect("undo stack must have entry"),
             &last
         );
     }

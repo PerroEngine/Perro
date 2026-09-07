@@ -195,7 +195,9 @@ pub(crate) struct AudioState {
     pub(crate) master_volume: f32,
     pub(crate) buses: HashMap<AudioBusID, BusState>,
     pub(crate) playbacks: Vec<Playback>,
+    pub(crate) playback_lookup: PlaybackLookup,
     pub(crate) midi_playbacks: Vec<MidiPlayback>,
+    pub(crate) midi_playback_lookup: PlaybackLookup,
     pub(crate) built_in_midi_mixers: Vec<BuiltInMidiMixerPlayback>,
     pub(crate) built_in_midi_mixer_index: HashMap<MidiMixerKey, usize>,
     pub(crate) built_in_midi_notes: HashMap<u64, MidiMixerKey>,
@@ -220,6 +222,50 @@ pub(crate) struct AudioState {
     // walks the playback lists once instead of per command.
     pub(crate) volumes_dirty: bool,
     pub(crate) speeds_dirty: bool,
+}
+
+/// Cache first-slot semantics, including duplicate user supplied playback IDs.
+/// Rebuild only after list edits and only for larger voice sets.
+#[derive(Default)]
+pub(crate) struct PlaybackLookup {
+    slots: HashMap<u64, usize>,
+    valid: bool,
+}
+
+impl PlaybackLookup {
+    pub(crate) fn invalidate(&mut self) {
+        self.valid = false;
+    }
+
+    pub(crate) fn find(
+        &mut self,
+        id: u64,
+        mut ids: impl ExactSizeIterator<Item = u64>,
+    ) -> Option<usize> {
+        if ids.len() <= 8 {
+            return ids.position(|candidate| candidate == id);
+        }
+        if !self.valid {
+            self.slots.clear();
+            for (index, candidate) in ids.enumerate() {
+                self.slots.entry(candidate).or_insert(index);
+            }
+            self.valid = true;
+        }
+        self.slots.get(&id).copied()
+    }
+}
+
+impl AudioState {
+    pub(crate) fn playback_position(&mut self, id: u64) -> Option<usize> {
+        self.playback_lookup
+            .find(id, self.playbacks.iter().map(|playback| playback.id))
+    }
+
+    pub(crate) fn midi_playback_position(&mut self, id: u64) -> Option<usize> {
+        self.midi_playback_lookup
+            .find(id, self.midi_playbacks.iter().map(|playback| playback.id))
+    }
 }
 
 pub(crate) struct CachedSoundFont {
@@ -646,7 +692,9 @@ impl AudioState {
             master_volume: 1.0,
             buses: HashMap::new(),
             playbacks: Vec::new(),
+            playback_lookup: PlaybackLookup::default(),
             midi_playbacks: Vec::new(),
+            midi_playback_lookup: PlaybackLookup::default(),
             built_in_midi_mixers: Vec::new(),
             built_in_midi_mixer_index: HashMap::new(),
             built_in_midi_notes: HashMap::new(),
@@ -670,6 +718,26 @@ impl AudioState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn playback_lookup_keeps_first_duplicate_after_list_edits() {
+        let mut ids = vec![9, 1, 9, 3, 4, 5, 6, 7, 8, 2];
+        let mut lookup = PlaybackLookup::default();
+        assert_eq!(lookup.find(9, ids.iter().copied()), Some(0));
+        assert_eq!(lookup.find(2, ids.iter().copied()), Some(9));
+        ids.swap_remove(0);
+        lookup.invalidate();
+        assert_eq!(lookup.find(2, ids.iter().copied()), Some(0));
+        assert_eq!(lookup.find(9, ids.iter().copied()), Some(2));
+        ids.truncate(3);
+        lookup.invalidate();
+        assert_eq!(lookup.find(9, ids.iter().copied()), Some(2));
+        assert_eq!(lookup.find(7, ids.iter().copied()), None);
+        ids.extend(10..20);
+        lookup.invalidate();
+        assert_eq!(lookup.find(19, ids.iter().copied()), Some(12));
+        assert_eq!(lookup.find(7, ids.iter().copied()), None);
+    }
 
     fn pan(x: f32) -> AudioPan {
         AudioPan::new(x, 0.0, 0.0)

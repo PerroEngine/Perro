@@ -208,7 +208,9 @@ mod bodies {
             velocity: Vector2::ZERO,
             ..body
         };
-        assert!(water_body_splashes_2d(&[floating], &water_index, &AHashMap::new(), 0.0).is_empty());
+        assert!(
+            water_body_splashes_2d(&[floating], &water_index, &AHashMap::new(), 0.0).is_empty()
+        );
     }
 
     #[test]
@@ -251,13 +253,16 @@ mod bodies {
             1
         );
         assert!(
-            water_body_splashes_3d(&[wet], &water_index, &AHashMap::new(), 0.1, &mut states).is_empty()
+            water_body_splashes_3d(&[wet], &water_index, &AHashMap::new(), 0.1, &mut states)
+                .is_empty()
         );
         assert!(
-            water_body_splashes_3d(&[dry], &water_index, &AHashMap::new(), 0.2, &mut states).is_empty()
+            water_body_splashes_3d(&[dry], &water_index, &AHashMap::new(), 0.2, &mut states)
+                .is_empty()
         );
         assert!(
-            water_body_splashes_3d(&[wet], &water_index, &AHashMap::new(), 0.3, &mut states).is_empty()
+            water_body_splashes_3d(&[wet], &water_index, &AHashMap::new(), 0.3, &mut states)
+                .is_empty()
         );
         let _ = water_body_splashes_3d(&[dry], &water_index, &AHashMap::new(), 0.4, &mut states);
         assert_eq!(
@@ -307,7 +312,8 @@ mod bodies {
             ..body
         };
         assert!(
-            water_body_splashes_3d(&[bob], &water_index, &AHashMap::new(), 0.5, &mut states).is_empty()
+            water_body_splashes_3d(&[bob], &water_index, &AHashMap::new(), 0.5, &mut states)
+                .is_empty()
         );
         assert!(
             water_body_splashes_3d(&[body], &water_index, &AHashMap::new(), 0.9, &mut states)
@@ -405,7 +411,8 @@ mod bodies {
             && let SceneNodeData::RigidBody3D(body) = &mut node.data
         {
             body.gravity_scale = 0.0;
-            body.transform.rotation = Quaternion::from_euler_xyz(0.0, 0.0, std::f32::consts::FRAC_PI_2);
+            body.transform.rotation =
+                Quaternion::from_euler_xyz(0.0, 0.0, std::f32::consts::FRAC_PI_2);
         }
 
         assert!(PhysicsAPI::apply_force_3d(
@@ -731,6 +738,7 @@ mod bodies {
 
         assert!(
             runtime
+                .physics_sync
                 .force_water_impacts_2d
                 .iter()
                 .any(|impact| impact.cavitation > 0.0)
@@ -776,10 +784,10 @@ mod bodies {
         );
         assert!(
             runtime
+                .physics_sync
                 .force_water_impacts_2d
                 .iter()
                 .any(|impact| impact.strength > 0.0 && impact.cavitation > 0.0)
         );
     }
-
 }

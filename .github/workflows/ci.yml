@@ -18,6 +18,13 @@ jobs:
         with:
           components: rustfmt
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Engine dependency direction
+        run: python tools/check_architecture.py
+
       - name: Cargo fmt
         run: cargo fmt --all -- --check
 
@@ -58,6 +65,13 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
+      - name: Restore Cargo cache
+        # Toolchain + lockfile + target host remain part of rust-cache's key.
+        # Share dependency artifacts with later Clippy and ignored-test jobs.
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ runner.os }}-workspace
+
       - name: Cargo test
         if: runner.os != 'Windows'
         env:
@@ -91,6 +105,11 @@ jobs:
         with:
           components: clippy
 
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ runner.os }}-workspace
+
       - name: Check editor scripts
         env:
           PERRO_AUDIO_DISABLED: "1"
@@ -121,6 +140,11 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ runner.os }}-workspace
+
       - name: Cargo test (ignored)
         env:
           PERRO_AUDIO_DISABLED: "1"
@@ -149,6 +173,11 @@ jobs:
         with:
           components: clippy
           targets: wasm32-unknown-unknown
+
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ runner.os }}-workspace
 
       - name: Cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings

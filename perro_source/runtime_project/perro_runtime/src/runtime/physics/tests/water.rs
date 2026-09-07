@@ -36,6 +36,7 @@ mod water {
         );
         assert!(
             runtime
+                .physics_sync
                 .force_water_impacts_3d
                 .iter()
                 .any(|impact| impact.strength > 0.0 && impact.cavitation > 0.0)

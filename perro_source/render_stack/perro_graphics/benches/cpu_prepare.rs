@@ -561,6 +561,40 @@ fn bench_3d_retained_updates(c: &mut Criterion) {
     group.finish();
 }
 
+// Measure the CPU half separately from the gpu_frame resource cases. These
+// commands change no pixels, but must still preserve setter events and refs.
+fn bench_3d_resource_metadata(c: &mut Criterion) {
+    let mut group = c.benchmark_group("graphics_3d_resource_metadata");
+    for count in [1_000u32, 10_000] {
+        for name in ["identical_material", "mesh_reservation"] {
+            group.bench_with_input(BenchmarkId::new(name, count), &count, |b, &count| {
+                let mut graphics = PerroGraphics::new();
+                let (mesh, material) = create_mesh_material(&mut graphics);
+                graphics.submit_many((0..count).map(|i| draw_3d_command(i, mesh, material)));
+                graphics.draw_frame();
+                let mut events = Vec::new();
+                b.iter(|| {
+                    let command = match name {
+                        "identical_material" => ResourceCommand::WriteMaterialData {
+                            id: material,
+                            material: Material3D::default().into(),
+                        },
+                        _ => ResourceCommand::SetMeshReserved {
+                            id: mesh,
+                            reserved: true,
+                        },
+                    };
+                    graphics.submit(RenderCommand::Resource(Box::new(command)));
+                    black_box(graphics.draw_frame_timed().expect("timing"));
+                    graphics.drain_events(&mut events);
+                    events.clear();
+                });
+            });
+        }
+    }
+    group.finish();
+}
+
 fn bench_3d_bulk_remove(c: &mut Criterion) {
     let mut group = c.benchmark_group("graphics_3d_bulk_remove");
     for count in [1_000u32, 10_000] {
@@ -916,6 +950,7 @@ criterion_group!(
     bench_2d_sprite_prepare_unique_z,
     bench_3d_draw_prepare,
     bench_3d_retained_updates,
+    bench_3d_resource_metadata,
     bench_3d_bulk_remove,
     bench_3d_revision_gate_paths,
     bench_3d_allocations,

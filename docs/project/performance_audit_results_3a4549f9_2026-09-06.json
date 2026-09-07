@@ -1,0 +1,5929 @@
+{
+  "baseline_commit": "3a4549f9beb718e3c94e2a3653ad72f5a84bd749",
+  "candidate": "uncommitted optimization snapshots; use each run SHA256, not mutable executable filename",
+  "raw_results_directory": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06",
+  "host": {
+    "cpu": "Intel Core i9-9900K, 8 cores / 16 logical",
+    "gpu": "AMD RX 7800 XT",
+    "driver": "32.0.11029.1008",
+    "os": "Windows",
+    "rustc": "1.97.1 (8bab26f4f 2026-07-14)",
+    "cargo": "1.97.1 (c980f4866 2026-06-30)"
+  },
+  "excluded": [
+    "v1 compiler-loaded timings",
+    "original shared-target base-final executables and r1/r2 timing comparisons",
+    "archive timings before assets-refresh: candidate linked stale baseline assets rlib",
+    "GPU resource-isolated1 compiler-loaded pair",
+    "preliminary single UI pair superseded by three alternating pairs"
+  ],
+  "notes": [
+    "Criterion ns arrays: lower95%, central estimate, upper95%. Compare central estimates, not stored Criterion change percentages.",
+    "I/O sample medians include whole batches unless operations_per_sample exists. Memory instrumentation runs separate from latency runs.",
+    "GPU gpu_3d_us means host CPU staging, not device GPU time. UI host total does not isolate packing; zero noop timestamps mean skipped work.",
+    "Retain measured pre-assets candidate benchmark binaries as measured-pre-assets-*.exe. Latest new-final-* files contain relinked assets; rerun archive with fresh assets. Other accepted kernels do not call the archive packer.",
+    "Aggregate tests across staged runs and replacement suites, not a single atomic cargo test execution. Concurrent unrelated source edits are outside measured snapshot claims."
+  ],
+  "criterion": [
+    {
+      "case": "runtime",
+      "name": "audit_runtime/navmesh/local/100000",
+      "base_ns": [
+        17780000.0,
+        17803000.0,
+        17835000.0
+      ],
+      "new_ns": [
+        2727.6,
+        2731.5,
+        2736.9
+      ],
+      "ratio": 6517.664287021783
+    },
+    {
+      "case": "runtime",
+      "name": "audit_runtime/tree_bones/120_bones/1_rigs",
+      "base_ns": [
+        33928.0,
+        34036.0,
+        34199.0
+      ],
+      "new_ns": [
+        12244.0,
+        12282.0,
+        12342.0
+      ],
+      "ratio": 2.771209900667644
+    },
+    {
+      "case": "runtime",
+      "name": "audit_runtime/physics_worlds/awake_1024/4",
+      "base_ns": [
+        1305800.0,
+        1307700.0,
+        1310100.0
+      ],
+      "new_ns": [
+        937180.0,
+        942620.0,
+        955890.0
+      ],
+      "ratio": 1.3873034732978295
+    },
+    {
+      "case": "runtime",
+      "name": "audit_runtime/spatial/one_candidate/10000",
+      "base_ns": [
+        8775.3,
+        8780.699999999999,
+        8789.199999999999
+      ],
+      "new_ns": [
+        2057.4,
+        2060.6,
+        2064.6
+      ],
+      "ratio": 4.2612345918664465
+    },
+    {
+      "case": "runtime",
+      "name": "audit_runtime/spatial/first_hit/100000",
+      "base_ns": [
+        1402600.0,
+        1435800.0,
+        1469900.0
+      ],
+      "new_ns": [
+        1406200.0,
+        1424600.0,
+        1448500.0
+      ],
+      "ratio": 1.0078618559595676
+    },
+    {
+      "case": "runtime",
+      "name": "audit_runtime/tree_bones/120_bones/100_rigs",
+      "base_ns": [
+        3523700.0,
+        3539500.0,
+        3559300.0
+      ],
+      "new_ns": [
+        1273800.0,
+        1276200.0,
+        1279300.0
+      ],
+      "ratio": 2.7734681084469517
+    },
+    {
+      "case": "runtime",
+      "name": "audit_runtime/spatial/one_candidate/100000",
+      "base_ns": [
+        71173.0,
+        71219.0,
+        71273.0
+      ],
+      "new_ns": [
+        2058.1,
+        2059.5,
+        2061.1000000000004
+      ],
+      "ratio": 34.58072347657198
+    },
+    {
+      "case": "runtime",
+      "name": "audit_runtime/spatial/first_hit/10000",
+      "base_ns": [
+        85466.0,
+        85638.0,
+        85892.0
+      ],
+      "new_ns": [
+        85100.0,
+        85224.0,
+        85372.0
+      ],
+      "ratio": 1.0048577865390032
+    },
+    {
+      "case": "runtime",
+      "name": "audit_runtime/navmesh/local/10000",
+      "base_ns": [
+        1740000.0,
+        1757600.0,
+        1773000.0
+      ],
+      "new_ns": [
+        1909.5,
+        1932.0,
+        1957.6
+      ],
+      "ratio": 909.7308488612837
+    },
+    {
+      "case": "runtime",
+      "name": "audit_runtime/player_bindings/100",
+      "base_ns": [
+        50611.0,
+        50631.0,
+        50654.0
+      ],
+      "new_ns": [
+        26539.0,
+        26554.0,
+        26568.0
+      ],
+      "ratio": 1.9067183851773744
+    },
+    {
+      "case": "runtime",
+      "name": "audit_runtime/navmesh/long/10000",
+      "base_ns": [
+        2479300.0,
+        2532300.0,
+        2602800.0
+      ],
+      "new_ns": [
+        570390.0,
+        593010.0,
+        626390.0
+      ],
+      "ratio": 4.270248393787626
+    },
+    {
+      "case": "runtime",
+      "name": "audit_runtime/physics_worlds/awake_1024/16",
+      "base_ns": [
+        1703800.0,
+        1707300.0,
+        1711400.0
+      ],
+      "new_ns": [
+        1227400.0,
+        1229900.0,
+        1233000.0
+      ],
+      "ratio": 1.388161639157655
+    },
+    {
+      "case": "runtime",
+      "name": "audit_runtime/navmesh/long/100000",
+      "base_ns": [
+        26626000.0,
+        26703000.0,
+        26794000.0
+      ],
+      "new_ns": [
+        8878000.0,
+        9026900.0,
+        9197100.0
+      ],
+      "ratio": 2.958158393246851
+    },
+    {
+      "case": "runtime",
+      "name": "audit_runtime/player_bindings/8",
+      "base_ns": [
+        1706.5,
+        1708.1,
+        1709.7
+      ],
+      "new_ns": [
+        1719.5,
+        1728.5,
+        1743.0
+      ],
+      "ratio": 0.9881978594156783
+    },
+    {
+      "case": "runtime",
+      "name": "audit_runtime/physics_worlds/awake_1024/1",
+      "base_ns": [
+        886420.0,
+        886990.0,
+        887650.0
+      ],
+      "new_ns": [
+        877560.0,
+        878560.0,
+        879680.0
+      ],
+      "ratio": 1.0095952467674376
+    },
+    {
+      "case": "runtime",
+      "name": "audit_runtime/tree_bones/60_bones/100_rigs",
+      "base_ns": [
+        1754800.0,
+        1757200.0,
+        1759900.0
+      ],
+      "new_ns": [
+        656890.0,
+        657700.0,
+        658580.0
+      ],
+      "ratio": 2.6717348335107194
+    },
+    {
+      "case": "runtime",
+      "name": "audit_runtime/player_bindings/1000",
+      "base_ns": [
+        3848600.0,
+        3851400.0,
+        3854000.0
+      ],
+      "new_ns": [
+        372580.0,
+        372790.0,
+        373020.0
+      ],
+      "ratio": 10.331285710453606
+    },
+    {
+      "case": "runtime",
+      "name": "audit_runtime/tree_bones/60_bones/1_rigs",
+      "base_ns": [
+        16987.0,
+        17011.0,
+        17036.0
+      ],
+      "new_ns": [
+        6146.099999999999,
+        6151.2,
+        6155.9
+      ],
+      "ratio": 2.7654766549616334
+    },
+    {
+      "case": "remaining",
+      "name": "audit_remaining/bone_collisions/dense/16",
+      "base_ns": [
+        172560.0,
+        172830.0,
+        173230.0
+      ],
+      "new_ns": [
+        107330.0,
+        107400.0,
+        107460.0
+      ],
+      "ratio": 1.609217877094972
+    },
+    {
+      "case": "remaining",
+      "name": "audit_remaining/bone_collisions/tiny_dense/16",
+      "base_ns": [
+        9865.8,
+        9872.3,
+        9880.1
+      ],
+      "new_ns": [
+        6507.3,
+        6511.599999999999,
+        6517.599999999999
+      ],
+      "ratio": 1.5161097118987652
+    },
+    {
+      "case": "remaining",
+      "name": "audit_remaining/graph/diamond/8",
+      "base_ns": [
+        1802100.0,
+        1803700.0,
+        1805400.0
+      ],
+      "new_ns": [
+        40414.0,
+        40453.0,
+        40498.0
+      ],
+      "ratio": 44.587546041084714
+    },
+    {
+      "case": "remaining",
+      "name": "audit_remaining/graph/linear/4",
+      "base_ns": [
+        24409.0,
+        24430.0,
+        24453.0
+      ],
+      "new_ns": [
+        13278.0,
+        13294.0,
+        13311.0
+      ],
+      "ratio": 1.8376711298330073
+    },
+    {
+      "case": "remaining",
+      "name": "audit_remaining/graph/diamond/4",
+      "base_ns": [
+        150860.0,
+        150990.0,
+        151140.0
+      ],
+      "new_ns": [
+        24745.0,
+        24765.0,
+        24790.0
+      ],
+      "ratio": 6.096910963052696
+    },
+    {
+      "case": "remaining",
+      "name": "audit_remaining/bone_collisions/sparse/256",
+      "base_ns": [
+        1856500.0,
+        1876300.0,
+        1914700.0
+      ],
+      "new_ns": [
+        800500.0,
+        801230.0,
+        801920.0
+      ],
+      "ratio": 2.341774521672928
+    },
+    {
+      "case": "remaining",
+      "name": "audit_remaining/bone_collisions/dense/2048",
+      "base_ns": [
+        16035000.0,
+        16050000.0,
+        16065999.999999998
+      ],
+      "new_ns": [
+        12822000.0,
+        12867000.0,
+        12915000.0
+      ],
+      "ratio": 1.2473770109582654
+    },
+    {
+      "case": "remaining",
+      "name": "audit_remaining/bone_collisions/sparse/16",
+      "base_ns": [
+        164380.0,
+        164550.0,
+        164800.0
+      ],
+      "new_ns": [
+        105530.0,
+        105630.0,
+        105760.0
+      ],
+      "ratio": 1.5577960806589037
+    },
+    {
+      "case": "remaining",
+      "name": "audit_remaining/graph/linear/8",
+      "base_ns": [
+        31748.0,
+        32049.0,
+        32584.000000000004
+      ],
+      "new_ns": [
+        20441.0,
+        20525.0,
+        20698.0
+      ],
+      "ratio": 1.5614616321559074
+    },
+    {
+      "case": "remaining",
+      "name": "audit_remaining/bone_collisions/sparse/0",
+      "base_ns": [
+        56972.0,
+        57028.0,
+        57090.0
+      ],
+      "new_ns": [
+        57320.0,
+        57376.0,
+        57447.0
+      ],
+      "ratio": 0.9939347462353597
+    },
+    {
+      "case": "remaining",
+      "name": "audit_remaining/graph/linear/0",
+      "base_ns": [
+        17213.0,
+        17222.0,
+        17231.0
+      ],
+      "new_ns": [
+        6086.0,
+        6098.6,
+        6114.8
+      ],
+      "ratio": 2.82392680287279
+    },
+    {
+      "case": "remaining",
+      "name": "audit_remaining/bone_collisions/sparse/2048",
+      "base_ns": [
+        16027999.999999998,
+        16047000.0,
+        16068999.999999998
+      ],
+      "new_ns": [
+        12851000.0,
+        12957000.0,
+        13126000.0
+      ],
+      "ratio": 1.2384811298911784
+    },
+    {
+      "case": "remaining",
+      "name": "audit_remaining/bone_collisions/tiny_sparse/16",
+      "base_ns": [
+        5385.900000000001,
+        5398.1,
+        5411.6
+      ],
+      "new_ns": [
+        5629.400000000001,
+        5642.2,
+        5662.0
+      ],
+      "ratio": 0.956736733898125
+    },
+    {
+      "case": "remaining",
+      "name": "audit_remaining/bone_collisions/dense/0",
+      "base_ns": [
+        56820.0,
+        56863.0,
+        56916.0
+      ],
+      "new_ns": [
+        57397.0,
+        57462.0,
+        57537.0
+      ],
+      "ratio": 0.9895757196060004
+    },
+    {
+      "case": "remaining",
+      "name": "audit_remaining/bone_collisions/dense/256",
+      "base_ns": [
+        1861000.0,
+        1862800.0,
+        1864900.0
+      ],
+      "new_ns": [
+        801820.0,
+        802370.0,
+        803100.0
+      ],
+      "ratio": 2.3216221942495356
+    },
+    {
+      "case": "remaining",
+      "name": "audit_remaining/graph/diamond/0",
+      "base_ns": [
+        16967.0,
+        16985.0,
+        17011.0
+      ],
+      "new_ns": [
+        6196.4,
+        6201.900000000001,
+        6207.4
+      ],
+      "ratio": 2.738676857092181
+    },
+    {
+      "case": "voices",
+      "name": "audit_audio/update_voice/last/256",
+      "base_ns": [
+        233.04,
+        241.18,
+        248.02
+      ],
+      "new_ns": [
+        120.37,
+        125.96,
+        130.86
+      ],
+      "ratio": 1.914734836456018
+    },
+    {
+      "case": "voices",
+      "name": "audit_audio/update_voice/cycle/256",
+      "base_ns": [
+        180.02,
+        184.94,
+        189.46
+      ],
+      "new_ns": [
+        124.22,
+        129.26,
+        133.9
+      ],
+      "ratio": 1.430759709113415
+    },
+    {
+      "case": "voices",
+      "name": "audit_audio/update_voice/last/1000",
+      "base_ns": [
+        964.89,
+        1086.4,
+        1215.5
+      ],
+      "new_ns": [
+        148.66,
+        167.18,
+        186.88
+      ],
+      "ratio": 6.498384974279221
+    },
+    {
+      "case": "voices",
+      "name": "audit_audio/update_voice/cycle/32",
+      "base_ns": [
+        81.12,
+        81.226,
+        81.339
+      ],
+      "new_ns": [
+        88.595,
+        88.835,
+        89.126
+      ],
+      "ratio": 0.9143468227612991
+    },
+    {
+      "case": "voices",
+      "name": "audit_audio/update_voice/last/32",
+      "base_ns": [
+        87.68,
+        87.897,
+        88.2
+      ],
+      "new_ns": [
+        86.879,
+        87.271,
+        88.077
+      ],
+      "ratio": 1.0071730586334522
+    },
+    {
+      "case": "voices",
+      "name": "audit_audio/update_voice/last/8",
+      "base_ns": [
+        71.877,
+        72.535,
+        74.107
+      ],
+      "new_ns": [
+        73.603,
+        73.637,
+        73.67
+      ],
+      "ratio": 0.9850346972310116
+    },
+    {
+      "case": "voices",
+      "name": "audit_audio/update_voice/cycle/8",
+      "base_ns": [
+        72.201,
+        72.235,
+        72.275
+      ],
+      "new_ns": [
+        74.574,
+        74.606,
+        74.642
+      ],
+      "ratio": 0.9682197142320994
+    },
+    {
+      "case": "voices",
+      "name": "audit_audio/update_voice/last/1",
+      "base_ns": [
+        68.544,
+        68.573,
+        68.606
+      ],
+      "new_ns": [
+        70.392,
+        70.415,
+        70.436
+      ],
+      "ratio": 0.9738408009657031
+    },
+    {
+      "case": "voices",
+      "name": "audit_audio/update_voice/cycle/1000",
+      "base_ns": [
+        532.65,
+        584.14,
+        634.5
+      ],
+      "new_ns": [
+        162.29,
+        183.23,
+        206.16
+      ],
+      "ratio": 3.1880150630355293
+    },
+    {
+      "case": "voices",
+      "name": "audit_audio/update_voice/cycle/1",
+      "base_ns": [
+        70.177,
+        70.2,
+        70.224
+      ],
+      "new_ns": [
+        71.514,
+        71.617,
+        71.846
+      ],
+      "ratio": 0.9802141949537121
+    },
+    {
+      "case": "metadata",
+      "name": "graphics_3d_resource_metadata/identical_material/10000",
+      "base_ns": [
+        105320.0,
+        105620.0,
+        105990.0
+      ],
+      "new_ns": [
+        1370.5,
+        1376.1000000000001,
+        1382.7
+      ],
+      "ratio": 76.75314294019329
+    },
+    {
+      "case": "metadata",
+      "name": "graphics_3d_resource_metadata/mesh_reservation/1000",
+      "base_ns": [
+        1631.3999999999999,
+        1648.1,
+        1668.1999999999998
+      ],
+      "new_ns": [
+        1623.0,
+        1637.3,
+        1652.6000000000001
+      ],
+      "ratio": 1.00659622549319
+    },
+    {
+      "case": "metadata",
+      "name": "graphics_3d_resource_metadata/identical_material/1000",
+      "base_ns": [
+        12018.0,
+        12119.0,
+        12221.0
+      ],
+      "new_ns": [
+        1366.5,
+        1372.2,
+        1377.8
+      ],
+      "ratio": 8.831802944177234
+    },
+    {
+      "case": "metadata",
+      "name": "graphics_3d_resource_metadata/mesh_reservation/10000",
+      "base_ns": [
+        1972.9,
+        2151.8,
+        2324.1
+      ],
+      "new_ns": [
+        1954.9,
+        2075.8999999999996,
+        2202.1000000000004
+      ],
+      "ratio": 1.0365624548388654
+    },
+    {
+      "case": "mesh",
+      "name": "resource_mesh_completed/compressed_pmesh/10000",
+      "base_ns": [
+        2466500.0,
+        2508300.0,
+        2551300.0
+      ],
+      "new_ns": [
+        1368900.0,
+        1388000.0,
+        1410000.0
+      ],
+      "ratio": 1.8071325648414986
+    },
+    {
+      "case": "mesh",
+      "name": "resource_mesh_completed/compressed_pmesh/1000",
+      "base_ns": [
+        344950.0,
+        357180.0,
+        368870.0
+      ],
+      "new_ns": [
+        220710.0,
+        224600.0,
+        228690.0
+      ],
+      "ratio": 1.590293855743544
+    },
+    {
+      "case": "texture",
+      "name": "resource_texture_completed/compressed_ptex/32",
+      "base_ns": [
+        18408000.0,
+        18567000.0,
+        18738000.0
+      ],
+      "new_ns": [
+        18654000.0,
+        18934000.0,
+        19245000.0
+      ],
+      "ratio": 0.9806168796873349
+    },
+    {
+      "case": "texture",
+      "name": "resource_texture_completed/compressed_ptex/4",
+      "base_ns": [
+        2551200.0,
+        2808200.0,
+        3276100.0
+      ],
+      "new_ns": [
+        2574600.0,
+        2661900.0,
+        2767800.0
+      ],
+      "ratio": 1.0549607423269094
+    },
+    {
+      "case": "nested",
+      "name": "audit_nested_fallback/variant_patch_8/8",
+      "base_ns": [
+        1738.5,
+        1739.4,
+        1740.3999999999999
+      ],
+      "new_ns": [
+        1728.2,
+        1729.2,
+        1730.8
+      ],
+      "ratio": 1.0058986814712005
+    },
+    {
+      "case": "nested",
+      "name": "audit_nested_fallback/variant_patch_64/4096",
+      "base_ns": [
+        8763000.0,
+        8787400.0,
+        8837200.0
+      ],
+      "new_ns": [
+        8759600.0,
+        8761400.0,
+        8763600.0
+      ],
+      "ratio": 1.0029675622617389
+    },
+    {
+      "case": "nested",
+      "name": "audit_nested_fallback/typed_get_last/8",
+      "base_ns": [
+        1349.1,
+        1349.6,
+        1350.4
+      ],
+      "new_ns": [
+        1363.0,
+        1363.5,
+        1364.2
+      ],
+      "ratio": 0.9898056472313898
+    },
+    {
+      "case": "nested",
+      "name": "audit_nested_fallback/variant_patch_1/128",
+      "base_ns": [
+        4170.4,
+        4173.4,
+        4177.5
+      ],
+      "new_ns": [
+        4166.5,
+        4188.799999999999,
+        4218.099999999999
+      ],
+      "ratio": 0.9963235294117648
+    },
+    {
+      "case": "nested",
+      "name": "audit_nested_fallback/direct_typed_set_control/8",
+      "base_ns": [
+        36.159,
+        36.193,
+        36.227
+      ],
+      "new_ns": [
+        36.142,
+        36.162,
+        36.181
+      ],
+      "ratio": 1.0008572534704938
+    },
+    {
+      "case": "nested",
+      "name": "audit_nested_fallback/typed_get_last/128",
+      "base_ns": [
+        30985.0,
+        31009.0,
+        31038.0
+      ],
+      "new_ns": [
+        31421.0,
+        31453.0,
+        31492.0
+      ],
+      "ratio": 0.9858836994881252
+    },
+    {
+      "case": "nested",
+      "name": "audit_nested_fallback/variant_patch_1/4096",
+      "base_ns": [
+        138650.0,
+        138700.0,
+        138760.0
+      ],
+      "new_ns": [
+        138360.0,
+        138430.0,
+        138520.0
+      ],
+      "ratio": 1.001950444267861
+    },
+    {
+      "case": "nested",
+      "name": "audit_nested_fallback/direct_typed_set_control/128",
+      "base_ns": [
+        82.966,
+        82.985,
+        83.012
+      ],
+      "new_ns": [
+        82.953,
+        83.113,
+        83.408
+      ],
+      "ratio": 0.9984599280497636
+    },
+    {
+      "case": "nested",
+      "name": "audit_nested_fallback/typed_set_last/128",
+      "base_ns": [
+        61182.0,
+        61220.0,
+        61270.0
+      ],
+      "new_ns": [
+        60149.0,
+        60215.0,
+        60292.0
+      ],
+      "ratio": 1.016690193473387
+    },
+    {
+      "case": "nested",
+      "name": "audit_nested_fallback/typed_set_last/8",
+      "base_ns": [
+        2628.7,
+        2630.1,
+        2631.5
+      ],
+      "new_ns": [
+        2588.5,
+        2589.5,
+        2591.2999999999997
+      ],
+      "ratio": 1.015678702452211
+    },
+    {
+      "case": "nested",
+      "name": "audit_nested_fallback/variant_patch_8/128",
+      "base_ns": [
+        31395.0,
+        31423.0,
+        31466.0
+      ],
+      "new_ns": [
+        31874.0,
+        31952.0,
+        32070.0
+      ],
+      "ratio": 0.9834439158738107
+    },
+    {
+      "case": "nested",
+      "name": "audit_nested_fallback/variant_patch_8/4096",
+      "base_ns": [
+        1108400.0,
+        1109100.0,
+        1109700.0
+      ],
+      "new_ns": [
+        1104200.0,
+        1104600.0,
+        1105000.0
+      ],
+      "ratio": 1.0040738728951657
+    },
+    {
+      "case": "nested",
+      "name": "audit_nested_fallback/variant_patch_1/8",
+      "base_ns": [
+        449.24,
+        449.39,
+        449.6
+      ],
+      "new_ns": [
+        448.82,
+        449.0,
+        449.22
+      ],
+      "ratio": 1.00086859688196
+    },
+    {
+      "case": "nested",
+      "name": "audit_nested_fallback/variant_patch_64/128",
+      "base_ns": [
+        195330.0,
+        195740.0,
+        196390.0
+      ],
+      "new_ns": [
+        194430.0,
+        195440.0,
+        197380.0
+      ],
+      "ratio": 1.0015349979533361
+    },
+    {
+      "case": "nested",
+      "name": "audit_nested_fallback/typed_set_last/4096",
+      "base_ns": [
+        2476400.0,
+        2481800.0,
+        2487900.0
+      ],
+      "new_ns": [
+        2460400.0,
+        2464400.0,
+        2469600.0
+      ],
+      "ratio": 1.0070605421197858
+    },
+    {
+      "case": "nested",
+      "name": "audit_nested_fallback/typed_get_last/4096",
+      "base_ns": [
+        1307600.0,
+        1310700.0,
+        1316100.0
+      ],
+      "new_ns": [
+        1318300.0,
+        1326500.0,
+        1341000.0
+      ],
+      "ratio": 0.9880889558989823
+    },
+    {
+      "case": "nested",
+      "name": "audit_nested_fallback/direct_typed_set_control/4096",
+      "base_ns": [
+        127.64,
+        127.67,
+        127.72
+      ],
+      "new_ns": [
+        127.65,
+        127.71,
+        127.78
+      ],
+      "ratio": 0.9996867903844648
+    }
+  ],
+  "sample_probes": [
+    {
+      "case": "idle_socket kind=tcp_frame max_bytes=4096 operations=10000",
+      "base_log": "final-base-net-isolated1.txt",
+      "new_log": "final-new-net-isolated1.txt",
+      "base": {
+        "case": "idle_socket kind=tcp_frame max_bytes=4096 operations=10000",
+        "samples_ns": [
+          6667500,
+          6603300,
+          6607700,
+          6584800,
+          6642400,
+          6598400,
+          6609100,
+          6616100,
+          6649500,
+          6610000,
+          6576400,
+          6630200,
+          6577200,
+          6594900,
+          6590700
+        ],
+        "operations_per_sample": 10000
+      },
+      "new": {
+        "case": "idle_socket kind=tcp_frame max_bytes=4096 operations=10000",
+        "samples_ns": [
+          3796000,
+          3777500,
+          3785800,
+          3772700,
+          3784000,
+          3771400,
+          3790200,
+          3797800,
+          3811500,
+          3791200,
+          3803000,
+          3783700,
+          3788000,
+          3781400,
+          3787700
+        ],
+        "operations_per_sample": 10000
+      },
+      "base_median_ns": 6607700,
+      "new_median_ns": 3787700
+    },
+    {
+      "case": "idle_socket kind=tcp_frame max_bytes=65536 operations=10000",
+      "base_log": "final-base-net-isolated1.txt",
+      "new_log": "final-new-net-isolated1.txt",
+      "base": {
+        "case": "idle_socket kind=tcp_frame max_bytes=65536 operations=10000",
+        "samples_ns": [
+          6643000,
+          6632300,
+          6591700,
+          6620100,
+          6586200,
+          6622900,
+          6608700,
+          6600000,
+          6597600,
+          6604000,
+          6658300,
+          6618700,
+          6682900,
+          6606900,
+          6599900
+        ],
+        "operations_per_sample": 10000
+      },
+      "new": {
+        "case": "idle_socket kind=tcp_frame max_bytes=65536 operations=10000",
+        "samples_ns": [
+          3790700,
+          3800700,
+          3797200,
+          3780600,
+          3791700,
+          3781900,
+          3798300,
+          3775400,
+          3792600,
+          3809600,
+          3784700,
+          3781700,
+          3781500,
+          3815400,
+          3770600
+        ],
+        "operations_per_sample": 10000
+      },
+      "base_median_ns": 6608700,
+      "new_median_ns": 3790700
+    },
+    {
+      "case": "idle_socket kind=tcp_raw max_bytes=4096 operations=10000",
+      "base_log": "final-base-net-isolated1.txt",
+      "new_log": "final-new-net-isolated1.txt",
+      "base": {
+        "case": "idle_socket kind=tcp_raw max_bytes=4096 operations=10000",
+        "samples_ns": [
+          4882200,
+          4995800,
+          5648800,
+          4763500,
+          4790900,
+          4743600,
+          4733600,
+          4711100,
+          4764700,
+          4749200,
+          4716300,
+          4754100,
+          4739200,
+          4747500,
+          4747900
+        ],
+        "operations_per_sample": 10000
+      },
+      "new": {
+        "case": "idle_socket kind=tcp_raw max_bytes=4096 operations=10000",
+        "samples_ns": [
+          3305300,
+          3286000,
+          3306500,
+          3289300,
+          3287900,
+          3288500,
+          3305600,
+          3279000,
+          3273900,
+          3277500,
+          3296800,
+          3297500,
+          3288000,
+          3290000,
+          3275300
+        ],
+        "operations_per_sample": 10000
+      },
+      "base_median_ns": 4749200,
+      "new_median_ns": 3288500
+    },
+    {
+      "case": "idle_socket kind=tcp_raw max_bytes=65536 operations=10000",
+      "base_log": "final-base-net-isolated1.txt",
+      "new_log": "final-new-net-isolated1.txt",
+      "base": {
+        "case": "idle_socket kind=tcp_raw max_bytes=65536 operations=10000",
+        "samples_ns": [
+          18031400,
+          18036600,
+          18061300,
+          17987300,
+          17997300,
+          63683200,
+          20267800,
+          19715000,
+          19423800,
+          18836100,
+          19169100,
+          18838000,
+          18868600,
+          18716100,
+          18719900
+        ],
+        "operations_per_sample": 10000
+      },
+      "new": {
+        "case": "idle_socket kind=tcp_raw max_bytes=65536 operations=10000",
+        "samples_ns": [
+          3298600,
+          3270500,
+          3272000,
+          3272000,
+          3288400,
+          3287000,
+          3280600,
+          3279900,
+          3286200,
+          3274300,
+          3281800,
+          3277800,
+          3280100,
+          3287900,
+          3280400
+        ],
+        "operations_per_sample": 10000
+      },
+      "base_median_ns": 18836100,
+      "new_median_ns": 3280400
+    },
+    {
+      "case": "idle_socket kind=udp max_bytes=4096 operations=10000",
+      "base_log": "final-base-net-isolated1.txt",
+      "new_log": "final-new-net-isolated1.txt",
+      "base": {
+        "case": "idle_socket kind=udp max_bytes=4096 operations=10000",
+        "samples_ns": [
+          5227900,
+          5205600,
+          5227400,
+          5278000,
+          5229300,
+          5266700,
+          5206300,
+          5225100,
+          5269300,
+          5200800,
+          5222900,
+          5244900,
+          5224200,
+          5224800,
+          5224900
+        ],
+        "operations_per_sample": 10000
+      },
+      "new": {
+        "case": "idle_socket kind=udp max_bytes=4096 operations=10000",
+        "samples_ns": [
+          3799000,
+          3778600,
+          3775500,
+          3784600,
+          3777200,
+          3778500,
+          3777000,
+          3784500,
+          3777700,
+          3779400,
+          3776800,
+          3795200,
+          3779200,
+          3777200,
+          3778600
+        ],
+        "operations_per_sample": 10000
+      },
+      "base_median_ns": 5225100,
+      "new_median_ns": 3778600
+    },
+    {
+      "case": "idle_socket kind=udp max_bytes=65536 operations=10000",
+      "base_log": "final-base-net-isolated1.txt",
+      "new_log": "final-new-net-isolated1.txt",
+      "base": {
+        "case": "idle_socket kind=udp max_bytes=65536 operations=10000",
+        "samples_ns": [
+          18969000,
+          18908100,
+          18942200,
+          19075800,
+          18935900,
+          18913000,
+          19020900,
+          18945600,
+          18926000,
+          19008800,
+          19033600,
+          18928400,
+          18940100,
+          18871800,
+          18923200
+        ],
+        "operations_per_sample": 10000
+      },
+      "new": {
+        "case": "idle_socket kind=udp max_bytes=65536 operations=10000",
+        "samples_ns": [
+          3813300,
+          3776300,
+          3778600,
+          3778200,
+          3794900,
+          3763100,
+          3755500,
+          3776000,
+          3810500,
+          3778700,
+          3782000,
+          3777900,
+          3814400,
+          3788200,
+          3793700
+        ],
+        "operations_per_sample": 10000
+      },
+      "base_median_ns": 18940100,
+      "new_median_ns": 3778700
+    },
+    {
+      "case": "tcp_queue_append count=1000",
+      "base_log": "final-base-net-isolated1.txt",
+      "new_log": "final-new-net-isolated1.txt",
+      "base": {
+        "case": "tcp_queue_append count=1000",
+        "samples_ns": [
+          547900,
+          505700,
+          499600,
+          503700,
+          500200,
+          497900,
+          497900,
+          504000,
+          502500,
+          502700,
+          515800,
+          498400,
+          498000,
+          497800,
+          506400
+        ],
+        "operations_per_sample": 1
+      },
+      "new": {
+        "case": "tcp_queue_append count=1000",
+        "samples_ns": [
+          21900,
+          15100,
+          15700,
+          15100,
+          15500,
+          15200,
+          15500,
+          15000,
+          15600,
+          15200,
+          15400,
+          14900,
+          15400,
+          14900,
+          18500
+        ],
+        "operations_per_sample": 1
+      },
+      "base_median_ns": 502500,
+      "new_median_ns": 15400
+    },
+    {
+      "case": "tcp_queue_append count=10000",
+      "base_log": "final-base-net-isolated1.txt",
+      "new_log": "final-new-net-isolated1.txt",
+      "base": {
+        "case": "tcp_queue_append count=10000",
+        "samples_ns": [
+          49465200,
+          48618600,
+          48486800,
+          48616800,
+          48727600,
+          48904800,
+          48324100,
+          48667400,
+          48959700,
+          48658300,
+          48872000,
+          48554600,
+          48794600,
+          48653300,
+          50082800
+        ],
+        "operations_per_sample": 1
+      },
+      "new": {
+        "case": "tcp_queue_append count=10000",
+        "samples_ns": [
+          216300,
+          141700,
+          103100,
+          97200,
+          167500,
+          146300,
+          102300,
+          125700,
+          97500,
+          197600,
+          141600,
+          159500,
+          131600,
+          163800,
+          98100
+        ],
+        "operations_per_sample": 1
+      },
+      "base_median_ns": 48667400,
+      "new_median_ns": 141600
+    },
+    {
+      "case": "slot_churn_10000_id0",
+      "base_log": "final-base-slots-isolated1.txt",
+      "new_log": "final-new-slots-isolated1.txt",
+      "base": {
+        "case": "slot_churn_10000_id0",
+        "operations_per_sample": 10000,
+        "samples_ns": [
+          26700,
+          31000,
+          26700,
+          28200,
+          26700,
+          26700,
+          26700,
+          26700,
+          26700,
+          26700,
+          26700,
+          26700,
+          26600,
+          26600,
+          26600,
+          26600,
+          26600,
+          26700,
+          26700,
+          26600
+        ]
+      },
+      "new": {
+        "case": "slot_churn_10000_id0",
+        "operations_per_sample": 10000,
+        "samples_ns": [
+          69500,
+          69300,
+          69400,
+          69400,
+          69400,
+          69400,
+          69300,
+          69300,
+          71700,
+          69400,
+          69400,
+          69400,
+          69500,
+          69400,
+          69400,
+          69300,
+          69400,
+          69400,
+          69400,
+          69400
+        ]
+      },
+      "base_median_ns": 26700.0,
+      "new_median_ns": 69400.0
+    },
+    {
+      "case": "slot_churn_10000_id9999",
+      "base_log": "final-base-slots-isolated1.txt",
+      "new_log": "final-new-slots-isolated1.txt",
+      "base": {
+        "case": "slot_churn_10000_id9999",
+        "operations_per_sample": 10000,
+        "samples_ns": [
+          35518300,
+          35446500,
+          35452500,
+          35534800,
+          35413800,
+          35489800,
+          35644000,
+          35511100,
+          35496600,
+          35474300,
+          35562500,
+          35521800,
+          35544200,
+          35516200,
+          35494500,
+          35489500,
+          35642800,
+          35467700,
+          35444500,
+          35523100
+        ]
+      },
+      "new": {
+        "case": "slot_churn_10000_id9999",
+        "operations_per_sample": 10000,
+        "samples_ns": [
+          69600,
+          71000,
+          69400,
+          69400,
+          69400,
+          69400,
+          69400,
+          69500,
+          69400,
+          69400,
+          69300,
+          69300,
+          69300,
+          69300,
+          69300,
+          70400,
+          69300,
+          69400,
+          69400,
+          69500
+        ]
+      },
+      "base_median_ns": 35503850.0,
+      "new_median_ns": 69400.0
+    },
+    {
+      "case": "slot_churn_16_id0",
+      "base_log": "final-base-slots-isolated1.txt",
+      "new_log": "final-new-slots-isolated1.txt",
+      "base": {
+        "case": "slot_churn_16_id0",
+        "operations_per_sample": 10000,
+        "samples_ns": [
+          26700,
+          26700,
+          26700,
+          26700,
+          26700,
+          26600,
+          26700,
+          26700,
+          26600,
+          26600,
+          26600,
+          26700,
+          26700,
+          26600,
+          26600,
+          26600,
+          26600,
+          26600,
+          26600,
+          26700
+        ]
+      },
+      "new": {
+        "case": "slot_churn_16_id0",
+        "operations_per_sample": 10000,
+        "samples_ns": [
+          69500,
+          69200,
+          71600,
+          69300,
+          69300,
+          69200,
+          69300,
+          69300,
+          69300,
+          69300,
+          69200,
+          69300,
+          69300,
+          69300,
+          69300,
+          69300,
+          69300,
+          70500,
+          69300,
+          69300
+        ]
+      },
+      "base_median_ns": 26650.0,
+      "new_median_ns": 69300.0
+    },
+    {
+      "case": "slot_churn_16_id15",
+      "base_log": "final-base-slots-isolated1.txt",
+      "new_log": "final-new-slots-isolated1.txt",
+      "base": {
+        "case": "slot_churn_16_id15",
+        "operations_per_sample": 10000,
+        "samples_ns": [
+          72800,
+          72700,
+          72700,
+          72700,
+          72700,
+          72700,
+          72600,
+          72600,
+          72700,
+          72700,
+          72700,
+          72700,
+          72700,
+          74800,
+          72700,
+          72600,
+          72600,
+          72700,
+          72700,
+          72700
+        ]
+      },
+      "new": {
+        "case": "slot_churn_16_id15",
+        "operations_per_sample": 10000,
+        "samples_ns": [
+          69400,
+          69300,
+          69200,
+          69300,
+          69200,
+          69300,
+          69300,
+          69300,
+          69300,
+          69400,
+          71500,
+          69300,
+          69300,
+          69300,
+          69200,
+          69300,
+          69300,
+          69300,
+          69300,
+          69300
+        ]
+      },
+      "base_median_ns": 72700.0,
+      "new_median_ns": 69300.0
+    },
+    {
+      "case": "slot_insert_10000",
+      "base_log": "final-base-slots-isolated1.txt",
+      "new_log": "final-new-slots-isolated1.txt",
+      "base": {
+        "case": "slot_insert_10000",
+        "operations_per_sample": 10000,
+        "samples_ns": [
+          17721300,
+          17621100,
+          17667000,
+          17628200,
+          17630400,
+          17661400,
+          17681200,
+          17634400,
+          17897500,
+          17620900,
+          17609100,
+          17669800,
+          17602600,
+          17605800,
+          17626000,
+          17679300,
+          17618000,
+          17621200,
+          17607100,
+          17729600
+        ]
+      },
+      "new": {
+        "case": "slot_insert_10000",
+        "operations_per_sample": 10000,
+        "samples_ns": [
+          113200,
+          81000,
+          74100,
+          50700,
+          72700,
+          49900,
+          67400,
+          49900,
+          68200,
+          48800,
+          72400,
+          49000,
+          65800,
+          48800,
+          68700,
+          49000,
+          78500,
+          53400,
+          69200,
+          50700
+        ]
+      },
+      "base_median_ns": 17629300.0,
+      "new_median_ns": 66600.0
+    },
+    {
+      "case": "slot_insert_16",
+      "base_log": "final-base-slots-isolated1.txt",
+      "new_log": "final-new-slots-isolated1.txt",
+      "base": {
+        "case": "slot_insert_16",
+        "operations_per_sample": 16,
+        "samples_ns": [
+          2200,
+          500,
+          300,
+          400,
+          300,
+          400,
+          300,
+          400,
+          300,
+          300,
+          400,
+          300,
+          300,
+          300,
+          400,
+          300,
+          300,
+          400,
+          300,
+          300
+        ]
+      },
+      "new": {
+        "case": "slot_insert_16",
+        "operations_per_sample": 16,
+        "samples_ns": [
+          7500,
+          400,
+          400,
+          400,
+          400,
+          400,
+          400,
+          400,
+          300,
+          400,
+          400,
+          400,
+          300,
+          300,
+          400,
+          400,
+          300,
+          400,
+          300,
+          300
+        ]
+      },
+      "base_median_ns": 300.0,
+      "new_median_ns": 400.0
+    },
+    {
+      "case": "world_highwater_128_stride1",
+      "base_log": "final-base-slots-isolated1.txt",
+      "new_log": "final-new-slots-isolated1.txt",
+      "base": {
+        "case": "world_highwater_128_stride1",
+        "operations_per_sample": 100,
+        "samples_ns": [
+          5933100,
+          5862600,
+          5910500,
+          5908800,
+          5870900,
+          5899000,
+          5871000,
+          5876800,
+          5892100,
+          5937100,
+          5903100,
+          5872500,
+          5879800,
+          5916200,
+          5881300,
+          5884400,
+          5874000,
+          5882300,
+          5875100,
+          5875000
+        ]
+      },
+      "new": {
+        "case": "world_highwater_128_stride1",
+        "operations_per_sample": 100,
+        "samples_ns": [
+          4999200,
+          4968900,
+          4966600,
+          4982500,
+          4964900,
+          4961800,
+          5015500,
+          5074800,
+          4982700,
+          5003700,
+          4966200,
+          4963700,
+          5012400,
+          4972400,
+          4982100,
+          5008300,
+          4966400,
+          4966900,
+          4983700,
+          4964700
+        ]
+      },
+      "base_median_ns": 5881800.0,
+      "new_median_ns": 4977250.0
+    },
+    {
+      "case": "world_highwater_4096_stride128",
+      "base_log": "final-base-slots-isolated1.txt",
+      "new_log": "final-new-slots-isolated1.txt",
+      "base": {
+        "case": "world_highwater_4096_stride128",
+        "operations_per_sample": 200,
+        "samples_ns": [
+          21855300,
+          21775700,
+          21950700,
+          21845600,
+          21706600,
+          21702000,
+          21726100,
+          21993500,
+          21693400,
+          21660800,
+          21755400,
+          21707400,
+          21871300,
+          21725600,
+          21633500,
+          21644400,
+          21456100,
+          21609300,
+          21781000,
+          21896100
+        ]
+      },
+      "new": {
+        "case": "world_highwater_4096_stride128",
+        "operations_per_sample": 200,
+        "samples_ns": [
+          21085700,
+          20893800,
+          20950600,
+          20845200,
+          20960400,
+          20788900,
+          20702900,
+          20793900,
+          20908900,
+          20748300,
+          20730900,
+          20600700,
+          20644200,
+          20795600,
+          20629800,
+          20719000,
+          20737200,
+          20761500,
+          20642100,
+          20661500
+        ]
+      },
+      "base_median_ns": 21725850.0,
+      "new_median_ns": 20754900.0
+    },
+    {
+      "case": "world_highwater_4096_stride4096",
+      "base_log": "final-base-slots-isolated1.txt",
+      "new_log": "final-new-slots-isolated1.txt",
+      "base": {
+        "case": "world_highwater_4096_stride4096",
+        "operations_per_sample": 10000,
+        "samples_ns": [
+          30595200,
+          30595200,
+          30756300,
+          30750300,
+          30936500,
+          30656800,
+          30936300,
+          30995500,
+          30923100,
+          30730000,
+          30771600,
+          30576300,
+          30718100,
+          30644900,
+          30803900,
+          30714700,
+          30470500,
+          30573300,
+          30552000,
+          30446000
+        ]
+      },
+      "new": {
+        "case": "world_highwater_4096_stride4096",
+        "operations_per_sample": 10000,
+        "samples_ns": [
+          4027800,
+          4070900,
+          4066200,
+          4097400,
+          4145800,
+          4063800,
+          4127900,
+          4139900,
+          4138400,
+          4127400,
+          4125300,
+          4125000,
+          4111300,
+          4126200,
+          4130400,
+          4114200,
+          4040400,
+          4085600,
+          4130200,
+          4151800
+        ]
+      },
+      "base_median_ns": 30716400.0,
+      "new_median_ns": 4125150.0
+    },
+    {
+      "case": "audio_wet_updates operations=10000",
+      "base_log": "final-base-dsp-isolated1.txt",
+      "new_log": "final-new-dsp-isolated1.txt",
+      "base": {
+        "case": "audio_wet_updates operations=10000",
+        "samples_ns": [
+          194200,
+          193900,
+          193900,
+          193900,
+          196100,
+          193900,
+          193900,
+          193900,
+          193900,
+          197200,
+          193900,
+          194000,
+          194100,
+          193800,
+          195500
+        ],
+        "operations_per_sample": 10000
+      },
+      "new": {
+        "case": "audio_wet_updates operations=10000",
+        "samples_ns": [
+          200800,
+          200400,
+          200400,
+          200400,
+          203800,
+          200400,
+          200500,
+          200400,
+          200400,
+          201900,
+          200400,
+          200400,
+          200400,
+          200300,
+          201700
+        ],
+        "operations_per_sample": 10000
+      },
+      "base_median_ns": 193900,
+      "new_median_ns": 200400
+    },
+    {
+      "case": "editor_index nodes=1000 operations=100",
+      "base_log": "final-base-editor-isolated1.txt",
+      "new_log": "final-new-editor-isolated1.txt",
+      "base": {
+        "case": "editor_index nodes=1000 operations=100",
+        "samples_ns": [
+          5348100,
+          5009200,
+          3699900,
+          3735300,
+          3879300,
+          3677800,
+          3699000,
+          3783600,
+          3637700,
+          3339500,
+          2302300,
+          2008000,
+          2000900,
+          2009100,
+          2005200
+        ],
+        "operations_per_sample": 100
+      },
+      "new": {
+        "case": "editor_index nodes=1000 operations=100",
+        "samples_ns": [
+          3800,
+          3700,
+          3700,
+          3700,
+          3700,
+          3700,
+          3700,
+          3700,
+          3700,
+          3700,
+          3700,
+          3700,
+          3700,
+          3700,
+          3700
+        ],
+        "operations_per_sample": 100
+      },
+      "base_median_ns": 3677800,
+      "new_median_ns": 3700
+    },
+    {
+      "case": "editor_index nodes=10000 operations=100",
+      "base_log": "final-base-editor-isolated1.txt",
+      "new_log": "final-new-editor-isolated1.txt",
+      "base": {
+        "case": "editor_index nodes=10000 operations=100",
+        "samples_ns": [
+          40888100,
+          40513400,
+          40419400,
+          38855500,
+          37633000,
+          35564000,
+          34179200,
+          32719400,
+          31467800,
+          31492700,
+          31625200,
+          31374800,
+          29969000,
+          29495600,
+          29652800
+        ],
+        "operations_per_sample": 100
+      },
+      "new": {
+        "case": "editor_index nodes=10000 operations=100",
+        "samples_ns": [
+          3900,
+          3700,
+          3700,
+          3700,
+          3700,
+          3700,
+          3700,
+          3700,
+          3700,
+          3700,
+          3700,
+          3700,
+          3800,
+          3700,
+          3700
+        ],
+        "operations_per_sample": 100
+      },
+      "base_median_ns": 32719400,
+      "new_median_ns": 3700
+    },
+    {
+      "case": "editor_noop nodes=1000 operations=20",
+      "base_log": "final-base-editor-isolated1.txt",
+      "new_log": "final-new-editor-isolated1.txt",
+      "base": {
+        "case": "editor_noop nodes=1000 operations=20",
+        "samples_ns": [
+          14890200,
+          14515000,
+          14337900,
+          14102000,
+          14215500,
+          14189400,
+          14198900,
+          14036300,
+          14361300,
+          14285000,
+          14114000,
+          13959200,
+          14040500,
+          14196300,
+          14273700
+        ],
+        "operations_per_sample": 20
+      },
+      "new": {
+        "case": "editor_noop nodes=1000 operations=20",
+        "samples_ns": [
+          11573900,
+          11892500,
+          11497000,
+          11505900,
+          11696800,
+          11438700,
+          11635600,
+          11641000,
+          11586500,
+          11664500,
+          11334900,
+          11416800,
+          11537100,
+          11309400,
+          10850400
+        ],
+        "operations_per_sample": 20
+      },
+      "base_median_ns": 14198900,
+      "new_median_ns": 11537100
+    },
+    {
+      "case": "editor_noop nodes=10000 operations=20",
+      "base_log": "final-base-editor-isolated1.txt",
+      "new_log": "final-new-editor-isolated1.txt",
+      "base": {
+        "case": "editor_noop nodes=10000 operations=20",
+        "samples_ns": [
+          602713100,
+          600167700,
+          601352800,
+          610557200,
+          600190200,
+          609501000,
+          598524900,
+          607668500,
+          614187200,
+          598209900,
+          602005200,
+          598469400,
+          601510900,
+          598657700,
+          599744200
+        ],
+        "operations_per_sample": 20
+      },
+      "new": {
+        "case": "editor_noop nodes=10000 operations=20",
+        "samples_ns": [
+          544568800,
+          548513900,
+          545389000,
+          542842900,
+          546721200,
+          543660000,
+          544100600,
+          548575500,
+          544151400,
+          556275400,
+          544977400,
+          544274400,
+          544414400,
+          545272700,
+          548996500
+        ],
+        "operations_per_sample": 20
+      },
+      "base_median_ns": 601352800,
+      "new_median_ns": 544977400
+    },
+    {
+      "case": "og_png_repeated_route",
+      "base_log": "final-base-og-isolated1.txt",
+      "new_log": "final-new-og-isolated1.txt",
+      "base": {
+        "case": "og_png_repeated_route",
+        "operations_per_sample": 1,
+        "samples_ns": [
+          71093400,
+          70865300,
+          72394700,
+          70879400,
+          70626200,
+          70678300,
+          70652800,
+          70951900,
+          70768600,
+          70807500,
+          70702200,
+          70672400,
+          70711100,
+          70728400,
+          70933000,
+          70767400,
+          76826500,
+          70769900,
+          73620300,
+          70558200
+        ],
+        "output_bytes": 45521,
+        "checksum": 7831864958926768531
+      },
+      "new": {
+        "case": "og_png_repeated_route",
+        "operations_per_sample": 1,
+        "samples_ns": [
+          14200,
+          6400,
+          5600,
+          5400,
+          5700,
+          6600,
+          5100,
+          5200,
+          5100,
+          5200,
+          5300,
+          5000,
+          5100,
+          5000,
+          5000,
+          5000,
+          5100,
+          5200,
+          5000,
+          5100
+        ],
+        "output_bytes": 45521,
+        "checksum": 7831864958926768531
+      },
+      "base_median_ns": 70769250.0,
+      "new_median_ns": 5150.0
+    },
+    {
+      "case": "material",
+      "base_log": "final-base-export-material-isolated1.txt",
+      "new_log": "final-new-export-material-isolated1.txt",
+      "base": {
+        "case": "material",
+        "threads": 4,
+        "first_call": false,
+        "memory_instrumented": false,
+        "samples_ns": [
+          47211900,
+          45716300,
+          45641600,
+          45753100,
+          45317400,
+          45611300,
+          45468400,
+          47353900,
+          48926200,
+          50693600
+        ],
+        "peak_requested_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "output_files": 1,
+        "output_checksum": "d675c2cdb3558fc9"
+      },
+      "new": {
+        "case": "material",
+        "threads": 4,
+        "first_call": false,
+        "memory_instrumented": false,
+        "samples_ns": [
+          614900,
+          514200,
+          504600,
+          470200,
+          459000,
+          460200,
+          468700,
+          446500,
+          451400,
+          500600
+        ],
+        "peak_requested_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "output_files": 1,
+        "output_checksum": "d675c2cdb3558fc9"
+      },
+      "base_median_ns": 45734700.0,
+      "new_median_ns": 469450.0
+    },
+    {
+      "case": "textures",
+      "base_log": "final-base-export-textures-isolated1.txt",
+      "new_log": "final-new-export-textures-isolated1.txt",
+      "base": {
+        "case": "textures",
+        "threads": 4,
+        "first_call": false,
+        "memory_instrumented": false,
+        "samples_ns": [
+          413944700,
+          416608200,
+          415579100,
+          413481800,
+          414156200,
+          418088600,
+          407711800,
+          417221200,
+          410718900,
+          404476100
+        ],
+        "peak_requested_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "output_files": 65,
+        "output_checksum": "28763088e1379663"
+      },
+      "new": {
+        "case": "textures",
+        "threads": 4,
+        "first_call": false,
+        "memory_instrumented": false,
+        "samples_ns": [
+          439821200,
+          491027400,
+          454645700,
+          471992100,
+          453524400,
+          454146000,
+          448005400,
+          468037300,
+          435409600,
+          452559500
+        ],
+        "peak_requested_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "output_files": 65,
+        "output_checksum": "28763088e1379663"
+      },
+      "base_median_ns": 414050450.0,
+      "new_median_ns": 453835200.0
+    },
+    {
+      "case": "shader",
+      "base_log": "final-base-export-shader-isolated1.txt",
+      "new_log": "final-new-export-shader-isolated1.txt",
+      "base": {
+        "case": "shader",
+        "threads": 4,
+        "first_call": false,
+        "memory_instrumented": false,
+        "samples_ns": [
+          2363702600,
+          2330798900,
+          2320757000,
+          2313102100,
+          2296906400,
+          2295809100,
+          2309756000,
+          2307879000,
+          2306498900,
+          2297609300
+        ],
+        "peak_requested_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "output_files": 11,
+        "output_checksum": "4b3b720c7f4a5131"
+      },
+      "new": {
+        "case": "shader",
+        "threads": 4,
+        "first_call": false,
+        "memory_instrumented": false,
+        "samples_ns": [
+          341494400,
+          331697600,
+          342163100,
+          340853500,
+          337019200,
+          349907900,
+          335481800,
+          331237200,
+          334516800,
+          335515700
+        ],
+        "peak_requested_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "output_files": 11,
+        "output_checksum": "4b3b720c7f4a5131"
+      },
+      "base_median_ns": 2308817500.0,
+      "new_median_ns": 336267450.0
+    },
+    {
+      "case": "codegen",
+      "base_log": "final-base-export-codegen-isolated1.txt",
+      "new_log": "final-new-export-codegen-isolated1.txt",
+      "base": {
+        "case": "codegen",
+        "threads": 4,
+        "first_call": false,
+        "memory_instrumented": false,
+        "samples_ns": [
+          373012900,
+          88761900,
+          87584200,
+          87781700,
+          88107000,
+          88451200,
+          87175000,
+          86977000,
+          88752600,
+          87947800
+        ],
+        "peak_requested_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "output_files": 3,
+        "output_checksum": "4d35631f9a1dcbe3"
+      },
+      "new": {
+        "case": "codegen",
+        "threads": 4,
+        "first_call": false,
+        "memory_instrumented": false,
+        "samples_ns": [
+          364278300,
+          25913200,
+          25814000,
+          25832400,
+          25614900,
+          25720300,
+          26092800,
+          25220400,
+          25320700,
+          24997100
+        ],
+        "peak_requested_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "output_files": 3,
+        "output_checksum": "4d35631f9a1dcbe3"
+      },
+      "base_median_ns": 88027400.0,
+      "new_median_ns": 25767150.0
+    },
+    {
+      "case": "codegen_small",
+      "base_log": "final-base-export-codegen_small-isolated1.txt",
+      "new_log": "final-new-export-codegen_small-isolated1.txt",
+      "base": {
+        "case": "codegen_small",
+        "threads": 4,
+        "first_call": false,
+        "memory_instrumented": false,
+        "samples_ns": [
+          8738900,
+          1090700,
+          1097400,
+          1075100,
+          1097200,
+          1055000,
+          1079500,
+          1048700,
+          1074200,
+          1046300
+        ],
+        "peak_requested_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "output_files": 3,
+        "output_checksum": "615bdf7982f53317"
+      },
+      "new": {
+        "case": "codegen_small",
+        "threads": 4,
+        "first_call": false,
+        "memory_instrumented": false,
+        "samples_ns": [
+          1221000,
+          1185500,
+          1188800,
+          1187500,
+          1172200,
+          1179900,
+          1168600,
+          1153900,
+          1165300,
+          1155700
+        ],
+        "peak_requested_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "output_files": 3,
+        "output_checksum": "615bdf7982f53317"
+      },
+      "base_median_ns": 1077300.0,
+      "new_median_ns": 1176050.0
+    },
+    {
+      "case": "material",
+      "base_log": "final-base-memory-material-isolated1.txt",
+      "new_log": "final-new-memory-material-isolated1.txt",
+      "base": {
+        "case": "material",
+        "threads": 4,
+        "first_call": false,
+        "memory_instrumented": true,
+        "samples_ns": [
+          47698700,
+          49288500,
+          48920600,
+          53057900,
+          57795700
+        ],
+        "peak_requested_bytes": [
+          85047458,
+          85047458,
+          85047458,
+          80849066,
+          85047458
+        ],
+        "output_files": 1,
+        "output_checksum": "d675c2cdb3558fc9"
+      },
+      "new": {
+        "case": "material",
+        "threads": 4,
+        "first_call": false,
+        "memory_instrumented": true,
+        "samples_ns": [
+          538900,
+          473000,
+          460200,
+          455900,
+          450700
+        ],
+        "peak_requested_bytes": [
+          53894,
+          44366,
+          55030,
+          48606,
+          51787
+        ],
+        "output_files": 1,
+        "output_checksum": "d675c2cdb3558fc9"
+      },
+      "base_median_ns": 49288500,
+      "new_median_ns": 460200
+    },
+    {
+      "case": "textures",
+      "base_log": "final-base-memory-textures-isolated1.txt",
+      "new_log": "final-new-memory-textures-isolated1.txt",
+      "base": {
+        "case": "textures",
+        "threads": 4,
+        "first_call": false,
+        "memory_instrumented": true,
+        "samples_ns": [
+          411595300,
+          417495700,
+          414438400,
+          411967500,
+          420455400
+        ],
+        "peak_requested_bytes": [
+          81582065,
+          83028407,
+          84188647,
+          84385255,
+          84669711
+        ],
+        "output_files": 65,
+        "output_checksum": "28763088e1379663"
+      },
+      "new": {
+        "case": "textures",
+        "threads": 4,
+        "first_call": false,
+        "memory_instrumented": true,
+        "samples_ns": [
+          460098600,
+          443948700,
+          444890600,
+          435691700,
+          452384000
+        ],
+        "peak_requested_bytes": [
+          22054658,
+          22139413,
+          22240918,
+          22165973,
+          22249899
+        ],
+        "output_files": 65,
+        "output_checksum": "28763088e1379663"
+      },
+      "base_median_ns": 414438400,
+      "new_median_ns": 444890600
+    },
+    {
+      "case": "archive",
+      "base_log": "final-base-export-archive-assets-refresh.txt",
+      "new_log": "final-new-export-archive-assets-refresh.txt",
+      "base": {
+        "case": "archive",
+        "threads": 4,
+        "first_call": false,
+        "memory_instrumented": false,
+        "samples_ns": [
+          43765600,
+          43828300,
+          42275000,
+          43619500,
+          48383300,
+          50436500,
+          50829100,
+          50009900,
+          48997700,
+          44485800,
+          47448100,
+          43667400,
+          43121300,
+          43428000,
+          42572700,
+          42687800,
+          42570200,
+          42604400,
+          43933300,
+          48309700
+        ],
+        "peak_requested_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "output_files": 1,
+        "output_checksum": "62adfdc9dbfdb1a9"
+      },
+      "new": {
+        "case": "archive",
+        "threads": 4,
+        "first_call": false,
+        "memory_instrumented": false,
+        "samples_ns": [
+          13586100,
+          13196700,
+          14060200,
+          13556600,
+          10802400,
+          11063700,
+          11125700,
+          11824700,
+          11846500,
+          11629700,
+          11260800,
+          11171100,
+          11120400,
+          11028900,
+          11514700,
+          11409400,
+          11384400,
+          11409000,
+          12138200,
+          11564900
+        ],
+        "peak_requested_bytes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "output_files": 1,
+        "output_checksum": "62adfdc9dbfdb1a9"
+      },
+      "base_median_ns": 43796950.0,
+      "new_median_ns": 11462050.0
+    },
+    {
+      "case": "archive",
+      "base_log": "final-base-memory-archive-assets-refresh.txt",
+      "new_log": "final-new-memory-archive-assets-refresh.txt",
+      "base": {
+        "case": "archive",
+        "threads": 4,
+        "first_call": false,
+        "memory_instrumented": true,
+        "samples_ns": [
+          44856100,
+          42258700,
+          42973800
+        ],
+        "peak_requested_bytes": [
+          134222922,
+          134222922,
+          134222922
+        ],
+        "output_files": 1,
+        "output_checksum": "62adfdc9dbfdb1a9"
+      },
+      "new": {
+        "case": "archive",
+        "threads": 4,
+        "first_call": false,
+        "memory_instrumented": true,
+        "samples_ns": [
+          11862900,
+          11701900,
+          11928200
+        ],
+        "peak_requested_bytes": [
+          33562274,
+          33562274,
+          33562274
+        ],
+        "output_files": 1,
+        "output_checksum": "62adfdc9dbfdb1a9"
+      },
+      "base_median_ns": 42973800,
+      "new_median_ns": 11862900
+    }
+  ],
+  "first_call_codegen": [
+    {
+      "case": "codegen",
+      "boundary": "one first generation per fresh process; excludes process/Rayon start and fixture creation",
+      "base_logs": [
+        "final-base-first-codegen-1-isolated1.txt",
+        "final-base-first-codegen-2-isolated1.txt",
+        "final-base-first-codegen-3-isolated1.txt",
+        "final-base-first-codegen-4-isolated1.txt",
+        "final-base-first-codegen-5-isolated1.txt",
+        "final-base-first-codegen-6-isolated1.txt",
+        "final-base-first-codegen-7-isolated1.txt"
+      ],
+      "base_samples_ns": [
+        91605900,
+        89428300,
+        91569400,
+        89233400,
+        89198300,
+        89558600,
+        89914000
+      ],
+      "base_median_ns": 89558600,
+      "new_logs": [
+        "final-new-first-codegen-1-isolated1.txt",
+        "final-new-first-codegen-2-isolated1.txt",
+        "final-new-first-codegen-3-isolated1.txt",
+        "final-new-first-codegen-4-isolated1.txt",
+        "final-new-first-codegen-5-isolated1.txt",
+        "final-new-first-codegen-6-isolated1.txt",
+        "final-new-first-codegen-7-isolated1.txt"
+      ],
+      "new_samples_ns": [
+        116248500,
+        117629600,
+        113993300,
+        113989400,
+        116615000,
+        115196700,
+        115111700
+      ],
+      "new_median_ns": 115196700
+    },
+    {
+      "case": "codegen_small",
+      "boundary": "one first generation per fresh process; excludes process/Rayon start and fixture creation",
+      "base_logs": [
+        "final-base-first-codegen_small-1-isolated1.txt",
+        "final-base-first-codegen_small-2-isolated1.txt",
+        "final-base-first-codegen_small-3-isolated1.txt",
+        "final-base-first-codegen_small-4-isolated1.txt",
+        "final-base-first-codegen_small-5-isolated1.txt",
+        "final-base-first-codegen_small-6-isolated1.txt",
+        "final-base-first-codegen_small-7-isolated1.txt"
+      ],
+      "base_samples_ns": [
+        3855000,
+        2686900,
+        2675500,
+        2739700,
+        2664900,
+        2636700,
+        2613800
+      ],
+      "base_median_ns": 2675500,
+      "new_logs": [
+        "final-new-first-codegen_small-1-isolated1.txt",
+        "final-new-first-codegen_small-2-isolated1.txt",
+        "final-new-first-codegen_small-3-isolated1.txt",
+        "final-new-first-codegen_small-4-isolated1.txt",
+        "final-new-first-codegen_small-5-isolated1.txt",
+        "final-new-first-codegen_small-6-isolated1.txt",
+        "final-new-first-codegen_small-7-isolated1.txt"
+      ],
+      "new_samples_ns": [
+        3126900,
+        2778600,
+        2769500,
+        2830000,
+        2855500,
+        3678000,
+        2794100
+      ],
+      "new_median_ns": 2830000
+    }
+  ],
+  "gpu_initial_accepted": [
+    {
+      "group": "shadow_moving",
+      "case": "shadow_moving_non_caster",
+      "baseline": {
+        "case": "shadow_moving_non_caster",
+        "frames": "120",
+        "total_us": "521",
+        "wait_us": "211",
+        "gpu_main_us": "142",
+        "gpu_water_us": "1",
+        "gpu_shadow_us": "28",
+        "cpu_prepare_us": "2",
+        "gpu_2d_us": "0",
+        "gpu_3d_us": "50",
+        "acquire_us": "109",
+        "encode_us": "21",
+        "submit_us": "231",
+        "present_us": "84",
+        "draw_calls_2d": "0",
+        "draw_calls_3d": "2",
+        "instances_3d": "257",
+        "skip_render_3d_frames": "0",
+        "scene_passes_per_frame": "1",
+        "shadow_layers_per_frame": "7",
+        "shadow_draw_calls_per_frame": "2",
+        "gpu_main_median_us": "139.560",
+        "gpu_main_p95_us": "147.600",
+        "acquire_median_us": "105.100",
+        "acquire_p95_us": "130.100",
+        "submit_median_us": "225.200",
+        "submit_p95_us": "257.600",
+        "present_median_us": "83.000",
+        "present_p95_us": "93.100",
+        "cpu_prepare_median_us": "2.800",
+        "cpu_prepare_p95_us": "3.500",
+        "encode_median_us": "21.500",
+        "encode_p95_us": "24.400",
+        "pipeline_switches_median": "1",
+        "pipeline_switches_p95": "1"
+      },
+      "current": {
+        "case": "shadow_moving_non_caster",
+        "frames": "120",
+        "total_us": "433",
+        "wait_us": "176",
+        "gpu_main_us": "115",
+        "gpu_water_us": "1",
+        "gpu_shadow_us": "1",
+        "cpu_prepare_us": "2",
+        "gpu_2d_us": "0",
+        "gpu_3d_us": "27",
+        "acquire_us": "111",
+        "encode_us": "12",
+        "submit_us": "177",
+        "present_us": "82",
+        "draw_calls_2d": "0",
+        "draw_calls_3d": "2",
+        "instances_3d": "257",
+        "skip_render_3d_frames": "0",
+        "scene_passes_per_frame": "1",
+        "shadow_layers_per_frame": "0",
+        "shadow_draw_calls_per_frame": "0",
+        "gpu_main_median_us": "114.960",
+        "gpu_main_p95_us": "116.560",
+        "acquire_median_us": "100.000",
+        "acquire_p95_us": "257.800",
+        "submit_median_us": "175.800",
+        "submit_p95_us": "192.000",
+        "present_median_us": "81.300",
+        "present_p95_us": "90.000",
+        "cpu_prepare_median_us": "2.700",
+        "cpu_prepare_p95_us": "3.300",
+        "encode_median_us": "11.900",
+        "encode_p95_us": "13.300",
+        "pipeline_switches_median": "1",
+        "pipeline_switches_p95": "1"
+      }
+    },
+    {
+      "group": "shadow_moving",
+      "case": "shadow_moving_caster_control",
+      "baseline": {
+        "case": "shadow_moving_caster_control",
+        "frames": "120",
+        "total_us": "529",
+        "wait_us": "215",
+        "gpu_main_us": "142",
+        "gpu_water_us": "1",
+        "gpu_shadow_us": "28",
+        "cpu_prepare_us": "3",
+        "gpu_2d_us": "0",
+        "gpu_3d_us": "52",
+        "acquire_us": "112",
+        "encode_us": "23",
+        "submit_us": "232",
+        "present_us": "85",
+        "draw_calls_2d": "0",
+        "draw_calls_3d": "1",
+        "instances_3d": "257",
+        "skip_render_3d_frames": "0",
+        "scene_passes_per_frame": "1",
+        "shadow_layers_per_frame": "7",
+        "shadow_draw_calls_per_frame": "2",
+        "gpu_main_median_us": "142.800",
+        "gpu_main_p95_us": "147.120",
+        "acquire_median_us": "105.800",
+        "acquire_p95_us": "153.200",
+        "submit_median_us": "226.300",
+        "submit_p95_us": "257.400",
+        "present_median_us": "83.500",
+        "present_p95_us": "92.600",
+        "cpu_prepare_median_us": "2.800",
+        "cpu_prepare_p95_us": "4.100",
+        "encode_median_us": "23.100",
+        "encode_p95_us": "28.400",
+        "pipeline_switches_median": "1",
+        "pipeline_switches_p95": "1"
+      },
+      "current": {
+        "case": "shadow_moving_caster_control",
+        "frames": "120",
+        "total_us": "520",
+        "wait_us": "212",
+        "gpu_main_us": "141",
+        "gpu_water_us": "1",
+        "gpu_shadow_us": "28",
+        "cpu_prepare_us": "2",
+        "gpu_2d_us": "0",
+        "gpu_3d_us": "50",
+        "acquire_us": "112",
+        "encode_us": "23",
+        "submit_us": "228",
+        "present_us": "83",
+        "draw_calls_2d": "0",
+        "draw_calls_3d": "1",
+        "instances_3d": "257",
+        "skip_render_3d_frames": "0",
+        "scene_passes_per_frame": "1",
+        "shadow_layers_per_frame": "7",
+        "shadow_draw_calls_per_frame": "2",
+        "gpu_main_median_us": "138.320",
+        "gpu_main_p95_us": "147.240",
+        "acquire_median_us": "105.300",
+        "acquire_p95_us": "141.800",
+        "submit_median_us": "223.600",
+        "submit_p95_us": "244.300",
+        "present_median_us": "82.600",
+        "present_p95_us": "88.100",
+        "cpu_prepare_median_us": "2.700",
+        "cpu_prepare_p95_us": "3.100",
+        "encode_median_us": "22.900",
+        "encode_p95_us": "24.900",
+        "pipeline_switches_median": "1",
+        "pipeline_switches_p95": "1"
+      }
+    },
+    {
+      "group": "audit",
+      "case": "audit_lod_mixed_10k",
+      "baseline": {
+        "case": "audit_lod_mixed_10k",
+        "frames": "120",
+        "total_us": "22918",
+        "wait_us": "279",
+        "gpu_main_us": "105",
+        "gpu_water_us": "1",
+        "gpu_shadow_us": "1",
+        "cpu_prepare_us": "4",
+        "gpu_2d_us": "0",
+        "gpu_3d_us": "22002",
+        "acquire_us": "449",
+        "encode_us": "30",
+        "submit_us": "291",
+        "present_us": "109",
+        "draw_calls_2d": "0",
+        "draw_calls_3d": "2",
+        "instances_3d": "10000",
+        "skip_render_3d_frames": "0",
+        "scene_passes_per_frame": "1",
+        "shadow_layers_per_frame": "0",
+        "shadow_draw_calls_per_frame": "0",
+        "gpu_main_median_us": "102.360",
+        "gpu_main_p95_us": "116.600",
+        "acquire_median_us": "457.800",
+        "acquire_p95_us": "509.500",
+        "submit_median_us": "287.000",
+        "submit_p95_us": "320.400",
+        "present_median_us": "108.300",
+        "present_p95_us": "119.300",
+        "cpu_prepare_median_us": "3.900",
+        "cpu_prepare_p95_us": "4.600",
+        "encode_median_us": "29.900",
+        "encode_p95_us": "34.400",
+        "pipeline_switches_median": "1",
+        "pipeline_switches_p95": "1"
+      },
+      "current": {
+        "case": "audit_lod_mixed_10k",
+        "frames": "120",
+        "total_us": "496",
+        "wait_us": "166",
+        "gpu_main_us": "96",
+        "gpu_water_us": "1",
+        "gpu_shadow_us": "1",
+        "cpu_prepare_us": "2",
+        "gpu_2d_us": "0",
+        "gpu_3d_us": "48",
+        "acquire_us": "107",
+        "encode_us": "17",
+        "submit_us": "214",
+        "present_us": "86",
+        "draw_calls_2d": "0",
+        "draw_calls_3d": "2",
+        "instances_3d": "10000",
+        "skip_render_3d_frames": "0",
+        "scene_passes_per_frame": "1",
+        "shadow_layers_per_frame": "0",
+        "shadow_draw_calls_per_frame": "0",
+        "gpu_main_median_us": "95.800",
+        "gpu_main_p95_us": "99.760",
+        "acquire_median_us": "100.600",
+        "acquire_p95_us": "128.500",
+        "submit_median_us": "209.000",
+        "submit_p95_us": "241.500",
+        "present_median_us": "83.600",
+        "present_p95_us": "103.500",
+        "cpu_prepare_median_us": "1.900",
+        "cpu_prepare_p95_us": "2.200",
+        "encode_median_us": "17.200",
+        "encode_p95_us": "20.400",
+        "pipeline_switches_median": "1",
+        "pipeline_switches_p95": "1"
+      }
+    },
+    {
+      "group": "audit",
+      "case": "audit_sparse_transform_1k",
+      "baseline": {
+        "case": "audit_sparse_transform_1k",
+        "frames": "120",
+        "total_us": "488",
+        "wait_us": "120",
+        "gpu_main_us": "55",
+        "gpu_water_us": "1",
+        "gpu_shadow_us": "1",
+        "cpu_prepare_us": "2",
+        "gpu_2d_us": "0",
+        "gpu_3d_us": "75",
+        "acquire_us": "112",
+        "encode_us": "14",
+        "submit_us": "180",
+        "present_us": "83",
+        "draw_calls_2d": "0",
+        "draw_calls_3d": "1",
+        "instances_3d": "1000",
+        "skip_render_3d_frames": "0",
+        "scene_passes_per_frame": "1",
+        "shadow_layers_per_frame": "0",
+        "shadow_draw_calls_per_frame": "0",
+        "gpu_main_median_us": "55.560",
+        "gpu_main_p95_us": "57.000",
+        "acquire_median_us": "103.500",
+        "acquire_p95_us": "222.900",
+        "submit_median_us": "177.800",
+        "submit_p95_us": "199.200",
+        "present_median_us": "82.100",
+        "present_p95_us": "90.900",
+        "cpu_prepare_median_us": "2.800",
+        "cpu_prepare_p95_us": "3.200",
+        "encode_median_us": "13.900",
+        "encode_p95_us": "16.700",
+        "pipeline_switches_median": "1",
+        "pipeline_switches_p95": "1"
+      },
+      "current": {
+        "case": "audit_sparse_transform_1k",
+        "frames": "120",
+        "total_us": "461",
+        "wait_us": "115",
+        "gpu_main_us": "55",
+        "gpu_water_us": "1",
+        "gpu_shadow_us": "1",
+        "cpu_prepare_us": "2",
+        "gpu_2d_us": "0",
+        "gpu_3d_us": "57",
+        "acquire_us": "106",
+        "encode_us": "12",
+        "submit_us": "179",
+        "present_us": "83",
+        "draw_calls_2d": "0",
+        "draw_calls_3d": "1",
+        "instances_3d": "1000",
+        "skip_render_3d_frames": "0",
+        "scene_passes_per_frame": "1",
+        "shadow_layers_per_frame": "0",
+        "shadow_draw_calls_per_frame": "0",
+        "gpu_main_median_us": "55.560",
+        "gpu_main_p95_us": "57.360",
+        "acquire_median_us": "99.800",
+        "acquire_p95_us": "134.400",
+        "submit_median_us": "176.600",
+        "submit_p95_us": "203.000",
+        "present_median_us": "81.700",
+        "present_p95_us": "101.400",
+        "cpu_prepare_median_us": "2.700",
+        "cpu_prepare_p95_us": "3.200",
+        "encode_median_us": "12.000",
+        "encode_p95_us": "13.800",
+        "pipeline_switches_median": "1",
+        "pipeline_switches_p95": "1"
+      }
+    },
+    {
+      "group": "audit",
+      "case": "audit_sparse_transform_10k",
+      "baseline": {
+        "case": "audit_sparse_transform_10k",
+        "frames": "120",
+        "total_us": "1203",
+        "wait_us": "171",
+        "gpu_main_us": "94",
+        "gpu_water_us": "1",
+        "gpu_shadow_us": "1",
+        "cpu_prepare_us": "3",
+        "gpu_2d_us": "0",
+        "gpu_3d_us": "583",
+        "acquire_us": "264",
+        "encode_us": "19",
+        "submit_us": "222",
+        "present_us": "88",
+        "draw_calls_2d": "0",
+        "draw_calls_3d": "1",
+        "instances_3d": "10000",
+        "skip_render_3d_frames": "0",
+        "scene_passes_per_frame": "1",
+        "shadow_layers_per_frame": "0",
+        "shadow_draw_calls_per_frame": "0",
+        "gpu_main_median_us": "94.040",
+        "gpu_main_p95_us": "95.720",
+        "acquire_median_us": "252.300",
+        "acquire_p95_us": "379.500",
+        "submit_median_us": "214.300",
+        "submit_p95_us": "253.500",
+        "present_median_us": "85.700",
+        "present_p95_us": "108.100",
+        "cpu_prepare_median_us": "2.900",
+        "cpu_prepare_p95_us": "4.300",
+        "encode_median_us": "18.100",
+        "encode_p95_us": "22.800",
+        "pipeline_switches_median": "1",
+        "pipeline_switches_p95": "1"
+      },
+      "current": {
+        "case": "audit_sparse_transform_10k",
+        "frames": "120",
+        "total_us": "1251",
+        "wait_us": "176",
+        "gpu_main_us": "93",
+        "gpu_water_us": "1",
+        "gpu_shadow_us": "1",
+        "cpu_prepare_us": "3",
+        "gpu_2d_us": "0",
+        "gpu_3d_us": "614",
+        "acquire_us": "272",
+        "encode_us": "17",
+        "submit_us": "232",
+        "present_us": "90",
+        "draw_calls_2d": "0",
+        "draw_calls_3d": "1",
+        "instances_3d": "10000",
+        "skip_render_3d_frames": "0",
+        "scene_passes_per_frame": "1",
+        "shadow_layers_per_frame": "0",
+        "shadow_draw_calls_per_frame": "0",
+        "gpu_main_median_us": "93.760",
+        "gpu_main_p95_us": "95.160",
+        "acquire_median_us": "255.700",
+        "acquire_p95_us": "390.900",
+        "submit_median_us": "221.500",
+        "submit_p95_us": "280.600",
+        "present_median_us": "86.900",
+        "present_p95_us": "106.200",
+        "cpu_prepare_median_us": "2.900",
+        "cpu_prepare_p95_us": "5.300",
+        "encode_median_us": "16.600",
+        "encode_p95_us": "22.600",
+        "pipeline_switches_median": "1",
+        "pipeline_switches_p95": "1"
+      }
+    },
+    {
+      "group": "audit",
+      "case": "audit_water_low_32",
+      "baseline": {
+        "case": "audit_water_low_32",
+        "frames": "120",
+        "total_us": "433",
+        "wait_us": "135",
+        "gpu_main_us": "69",
+        "gpu_water_us": "14",
+        "gpu_shadow_us": "1",
+        "cpu_prepare_us": "2",
+        "gpu_2d_us": "8",
+        "gpu_3d_us": "2",
+        "acquire_us": "106",
+        "encode_us": "12",
+        "submit_us": "190",
+        "present_us": "82",
+        "draw_calls_2d": "0",
+        "draw_calls_3d": "0",
+        "instances_3d": "0",
+        "skip_render_3d_frames": "0",
+        "scene_passes_per_frame": "3",
+        "shadow_layers_per_frame": "0",
+        "shadow_draw_calls_per_frame": "0",
+        "gpu_main_median_us": "69.920",
+        "gpu_main_p95_us": "70.920",
+        "acquire_median_us": "96.600",
+        "acquire_p95_us": "154.300",
+        "submit_median_us": "186.500",
+        "submit_p95_us": "216.600",
+        "present_median_us": "81.100",
+        "present_p95_us": "90.300",
+        "cpu_prepare_median_us": "1.900",
+        "cpu_prepare_p95_us": "2.200",
+        "encode_median_us": "12.100",
+        "encode_p95_us": "14.500",
+        "pipeline_switches_median": "0",
+        "pipeline_switches_p95": "0"
+      },
+      "current": {
+        "case": "audit_water_low_32",
+        "frames": "120",
+        "total_us": "438",
+        "wait_us": "132",
+        "gpu_main_us": "69",
+        "gpu_water_us": "14",
+        "gpu_shadow_us": "1",
+        "cpu_prepare_us": "2",
+        "gpu_2d_us": "8",
+        "gpu_3d_us": "2",
+        "acquire_us": "104",
+        "encode_us": "12",
+        "submit_us": "195",
+        "present_us": "83",
+        "draw_calls_2d": "0",
+        "draw_calls_3d": "0",
+        "instances_3d": "0",
+        "skip_render_3d_frames": "0",
+        "scene_passes_per_frame": "3",
+        "shadow_layers_per_frame": "0",
+        "shadow_draw_calls_per_frame": "0",
+        "gpu_main_median_us": "69.360",
+        "gpu_main_p95_us": "70.240",
+        "acquire_median_us": "98.500",
+        "acquire_p95_us": "135.700",
+        "submit_median_us": "189.700",
+        "submit_p95_us": "215.000",
+        "present_median_us": "81.300",
+        "present_p95_us": "94.300",
+        "cpu_prepare_median_us": "1.900",
+        "cpu_prepare_p95_us": "2.300",
+        "encode_median_us": "12.000",
+        "encode_p95_us": "13.500",
+        "pipeline_switches_median": "0",
+        "pipeline_switches_p95": "0"
+      }
+    },
+    {
+      "group": "audit",
+      "case": "audit_water_mixed_32",
+      "baseline": {
+        "case": "audit_water_mixed_32",
+        "frames": "120",
+        "total_us": "445",
+        "wait_us": "138",
+        "gpu_main_us": "72",
+        "gpu_water_us": "17",
+        "gpu_shadow_us": "1",
+        "cpu_prepare_us": "2",
+        "gpu_2d_us": "9",
+        "gpu_3d_us": "2",
+        "acquire_us": "105",
+        "encode_us": "12",
+        "submit_us": "198",
+        "present_us": "84",
+        "draw_calls_2d": "0",
+        "draw_calls_3d": "0",
+        "instances_3d": "0",
+        "skip_render_3d_frames": "0",
+        "scene_passes_per_frame": "3",
+        "shadow_layers_per_frame": "0",
+        "shadow_draw_calls_per_frame": "0",
+        "gpu_main_median_us": "72.400",
+        "gpu_main_p95_us": "73.720",
+        "acquire_median_us": "99.900",
+        "acquire_p95_us": "136.300",
+        "submit_median_us": "191.600",
+        "submit_p95_us": "225.600",
+        "present_median_us": "82.400",
+        "present_p95_us": "94.900",
+        "cpu_prepare_median_us": "2.000",
+        "cpu_prepare_p95_us": "2.800",
+        "encode_median_us": "12.300",
+        "encode_p95_us": "13.900",
+        "pipeline_switches_median": "0",
+        "pipeline_switches_p95": "0"
+      },
+      "current": {
+        "case": "audit_water_mixed_32",
+        "frames": "120",
+        "total_us": "444",
+        "wait_us": "144",
+        "gpu_main_us": "72",
+        "gpu_water_us": "17",
+        "gpu_shadow_us": "1",
+        "cpu_prepare_us": "2",
+        "gpu_2d_us": "8",
+        "gpu_3d_us": "2",
+        "acquire_us": "106",
+        "encode_us": "12",
+        "submit_us": "198",
+        "present_us": "83",
+        "draw_calls_2d": "0",
+        "draw_calls_3d": "0",
+        "instances_3d": "0",
+        "skip_render_3d_frames": "0",
+        "scene_passes_per_frame": "3",
+        "shadow_layers_per_frame": "0",
+        "shadow_draw_calls_per_frame": "0",
+        "gpu_main_median_us": "72.280",
+        "gpu_main_p95_us": "73.720",
+        "acquire_median_us": "98.400",
+        "acquire_p95_us": "131.600",
+        "submit_median_us": "192.400",
+        "submit_p95_us": "216.000",
+        "present_median_us": "82.000",
+        "present_p95_us": "98.900",
+        "cpu_prepare_median_us": "1.900",
+        "cpu_prepare_p95_us": "2.300",
+        "encode_median_us": "12.000",
+        "encode_p95_us": "13.400",
+        "pipeline_switches_median": "0",
+        "pipeline_switches_p95": "0"
+      }
+    },
+    {
+      "group": "audit",
+      "case": "audit_water_ultra_32",
+      "baseline": {
+        "case": "audit_water_ultra_32",
+        "frames": "120",
+        "total_us": "443",
+        "wait_us": "345",
+        "gpu_main_us": "265",
+        "gpu_water_us": "195",
+        "gpu_shadow_us": "1",
+        "cpu_prepare_us": "2",
+        "gpu_2d_us": "8",
+        "gpu_3d_us": "2",
+        "acquire_us": "109",
+        "encode_us": "12",
+        "submit_us": "195",
+        "present_us": "82",
+        "draw_calls_2d": "0",
+        "draw_calls_3d": "0",
+        "instances_3d": "0",
+        "skip_render_3d_frames": "0",
+        "scene_passes_per_frame": "3",
+        "shadow_layers_per_frame": "0",
+        "shadow_draw_calls_per_frame": "0",
+        "gpu_main_median_us": "265.880",
+        "gpu_main_p95_us": "268.600",
+        "acquire_median_us": "98.400",
+        "acquire_p95_us": "141.900",
+        "submit_median_us": "189.100",
+        "submit_p95_us": "214.800",
+        "present_median_us": "81.600",
+        "present_p95_us": "91.800",
+        "cpu_prepare_median_us": "2.000",
+        "cpu_prepare_p95_us": "2.400",
+        "encode_median_us": "12.200",
+        "encode_p95_us": "14.300",
+        "pipeline_switches_median": "0",
+        "pipeline_switches_p95": "0"
+      },
+      "current": {
+        "case": "audit_water_ultra_32",
+        "frames": "120",
+        "total_us": "441",
+        "wait_us": "342",
+        "gpu_main_us": "265",
+        "gpu_water_us": "195",
+        "gpu_shadow_us": "1",
+        "cpu_prepare_us": "2",
+        "gpu_2d_us": "8",
+        "gpu_3d_us": "2",
+        "acquire_us": "105",
+        "encode_us": "12",
+        "submit_us": "196",
+        "present_us": "82",
+        "draw_calls_2d": "0",
+        "draw_calls_3d": "0",
+        "instances_3d": "0",
+        "skip_render_3d_frames": "0",
+        "scene_passes_per_frame": "3",
+        "shadow_layers_per_frame": "0",
+        "shadow_draw_calls_per_frame": "0",
+        "gpu_main_median_us": "265.480",
+        "gpu_main_p95_us": "268.400",
+        "acquire_median_us": "97.500",
+        "acquire_p95_us": "140.100",
+        "submit_median_us": "189.200",
+        "submit_p95_us": "222.600",
+        "present_median_us": "81.500",
+        "present_p95_us": "91.500",
+        "cpu_prepare_median_us": "1.900",
+        "cpu_prepare_p95_us": "2.200",
+        "encode_median_us": "11.900",
+        "encode_p95_us": "13.200",
+        "pipeline_switches_median": "0",
+        "pipeline_switches_p95": "0"
+      }
+    }
+  ],
+  "gpu_final_resource_and_ui": {
+    "ui": [
+      {
+        "case": "audit_ui_sparse_1k",
+        "baseline": {
+          "frame_mean_us_by_run": [
+            1213.0,
+            1316.0,
+            1243.0
+          ],
+          "median_of_frame_means_us": 1243.0,
+          "min_frame_mean_us": 1213.0,
+          "max_frame_mean_us": 1316.0
+        },
+        "current": {
+          "frame_mean_us_by_run": [
+            498.0,
+            502.0,
+            511.0
+          ],
+          "median_of_frame_means_us": 502.0,
+          "min_frame_mean_us": 498.0,
+          "max_frame_mean_us": 511.0
+        },
+        "delta_percent": -59.61383748994369
+      },
+      {
+        "case": "audit_ui_all_changed_1k",
+        "baseline": {
+          "frame_mean_us_by_run": [
+            2759.0,
+            3023.0,
+            2934.0
+          ],
+          "median_of_frame_means_us": 2934.0,
+          "min_frame_mean_us": 2759.0,
+          "max_frame_mean_us": 3023.0
+        },
+        "current": {
+          "frame_mean_us_by_run": [
+            2663.0,
+            2907.0,
+            2767.0
+          ],
+          "median_of_frame_means_us": 2767.0,
+          "min_frame_mean_us": 2663.0,
+          "max_frame_mean_us": 2907.0
+        },
+        "delta_percent": -5.691888207225626
+      }
+    ],
+    "resource": [
+      {
+        "case": "resource_noop_material_10k",
+        "baseline": {
+          "case": "resource_noop_material_10k",
+          "frames": "240",
+          "total_us": "23365",
+          "wait_us": "335",
+          "gpu_main_us": "148",
+          "gpu_water_us": "1",
+          "gpu_shadow_us": "1",
+          "cpu_prepare_us": "6",
+          "gpu_2d_us": "0",
+          "gpu_3d_us": "22099",
+          "acquire_us": "494",
+          "encode_us": "28",
+          "submit_us": "288",
+          "present_us": "110",
+          "draw_calls_2d": "0",
+          "draw_calls_3d": "1",
+          "instances_3d": "10000",
+          "skip_render_3d_frames": "0",
+          "scene_passes_per_frame": "1",
+          "shadow_layers_per_frame": "0",
+          "shadow_draw_calls_per_frame": "0",
+          "gpu_main_median_us": "148.240",
+          "gpu_main_p95_us": "152.400",
+          "acquire_median_us": "497.800",
+          "acquire_p95_us": "615.800",
+          "submit_median_us": "286.100",
+          "submit_p95_us": "310.500",
+          "present_median_us": "109.200",
+          "present_p95_us": "121.000",
+          "cpu_prepare_median_us": "6.700",
+          "cpu_prepare_p95_us": "8.200",
+          "encode_median_us": "28.100",
+          "encode_p95_us": "31.200",
+          "pipeline_switches_median": "1",
+          "pipeline_switches_p95": "1"
+        },
+        "current": {
+          "case": "resource_noop_material_10k",
+          "frames": "240",
+          "total_us": "0",
+          "wait_us": "2",
+          "gpu_main_us": "0",
+          "gpu_water_us": "0",
+          "gpu_shadow_us": "0",
+          "cpu_prepare_us": "0",
+          "gpu_2d_us": "0",
+          "gpu_3d_us": "0",
+          "acquire_us": "0",
+          "encode_us": "0",
+          "submit_us": "0",
+          "present_us": "0",
+          "draw_calls_2d": "0",
+          "draw_calls_3d": "0",
+          "instances_3d": "0",
+          "skip_render_3d_frames": "0",
+          "scene_passes_per_frame": "0",
+          "shadow_layers_per_frame": "0",
+          "shadow_draw_calls_per_frame": "0",
+          "gpu_main_median_us": "0.000",
+          "gpu_main_p95_us": "0.000",
+          "acquire_median_us": "0.000",
+          "acquire_p95_us": "0.000",
+          "submit_median_us": "0.000",
+          "submit_p95_us": "0.000",
+          "present_median_us": "0.000",
+          "present_p95_us": "0.000",
+          "cpu_prepare_median_us": "0.000",
+          "cpu_prepare_p95_us": "0.000",
+          "encode_median_us": "0.000",
+          "encode_p95_us": "0.000",
+          "pipeline_switches_median": "0",
+          "pipeline_switches_p95": "0"
+        }
+      },
+      {
+        "case": "resource_changed_material_10k",
+        "baseline": {
+          "case": "resource_changed_material_10k",
+          "frames": "240",
+          "total_us": "23524",
+          "wait_us": "328",
+          "gpu_main_us": "144",
+          "gpu_water_us": "1",
+          "gpu_shadow_us": "1",
+          "cpu_prepare_us": "7",
+          "gpu_2d_us": "0",
+          "gpu_3d_us": "22289",
+          "acquire_us": "452",
+          "encode_us": "27",
+          "submit_us": "291",
+          "present_us": "113",
+          "draw_calls_2d": "0",
+          "draw_calls_3d": "1",
+          "instances_3d": "10000",
+          "skip_render_3d_frames": "0",
+          "scene_passes_per_frame": "1",
+          "shadow_layers_per_frame": "0",
+          "shadow_draw_calls_per_frame": "0",
+          "gpu_main_median_us": "143.160",
+          "gpu_main_p95_us": "152.160",
+          "acquire_median_us": "464.600",
+          "acquire_p95_us": "518.800",
+          "submit_median_us": "287.600",
+          "submit_p95_us": "320.900",
+          "present_median_us": "111.700",
+          "present_p95_us": "129.900",
+          "cpu_prepare_median_us": "7.100",
+          "cpu_prepare_p95_us": "8.900",
+          "encode_median_us": "27.400",
+          "encode_p95_us": "31.500",
+          "pipeline_switches_median": "1",
+          "pipeline_switches_p95": "1"
+        },
+        "current": {
+          "case": "resource_changed_material_10k",
+          "frames": "240",
+          "total_us": "23812",
+          "wait_us": "328",
+          "gpu_main_us": "148",
+          "gpu_water_us": "1",
+          "gpu_shadow_us": "1",
+          "cpu_prepare_us": "7",
+          "gpu_2d_us": "0",
+          "gpu_3d_us": "22576",
+          "acquire_us": "461",
+          "encode_us": "28",
+          "submit_us": "290",
+          "present_us": "113",
+          "draw_calls_2d": "0",
+          "draw_calls_3d": "1",
+          "instances_3d": "10000",
+          "skip_render_3d_frames": "0",
+          "scene_passes_per_frame": "1",
+          "shadow_layers_per_frame": "0",
+          "shadow_draw_calls_per_frame": "0",
+          "gpu_main_median_us": "148.760",
+          "gpu_main_p95_us": "152.240",
+          "acquire_median_us": "466.700",
+          "acquire_p95_us": "506.500",
+          "submit_median_us": "288.100",
+          "submit_p95_us": "310.300",
+          "present_median_us": "111.500",
+          "present_p95_us": "130.500",
+          "cpu_prepare_median_us": "6.900",
+          "cpu_prepare_p95_us": "8.400",
+          "encode_median_us": "28.200",
+          "encode_p95_us": "33.000",
+          "pipeline_switches_median": "1",
+          "pipeline_switches_p95": "1"
+        }
+      },
+      {
+        "case": "resource_reservation_10k",
+        "baseline": {
+          "case": "resource_reservation_10k",
+          "frames": "240",
+          "total_us": "23068",
+          "wait_us": "327",
+          "gpu_main_us": "148",
+          "gpu_water_us": "1",
+          "gpu_shadow_us": "1",
+          "cpu_prepare_us": "6",
+          "gpu_2d_us": "0",
+          "gpu_3d_us": "22090",
+          "acquire_us": "505",
+          "encode_us": "29",
+          "submit_us": "288",
+          "present_us": "110",
+          "draw_calls_2d": "0",
+          "draw_calls_3d": "1",
+          "instances_3d": "10000",
+          "skip_render_3d_frames": "0",
+          "scene_passes_per_frame": "1",
+          "shadow_layers_per_frame": "0",
+          "shadow_draw_calls_per_frame": "0",
+          "gpu_main_median_us": "148.560",
+          "gpu_main_p95_us": "152.440",
+          "acquire_median_us": "494.900",
+          "acquire_p95_us": "641.600",
+          "submit_median_us": "285.900",
+          "submit_p95_us": "314.200",
+          "present_median_us": "109.500",
+          "present_p95_us": "124.800",
+          "cpu_prepare_median_us": "6.100",
+          "cpu_prepare_p95_us": "7.000",
+          "encode_median_us": "29.600",
+          "encode_p95_us": "33.500",
+          "pipeline_switches_median": "1",
+          "pipeline_switches_p95": "1"
+        },
+        "current": {
+          "case": "resource_reservation_10k",
+          "frames": "240",
+          "total_us": "295",
+          "wait_us": "78",
+          "gpu_main_us": "26",
+          "gpu_water_us": "1",
+          "gpu_shadow_us": "1",
+          "cpu_prepare_us": "3",
+          "gpu_2d_us": "0",
+          "gpu_3d_us": "8",
+          "acquire_us": "96",
+          "encode_us": "3",
+          "submit_us": "84",
+          "present_us": "80",
+          "draw_calls_2d": "0",
+          "draw_calls_3d": "1",
+          "instances_3d": "10000",
+          "skip_render_3d_frames": "240",
+          "scene_passes_per_frame": "0",
+          "shadow_layers_per_frame": "0",
+          "shadow_draw_calls_per_frame": "0",
+          "gpu_main_median_us": "26.040",
+          "gpu_main_p95_us": "26.600",
+          "acquire_median_us": "89.700",
+          "acquire_p95_us": "151.900",
+          "submit_median_us": "82.600",
+          "submit_p95_us": "95.700",
+          "present_median_us": "77.900",
+          "present_p95_us": "95.600",
+          "cpu_prepare_median_us": "2.900",
+          "cpu_prepare_p95_us": "3.400",
+          "encode_median_us": "3.400",
+          "encode_p95_us": "3.800",
+          "pipeline_switches_median": "1",
+          "pipeline_switches_p95": "1"
+        }
+      }
+    ],
+    "runs": [
+      {
+        "name": "final-base-gpu-resource-isolated2",
+        "exit_code": 0,
+        "compiler_free": true,
+        "max_compilers": 0.0,
+        "sha256": "89E2441E9D923C45DAAB1CC830474B2FD335D2478E35A1FD981C4F0D5C71ADC3"
+      },
+      {
+        "name": "final-base-gpu-ui-repeat1",
+        "exit_code": 0,
+        "compiler_free": true,
+        "max_compilers": 0.0,
+        "sha256": "89E2441E9D923C45DAAB1CC830474B2FD335D2478E35A1FD981C4F0D5C71ADC3"
+      },
+      {
+        "name": "final-base-gpu-ui-repeat2",
+        "exit_code": 0,
+        "compiler_free": true,
+        "max_compilers": 0.0,
+        "sha256": "89E2441E9D923C45DAAB1CC830474B2FD335D2478E35A1FD981C4F0D5C71ADC3"
+      },
+      {
+        "name": "final-base-gpu-ui-repeat3",
+        "exit_code": 0,
+        "compiler_free": true,
+        "max_compilers": 0.0,
+        "sha256": "89E2441E9D923C45DAAB1CC830474B2FD335D2478E35A1FD981C4F0D5C71ADC3"
+      },
+      {
+        "name": "final-new-gpu-resource-isolated2",
+        "exit_code": 0,
+        "compiler_free": true,
+        "max_compilers": 0.0,
+        "sha256": "8AB270F3D73EA4591BF354B763B697544752C5C175D536A90E365E2A0A9F1FF2"
+      },
+      {
+        "name": "final-new-gpu-ui-repeat1",
+        "exit_code": 0,
+        "compiler_free": true,
+        "max_compilers": 0.0,
+        "sha256": "8AB270F3D73EA4591BF354B763B697544752C5C175D536A90E365E2A0A9F1FF2"
+      },
+      {
+        "name": "final-new-gpu-ui-repeat2",
+        "exit_code": 0,
+        "compiler_free": true,
+        "max_compilers": 0.0,
+        "sha256": "8AB270F3D73EA4591BF354B763B697544752C5C175D536A90E365E2A0A9F1FF2"
+      },
+      {
+        "name": "final-new-gpu-ui-repeat3",
+        "exit_code": 0,
+        "compiler_free": true,
+        "max_compilers": 0.0,
+        "sha256": "8AB270F3D73EA4591BF354B763B697544752C5C175D536A90E365E2A0A9F1FF2"
+      }
+    ],
+    "ui_boundary": "Median of three host draw-frame means, not pooled frame median or isolated packing time",
+    "warmup_frames": 60,
+    "sample_frames_per_run": 240
+  },
+  "demo_sync_same_executable": {
+    "raw_log": "final-demo-sync-isolated1.txt",
+    "rows": [
+      {
+        "case": "demo_bundle_sync_baseline",
+        "bytes": 50331648,
+        "samples_ns": [
+          18097600,
+          18869400,
+          18210200,
+          18484400,
+          18152400,
+          18649200,
+          18527300,
+          18373900,
+          18358400,
+          18928500,
+          18502100,
+          25775800,
+          18913000,
+          18240400,
+          18218400,
+          18536700,
+          18310400,
+          18080000,
+          18608100,
+          18271900
+        ],
+        "mtime_same": true,
+        "median_ns": 18429150.0
+      },
+      {
+        "case": "demo_bundle_sync_candidate",
+        "bytes": 50331648,
+        "samples_ns": [
+          45418000,
+          19819100,
+          20241900,
+          19820000,
+          20676200,
+          19967000,
+          20312200,
+          19335900,
+          20816200,
+          20406800,
+          20669700,
+          20828400,
+          20220300,
+          19776600,
+          20519700,
+          20306800,
+          20202200,
+          20745700,
+          20206200,
+          19657500
+        ],
+        "mtime_same": true,
+        "median_ns": 20274350.0
+      }
+    ]
+  },
+  "docs_same_build": {
+    "comparison": "Same latest current Clippy build: docs_test.json vs docs.json; no baseline corpus",
+    "generated_directory": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-target-2026-09-06\\release\\build\\perro_website-dcf475c6be9a9da4\\out",
+    "full_path": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-target-2026-09-06\\release\\build\\perro_website-dcf475c6be9a9da4\\out\\docs_test.json",
+    "production_path": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-target-2026-09-06\\release\\build\\perro_website-dcf475c6be9a9da4\\out\\docs.json",
+    "full_bytes": 6657979,
+    "production_bytes": 4876437,
+    "omitted_json_bytes": 1781542,
+    "reduction_percent": 26.757999687292497,
+    "full_page_count": 174,
+    "production_page_count": 174,
+    "full_markdown_field_count": 174,
+    "production_markdown_field_count": 0,
+    "markdown_content_utf8_bytes": 1717925,
+    "ordered_routes_equal": true,
+    "rendered_html_equal": true,
+    "full_search_text_equal": true,
+    "all_non_markdown_values_equal": true,
+    "differing_page_indices": [],
+    "page_keys": [
+      "collection",
+      "slug",
+      "route_path",
+      "title",
+      "area",
+      "nav_group",
+      "nav_order",
+      "is_history",
+      "summary",
+      "headings",
+      "keywords",
+      "html",
+      "search_text"
+    ],
+    "full_sha256": "505C090489CCB988897366D30B1BA81622B8E97FFBEE1D6E70A577C279032382",
+    "production_sha256": "2725CE4BA09AB6254E5D83D78C9843F03CBAEE7CBF8F3A0C8C2C3F0AEC120735",
+    "files_unchanged_during_read": true
+  },
+  "artifact_profile_feature_fixture_identity": {
+    "common_artifacts": 305,
+    "base_only": [],
+    "new_only": [],
+    "profile_feature_differences": [],
+    "fixtures": [
+      {
+        "path": "perro_source/runtime_project/perro_runtime/benches/audit_runtime.rs",
+        "base": "e0507df7cf4e23e1c9dabb938fcbbf3fdd03aaf8e141b986bacffdde6c32fda3",
+        "new": "e0507df7cf4e23e1c9dabb938fcbbf3fdd03aaf8e141b986bacffdde6c32fda3",
+        "equal": true
+      },
+      {
+        "path": "perro_source/runtime_project/perro_runtime/benches/audit_runtime_remaining.rs",
+        "base": "ff1ad631bcbf87ce623781df0f61c3d4a099ac6b7be1871bb7c9c3c8e1cc1496",
+        "new": "ff1ad631bcbf87ce623781df0f61c3d4a099ac6b7be1871bb7c9c3c8e1cc1496",
+        "equal": true
+      },
+      {
+        "path": "perro_source/audio_stack/perro_pawdio/benches/audit_playback.rs",
+        "base": "1808554c993a8578f87838e1dffa70e7242b369ac74d662da2debd6ae67d859e",
+        "new": "1808554c993a8578f87838e1dffa70e7242b369ac74d662da2debd6ae67d859e",
+        "equal": true
+      },
+      {
+        "path": "perro_source/script_stack/perro_scripting/benches/nested_fallback_audit.rs",
+        "base": "619b607b6fc194126e1defad0b248113ee45d1b6fc1a0b6a5da655ed50e43756",
+        "new": "619b607b6fc194126e1defad0b248113ee45d1b6fc1a0b6a5da655ed50e43756",
+        "equal": true
+      },
+      {
+        "path": "perro_source/render_stack/perro_graphics/benches/cpu_prepare.rs",
+        "base": "a2cec1e89a6b41bdfe12f2239fbba6fe57bc16fdadec44ec5c92d050851ef7f5",
+        "new": "a2cec1e89a6b41bdfe12f2239fbba6fe57bc16fdadec44ec5c92d050851ef7f5",
+        "equal": true
+      },
+      {
+        "path": "perro_source/render_stack/perro_graphics/benches/resource_loading.rs",
+        "base": "b133b79840a6e00795bd258552f12156e7eb9de77fc44c88c8360f8f26a2469d",
+        "new": "b133b79840a6e00795bd258552f12156e7eb9de77fc44c88c8360f8f26a2469d",
+        "equal": true
+      },
+      {
+        "path": "perro_source/render_stack/perro_graphics/benches/gpu_frame.rs",
+        "base": "2492bb182222771401ed3a584b580757c3235f44071f2aafd81b9cee09542340",
+        "new": "2492bb182222771401ed3a584b580757c3235f44071f2aafd81b9cee09542340",
+        "equal": true
+      },
+      {
+        "path": "perro_source/build_pipeline/perro_static_pipeline/benches/export_hotpaths.rs",
+        "base": "284f655c2028d8826cc9cb462ba6ba5619a6d1fcda5dd8cf26ee995ba9e8c4d3",
+        "new": "284f655c2028d8826cc9cb462ba6ba5619a6d1fcda5dd8cf26ee995ba9e8c4d3",
+        "equal": true
+      },
+      {
+        "path": "perro_source/build_pipeline/perro_static_pipeline/tests/support/mod.rs",
+        "base": "4ba16b0fd87be0e307870d2b660c7dc50a13414f59fc19c10f529b604a018ab1",
+        "new": "4ba16b0fd87be0e307870d2b660c7dc50a13414f59fc19c10f529b604a018ab1",
+        "equal": true
+      },
+      {
+        "path": "perro_source/render_stack/perro_graphics/benches/fixtures/audit_gpu.rs",
+        "base": "efe0121213edd653a1ce29124a038796c76a8c2236afad128b801ac817a75d2c",
+        "new": "efe0121213edd653a1ce29124a038796c76a8c2236afad128b801ac817a75d2c",
+        "equal": true
+      },
+      {
+        "path": "perro_source/render_stack/perro_graphics/benches/fixtures/lod_mesh.rs",
+        "base": "fa828b9308ca56c4135d6a97a10685c3551b12015ff90431e920ae2dd93a5860",
+        "new": "fa828b9308ca56c4135d6a97a10685c3551b12015ff90431e920ae2dd93a5860",
+        "equal": true
+      },
+      {
+        "path": "perro_source/render_stack/perro_graphics/benches/fixtures/mesh_load.rs",
+        "base": "cbcd99a262b830975b3b2afbe499510fcd487456ffef39e6e785abf592afe9fc",
+        "new": "cbcd99a262b830975b3b2afbe499510fcd487456ffef39e6e785abf592afe9fc",
+        "equal": true
+      },
+      {
+        "path": "perro_source/render_stack/perro_graphics/benches/fixtures/texture_load.rs",
+        "base": "4c921ab547ac86ce4af30f7629c626dfde58cb5c370d652a3e989573c493144b",
+        "new": "4c921ab547ac86ce4af30f7629c626dfde58cb5c370d652a3e989573c493144b",
+        "equal": true
+      }
+    ]
+  },
+  "baseline_executables": [
+    {
+      "phase": "editor",
+      "target": "scripts",
+      "kind": [
+        "cdylib",
+        "rlib"
+      ],
+      "package_id": "path+file:///D:/Rust/Perro-perf-audit-baseline/perro_editor/.perro/scripts#0.1.0",
+      "manifest_path": "D:\\Rust\\Perro-perf-audit-baseline\\perro_editor\\.perro\\scripts\\Cargo.toml",
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 2,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": true
+      },
+      "features": [],
+      "fresh": false,
+      "original_executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-base-target-2026-09-06\\release\\deps\\scripts-f129af1c1682de15.exe",
+      "executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-editor.exe",
+      "sha256": "16FA095E9DD3EF2370A284BFEAD399AAE89CF5F6DCB31EF3ED567CFC1238615A",
+      "bytes": 1422336
+    },
+    {
+      "phase": "benches-final",
+      "target": "audit_playback",
+      "kind": [
+        "bench"
+      ],
+      "package_id": "path+file:///D:/Rust/Perro-perf-audit-baseline/perro_source/audio_stack/perro_pawdio#0.1.0",
+      "manifest_path": "D:\\Rust\\Perro-perf-audit-baseline\\perro_source\\audio_stack\\perro_pawdio\\Cargo.toml",
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": true
+      },
+      "features": [
+        "default",
+        "playback"
+      ],
+      "fresh": true,
+      "original_executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-base-target-2026-09-06\\release\\deps\\audit_playback-88f253a52d8a3e3b.exe",
+      "executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-audit_playback.exe",
+      "sha256": "92A9C2DFBC9C76F650DE61946EBDC2539D409ACEF45B66436DABE082B15A1463",
+      "bytes": 4447232
+    },
+    {
+      "phase": "benches-final",
+      "target": "audit_runtime",
+      "kind": [
+        "bench"
+      ],
+      "package_id": "path+file:///D:/Rust/Perro-perf-audit-baseline/perro_source/runtime_project/perro_runtime#0.1.0",
+      "manifest_path": "D:\\Rust\\Perro-perf-audit-baseline\\perro_source\\runtime_project\\perro_runtime\\Cargo.toml",
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": true
+      },
+      "features": [
+        "audio",
+        "bench",
+        "default"
+      ],
+      "fresh": true,
+      "original_executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-base-target-2026-09-06\\release\\deps\\audit_runtime-4f15df8e7153e805.exe",
+      "executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-audit_runtime.exe",
+      "sha256": "1E2ED7524D9CB5BBB8F22532F321D08C29678842BED59E13511529D533A9EF60",
+      "bytes": 12358656
+    },
+    {
+      "phase": "benches-final",
+      "target": "export_hotpaths",
+      "kind": [
+        "bench"
+      ],
+      "package_id": "path+file:///D:/Rust/Perro-perf-audit-baseline/perro_source/build_pipeline/perro_static_pipeline#0.1.0",
+      "manifest_path": "D:\\Rust\\Perro-perf-audit-baseline\\perro_source\\build_pipeline\\perro_static_pipeline\\Cargo.toml",
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": true
+      },
+      "features": [],
+      "fresh": true,
+      "original_executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-base-target-2026-09-06\\release\\deps\\export_hotpaths-48c536b420d69157.exe",
+      "executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-export_hotpaths.exe",
+      "sha256": "68D6A88D44B9EB3949274C63A494B0C44AC2EE30AFE552ABF0FB4F535897B4E8",
+      "bytes": 13304832
+    },
+    {
+      "phase": "benches-final",
+      "target": "resource_loading",
+      "kind": [
+        "bench"
+      ],
+      "package_id": "path+file:///D:/Rust/Perro-perf-audit-baseline/perro_source/render_stack/perro_graphics#0.1.0",
+      "manifest_path": "D:\\Rust\\Perro-perf-audit-baseline\\perro_source\\render_stack\\perro_graphics\\Cargo.toml",
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": true
+      },
+      "features": [],
+      "fresh": true,
+      "original_executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-base-target-2026-09-06\\release\\deps\\resource_loading-a317066486e3bd05.exe",
+      "executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-resource_loading.exe",
+      "sha256": "56570005B4960EB4F86A40068919E2970192466863F53F0E6202CCD1929285DC",
+      "bytes": 17840640
+    },
+    {
+      "phase": "benches-final",
+      "target": "gpu_frame",
+      "kind": [
+        "bench"
+      ],
+      "package_id": "path+file:///D:/Rust/Perro-perf-audit-baseline/perro_source/render_stack/perro_graphics#0.1.0",
+      "manifest_path": "D:\\Rust\\Perro-perf-audit-baseline\\perro_source\\render_stack\\perro_graphics\\Cargo.toml",
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": true
+      },
+      "features": [],
+      "fresh": true,
+      "original_executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-base-target-2026-09-06\\release\\deps\\gpu_frame-ec3af49fbf8670c0.exe",
+      "executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-gpu_frame.exe",
+      "sha256": "89E2441E9D923C45DAAB1CC830474B2FD335D2478E35A1FD981C4F0D5C71ADC3",
+      "bytes": 17969152
+    },
+    {
+      "phase": "benches-final",
+      "target": "cpu_prepare",
+      "kind": [
+        "bench"
+      ],
+      "package_id": "path+file:///D:/Rust/Perro-perf-audit-baseline/perro_source/render_stack/perro_graphics#0.1.0",
+      "manifest_path": "D:\\Rust\\Perro-perf-audit-baseline\\perro_source\\render_stack\\perro_graphics\\Cargo.toml",
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": true
+      },
+      "features": [],
+      "fresh": true,
+      "original_executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-base-target-2026-09-06\\release\\deps\\cpu_prepare-17a5922dca5d3e5c.exe",
+      "executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-cpu_prepare.exe",
+      "sha256": "E68FE62DAB8F4B0137DC2F3EBDFDC33FF4791D7F9587EA8EE2D8A466C7892C33",
+      "bytes": 17913344
+    },
+    {
+      "phase": "benches-final",
+      "target": "nested_fallback_audit",
+      "kind": [
+        "bench"
+      ],
+      "package_id": "path+file:///D:/Rust/Perro-perf-audit-baseline/perro_source/script_stack/perro_scripting#0.1.0",
+      "manifest_path": "D:\\Rust\\Perro-perf-audit-baseline\\perro_source\\script_stack\\perro_scripting\\Cargo.toml",
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": true
+      },
+      "features": [],
+      "fresh": true,
+      "original_executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-base-target-2026-09-06\\release\\deps\\nested_fallback_audit-c0cd36c13cc1b393.exe",
+      "executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-nested_fallback_audit.exe",
+      "sha256": "14B82BD788C263F9DEEBA46F8258250EBCC07EEAF7336474C58AD5C68A3129D5",
+      "bytes": 3068928
+    },
+    {
+      "phase": "benches-final",
+      "target": "audit_runtime_remaining",
+      "kind": [
+        "bench"
+      ],
+      "package_id": "path+file:///D:/Rust/Perro-perf-audit-baseline/perro_source/runtime_project/perro_runtime#0.1.0",
+      "manifest_path": "D:\\Rust\\Perro-perf-audit-baseline\\perro_source\\runtime_project\\perro_runtime\\Cargo.toml",
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": true
+      },
+      "features": [
+        "audio",
+        "bench",
+        "default"
+      ],
+      "fresh": false,
+      "original_executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-base-target-2026-09-06\\release\\deps\\audit_runtime_remaining-3f4d5db87ee3c62c.exe",
+      "executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-audit_runtime_remaining.exe",
+      "sha256": "4D94BDC15BE47EFC90824126C56AEEB694A069CC4C5B3BF43B4D4D34B06593A9",
+      "bytes": 12277760
+    },
+    {
+      "phase": "tests-matched",
+      "target": "perro_website_lib",
+      "kind": [
+        "cdylib",
+        "rlib"
+      ],
+      "package_id": "path+file:///D:/Rust/Perro-perf-audit-baseline/perro_website#0.1.0",
+      "manifest_path": "D:\\Rust\\Perro-perf-audit-baseline\\perro_website\\Cargo.toml",
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": true
+      },
+      "features": [
+        "default",
+        "ssr"
+      ],
+      "fresh": true,
+      "original_executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-base-target-2026-09-06\\release\\deps\\perro_website_lib-ff06b9cc38cf4962.exe",
+      "executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-test-perro_website-perro_website_lib.exe",
+      "sha256": "C62C741383B96EDDE86465F19FC97D1401D329EE34D94510034DF4DAA7B1899B",
+      "bytes": 7799296
+    },
+    {
+      "phase": "tests-matched",
+      "target": "sync_query_pose",
+      "kind": [
+        "test"
+      ],
+      "package_id": "path+file:///D:/Rust/Perro-perf-audit-baseline/perro_source/runtime_project/perro_physics#0.1.0",
+      "manifest_path": "D:\\Rust\\Perro-perf-audit-baseline\\perro_source\\runtime_project\\perro_physics\\Cargo.toml",
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": true
+      },
+      "features": [],
+      "fresh": true,
+      "original_executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-base-target-2026-09-06\\release\\deps\\sync_query_pose-b270627d6683c4d5.exe",
+      "executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-test-perro_physics-sync_query_pose.exe",
+      "sha256": "CFB50B1AC7C2E019953ACBD8DF4EDFD31309269B27F5CBCC02995811CF284F48",
+      "bytes": 3055104
+    },
+    {
+      "phase": "tests-matched",
+      "target": "perro_pawdio",
+      "kind": [
+        "lib"
+      ],
+      "package_id": "path+file:///D:/Rust/Perro-perf-audit-baseline/perro_source/audio_stack/perro_pawdio#0.1.0",
+      "manifest_path": "D:\\Rust\\Perro-perf-audit-baseline\\perro_source\\audio_stack\\perro_pawdio\\Cargo.toml",
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": true
+      },
+      "features": [
+        "default",
+        "playback"
+      ],
+      "fresh": true,
+      "original_executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-base-target-2026-09-06\\release\\deps\\perro_pawdio-e595737150547234.exe",
+      "executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-test-perro_pawdio-perro_pawdio.exe",
+      "sha256": "738B906B7AF728BFFDCCF4FF5DA3C2E52D665F95EE2AA05809CC9D9D239073AF",
+      "bytes": 1555456
+    },
+    {
+      "phase": "tests-matched",
+      "target": "perro_website",
+      "kind": [
+        "bin"
+      ],
+      "package_id": "path+file:///D:/Rust/Perro-perf-audit-baseline/perro_website#0.1.0",
+      "manifest_path": "D:\\Rust\\Perro-perf-audit-baseline\\perro_website\\Cargo.toml",
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": true
+      },
+      "features": [
+        "default",
+        "ssr"
+      ],
+      "fresh": true,
+      "original_executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-base-target-2026-09-06\\release\\deps\\perro_website-5e718d2aa74250f3.exe",
+      "executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-test-perro_website-perro_website.exe",
+      "sha256": "EE70C03AA7264322A3A7E36B3D63EB8B83F408119F33589EF4EEAC5643A83321",
+      "bytes": 14528512
+    },
+    {
+      "phase": "tests-matched",
+      "target": "perro_networking",
+      "kind": [
+        "lib"
+      ],
+      "package_id": "path+file:///D:/Rust/Perro-perf-audit-baseline/perro_source/api_modules/perro_networking#0.1.0",
+      "manifest_path": "D:\\Rust\\Perro-perf-audit-baseline\\perro_source\\api_modules\\perro_networking\\Cargo.toml",
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": true
+      },
+      "features": [
+        "network-tests"
+      ],
+      "fresh": true,
+      "original_executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-base-target-2026-09-06\\release\\deps\\perro_networking-d7ba17be3f59cf2f.exe",
+      "executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-test-perro_networking-perro_networking.exe",
+      "sha256": "1E8D0DA2DACD18A77C7E6B4EB6C3826D2F96DF8FFAC32328BF87EEAD19F65409",
+      "bytes": 5457408
+    },
+    {
+      "phase": "tests-matched",
+      "target": "perro_runtime",
+      "kind": [
+        "lib"
+      ],
+      "package_id": "path+file:///D:/Rust/Perro-perf-audit-baseline/perro_source/runtime_project/perro_runtime#0.1.0",
+      "manifest_path": "D:\\Rust\\Perro-perf-audit-baseline\\perro_source\\runtime_project\\perro_runtime\\Cargo.toml",
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": true
+      },
+      "features": [
+        "audio",
+        "bench",
+        "default"
+      ],
+      "fresh": true,
+      "original_executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-base-target-2026-09-06\\release\\deps\\perro_runtime-5c715e0062c066ad.exe",
+      "executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-test-perro_runtime-perro_runtime.exe",
+      "sha256": "CDCB11D843B44743BDD7729083567FC3AB0B55CE60DC5FA4464BAE6FB82F4577",
+      "bytes": 15412224
+    },
+    {
+      "phase": "tests-matched",
+      "target": "perro_physics",
+      "kind": [
+        "lib"
+      ],
+      "package_id": "path+file:///D:/Rust/Perro-perf-audit-baseline/perro_source/runtime_project/perro_physics#0.1.0",
+      "manifest_path": "D:\\Rust\\Perro-perf-audit-baseline\\perro_source\\runtime_project\\perro_physics\\Cargo.toml",
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": true
+      },
+      "features": [],
+      "fresh": true,
+      "original_executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-base-target-2026-09-06\\release\\deps\\perro_physics-0682676594b9bdf1.exe",
+      "executable": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-test-perro_physics-perro_physics.exe",
+      "sha256": "858D0BBDBA8C065AEDAA764C8C5E70CFB26D7813134381DF77E3EBD4681048CF",
+      "bytes": 4075008
+    }
+  ],
+  "candidate_assets_refresh_executables": [
+    {
+      "name": "audit_playback",
+      "source": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-target-2026-09-06\\release\\deps\\audit_playback-88f253a52d8a3e3b.exe",
+      "snapshot": "C:/Users/super/.codex/tmp/perro-perf-audit-results-2026-09-06/new-final-audit_playback.exe",
+      "manifest_path": "D:\\Rust\\Perro\\perro_source\\audio_stack\\perro_pawdio\\Cargo.toml",
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": true
+      },
+      "features": [
+        "default",
+        "playback"
+      ],
+      "fresh": false,
+      "prior_sha256": "558A2A9C26B91B4575C59458FB129DFA5673242DBF40CF8B86E0B775F23E4B1E",
+      "sha256": "66F6AB3AAEE1DB510569BE41CD267E0CED3A206C5B68169DE1DF63D834201364",
+      "changed": true
+    },
+    {
+      "name": "nested_fallback_audit",
+      "source": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-target-2026-09-06\\release\\deps\\nested_fallback_audit-c0cd36c13cc1b393.exe",
+      "snapshot": "C:/Users/super/.codex/tmp/perro-perf-audit-results-2026-09-06/new-final-nested_fallback_audit.exe",
+      "manifest_path": "D:\\Rust\\Perro\\perro_source\\script_stack\\perro_scripting\\Cargo.toml",
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": true
+      },
+      "features": [],
+      "fresh": false,
+      "prior_sha256": "1802546EE1ADF7D00007E33BAB4294128F6F0928D4EF3FB0990B4671D989FD5B",
+      "sha256": "4725EC412462A0C305E1FBE29BBE38A4182E7BA57EC13D1767B9A91BE51DDDC0",
+      "changed": true
+    },
+    {
+      "name": "gpu_frame",
+      "source": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-target-2026-09-06\\release\\deps\\gpu_frame-ec3af49fbf8670c0.exe",
+      "snapshot": "C:/Users/super/.codex/tmp/perro-perf-audit-results-2026-09-06/new-final-gpu_frame.exe",
+      "manifest_path": "D:\\Rust\\Perro\\perro_source\\render_stack\\perro_graphics\\Cargo.toml",
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": true
+      },
+      "features": [],
+      "fresh": false,
+      "prior_sha256": "8AB270F3D73EA4591BF354B763B697544752C5C175D536A90E365E2A0A9F1FF2",
+      "sha256": "B9E9B5146A05D4977D61CBC89F63C77BBF9AB6AAF794B397912F4B77A3F5EE42",
+      "changed": true
+    },
+    {
+      "name": "cpu_prepare",
+      "source": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-target-2026-09-06\\release\\deps\\cpu_prepare-17a5922dca5d3e5c.exe",
+      "snapshot": "C:/Users/super/.codex/tmp/perro-perf-audit-results-2026-09-06/new-final-cpu_prepare.exe",
+      "manifest_path": "D:\\Rust\\Perro\\perro_source\\render_stack\\perro_graphics\\Cargo.toml",
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": true
+      },
+      "features": [],
+      "fresh": false,
+      "prior_sha256": "39D5E5CB43A8B1287DC06EA423D0F48E42363B5A54C2B2B2D4499EB88010684F",
+      "sha256": "1E346070B31B9492A800E3A134C9E11678CC5F833CE7F2BA1FCD6F485B4055B2",
+      "changed": true
+    },
+    {
+      "name": "export_hotpaths",
+      "source": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-target-2026-09-06\\release\\deps\\export_hotpaths-48c536b420d69157.exe",
+      "snapshot": "C:/Users/super/.codex/tmp/perro-perf-audit-results-2026-09-06/new-final-export_hotpaths.exe",
+      "manifest_path": "D:\\Rust\\Perro\\perro_source\\build_pipeline\\perro_static_pipeline\\Cargo.toml",
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": true
+      },
+      "features": [],
+      "fresh": false,
+      "prior_sha256": "2AF1C2EF43DAA98CDC0841613EFB31B6A8470869E8E76EE123D259546F6F4E68",
+      "sha256": "8066CC41D20E6929C7683DE7408426164487377572351AC166C5DD651DE8609F",
+      "changed": true
+    },
+    {
+      "name": "audit_runtime_remaining",
+      "source": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-target-2026-09-06\\release\\deps\\audit_runtime_remaining-3f4d5db87ee3c62c.exe",
+      "snapshot": "C:/Users/super/.codex/tmp/perro-perf-audit-results-2026-09-06/new-final-audit_runtime_remaining.exe",
+      "manifest_path": "D:\\Rust\\Perro\\perro_source\\runtime_project\\perro_runtime\\Cargo.toml",
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": true
+      },
+      "features": [
+        "audio",
+        "bench",
+        "default"
+      ],
+      "fresh": false,
+      "prior_sha256": "68E5BB84468927B02C4B885736F024E8BE50A89B19A7396EF5ED728C4D5DE4CB",
+      "sha256": "00495238F9210F1BFEB9EDCF7D2D362384FA1F84D8642B2D3386FF17D7481C51",
+      "changed": true
+    },
+    {
+      "name": "audit_runtime",
+      "source": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-target-2026-09-06\\release\\deps\\audit_runtime-4f15df8e7153e805.exe",
+      "snapshot": "C:/Users/super/.codex/tmp/perro-perf-audit-results-2026-09-06/new-final-audit_runtime.exe",
+      "manifest_path": "D:\\Rust\\Perro\\perro_source\\runtime_project\\perro_runtime\\Cargo.toml",
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": true
+      },
+      "features": [
+        "audio",
+        "bench",
+        "default"
+      ],
+      "fresh": false,
+      "prior_sha256": "6A697B50BA3FEE8BDE4B691D70C95A6019D892CBECC8BE237125E532F7B9DDD5",
+      "sha256": "471F8E4DF8C22D3E935B3DB3228447E2295B0E8732896D84E32549920C9CC0D9",
+      "changed": true
+    },
+    {
+      "name": "resource_loading",
+      "source": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-target-2026-09-06\\release\\deps\\resource_loading-a317066486e3bd05.exe",
+      "snapshot": "C:/Users/super/.codex/tmp/perro-perf-audit-results-2026-09-06/new-final-resource_loading.exe",
+      "manifest_path": "D:\\Rust\\Perro\\perro_source\\render_stack\\perro_graphics\\Cargo.toml",
+      "profile": {
+        "opt_level": "3",
+        "debuginfo": 0,
+        "debug_assertions": false,
+        "overflow_checks": false,
+        "test": true
+      },
+      "features": [],
+      "fresh": false,
+      "prior_sha256": "8AC8CE25FD05D9D7C13B62B36435FA7C6783347B3BD02E9A4CF441BD4C12FFAD",
+      "sha256": "EDAC09EEA94C1EB669F43723AFC78ABC65B954D53679253A293E3E587CA77B43",
+      "changed": true
+    }
+  ],
+  "test_snapshot_totals": {
+    "workspace_passed": 2601,
+    "workspace_targets": 59,
+    "workspace_ignored": 29,
+    "editor_passed": 57,
+    "editor_ignored": 3,
+    "gpu_pixel_separate_passed": 1,
+    "doctests_run": false
+  },
+  "accepted_runs": {
+    "final-base-mesh-isolated1": {
+      "name": "final-base-mesh-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-resource_loading.exe",
+      "sha256": "56570005B4960EB4F86A40068919E2970192466863F53F0E6202CCD1929285DC",
+      "arguments": [
+        "resource_mesh_completed",
+        "--bench",
+        "--sample-size",
+        "20",
+        "--warm-up-time",
+        "0.5",
+        "--measurement-time",
+        "1",
+        "--noplot"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 29
+    },
+    "final-new-mesh-isolated1": {
+      "name": "final-new-mesh-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-resource_loading.exe",
+      "sha256": "8AC8CE25FD05D9D7C13B62B36435FA7C6783347B3BD02E9A4CF441BD4C12FFAD",
+      "arguments": [
+        "resource_mesh_completed",
+        "--bench",
+        "--sample-size",
+        "20",
+        "--warm-up-time",
+        "0.5",
+        "--measurement-time",
+        "1",
+        "--noplot"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 29
+    },
+    "final-base-metadata-isolated1": {
+      "name": "final-base-metadata-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-cpu_prepare.exe",
+      "sha256": "E68FE62DAB8F4B0137DC2F3EBDFDC33FF4791D7F9587EA8EE2D8A466C7892C33",
+      "arguments": [
+        "graphics_3d_resource_metadata",
+        "--bench",
+        "--sample-size",
+        "20",
+        "--warm-up-time",
+        "0.5",
+        "--measurement-time",
+        "1",
+        "--noplot"
+      ],
+      "exit_code": 0,
+      "affinity": 32768,
+      "compiler_free": true,
+      "load_sample_count": 79
+    },
+    "final-new-metadata-isolated1": {
+      "name": "final-new-metadata-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-cpu_prepare.exe",
+      "sha256": "39D5E5CB43A8B1287DC06EA423D0F48E42363B5A54C2B2B2D4499EB88010684F",
+      "arguments": [
+        "graphics_3d_resource_metadata",
+        "--bench",
+        "--sample-size",
+        "20",
+        "--warm-up-time",
+        "0.5",
+        "--measurement-time",
+        "1",
+        "--noplot"
+      ],
+      "exit_code": 0,
+      "affinity": 32768,
+      "compiler_free": true,
+      "load_sample_count": 81
+    },
+    "final-base-nested-isolated1": {
+      "name": "final-base-nested-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-nested_fallback_audit.exe",
+      "sha256": "14B82BD788C263F9DEEBA46F8258250EBCC07EEAF7336474C58AD5C68A3129D5",
+      "arguments": [
+        "audit_nested_fallback",
+        "--bench",
+        "--sample-size",
+        "20",
+        "--warm-up-time",
+        "0.5",
+        "--measurement-time",
+        "1",
+        "--noplot"
+      ],
+      "exit_code": 0,
+      "affinity": 32768,
+      "compiler_free": true,
+      "load_sample_count": 217
+    },
+    "final-new-nested-isolated1": {
+      "name": "final-new-nested-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-nested_fallback_audit.exe",
+      "sha256": "1802546EE1ADF7D00007E33BAB4294128F6F0928D4EF3FB0990B4671D989FD5B",
+      "arguments": [
+        "audit_nested_fallback",
+        "--bench",
+        "--sample-size",
+        "20",
+        "--warm-up-time",
+        "0.5",
+        "--measurement-time",
+        "1",
+        "--noplot"
+      ],
+      "exit_code": 0,
+      "affinity": 32768,
+      "compiler_free": true,
+      "load_sample_count": 217
+    },
+    "final-base-remaining-isolated1": {
+      "name": "final-base-remaining-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-audit_runtime_remaining.exe",
+      "sha256": "4D94BDC15BE47EFC90824126C56AEEB694A069CC4C5B3BF43B4D4D34B06593A9",
+      "arguments": [
+        "audit_remaining",
+        "--bench",
+        "--sample-size",
+        "20",
+        "--warm-up-time",
+        "0.5",
+        "--measurement-time",
+        "1",
+        "--noplot"
+      ],
+      "exit_code": 0,
+      "affinity": 32768,
+      "compiler_free": true,
+      "load_sample_count": 217
+    },
+    "final-new-remaining-isolated1": {
+      "name": "final-new-remaining-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-audit_runtime_remaining.exe",
+      "sha256": "68E5BB84468927B02C4B885736F024E8BE50A89B19A7396EF5ED728C4D5DE4CB",
+      "arguments": [
+        "audit_remaining",
+        "--bench",
+        "--sample-size",
+        "20",
+        "--warm-up-time",
+        "0.5",
+        "--measurement-time",
+        "1",
+        "--noplot"
+      ],
+      "exit_code": 0,
+      "affinity": 32768,
+      "compiler_free": true,
+      "load_sample_count": 215
+    },
+    "final-base-runtime-isolated1": {
+      "name": "final-base-runtime-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-audit_runtime.exe",
+      "sha256": "1E2ED7524D9CB5BBB8F22532F321D08C29678842BED59E13511529D533A9EF60",
+      "arguments": [
+        "audit_runtime",
+        "--bench",
+        "--sample-size",
+        "20",
+        "--warm-up-time",
+        "0.5",
+        "--measurement-time",
+        "1",
+        "--noplot"
+      ],
+      "exit_code": 0,
+      "affinity": 32768,
+      "compiler_free": true,
+      "load_sample_count": 260
+    },
+    "final-new-runtime-isolated1": {
+      "name": "final-new-runtime-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-audit_runtime.exe",
+      "sha256": "6A697B50BA3FEE8BDE4B691D70C95A6019D892CBECC8BE237125E532F7B9DDD5",
+      "arguments": [
+        "audit_runtime",
+        "--bench",
+        "--sample-size",
+        "20",
+        "--warm-up-time",
+        "0.5",
+        "--measurement-time",
+        "1",
+        "--noplot"
+      ],
+      "exit_code": 0,
+      "affinity": 32768,
+      "compiler_free": true,
+      "load_sample_count": 242
+    },
+    "final-base-texture-isolated1": {
+      "name": "final-base-texture-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-resource_loading.exe",
+      "sha256": "56570005B4960EB4F86A40068919E2970192466863F53F0E6202CCD1929285DC",
+      "arguments": [
+        "resource_texture_completed",
+        "--bench",
+        "--sample-size",
+        "20",
+        "--warm-up-time",
+        "0.5",
+        "--measurement-time",
+        "1",
+        "--noplot"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 31
+    },
+    "final-new-texture-isolated1": {
+      "name": "final-new-texture-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-resource_loading.exe",
+      "sha256": "8AC8CE25FD05D9D7C13B62B36435FA7C6783347B3BD02E9A4CF441BD4C12FFAD",
+      "arguments": [
+        "resource_texture_completed",
+        "--bench",
+        "--sample-size",
+        "20",
+        "--warm-up-time",
+        "0.5",
+        "--measurement-time",
+        "1",
+        "--noplot"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 32
+    },
+    "final-base-voices-isolated1": {
+      "name": "final-base-voices-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-audit_playback.exe",
+      "sha256": "92A9C2DFBC9C76F650DE61946EBDC2539D409ACEF45B66436DABE082B15A1463",
+      "arguments": [
+        "audit_audio",
+        "--bench",
+        "--sample-size",
+        "20",
+        "--warm-up-time",
+        "0.5",
+        "--measurement-time",
+        "1",
+        "--noplot"
+      ],
+      "exit_code": 0,
+      "affinity": 32768,
+      "compiler_free": true,
+      "load_sample_count": 125
+    },
+    "final-new-voices-isolated1": {
+      "name": "final-new-voices-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-audit_playback.exe",
+      "sha256": "558A2A9C26B91B4575C59458FB129DFA5673242DBF40CF8B86E0B775F23E4B1E",
+      "arguments": [
+        "audit_audio",
+        "--bench",
+        "--sample-size",
+        "20",
+        "--warm-up-time",
+        "0.5",
+        "--measurement-time",
+        "1",
+        "--noplot"
+      ],
+      "exit_code": 0,
+      "affinity": 32768,
+      "compiler_free": true,
+      "load_sample_count": 126
+    },
+    "final-base-net-isolated1": {
+      "name": "final-base-net-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-test-perro_networking-perro_networking.exe",
+      "sha256": "1E8D0DA2DACD18A77C7E6B4EB6C3826D2F96DF8FFAC32328BF87EEAD19F65409",
+      "arguments": [
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1",
+        "audit_perf::"
+      ],
+      "exit_code": 0,
+      "affinity": 32768,
+      "compiler_free": true,
+      "load_sample_count": 12
+    },
+    "final-new-net-isolated1": {
+      "name": "final-new-net-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/final-test-perro_networking-perro_networking.exe",
+      "sha256": "7F78C05CA95D725063B25CB89009A9A477318C15410A462A78B4802BCE0E5074",
+      "arguments": [
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1",
+        "audit_perf::"
+      ],
+      "exit_code": 0,
+      "affinity": 32768,
+      "compiler_free": true,
+      "load_sample_count": 3
+    },
+    "final-base-slots-isolated1": {
+      "name": "final-base-slots-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-test-perro_networking-perro_networking.exe",
+      "sha256": "1E8D0DA2DACD18A77C7E6B4EB6C3826D2F96DF8FFAC32328BF87EEAD19F65409",
+      "arguments": [
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1",
+        "perf_tests::"
+      ],
+      "exit_code": 0,
+      "affinity": 32768,
+      "compiler_free": true,
+      "load_sample_count": 20
+    },
+    "final-new-slots-isolated1": {
+      "name": "final-new-slots-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/final-test-perro_networking-perro_networking.exe",
+      "sha256": "7F78C05CA95D725063B25CB89009A9A477318C15410A462A78B4802BCE0E5074",
+      "arguments": [
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1",
+        "perf_tests::"
+      ],
+      "exit_code": 0,
+      "affinity": 32768,
+      "compiler_free": true,
+      "load_sample_count": 9
+    },
+    "final-base-dsp-isolated1": {
+      "name": "final-base-dsp-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-test-perro_pawdio-perro_pawdio.exe",
+      "sha256": "738B906B7AF728BFFDCCF4FF5DA3C2E52D665F95EE2AA05809CC9D9D239073AF",
+      "arguments": [
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1",
+        "audit_wet_delay_storage"
+      ],
+      "exit_code": 0,
+      "affinity": 32768,
+      "compiler_free": true,
+      "load_sample_count": 1
+    },
+    "final-new-dsp-isolated1": {
+      "name": "final-new-dsp-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/final-test-perro_pawdio-perro_pawdio.exe",
+      "sha256": "33E7BB5A5C26518D0E24AEC9CACDC9E7EE65AB69D7F2B9792D3339DAA425BEFD",
+      "arguments": [
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1",
+        "audit_wet_delay_storage"
+      ],
+      "exit_code": 0,
+      "affinity": 32768,
+      "compiler_free": true,
+      "load_sample_count": 1
+    },
+    "final-base-editor-isolated1": {
+      "name": "final-base-editor-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-editor.exe",
+      "sha256": "16FA095E9DD3EF2370A284BFEAD399AAE89CF5F6DCB31EF3ED567CFC1238615A",
+      "arguments": [
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1",
+        "audit_editor",
+        "--skip",
+        "audit_editor_views"
+      ],
+      "exit_code": 0,
+      "affinity": 32768,
+      "compiler_free": true,
+      "load_sample_count": 63
+    },
+    "final-new-editor-isolated1": {
+      "name": "final-new-editor-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-editor.exe",
+      "sha256": "0E8523FDFAF23A39E89073D4402CDBEC3BDDF68799CE01CB2D8D3AC6CD0C19BA",
+      "arguments": [
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1",
+        "audit_editor",
+        "--skip",
+        "audit_editor_views"
+      ],
+      "exit_code": 0,
+      "affinity": 32768,
+      "compiler_free": true,
+      "load_sample_count": 54
+    },
+    "final-base-og-isolated1": {
+      "name": "final-base-og-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-test-perro_website-perro_website.exe",
+      "sha256": "EE70C03AA7264322A3A7E36B3D63EB8B83F408119F33589EF4EEAC5643A83321",
+      "arguments": [
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1",
+        "time_og_png_repeated_route"
+      ],
+      "exit_code": 0,
+      "affinity": 32768,
+      "compiler_free": true,
+      "load_sample_count": 10
+    },
+    "final-new-og-isolated1": {
+      "name": "final-new-og-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/final-test-perro_website-perro_website.exe",
+      "sha256": "ADF9CF070FF58F0210794885D45F809A203322DB2A9A31104B360F5C71384955",
+      "arguments": [
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1",
+        "time_og_png_repeated_route"
+      ],
+      "exit_code": 0,
+      "affinity": 32768,
+      "compiler_free": true,
+      "load_sample_count": 1
+    },
+    "final-base-export-material-isolated1": {
+      "name": "final-base-export-material-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-export_hotpaths.exe",
+      "sha256": "68D6A88D44B9EB3949274C63A494B0C44AC2EE30AFE552ABF0FB4F535897B4E8",
+      "arguments": [
+        "--case=material",
+        "--samples=10",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 4
+    },
+    "final-new-export-material-isolated1": {
+      "name": "final-new-export-material-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-export_hotpaths.exe",
+      "sha256": "2AF1C2EF43DAA98CDC0841613EFB31B6A8470869E8E76EE123D259546F6F4E68",
+      "arguments": [
+        "--case=material",
+        "--samples=10",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 1
+    },
+    "final-base-export-textures-isolated1": {
+      "name": "final-base-export-textures-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-export_hotpaths.exe",
+      "sha256": "68D6A88D44B9EB3949274C63A494B0C44AC2EE30AFE552ABF0FB4F535897B4E8",
+      "arguments": [
+        "--case=textures",
+        "--samples=10",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 31
+    },
+    "final-new-export-textures-isolated1": {
+      "name": "final-new-export-textures-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-export_hotpaths.exe",
+      "sha256": "2AF1C2EF43DAA98CDC0841613EFB31B6A8470869E8E76EE123D259546F6F4E68",
+      "arguments": [
+        "--case=textures",
+        "--samples=10",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 35
+    },
+    "final-base-export-shader-isolated1": {
+      "name": "final-base-export-shader-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-export_hotpaths.exe",
+      "sha256": "68D6A88D44B9EB3949274C63A494B0C44AC2EE30AFE552ABF0FB4F535897B4E8",
+      "arguments": [
+        "--case=shader",
+        "--samples=10",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 162
+    },
+    "final-new-export-shader-isolated1": {
+      "name": "final-new-export-shader-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-export_hotpaths.exe",
+      "sha256": "2AF1C2EF43DAA98CDC0841613EFB31B6A8470869E8E76EE123D259546F6F4E68",
+      "arguments": [
+        "--case=shader",
+        "--samples=10",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 24
+    },
+    "final-base-export-codegen-isolated1": {
+      "name": "final-base-export-codegen-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-export_hotpaths.exe",
+      "sha256": "68D6A88D44B9EB3949274C63A494B0C44AC2EE30AFE552ABF0FB4F535897B4E8",
+      "arguments": [
+        "--case=codegen",
+        "--samples=10",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 9
+    },
+    "final-new-export-codegen-isolated1": {
+      "name": "final-new-export-codegen-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-export_hotpaths.exe",
+      "sha256": "2AF1C2EF43DAA98CDC0841613EFB31B6A8470869E8E76EE123D259546F6F4E68",
+      "arguments": [
+        "--case=codegen",
+        "--samples=10",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 6
+    },
+    "final-base-export-codegen_small-isolated1": {
+      "name": "final-base-export-codegen_small-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-export_hotpaths.exe",
+      "sha256": "68D6A88D44B9EB3949274C63A494B0C44AC2EE30AFE552ABF0FB4F535897B4E8",
+      "arguments": [
+        "--case=codegen_small",
+        "--samples=10",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 1
+    },
+    "final-new-export-codegen_small-isolated1": {
+      "name": "final-new-export-codegen_small-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-export_hotpaths.exe",
+      "sha256": "2AF1C2EF43DAA98CDC0841613EFB31B6A8470869E8E76EE123D259546F6F4E68",
+      "arguments": [
+        "--case=codegen_small",
+        "--samples=10",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 1
+    },
+    "final-base-memory-material-isolated1": {
+      "name": "final-base-memory-material-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-export_hotpaths.exe",
+      "sha256": "68D6A88D44B9EB3949274C63A494B0C44AC2EE30AFE552ABF0FB4F535897B4E8",
+      "arguments": [
+        "--case=material",
+        "--samples=5",
+        "--threads=4",
+        "--memory"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 3
+    },
+    "final-new-memory-material-isolated1": {
+      "name": "final-new-memory-material-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-export_hotpaths.exe",
+      "sha256": "2AF1C2EF43DAA98CDC0841613EFB31B6A8470869E8E76EE123D259546F6F4E68",
+      "arguments": [
+        "--case=material",
+        "--samples=5",
+        "--threads=4",
+        "--memory"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 1
+    },
+    "final-base-memory-textures-isolated1": {
+      "name": "final-base-memory-textures-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-export_hotpaths.exe",
+      "sha256": "68D6A88D44B9EB3949274C63A494B0C44AC2EE30AFE552ABF0FB4F535897B4E8",
+      "arguments": [
+        "--case=textures",
+        "--samples=5",
+        "--threads=4",
+        "--memory"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 19
+    },
+    "final-new-memory-textures-isolated1": {
+      "name": "final-new-memory-textures-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-export_hotpaths.exe",
+      "sha256": "2AF1C2EF43DAA98CDC0841613EFB31B6A8470869E8E76EE123D259546F6F4E68",
+      "arguments": [
+        "--case=textures",
+        "--samples=5",
+        "--threads=4",
+        "--memory"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 20
+    },
+    "final-base-export-archive-assets-refresh": {
+      "name": "final-base-export-archive-assets-refresh",
+      "exe": "C:/Users/super/.codex/tmp/perro-perf-audit-results-2026-09-06/isolated-base-export_hotpaths.exe",
+      "sha256": "68D6A88D44B9EB3949274C63A494B0C44AC2EE30AFE552ABF0FB4F535897B4E8",
+      "arguments": [
+        "--case=archive",
+        "--samples=20",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 8
+    },
+    "final-new-export-archive-assets-refresh": {
+      "name": "final-new-export-archive-assets-refresh",
+      "exe": "C:/Users/super/.codex/tmp/perro-perf-audit-results-2026-09-06/new-final-export_hotpaths.exe",
+      "sha256": "8066CC41D20E6929C7683DE7408426164487377572351AC166C5DD651DE8609F",
+      "arguments": [
+        "--case=archive",
+        "--samples=20",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 4
+    },
+    "final-base-memory-archive-assets-refresh": {
+      "name": "final-base-memory-archive-assets-refresh",
+      "exe": "C:/Users/super/.codex/tmp/perro-perf-audit-results-2026-09-06/isolated-base-export_hotpaths.exe",
+      "sha256": "68D6A88D44B9EB3949274C63A494B0C44AC2EE30AFE552ABF0FB4F535897B4E8",
+      "arguments": [
+        "--case=archive",
+        "--samples=3",
+        "--threads=4",
+        "--memory"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 3
+    },
+    "final-new-memory-archive-assets-refresh": {
+      "name": "final-new-memory-archive-assets-refresh",
+      "exe": "C:/Users/super/.codex/tmp/perro-perf-audit-results-2026-09-06/new-final-export_hotpaths.exe",
+      "sha256": "8066CC41D20E6929C7683DE7408426164487377572351AC166C5DD651DE8609F",
+      "arguments": [
+        "--case=archive",
+        "--samples=3",
+        "--threads=4",
+        "--memory"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 3
+    },
+    "final-base-first-codegen-1-isolated1": {
+      "name": "final-base-first-codegen-1-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-export_hotpaths.exe",
+      "sha256": "68D6A88D44B9EB3949274C63A494B0C44AC2EE30AFE552ABF0FB4F535897B4E8",
+      "arguments": [
+        "--case=codegen",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 4
+    },
+    "final-base-first-codegen-2-isolated1": {
+      "name": "final-base-first-codegen-2-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-export_hotpaths.exe",
+      "sha256": "68D6A88D44B9EB3949274C63A494B0C44AC2EE30AFE552ABF0FB4F535897B4E8",
+      "arguments": [
+        "--case=codegen",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 4
+    },
+    "final-base-first-codegen-3-isolated1": {
+      "name": "final-base-first-codegen-3-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-export_hotpaths.exe",
+      "sha256": "68D6A88D44B9EB3949274C63A494B0C44AC2EE30AFE552ABF0FB4F535897B4E8",
+      "arguments": [
+        "--case=codegen",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 4
+    },
+    "final-base-first-codegen-4-isolated1": {
+      "name": "final-base-first-codegen-4-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-export_hotpaths.exe",
+      "sha256": "68D6A88D44B9EB3949274C63A494B0C44AC2EE30AFE552ABF0FB4F535897B4E8",
+      "arguments": [
+        "--case=codegen",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 5
+    },
+    "final-base-first-codegen-5-isolated1": {
+      "name": "final-base-first-codegen-5-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-export_hotpaths.exe",
+      "sha256": "68D6A88D44B9EB3949274C63A494B0C44AC2EE30AFE552ABF0FB4F535897B4E8",
+      "arguments": [
+        "--case=codegen",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 4
+    },
+    "final-base-first-codegen-6-isolated1": {
+      "name": "final-base-first-codegen-6-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-export_hotpaths.exe",
+      "sha256": "68D6A88D44B9EB3949274C63A494B0C44AC2EE30AFE552ABF0FB4F535897B4E8",
+      "arguments": [
+        "--case=codegen",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 4
+    },
+    "final-base-first-codegen-7-isolated1": {
+      "name": "final-base-first-codegen-7-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-export_hotpaths.exe",
+      "sha256": "68D6A88D44B9EB3949274C63A494B0C44AC2EE30AFE552ABF0FB4F535897B4E8",
+      "arguments": [
+        "--case=codegen",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 4
+    },
+    "final-new-first-codegen-1-isolated1": {
+      "name": "final-new-first-codegen-1-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-export_hotpaths.exe",
+      "sha256": "2AF1C2EF43DAA98CDC0841613EFB31B6A8470869E8E76EE123D259546F6F4E68",
+      "arguments": [
+        "--case=codegen",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 5
+    },
+    "final-new-first-codegen-2-isolated1": {
+      "name": "final-new-first-codegen-2-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-export_hotpaths.exe",
+      "sha256": "2AF1C2EF43DAA98CDC0841613EFB31B6A8470869E8E76EE123D259546F6F4E68",
+      "arguments": [
+        "--case=codegen",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 5
+    },
+    "final-new-first-codegen-3-isolated1": {
+      "name": "final-new-first-codegen-3-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-export_hotpaths.exe",
+      "sha256": "2AF1C2EF43DAA98CDC0841613EFB31B6A8470869E8E76EE123D259546F6F4E68",
+      "arguments": [
+        "--case=codegen",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 4
+    },
+    "final-new-first-codegen-4-isolated1": {
+      "name": "final-new-first-codegen-4-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-export_hotpaths.exe",
+      "sha256": "2AF1C2EF43DAA98CDC0841613EFB31B6A8470869E8E76EE123D259546F6F4E68",
+      "arguments": [
+        "--case=codegen",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 5
+    },
+    "final-new-first-codegen-5-isolated1": {
+      "name": "final-new-first-codegen-5-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-export_hotpaths.exe",
+      "sha256": "2AF1C2EF43DAA98CDC0841613EFB31B6A8470869E8E76EE123D259546F6F4E68",
+      "arguments": [
+        "--case=codegen",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 5
+    },
+    "final-new-first-codegen-6-isolated1": {
+      "name": "final-new-first-codegen-6-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-export_hotpaths.exe",
+      "sha256": "2AF1C2EF43DAA98CDC0841613EFB31B6A8470869E8E76EE123D259546F6F4E68",
+      "arguments": [
+        "--case=codegen",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 5
+    },
+    "final-new-first-codegen-7-isolated1": {
+      "name": "final-new-first-codegen-7-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-export_hotpaths.exe",
+      "sha256": "2AF1C2EF43DAA98CDC0841613EFB31B6A8470869E8E76EE123D259546F6F4E68",
+      "arguments": [
+        "--case=codegen",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 5
+    },
+    "final-base-first-codegen_small-1-isolated1": {
+      "name": "final-base-first-codegen_small-1-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-export_hotpaths.exe",
+      "sha256": "68D6A88D44B9EB3949274C63A494B0C44AC2EE30AFE552ABF0FB4F535897B4E8",
+      "arguments": [
+        "--case=codegen_small",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 1
+    },
+    "final-base-first-codegen_small-2-isolated1": {
+      "name": "final-base-first-codegen_small-2-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-export_hotpaths.exe",
+      "sha256": "68D6A88D44B9EB3949274C63A494B0C44AC2EE30AFE552ABF0FB4F535897B4E8",
+      "arguments": [
+        "--case=codegen_small",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 1
+    },
+    "final-base-first-codegen_small-3-isolated1": {
+      "name": "final-base-first-codegen_small-3-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-export_hotpaths.exe",
+      "sha256": "68D6A88D44B9EB3949274C63A494B0C44AC2EE30AFE552ABF0FB4F535897B4E8",
+      "arguments": [
+        "--case=codegen_small",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 1
+    },
+    "final-base-first-codegen_small-4-isolated1": {
+      "name": "final-base-first-codegen_small-4-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-export_hotpaths.exe",
+      "sha256": "68D6A88D44B9EB3949274C63A494B0C44AC2EE30AFE552ABF0FB4F535897B4E8",
+      "arguments": [
+        "--case=codegen_small",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 1
+    },
+    "final-base-first-codegen_small-5-isolated1": {
+      "name": "final-base-first-codegen_small-5-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-export_hotpaths.exe",
+      "sha256": "68D6A88D44B9EB3949274C63A494B0C44AC2EE30AFE552ABF0FB4F535897B4E8",
+      "arguments": [
+        "--case=codegen_small",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 1
+    },
+    "final-base-first-codegen_small-6-isolated1": {
+      "name": "final-base-first-codegen_small-6-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-export_hotpaths.exe",
+      "sha256": "68D6A88D44B9EB3949274C63A494B0C44AC2EE30AFE552ABF0FB4F535897B4E8",
+      "arguments": [
+        "--case=codegen_small",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 1
+    },
+    "final-base-first-codegen_small-7-isolated1": {
+      "name": "final-base-first-codegen_small-7-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-export_hotpaths.exe",
+      "sha256": "68D6A88D44B9EB3949274C63A494B0C44AC2EE30AFE552ABF0FB4F535897B4E8",
+      "arguments": [
+        "--case=codegen_small",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 1
+    },
+    "final-new-first-codegen_small-1-isolated1": {
+      "name": "final-new-first-codegen_small-1-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-export_hotpaths.exe",
+      "sha256": "2AF1C2EF43DAA98CDC0841613EFB31B6A8470869E8E76EE123D259546F6F4E68",
+      "arguments": [
+        "--case=codegen_small",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 1
+    },
+    "final-new-first-codegen_small-2-isolated1": {
+      "name": "final-new-first-codegen_small-2-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-export_hotpaths.exe",
+      "sha256": "2AF1C2EF43DAA98CDC0841613EFB31B6A8470869E8E76EE123D259546F6F4E68",
+      "arguments": [
+        "--case=codegen_small",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 1
+    },
+    "final-new-first-codegen_small-3-isolated1": {
+      "name": "final-new-first-codegen_small-3-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-export_hotpaths.exe",
+      "sha256": "2AF1C2EF43DAA98CDC0841613EFB31B6A8470869E8E76EE123D259546F6F4E68",
+      "arguments": [
+        "--case=codegen_small",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 1
+    },
+    "final-new-first-codegen_small-4-isolated1": {
+      "name": "final-new-first-codegen_small-4-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-export_hotpaths.exe",
+      "sha256": "2AF1C2EF43DAA98CDC0841613EFB31B6A8470869E8E76EE123D259546F6F4E68",
+      "arguments": [
+        "--case=codegen_small",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 1
+    },
+    "final-new-first-codegen_small-5-isolated1": {
+      "name": "final-new-first-codegen_small-5-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-export_hotpaths.exe",
+      "sha256": "2AF1C2EF43DAA98CDC0841613EFB31B6A8470869E8E76EE123D259546F6F4E68",
+      "arguments": [
+        "--case=codegen_small",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 1
+    },
+    "final-new-first-codegen_small-6-isolated1": {
+      "name": "final-new-first-codegen_small-6-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-export_hotpaths.exe",
+      "sha256": "2AF1C2EF43DAA98CDC0841613EFB31B6A8470869E8E76EE123D259546F6F4E68",
+      "arguments": [
+        "--case=codegen_small",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 1
+    },
+    "final-new-first-codegen_small-7-isolated1": {
+      "name": "final-new-first-codegen_small-7-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-export_hotpaths.exe",
+      "sha256": "2AF1C2EF43DAA98CDC0841613EFB31B6A8470869E8E76EE123D259546F6F4E68",
+      "arguments": [
+        "--case=codegen_small",
+        "--first-call",
+        "--threads=4"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 1
+    },
+    "final-base-gpu-audit-isolated1": {
+      "name": "final-base-gpu-audit-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-gpu_frame.exe",
+      "sha256": "89E2441E9D923C45DAAB1CC830474B2FD335D2478E35A1FD981C4F0D5C71ADC3",
+      "arguments": [
+        "audit"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 58
+    },
+    "final-new-gpu-audit-isolated1": {
+      "name": "final-new-gpu-audit-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-gpu_frame.exe",
+      "sha256": "8AB270F3D73EA4591BF354B763B697544752C5C175D536A90E365E2A0A9F1FF2",
+      "arguments": [
+        "audit"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 36
+    },
+    "final-base-gpu-shadow_moving-isolated1": {
+      "name": "final-base-gpu-shadow_moving-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-gpu_frame.exe",
+      "sha256": "89E2441E9D923C45DAAB1CC830474B2FD335D2478E35A1FD981C4F0D5C71ADC3",
+      "arguments": [
+        "audit"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 10
+    },
+    "final-new-gpu-shadow_moving-isolated1": {
+      "name": "final-new-gpu-shadow_moving-isolated1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-gpu_frame.exe",
+      "sha256": "8AB270F3D73EA4591BF354B763B697544752C5C175D536A90E365E2A0A9F1FF2",
+      "arguments": [
+        "audit"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 9
+    },
+    "final-base-gpu-resource-isolated2": {
+      "name": "final-base-gpu-resource-isolated2",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-gpu_frame.exe",
+      "sha256": "89E2441E9D923C45DAAB1CC830474B2FD335D2478E35A1FD981C4F0D5C71ADC3",
+      "arguments": [
+        "audit"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 145
+    },
+    "final-new-gpu-resource-isolated2": {
+      "name": "final-new-gpu-resource-isolated2",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-gpu_frame.exe",
+      "sha256": "8AB270F3D73EA4591BF354B763B697544752C5C175D536A90E365E2A0A9F1FF2",
+      "arguments": [
+        "audit"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 58
+    },
+    "final-base-gpu-ui-repeat1": {
+      "name": "final-base-gpu-ui-repeat1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-gpu_frame.exe",
+      "sha256": "89E2441E9D923C45DAAB1CC830474B2FD335D2478E35A1FD981C4F0D5C71ADC3",
+      "arguments": [
+        "audit"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 14
+    },
+    "final-new-gpu-ui-repeat1": {
+      "name": "final-new-gpu-ui-repeat1",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-gpu_frame.exe",
+      "sha256": "8AB270F3D73EA4591BF354B763B697544752C5C175D536A90E365E2A0A9F1FF2",
+      "arguments": [
+        "audit"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 12
+    },
+    "final-base-gpu-ui-repeat2": {
+      "name": "final-base-gpu-ui-repeat2",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-gpu_frame.exe",
+      "sha256": "89E2441E9D923C45DAAB1CC830474B2FD335D2478E35A1FD981C4F0D5C71ADC3",
+      "arguments": [
+        "audit"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 15
+    },
+    "final-new-gpu-ui-repeat2": {
+      "name": "final-new-gpu-ui-repeat2",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-gpu_frame.exe",
+      "sha256": "8AB270F3D73EA4591BF354B763B697544752C5C175D536A90E365E2A0A9F1FF2",
+      "arguments": [
+        "audit"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 13
+    },
+    "final-base-gpu-ui-repeat3": {
+      "name": "final-base-gpu-ui-repeat3",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/isolated-base-gpu_frame.exe",
+      "sha256": "89E2441E9D923C45DAAB1CC830474B2FD335D2478E35A1FD981C4F0D5C71ADC3",
+      "arguments": [
+        "audit"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 14
+    },
+    "final-new-gpu-ui-repeat3": {
+      "name": "final-new-gpu-ui-repeat3",
+      "exe": "C:\\Users\\super\\.codex\\tmp\\perro-perf-audit-results-2026-09-06/new-final-gpu_frame.exe",
+      "sha256": "8AB270F3D73EA4591BF354B763B697544752C5C175D536A90E365E2A0A9F1FF2",
+      "arguments": [
+        "audit"
+      ],
+      "exit_code": 0,
+      "affinity": 65535,
+      "compiler_free": true,
+      "load_sample_count": 13
+    }
+  }
+}

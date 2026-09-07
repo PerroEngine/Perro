@@ -327,6 +327,66 @@ fn median(mut samples: Vec<Duration>) -> Duration {
 }
 
 #[test]
+fn noncaster_transform_patch_keeps_shadow_memo_but_caster_patch_invalidates() {
+    let Some((device, queue)) = pollster::block_on(test_device()) else {
+        eprintln!("skip noncaster shadow test: no wgpu adapter");
+        return;
+    };
+    let mesh_arena = SharedMeshArena::new(&device, false, false);
+    let gpu = new_gpu_3d(&device, &queue, &mesh_arena);
+    let mut resources = ResourceStore::new();
+    let mesh = resources.create_mesh("__cube__", true);
+    let material = resources.create_material(Material3D::default(), None, true);
+    let mut lighting = Lighting3DState::default();
+    lighting.spot_lights[0] = Some(perro_render_bridge::SpotLight3DState {
+        position: [0.0, 4.0, 0.0],
+        direction: [0.0, -1.0, 0.0],
+        color: [1.0; 3],
+        intensity: 5.0,
+        range: 20.0,
+        inner_angle_radians: 0.26,
+        outer_angle_radians: 0.52,
+        cast_shadows: true,
+        shadow_strength: 1.0,
+        shadow_depth_bias: 0.001,
+        shadow_normal_bias: 0.01,
+    });
+    let mut harness = Harness {
+        device,
+        queue,
+        gpu,
+        resources,
+        shared_textures: SharedTextureStore::default(),
+        mesh_arena,
+        lighting,
+        revision: 0,
+        static_shader_lookup: None,
+    };
+    let mut draws = vec![
+        regular_draw(0, mesh, material, Color::WHITE),
+        regular_draw(1, mesh, material, Color::WHITE),
+    ];
+    draws[1].cast_shadows = false;
+    harness.prepare(&draws, true);
+    let initial = harness.gpu.shadow_setup_run_count;
+    for x in [3.0, 4.0, 5.0] {
+        draws[1].instance_mats = Arc::from([identity_at(x)]);
+        harness.prepare(&draws, false);
+        assert_eq!(harness.gpu.last_prepare_step_timing.full_rebuilds, 0);
+        assert_eq!(harness.gpu.shadow_setup_run_count, initial);
+    }
+    draws[0].instance_mats = Arc::from([identity_at(0.5)]);
+    harness.prepare(&draws, false);
+    assert!(harness.gpu.shadow_setup_run_count > initial);
+    // A formerly noncasting node entering the caster set must rebuild too.
+    let after_caster = harness.gpu.shadow_setup_run_count;
+    draws[1].cast_shadows = true;
+    harness.prepare(&draws, false);
+    assert_eq!(harness.gpu.last_prepare_step_timing.full_rebuilds, 1);
+    assert!(harness.gpu.shadow_setup_run_count > after_caster);
+}
+
+#[test]
 fn multimesh_staging_reuse_matches_full_repack_and_is_cheaper() {
     pollster::block_on(async {
         let Some((device, queue)) = test_device().await else {
@@ -1494,6 +1554,91 @@ fn multimesh_lod_ranges(gpu: &Gpu3D) -> std::collections::BTreeSet<(u32, u32)> {
         .collect()
 }
 
+#[test]
+fn opaque_mixed_lod_camera_reuses_rows_and_rebuilds_on_band_flip_or_alpha() {
+    pollster::block_on(async {
+        let Some((device, queue)) = test_device().await else {
+            eprintln!("skip mixed LOD camera gate test: no wgpu adapter");
+            return;
+        };
+        let mesh_arena = SharedMeshArena::new(&device, false, false);
+        let gpu = new_gpu_3d(&device, &queue, &mesh_arena);
+        let mut resources = ResourceStore::new();
+        let lod_mesh = resources.create_mesh(LOD_MESH_SOURCE, true);
+        let cube = resources.create_mesh("__cube__", true);
+        let material = resources.create_material(Material3D::default(), None::<&str>, true);
+        let mut harness = Harness {
+            device,
+            queue,
+            gpu,
+            resources,
+            mesh_arena,
+            shared_textures: SharedTextureStore::default(),
+            lighting: Lighting3DState::default(),
+            revision: 0,
+            static_shader_lookup: None,
+        };
+        let mut draws: Vec<_> = (0..128)
+            .map(|i| regular_draw(i, cube, material, Color::WHITE))
+            .collect();
+        let mut lod_draw = regular_draw(128, lod_mesh, material, Color::WHITE);
+        lod_draw.instance_mats = Arc::from([identity_at(4.0)]);
+        draws.push(lod_draw);
+        draws.push(lod_dense_draw(0, lod_mesh, material, 4.0));
+        harness.prepare_with_camera(&draws, true, lod_test_camera([0.0; 3]));
+        assert_eq!(harness.gpu.regular_lod_bands.len(), 1);
+        let near = lod_test_camera([0.05, 0.0, 0.0]);
+        harness.prepare_with_camera(&draws, false, near.clone());
+        assert_eq!(harness.gpu.last_prepare_step_timing.full_rebuilds, 0);
+        assert_eq!(harness.gpu.prepare_upload_stats().write_buffer_bytes, 0);
+        let regular_bytes =
+            bytemuck::cast_slice::<_, u8>(&harness.gpu.staged_instance_transforms).to_vec();
+        let dense_rows = snapshot(&harness.gpu);
+        harness.prepare_with_camera(&draws, true, near);
+        assert_eq!(
+            regular_bytes,
+            bytemuck::cast_slice::<_, u8>(&harness.gpu.staged_instance_transforms)
+        );
+        assert!(dense_rows == snapshot(&harness.gpu));
+
+        let far = lod_test_camera([-400.0, 0.0, 0.0]);
+        harness.prepare_with_camera(&draws, false, far.clone());
+        assert_eq!(harness.gpu.last_prepare_step_timing.full_rebuilds, 1);
+        let bands: Vec<_> = harness
+            .gpu
+            .draw_batches
+            .iter()
+            .map(|b| (b.mesh.index_start, b.mesh.index_count))
+            .collect();
+        let dense_rows = snapshot(&harness.gpu);
+        harness.prepare_with_camera(&draws, true, far);
+        assert_eq!(
+            bands,
+            harness
+                .gpu
+                .draw_batches
+                .iter()
+                .map(|b| (b.mesh.index_start, b.mesh.index_count))
+                .collect::<Vec<_>>()
+        );
+        assert!(dense_rows == snapshot(&harness.gpu));
+
+        // Transparent order still depends on the camera continuously.
+        let alpha = harness.resources.create_material(
+            Material3D::Standard(StandardMaterial3D {
+                alpha_mode: 2,
+                ..StandardMaterial3D::default()
+            }),
+            None::<&str>,
+            true,
+        );
+        draws[0].surfaces = surfaces(alpha, Color::WHITE);
+        harness.prepare_with_camera(&draws, true, lod_test_camera([0.0; 3]));
+        harness.prepare_with_camera(&draws, false, lod_test_camera([0.05, 0.0, 0.0]));
+        assert_eq!(harness.gpu.last_prepare_step_timing.full_rebuilds, 1);
+    });
+}
+
 /// User-reported spike: frame hitches in multimesh scenes whenever the camera
 /// moves. Cause was the staging-reuse key -- it required exact camera equality
 /// for every dense draw whose mesh has baked LODs, so a camera that moved at
@@ -1568,7 +1713,9 @@ fn multimesh_staging_reuse_survives_camera_motion_across_lod_bands() {
         let mut moving_total = Duration::ZERO;
         let mut camera = lod_test_camera([0.0; 3]);
         for frame in 1..=FRAMES {
-            flip(&mut draws, frame % 2 == 0);
+            // The initial draw is white. Flip on frame 1 as well: camera-only
+            // motion inside a band correctly skips the full path now.
+            flip(&mut draws, frame % 2 != 0);
             // ~1cm of drift per frame plus a little sway: a camera in motion,
             // nowhere near a band edge.
             let t = frame as f32;

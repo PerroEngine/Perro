@@ -9,6 +9,9 @@ pub struct UdpPacket {
 pub struct UdpEndpoint {
     socket: UdpSocket,
     local: SocketAddr,
+    // Keep Send + Sync and preserve concurrent shared-reference receives.
+    // Idle polls reuse storage; successful packets take ownership of it.
+    recv_buf: Mutex<Vec<u8>>,
 }
 
 impl UdpEndpoint {
@@ -21,7 +24,11 @@ impl UdpEndpoint {
         let local = socket
             .local_addr()
             .map_err(|err| NetError::from_io(NetErrorKind::LocalAddress, err))?;
-        Ok(Self { socket, local })
+        Ok(Self {
+            socket,
+            local,
+            recv_buf: Mutex::new(Vec::new()),
+        })
     }
 
     pub fn local_addr(&self) -> SocketAddr {
@@ -36,13 +43,17 @@ impl UdpEndpoint {
     }
 
     pub fn recv_from(&self, max_bytes: usize) -> NetResult<Option<UdpPacket>> {
-        let mut buf = vec![0_u8; max_bytes.max(1)];
+        let mut buf = self
+            .recv_buf
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        buf.resize(max_bytes.max(1), 0);
         match self.socket.recv_from(&mut buf) {
             Ok((n, peer)) => {
                 buf.truncate(n);
                 Ok(Some(UdpPacket {
                     peer: peer.to_string(),
-                    bytes: buf,
+                    bytes: std::mem::take(&mut *buf),
                 }))
             }
             Err(err) if err.kind() == io::ErrorKind::WouldBlock => Ok(None),

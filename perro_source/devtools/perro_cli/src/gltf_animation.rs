@@ -28,6 +28,8 @@ struct ConvertedAnimation {
 }
 
 pub(crate) fn gltf_to_panim_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    let expanded = crate::animation_options::expand(args, cwd)?;
+    let args = expanded.as_slice();
     let Some(raw_input) = parse_flag_value(args, "--input")
         .or_else(|| parse_flag_value(args, "--in"))
         .or_else(|| args.get(2).filter(|arg| !arg.starts_with("--")).cloned())
@@ -93,8 +95,29 @@ pub(crate) fn gltf_to_panim_command(args: &[String], cwd: &Path) -> Result<(), S
         std::fs::create_dir_all(parent)
             .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
     }
-    std::fs::write(&output_path, panim)
-        .map_err(|err| format!("failed to write {}: {err}", output_path.display()))?;
+    // Publish complete output in one rename; failed conversion/write keeps prior file.
+    use std::io::Write as _;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT_OUTPUT: AtomicU64 = AtomicU64::new(0);
+    let temp = output_path.with_extension(format!(
+        "panim.{}.{}.tmp",
+        std::process::id(),
+        NEXT_OUTPUT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temp)
+        .map_err(|err| format!("create {}: {err}", temp.display()))?;
+    let result = file
+        .write_all(panim.as_bytes())
+        .and_then(|_| file.sync_all());
+    drop(file);
+    let result = result.and_then(|_| std::fs::rename(&temp, &output_path));
+    if let Err(err) = result {
+        let _ = std::fs::remove_file(&temp);
+        return Err(format!("publish {}: {err}", output_path.display()));
+    }
     println!("created animation at {}", output_path.display());
     Ok(())
 }
@@ -105,7 +128,12 @@ fn convert_gltf_animation_to_panim(
     clip_selector: Option<&str>,
     skeleton_object: &str,
 ) -> Result<ConvertedAnimation, String> {
-    let (doc, buffers, _images) = gltf::import(input_path)
+    let gltf::Gltf {
+        document: doc,
+        blob,
+    } = gltf::Gltf::open(input_path)
+        .map_err(|err| format!("failed to import glTF `{}`: {err}", input_path.display()))?;
+    let buffers = gltf::import_buffers(&doc, input_path.parent(), blob)
         .map_err(|err| format!("failed to import glTF `{}`: {err}", input_path.display()))?;
     let animation = select_animation(&doc, clip_selector)?;
     let animation_name = animation

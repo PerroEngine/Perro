@@ -38,6 +38,11 @@ pub(crate) struct PhysicsState {
     active: PhysicsSystem,
     worlds: AHashMap<NodeID, PhysicsSystem>,
     paused: bool,
+    /// Nodes whose transforms could affect another physics world's basis.
+    /// Rebuilt alongside the world list on topology changes.
+    cross_world_ancestors: AHashSet<NodeID>,
+    cross_world_ancestors_valid: bool,
+    cross_world_ancestors_revision: u64,
 }
 
 impl PhysicsState {
@@ -47,6 +52,9 @@ impl PhysicsState {
             active: PhysicsSystem::new(),
             worlds: AHashMap::new(),
             paused: false,
+            cross_world_ancestors: AHashSet::default(),
+            cross_world_ancestors_valid: false,
+            cross_world_ancestors_revision: 0,
         }
     }
 
@@ -111,26 +119,86 @@ impl std::ops::DerefMut for PhysicsState {
 }
 
 impl Runtime {
+    fn refresh_physics_world_ancestors(&mut self, worlds: &[NodeID]) {
+        self.physics.cross_world_ancestors.clear();
+        self.physics.cross_world_ancestors_valid = true;
+        self.physics.cross_world_ancestors_revision = self.nodes.structural_revision();
+        for &world in worlds {
+            let mut ancestor = world;
+            let mut remaining = self.nodes.len();
+            while !ancestor.is_nil() {
+                if remaining == 0 {
+                    self.physics.cross_world_ancestors_valid = false;
+                    break;
+                }
+                let Some(node) = self.nodes.get(ancestor) else {
+                    self.physics.cross_world_ancestors_valid = false;
+                    break;
+                };
+                self.physics.cross_world_ancestors.insert(ancestor);
+                ancestor = node.parent;
+                remaining -= 1;
+            }
+        }
+    }
+
+    /// Internal pose/velocity/handle writes mirror the active physics world.
+    /// Forward an already-fresh peer world across those writes only if no
+    /// changed node can affect a nested world's basis. Older (externally
+    /// invalidated) epochs stay stale. Run before any signal callbacks.
+    fn forward_unaffected_physics_world_epochs(
+        &mut self,
+        before_physics: u64,
+        before_mutation: u64,
+    ) {
+        let after = self.nodes.physics_revision();
+        if after == before_physics
+            || !self.physics.cross_world_ancestors_valid
+            || self.physics.cross_world_ancestors_revision != self.nodes.structural_revision()
+            || self.nodes.mutation_revision() < before_mutation
+            || self.physics.cross_world_ancestors.iter().any(|&id| {
+                self.nodes
+                    .node_change_stamp(id)
+                    .is_none_or(|stamp| stamp > before_mutation)
+            })
+        {
+            return;
+        }
+        for (two_d, three_d) in self
+            .physics_sync
+            .physics_synced_world_revisions
+            .values_mut()
+        {
+            if *two_d == Some(before_physics) {
+                *two_d = Some(after);
+            }
+            if *three_d == Some(before_physics) {
+                *three_d = Some(after);
+            }
+        }
+    }
+
     fn activate_physics_world(&mut self, world: NodeID) {
         let current = self.physics.active_world();
         if current == world {
             return;
         }
-        self.physics_synced_world_revisions.insert(
+        self.physics_sync.physics_synced_world_revisions.insert(
             current,
             (
-                self.physics_synced_node_revision_2d,
-                self.physics_synced_node_revision_3d,
+                self.physics_sync.physics_synced_node_revision_2d,
+                self.physics_sync.physics_synced_node_revision_3d,
             ),
         );
         self.physics.activate(world);
         let revisions = self
+            .physics_sync
             .physics_synced_world_revisions
             .get(&world)
             .copied()
             .unwrap_or((None, None));
-        self.physics_synced_node_revision_2d = revisions.0;
-        self.physics_synced_node_revision_3d = revisions.1;
+        self.physics_sync.physics_synced_node_revision_2d = revisions.0;
+        self.physics_sync.physics_synced_node_revision_3d = revisions.1;
     }
 
     #[inline]

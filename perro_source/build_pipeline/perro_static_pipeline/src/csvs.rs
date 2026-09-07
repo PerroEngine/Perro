@@ -46,6 +46,19 @@ pub fn generate_static_csvs(project_root: &Path) -> Result<(), StaticPipelineErr
     collect_csv_paths(&root, &root, &mut paths)?;
     paths.sort_by(|a, b| a.0.cmp(&b.0));
     ensure_unique_hashes("csv", paths.iter().map(|(path, _)| path.as_str()))?;
+    let cache = crate::cache::CodegenCache::new(
+        &static_dir.join("csvs.rs"),
+        paths.iter().map(|(_, path)| path.clone()),
+        &format!("csvs prefix={}", crate::asset_prefix()),
+    );
+    if cache.hit() {
+        crate::record_static_assets(
+            perro_asset_formats::dlc::DlcAssetKind::CSV,
+            perro_asset_formats::dlc::DlcAssetAccess::ENGINE_LOCAL,
+            paths.iter().map(|(path, _)| (path.as_str(), false)),
+        );
+        return Ok(());
+    }
 
     let mut tables = Vec::with_capacity(paths.len());
     for (asset_path, disk_path) in &paths {
@@ -101,6 +114,7 @@ pub fn generate_static_csvs(project_root: &Path) -> Result<(), StaticPipelineErr
     );
 
     crate::write_if_changed(&static_dir.join("csvs.rs"), out.as_bytes())?;
+    cache.store(out.as_bytes());
     crate::record_static_assets(
         perro_asset_formats::dlc::DlcAssetKind::CSV,
         perro_asset_formats::dlc::DlcAssetAccess::ENGINE_LOCAL,

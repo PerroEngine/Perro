@@ -218,7 +218,10 @@ impl PanimDoc {
     // Flips the key's open flag; returns the new state, or None if missing.
     pub fn toggle_key_open(&mut self, track: usize, frame: u32) -> Option<bool> {
         let track = self.tracks.get_mut(track)?;
-        let pos = track.keys.binary_search_by_key(&frame, |key| key.frame).ok()?;
+        let pos = track
+            .keys
+            .binary_search_by_key(&frame, |key| key.frame)
+            .ok()?;
         track.keys[pos].open = !track.keys[pos].open;
         Some(track.keys[pos].open)
     }
@@ -443,7 +446,10 @@ pub fn serialize_panim(doc: &PanimDoc) -> String {
         }
     }
     for event in &doc.events {
-        if !frames.iter().any(|(frame, open)| *frame == event.frame && !open) {
+        if !frames
+            .iter()
+            .any(|(frame, open)| *frame == event.frame && !open)
+        {
             frames.push((event.frame, false));
         }
     }
@@ -589,7 +595,10 @@ pub fn parse_bone_field(field: &str) -> Option<(String, &'static str)> {
     let rest = field.strip_prefix("bones[\"")?;
     let (name, tail) = rest.split_once("\"]")?;
     let sub = tail.strip_prefix('.')?;
-    let sub = BONE_TRACK_SUBFIELDS.iter().copied().find(|item| *item == sub)?;
+    let sub = BONE_TRACK_SUBFIELDS
+        .iter()
+        .copied()
+        .find(|item| *item == sub)?;
     Some((name.to_string(), sub))
 }
 
@@ -597,8 +606,15 @@ enum Section {
     Top,
     Animation,
     Objects,
-    Frame { frame: u32, open: bool },
-    FrameObject { frame: u32, open: bool, object: String },
+    Frame {
+        frame: u32,
+        open: bool,
+    },
+    FrameObject {
+        frame: u32,
+        open: bool,
+        object: String,
+    },
 }
 
 fn set_key_control(
@@ -834,7 +850,9 @@ emit_signal = { name="footfall", params=[1] }
         assert!(doc.set_key_interp(hero, 10, Some("step".to_string())));
         assert!(doc.set_key_ease(hero, 10, Some("ease_out".to_string())));
         assert!(doc.set_key_value(hero, 10, "(9, 0, 0)".to_string()));
-        let key = doc.key_at(hero, 10).expect("sample must contain frame 10 key");
+        let key = doc
+            .key_at(hero, 10)
+            .expect("sample must contain frame 10 key");
         assert_eq!(key.interp.as_deref(), Some("step"));
         assert_eq!(key.ease.as_deref(), Some("ease_out"));
         assert_eq!(key.value, "(9, 0, 0)");
@@ -879,33 +897,57 @@ emit_signal = { name="footfall", params=[1] }
             .track_index("Hero", "position")
             .expect("sample must contain Hero position track");
         assert_eq!(doc.toggle_key_open(hero, 0), Some(true));
-        assert!(doc.key_at(hero, 0).expect("sample must contain frame 0 key").open);
+        assert!(
+            doc.key_at(hero, 0)
+                .expect("sample must contain frame 0 key")
+                .open
+        );
         // Open flag survives serialize/parse (track order is not guaranteed
         // stable when the earliest frame's object changes, so re-resolve it).
         let round = parse_panim(&serialize_panim(&doc));
         let hero = round
             .track_index("Hero", "position")
             .expect("round trip must contain Hero position track");
-        assert!(round.key_at(hero, 0).expect("round trip must contain frame 0 key").open);
-        assert!(!round.key_at(hero, 10).expect("round trip must contain frame 10 key").open);
+        assert!(
+            round
+                .key_at(hero, 0)
+                .expect("round trip must contain frame 0 key")
+                .open
+        );
+        assert!(
+            !round
+                .key_at(hero, 10)
+                .expect("round trip must contain frame 10 key")
+                .open
+        );
         // Flip back closes it.
         let mut doc = round;
         let hero = doc
             .track_index("Hero", "position")
             .expect("round trip must contain Hero position track");
         assert_eq!(doc.toggle_key_open(hero, 0), Some(false));
-        assert!(!doc.key_at(hero, 0).expect("round trip must contain frame 0 key").open);
+        assert!(
+            !doc.key_at(hero, 0)
+                .expect("round trip must contain frame 0 key")
+                .open
+        );
     }
 
     #[test]
     fn interp_ease_cycles_wrap_through_default() {
         assert_eq!(cycle_key_interp(None).as_deref(), Some("step"));
-        assert_eq!(cycle_key_interp(Some("step")).as_deref(), Some("interpolate"));
+        assert_eq!(
+            cycle_key_interp(Some("step")).as_deref(),
+            Some("interpolate")
+        );
         assert_eq!(cycle_key_interp(Some("interpolate")), None);
         assert_eq!(cycle_key_ease(None).as_deref(), Some("linear"));
         assert_eq!(cycle_key_ease(Some("linear")).as_deref(), Some("ease_in"));
         assert_eq!(cycle_key_ease(Some("ease_in")).as_deref(), Some("ease_out"));
-        assert_eq!(cycle_key_ease(Some("ease_out")).as_deref(), Some("ease_in_out"));
+        assert_eq!(
+            cycle_key_ease(Some("ease_out")).as_deref(),
+            Some("ease_in_out")
+        );
         assert_eq!(cycle_key_ease(Some("ease_in_out")), None);
     }
 

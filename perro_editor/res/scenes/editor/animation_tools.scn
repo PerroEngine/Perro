@@ -1,0 +1,268 @@
+$root = @animation_tools
+[animation_tools]
+[UiVLayout]
+anchor = "center"
+size_ratio = (0.52, 0.94)
+visible = false
+spacing = 0.002
+padding = (0.018, 0.01)
+style = { fill = "#23272D", stroke = "#5A91DD", stroke_width = 1.0, radius = 0.02 }
+[/UiVLayout]
+[/animation_tools]
+[tool_input_label]
+parent = @animation_tools
+[UiLabel]
+size_ratio = (1.0, 0.025)
+text = "Input GLB/glTF"
+color = "#D7DBE0"
+text_size_ratio = 0.5
+h_align = "start"
+[/UiLabel]
+[/tool_input_label]
+[tool_input]
+parent = @animation_tools
+[UiTextBox]
+size_ratio = (1.0, 0.035)
+text_size_ratio = 0.4
+style = { fill = "#171A1F", stroke = "#4A525D", stroke_width = 1.0, radius = 0.02 }
+[/UiTextBox]
+[/tool_input]
+[tool_output_label]
+parent = @animation_tools
+[UiLabel]
+size_ratio = (1.0, 0.025)
+text = "Output .panim"
+color = "#D7DBE0"
+text_size_ratio = 0.5
+h_align = "start"
+[/UiLabel]
+[/tool_output_label]
+[tool_output]
+parent = @animation_tools
+[UiTextBox]
+size_ratio = (1.0, 0.035)
+text_size_ratio = 0.4
+style = { fill = "#171A1F", stroke = "#4A525D", stroke_width = 1.0, radius = 0.02 }
+[/UiTextBox]
+[/tool_output]
+[tool_clip_label]
+parent = @animation_tools
+[UiLabel]
+size_ratio = (1.0, 0.025)
+text = "Clip name/index"
+color = "#D7DBE0"
+text_size_ratio = 0.5
+h_align = "start"
+[/UiLabel]
+[/tool_clip_label]
+[tool_clip]
+parent = @animation_tools
+[UiTextBox]
+size_ratio = (1.0, 0.035)
+text_size_ratio = 0.4
+style = { fill = "#171A1F", stroke = "#4A525D", stroke_width = 1.0, radius = 0.02 }
+[/UiTextBox]
+[/tool_clip]
+[tool_fps_label]
+parent = @animation_tools
+[UiLabel]
+size_ratio = (1.0, 0.025)
+text = "FPS"
+color = "#D7DBE0"
+text_size_ratio = 0.5
+h_align = "start"
+[/UiLabel]
+[/tool_fps_label]
+[tool_fps]
+parent = @animation_tools
+[UiTextBox]
+size_ratio = (1.0, 0.035)
+text_size_ratio = 0.4
+style = { fill = "#171A1F", stroke = "#4A525D", stroke_width = 1.0, radius = 0.02 }
+[/UiTextBox]
+[/tool_fps]
+[tool_skeleton_label]
+parent = @animation_tools
+[UiLabel]
+size_ratio = (1.0, 0.025)
+text = "Skeleton object"
+color = "#D7DBE0"
+text_size_ratio = 0.5
+h_align = "start"
+[/UiLabel]
+[/tool_skeleton_label]
+[tool_skeleton]
+parent = @animation_tools
+[UiTextBox]
+size_ratio = (1.0, 0.035)
+text_size_ratio = 0.4
+style = { fill = "#171A1F", stroke = "#4A525D", stroke_width = 1.0, radius = 0.02 }
+[/UiTextBox]
+[/tool_skeleton]
+[tool_retarget_map_label]
+parent = @animation_tools
+[UiLabel]
+size_ratio = (1.0, 0.025)
+text = "Retarget map (optional)"
+color = "#D7DBE0"
+text_size_ratio = 0.5
+h_align = "start"
+[/UiLabel]
+[/tool_retarget_map_label]
+[tool_retarget_map]
+parent = @animation_tools
+[UiTextBox]
+size_ratio = (1.0, 0.035)
+text_size_ratio = 0.4
+style = { fill = "#171A1F", stroke = "#4A525D", stroke_width = 1.0, radius = 0.02 }
+[/UiTextBox]
+[/tool_retarget_map]
+[tool_target_rig_label]
+parent = @animation_tools
+[UiLabel]
+size_ratio = (1.0, 0.025)
+text = "Target rig (optional)"
+color = "#D7DBE0"
+text_size_ratio = 0.5
+h_align = "start"
+[/UiLabel]
+[/tool_target_rig_label]
+[tool_target_rig]
+parent = @animation_tools
+[UiTextBox]
+size_ratio = (1.0, 0.035)
+text_size_ratio = 0.4
+style = { fill = "#171A1F", stroke = "#4A525D", stroke_width = 1.0, radius = 0.02 }
+[/UiTextBox]
+[/tool_target_rig]
+[tool_options_label]
+parent = @animation_tools
+[UiLabel]
+size_ratio = (1.0, 0.025)
+text = "Saved options path"
+color = "#D7DBE0"
+text_size_ratio = 0.5
+h_align = "start"
+[/UiLabel]
+[/tool_options_label]
+[tool_options]
+parent = @animation_tools
+[UiTextBox]
+size_ratio = (1.0, 0.035)
+text_size_ratio = 0.4
+style = { fill = "#171A1F", stroke = "#4A525D", stroke_width = 1.0, radius = 0.02 }
+[/UiTextBox]
+[/tool_options]
+[tool_cli_label]
+parent = @animation_tools
+[UiLabel]
+size_ratio = (1.0, 0.025)
+text = "Perro CLI executable"
+color = "#D7DBE0"
+text_size_ratio = 0.5
+h_align = "start"
+[/UiLabel]
+[/tool_cli_label]
+[tool_cli]
+parent = @animation_tools
+[UiTextBox]
+size_ratio = (1.0, 0.035)
+text_size_ratio = 0.4
+style = { fill = "#171A1F", stroke = "#4A525D", stroke_width = 1.0, radius = 0.02 }
+[/UiTextBox]
+[/tool_cli]
+[tool_save]
+parent = @animation_tools
+[UiButton]
+size_ratio = (1.0, 0.047)
+click_signals = ["editor_tool_save"]
+style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.02 }
+[/UiButton]
+[/tool_save]
+[tool_save_text]
+parent = @tool_save
+[UiLabel]
+size_ratio = (1.0, 1.0)
+text = "Save Options"
+text_size_ratio = 0.35
+input_enabled = false
+mouse_filter = "pass"
+color = "#D7DBE0"
+[/UiLabel]
+[/tool_save_text]
+[tool_load]
+parent = @animation_tools
+[UiButton]
+size_ratio = (1.0, 0.047)
+click_signals = ["editor_tool_load"]
+style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.02 }
+[/UiButton]
+[/tool_load]
+[tool_load_text]
+parent = @tool_load
+[UiLabel]
+size_ratio = (1.0, 1.0)
+text = "Load Options"
+text_size_ratio = 0.35
+input_enabled = false
+mouse_filter = "pass"
+color = "#D7DBE0"
+[/UiLabel]
+[/tool_load_text]
+[tool_pick_cli]
+parent = @animation_tools
+[UiButton]
+size_ratio = (1.0, 0.047)
+click_signals = ["editor_tool_pick_cli"]
+style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.02 }
+[/UiButton]
+[/tool_pick_cli]
+[tool_pick_cli_text]
+parent = @tool_pick_cli
+[UiLabel]
+size_ratio = (1.0, 1.0)
+text = "Choose CLI"
+text_size_ratio = 0.35
+input_enabled = false
+mouse_filter = "pass"
+color = "#D7DBE0"
+[/UiLabel]
+[/tool_pick_cli_text]
+[tool_run]
+parent = @animation_tools
+[UiButton]
+size_ratio = (1.0, 0.047)
+click_signals = ["editor_tool_run"]
+style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.02 }
+[/UiButton]
+[/tool_run]
+[tool_run_text]
+parent = @tool_run
+[UiLabel]
+size_ratio = (1.0, 1.0)
+text = "Convert Animation"
+text_size_ratio = 0.35
+input_enabled = false
+mouse_filter = "pass"
+color = "#D7DBE0"
+[/UiLabel]
+[/tool_run_text]
+[tool_close]
+parent = @animation_tools
+[UiButton]
+size_ratio = (1.0, 0.047)
+click_signals = ["editor_tool_close"]
+style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.02 }
+[/UiButton]
+[/tool_close]
+[tool_close_text]
+parent = @tool_close
+[UiLabel]
+size_ratio = (1.0, 1.0)
+text = "Close"
+text_size_ratio = 0.35
+input_enabled = false
+mouse_filter = "pass"
+color = "#D7DBE0"
+[/UiLabel]
+[/tool_close_text]

@@ -159,6 +159,52 @@ fn write_output_if_changed(path: &Path, bytes: &[u8]) -> io::Result<()> {
     fs::write(path, bytes)
 }
 
+// Stat reuse already borrows every payload from the old archive. Check the
+// small canonical header/index instead of copying those payloads into another
+// archive just to compare them. Layout checks also reject gaps, reordered or
+// duplicate index rows, and trailing bytes that a fresh assembly would remove.
+fn is_unchanged_archive(reuse: &ReusedArchive, files: &[ProcessedFile<'_>]) -> io::Result<bool> {
+    if files.len() != reuse.index.len() {
+        return Ok(false);
+    }
+    let mut header_bytes = Vec::new();
+    let mut header = PerroAssetsHeader {
+        magic: PERRO_ASSETS_MAGIC,
+        version: archive::VERSION,
+        file_count: files.len() as u32,
+        index_offset: 0,
+    };
+    write_header(&mut header_bytes, &header)?;
+    let mut offset = header_bytes.len() as u64;
+    let mut index_bytes = Vec::new();
+    for file in files {
+        if !matches!(file.data, Cow::Borrowed(_)) {
+            return Ok(false);
+        }
+        let Some(meta) = reuse.index.get(&file.rel_path) else {
+            return Ok(false);
+        };
+        if meta.offset != offset {
+            return Ok(false);
+        }
+        write_index_entry(&mut index_bytes, &format!("res/{}", file.rel_path), meta)?;
+        let Some(next) = offset.checked_add(meta.size) else {
+            return Ok(false);
+        };
+        offset = next;
+    }
+    header.index_offset = offset;
+    header_bytes.clear();
+    write_header(&mut header_bytes, &header)?;
+    let Ok(index_offset) = usize::try_from(offset) else {
+        return Ok(false);
+    };
+    Ok(
+        reuse.bytes.get(..header_bytes.len()) == Some(header_bytes.as_slice())
+            && reuse.bytes.get(index_offset..) == Some(index_bytes.as_slice()),
+    )
+}
+
 /// Build a `.perro` archive.
 ///
 /// Incremental: a `<output>.stat` sidecar records each source's (len, mtime);
@@ -227,6 +273,12 @@ pub fn build_perro_assets_archive(
         })
         .collect::<io::Result<Vec<_>>>()?;
 
+    if let Some(reuse) = reuse.as_ref()
+        && is_unchanged_archive(reuse, &processed_files)?
+    {
+        return write_stat_manifest(&stat_path, &processed_files);
+    }
+
     let mut archive = Cursor::new(Vec::<u8>::new());
     let header = PerroAssetsHeader {
         magic: PERRO_ASSETS_MAGIC,
@@ -268,7 +320,16 @@ pub fn build_perro_assets_archive(
     };
     write_header(&mut archive, &header)?;
 
-    write_output_if_changed(output, &archive.into_inner())?;
+    let archive = archive.into_inner();
+    // Reuse was read at the beginning of this build; do not read it a second
+    // time when an input stat changed but encoded output stayed identical.
+    if let Some(reuse) = reuse.as_ref() {
+        if reuse.bytes != archive {
+            fs::write(output, &archive)?;
+        }
+    } else {
+        write_output_if_changed(output, &archive)?;
+    }
     write_stat_manifest(&stat_path, &processed_files)
 }
 

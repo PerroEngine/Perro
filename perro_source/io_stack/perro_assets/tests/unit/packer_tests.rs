@@ -217,3 +217,60 @@ fn assets_archive_reuses_prev_compressed_bytes_on_stat_match() {
 
     let _ = fs::remove_dir_all(&root);
 }
+
+#[test]
+fn incremental_archive_matches_clean_after_set_and_layout_changes() {
+    let root = std::env::temp_dir().join(format!("perro_assets_layout_{}", std::process::id()));
+    fs::create_dir_all(root.join("res")).expect("create fixture");
+    let res = root.join("res");
+    let output = root.join("assets.perro");
+    fs::write(res.join("a.txt"), b"first").expect("write source");
+    build_perro_assets_archive(&output, &res, &root, &[]).expect("first build");
+    let first = fs::read(&output).expect("read archive");
+    let saved_time = std::time::UNIX_EPOCH + Duration::from_secs(1_600_000_000);
+    set_source_mtime(&output, saved_time);
+    build_perro_assets_archive(&output, &res, &root, &[]).expect("unchanged build");
+    assert_eq!(fs::read(&output).expect("read archive"), first);
+    assert_eq!(
+        fs::metadata(&output)
+            .expect("stat archive")
+            .modified()
+            .expect("mtime"),
+        saved_time
+    );
+
+    // A source stat change with identical bytes also preserves output mtime.
+    set_source_mtime(&res.join("a.txt"), saved_time);
+    build_perro_assets_archive(&output, &res, &root, &[]).expect("same-content build");
+    assert_eq!(
+        fs::metadata(&output)
+            .expect("stat archive")
+            .modified()
+            .expect("mtime"),
+        saved_time
+    );
+
+    for remove_first in [false, true] {
+        if remove_first {
+            fs::remove_file(res.join("a.txt")).expect("remove source");
+        } else {
+            fs::write(res.join("b.txt"), b"second").expect("add source");
+        }
+        build_perro_assets_archive(&output, &res, &root, &[]).expect("incremental build");
+        let clean = root.join(format!("clean_{remove_first}.perro"));
+        build_perro_assets_archive(&clean, &res, &root, &[]).expect("clean build");
+        assert_eq!(
+            fs::read(&output).expect("read incremental"),
+            fs::read(clean).expect("read clean")
+        );
+    }
+
+    // The fast path must not retain noncanonical trailing bytes.
+    let canonical = fs::read(&output).expect("read canonical");
+    let mut trailing = canonical.clone();
+    trailing.extend_from_slice(b"stale tail");
+    fs::write(&output, trailing).expect("append stale bytes");
+    build_perro_assets_archive(&output, &res, &root, &[]).expect("repair layout");
+    assert_eq!(fs::read(&output).expect("read repaired"), canonical);
+    fs::remove_dir_all(root).expect("remove fixture");
+}

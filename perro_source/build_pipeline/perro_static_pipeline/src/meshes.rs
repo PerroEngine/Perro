@@ -141,74 +141,79 @@ pub fn generate_static_meshes(
     if miss_count > 0 {
         eprintln!("  [assets] mesh encode: {miss_count} changed");
     }
-    let processed = misses
-        .into_par_iter()
-        .enumerate()
-        .map(|(miss_index, (rel, len, mtime))| -> io::Result<_> {
-            let res_path = asset_uri(&rel);
-            let started = Instant::now();
-            eprintln!(
-                "  [assets] mesh {}/{miss_count}: {res_path}",
-                miss_index + 1
-            );
-            let full_path = res_dir.join(&rel);
-            let ext = Path::new(&rel)
-                .extension()
-                .and_then(|e| e.to_str())
-                .map(|s| s.to_ascii_lowercase())
-                .unwrap_or_default();
-            let assets = match ext.as_str() {
-                PMESH_EXTENSION => {
-                    let bytes = fs::read(&full_path)?;
-                    vec![MeshAsset {
-                        entry: MeshRef {
-                            lookup_key: res_path,
-                            embedded_rel_path: rel.clone(),
-                            synthesized: false,
-                        },
-                        bytes,
-                    }]
-                }
-                source_ext::GLB | source_ext::GLTF => {
-                    build_gltf_mesh_entries(&full_path, &res_path, &rel, bake_meshlets)?
-                        .into_iter()
-                        .map(|(entry, bytes)| MeshAsset { entry, bytes })
-                        .collect()
-                }
-                _ => Vec::new(),
-            };
-            eprintln!(
-                "  [assets] mesh {}/{miss_count}: done res://{rel} ({:.2?})",
-                miss_index + 1,
-                started.elapsed()
-            );
-            Ok((rel, len, mtime, assets))
-        })
-        .collect::<io::Result<Vec<_>>>()?;
+    let batch_size = rayon::current_num_threads().max(1);
+    for (batch_index, batch) in misses.chunks(batch_size).enumerate() {
+        let processed = batch
+            .par_iter()
+            .cloned()
+            .enumerate()
+            .map(|(miss_index, (rel, len, mtime))| -> io::Result<_> {
+                let miss_index = batch_index * batch_size + miss_index;
+                let res_path = asset_uri(&rel);
+                let started = Instant::now();
+                eprintln!(
+                    "  [assets] mesh {}/{miss_count}: {res_path}",
+                    miss_index + 1
+                );
+                let full_path = res_dir.join(&rel);
+                let ext = Path::new(&rel)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(|s| s.to_ascii_lowercase())
+                    .unwrap_or_default();
+                let assets = match ext.as_str() {
+                    PMESH_EXTENSION => {
+                        let bytes = fs::read(&full_path)?;
+                        vec![MeshAsset {
+                            entry: MeshRef {
+                                lookup_key: res_path,
+                                embedded_rel_path: rel.clone(),
+                                synthesized: false,
+                            },
+                            bytes,
+                        }]
+                    }
+                    source_ext::GLB | source_ext::GLTF => {
+                        build_gltf_mesh_entries(&full_path, &res_path, &rel, bake_meshlets)?
+                            .into_iter()
+                            .map(|(entry, bytes)| MeshAsset { entry, bytes })
+                            .collect()
+                    }
+                    _ => Vec::new(),
+                };
+                eprintln!(
+                    "  [assets] mesh {}/{miss_count}: done res://{rel} ({:.2?})",
+                    miss_index + 1,
+                    started.elapsed()
+                );
+                Ok((rel, len, mtime, assets))
+            })
+            .collect::<io::Result<Vec<_>>>()?;
 
-    for (rel, len, mtime, mut assets) in processed {
-        assets.sort_by(|a, b| a.entry.embedded_rel_path.cmp(&b.entry.embedded_rel_path));
-        let mut record = CachedSource::default();
-        for asset in assets {
-            let output_path = embedded_meshes_dir.join(&asset.entry.embedded_rel_path);
-            if let Some(parent) = output_path.parent() {
-                fs::create_dir_all(parent)?;
+        for (rel, len, mtime, mut assets) in processed {
+            assets.sort_by(|a, b| a.entry.embedded_rel_path.cmp(&b.entry.embedded_rel_path));
+            let mut record = CachedSource::default();
+            for asset in assets {
+                let output_path = embedded_meshes_dir.join(&asset.entry.embedded_rel_path);
+                if let Some(parent) = output_path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                write_if_changed(&output_path, &asset.bytes)?;
+                record.rows.push(vec![
+                    asset.entry.lookup_key.clone(),
+                    asset.entry.embedded_rel_path.clone(),
+                    if asset.entry.synthesized { "1" } else { "0" }.to_string(),
+                ]);
+                record.files.push(asset.entry.embedded_rel_path.clone());
+                mesh_refs.push(asset.entry);
             }
-            write_if_changed(&output_path, &asset.bytes)?;
-            record.rows.push(vec![
-                asset.entry.lookup_key.clone(),
-                asset.entry.embedded_rel_path.clone(),
-                if asset.entry.synthesized { "1" } else { "0" }.to_string(),
-            ]);
-            record.files.push(asset.entry.embedded_rel_path.clone());
-            mesh_refs.push(asset.entry);
-        }
-        let cacheable = !rel.to_ascii_lowercase().ends_with(source_ext::GLTF);
-        if cacheable {
-            cache.store(&rel, len, mtime, record);
-        } else {
-            // Keep gltf outputs alive through pruning without a stat key.
-            cache.store(&rel, 0, u128::MAX, record);
+            let cacheable = !rel.to_ascii_lowercase().ends_with(source_ext::GLTF);
+            if cacheable {
+                cache.store(&rel, len, mtime, record);
+            } else {
+                // Keep gltf outputs alive through pruning without a stat key.
+                cache.store(&rel, 0, u128::MAX, record);
+            }
         }
     }
     cache.finish()?;
@@ -296,7 +301,12 @@ fn build_gltf_mesh_entries(
     rel: &str,
     bake_meshlets: bool,
 ) -> io::Result<Vec<(MeshRef, Vec<u8>)>> {
-    let (doc, buffers, _images) = gltf::import(path)
+    let gltf::Gltf {
+        document: doc,
+        blob,
+    } = gltf::Gltf::open(path)
+        .map_err(|err| io::Error::other(format!("failed to import model `{res_path}`: {err}")))?;
+    let buffers = gltf::import_buffers(&doc, path.parent(), blob)
         .map_err(|err| io::Error::other(format!("failed to import model `{res_path}`: {err}")))?;
 
     let mut entries = Vec::<(MeshRef, Vec<u8>)>::new();

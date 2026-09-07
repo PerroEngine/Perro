@@ -1733,6 +1733,7 @@ impl Gpu3D {
             last_prepare_step_timing: Prepare3DStepTiming::default(),
             prepare_full_rebuild_count: 0,
             camera_dependent_staging: false,
+            regular_lod_bands: Vec::new(),
             draw_batches: Vec::new(),
             opaque_batch_indices: Vec::new(),
             alpha_batch_indices: Vec::new(),

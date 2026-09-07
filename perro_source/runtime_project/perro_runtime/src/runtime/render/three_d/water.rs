@@ -18,7 +18,7 @@ impl Runtime {
         // physics_revision -> no per-tick full-arena scan. take out to iterate
         // while calling &mut self transform lookups, then restore.
         self.cached_water_collision_body_ids_3d();
-        let body_ids = std::mem::take(&mut self.water_collision_body_ids_3d_cache);
+        let body_ids = std::mem::take(&mut self.physics_sync.water_collision_body_ids_3d_cache);
         for body_id in body_ids.iter().copied() {
             let Some((enabled, layers, mask, scale_bias)) =
                 self.nodes.get(body_id).and_then(|node| match &node.data {
@@ -225,7 +225,7 @@ impl Runtime {
                 }
             }
         }
-        self.water_collision_body_ids_3d_cache = body_ids;
+        self.physics_sync.water_collision_body_ids_3d_cache = body_ids;
         if shapes.is_empty() {
             empty_arc_slice()
         } else {
@@ -237,7 +237,7 @@ impl Runtime {
         &mut self,
         water_id: NodeID,
     ) -> Arc<[WaterBodyQueryState]> {
-        let Some(queries) = self.pending_water_queries_3d.get(&water_id) else {
+        let Some(queries) = self.physics_sync.pending_water_queries_3d.get(&water_id) else {
             return empty_arc_slice();
         };
         // slice iter is TrustedLen: collects into the Arc directly.
@@ -264,7 +264,7 @@ impl Runtime {
         let water_inv = water_global.to_mat4().inverse();
         let half = water.shape.surface_size() * 0.5;
         self.cached_rigid_body_ids_3d();
-        let body_ids = std::mem::take(&mut self.water_rigid_body_ids_3d_cache);
+        let body_ids = std::mem::take(&mut self.physics_sync.water_rigid_body_ids_3d_cache);
         let mut impacts = Vec::new();
         for body_id in body_ids.iter().copied() {
             let Some((layers, mask, mass, density, velocity)) =
@@ -301,7 +301,7 @@ impl Runtime {
             }
             let local_xz = perro_structs::Vector2::new(local.x, local.z);
             let cached_sample = crate::runtime::physics::lookup_water_body_sample(
-                &self.water_body_samples,
+                &self.physics_sync.water_body_samples,
                 water_id,
                 body_id,
                 0,
@@ -314,7 +314,7 @@ impl Runtime {
                 local_xz,
                 self.time.elapsed,
                 cached_sample,
-                self.water_samples.get(&water_id).copied(),
+                self.physics_sync.water_samples.get(&water_id).copied(),
             );
             let target = crate::runtime::physics::water_target_submerged(density);
             let submerged = sample.height - local.y;
@@ -347,9 +347,9 @@ impl Runtime {
                 cavitation: (vertical_impact * 0.035 + surface_contact * 0.08).clamp(0.0, 1.0),
             });
         }
-        self.water_rigid_body_ids_3d_cache = body_ids;
+        self.physics_sync.water_rigid_body_ids_3d_cache = body_ids;
         let water_world = self.node_world(water_id).unwrap_or(NodeID::nil());
-        for impact in self.force_water_impacts_3d.iter() {
+        for impact in self.physics_sync.force_water_impacts_3d.iter() {
             if impact.world != water_world {
                 continue;
             }
@@ -369,7 +369,7 @@ impl Runtime {
                 cavitation: impact.cavitation,
             });
         }
-        if let Some(contacts) = self.water_contacts_3d.get(&water_id) {
+        if let Some(contacts) = self.physics_sync.water_contacts_3d.get(&water_id) {
             for contact in contacts {
                 let local = water_local_point_3d(water_inv, contact.position);
                 if local.x.abs() > half.x + contact.radius
@@ -389,7 +389,7 @@ impl Runtime {
             }
         }
         for link in self.collect_water_links_3d(water_id, water).iter() {
-            for impact in self.force_water_impacts_3d.iter() {
+            for impact in self.physics_sync.force_water_impacts_3d.iter() {
                 if impact.world != water_world {
                     continue;
                 }
@@ -438,7 +438,7 @@ impl Runtime {
             return empty_arc_slice();
         };
         self.cached_water_ids_3d();
-        let other_ids = std::mem::take(&mut self.water_ids_3d_cache);
+        let other_ids = std::mem::take(&mut self.physics_sync.water_ids_3d_cache);
         let mut links = Vec::new();
         for other_id in other_ids.iter().copied() {
             if other_id == water_id {
@@ -486,7 +486,7 @@ impl Runtime {
                 flow_transfer: water.link.flow_transfer.min(other_water.link.flow_transfer),
             });
         }
-        self.water_ids_3d_cache = other_ids;
+        self.physics_sync.water_ids_3d_cache = other_ids;
         if links.is_empty() {
             empty_arc_slice()
         } else {

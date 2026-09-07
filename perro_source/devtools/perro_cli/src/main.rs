@@ -1,6 +1,7 @@
 use std::env;
 use std::path::{Path, PathBuf};
 
+mod animation_options;
 mod bench;
 mod doctor;
 mod gltf_animation;
@@ -353,7 +354,7 @@ fn print_usage() {
         "  perro_cli new_panimtree --name <tree_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>]"
     );
     eprintln!(
-        "  perro_cli import_anim <model.glb|model.gltf> --output <clip.panim> [--clip <name|index>] [--fps <fps>] [--skeleton <object_name>] [--retarget-map <map.pretarget>] [--target-rig <rig.glb|rig.gltf>]"
+        "  perro_cli import_anim [model.glb|model.gltf] [--options <file.toml>] --output <clip.panim> [--clip <name|index>] [--fps <fps>] [--skeleton <object_name>] [--retarget-map <map.pretarget>] [--target-rig <rig.glb|rig.gltf>]"
     );
 }
 

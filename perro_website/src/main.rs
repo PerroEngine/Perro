@@ -1,4 +1,8 @@
 #[cfg(feature = "ssr")]
+mod og_cache;
+#[cfg(all(test, feature = "ssr"))]
+mod og_perf_tests;
+#[cfg(feature = "ssr")]
 mod sponsor_api;
 
 #[cfg(feature = "ssr")]
@@ -64,8 +68,15 @@ async fn og_image(
     let (title, label, summary) = og_text(normalized);
     let svg = social_svg(&title, &label, &summary);
     if wants_png {
-        return match svg_to_png(&svg) {
-            Ok(png) => ([(axum::http::header::CONTENT_TYPE, "image/png")], png).into_response(),
+        return match og_cache::get_png(svg).await {
+            Ok(png) => (
+                [
+                    (axum::http::header::CONTENT_TYPE, "image/png"),
+                    (axum::http::header::CACHE_CONTROL, "public, max-age=3600"),
+                ],
+                png,
+            )
+                .into_response(),
             Err(_) => (
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                 "social image render failed",

@@ -1,0 +1,1716 @@
+{
+  "environment": {
+    "os": "Windows x86_64 MSVC",
+    "cpu": "Intel Core i9-9900K (8 cores / 16 threads)",
+    "rustc": "1.97.1 (8bab26f4f 2026-07-14)",
+    "profile": "workspace bench profile; separate baseline/candidate targets"
+  },
+  "baseline": {
+    "head": "3a4549f9beb718e3c94e2a3653ad72f5a84bd749",
+    "source": "initial worktree, including pre-existing uncommitted changes",
+    "fixture": "identical architecture_probe helper added to baseline and candidate benchmark"
+  },
+  "architecture_probes": {
+    "cpu": null,
+    "repeats": 7,
+    "hashes": {
+      "baseline": "5c8b481ccfa228971da5c60bca9797176d9d492783ed1b88d91c9bde1b7f63e3",
+      "candidate": "a6edbade8e41cf737c698b7eb64de32d13d7dd295771751cb710caf82c27e7a3"
+    },
+    "rows": [
+      {
+        "case": "mixed_update",
+        "nodes": 1000,
+        "baseline": [
+          {
+            "median_ns": 34540,
+            "p95_ns": 34790,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 34470,
+            "p95_ns": 34810,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 34480,
+            "p95_ns": 34800,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 34460,
+            "p95_ns": 34860,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 34390,
+            "p95_ns": 35920,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 34570,
+            "p95_ns": 34890,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 34680,
+            "p95_ns": 35010,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "candidate": [
+          {
+            "median_ns": 30300,
+            "p95_ns": 30510,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 30290,
+            "p95_ns": 30590,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 30290,
+            "p95_ns": 30620,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 30270,
+            "p95_ns": 30590,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 30240,
+            "p95_ns": 30460,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 30430,
+            "p95_ns": 30760,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 30460,
+            "p95_ns": 31320,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "paired_delta_percent": -12.151972157772617,
+        "slower_pairs": 0
+      },
+      {
+        "case": "mixed_fixed",
+        "nodes": 1000,
+        "baseline": [
+          {
+            "median_ns": 24810,
+            "p95_ns": 25050,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 24820,
+            "p95_ns": 25040,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 24580,
+            "p95_ns": 24870,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 24670,
+            "p95_ns": 24920,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 24730,
+            "p95_ns": 25130,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 25640,
+            "p95_ns": 40570,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 24770,
+            "p95_ns": 25570,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "candidate": [
+          {
+            "median_ns": 20040,
+            "p95_ns": 20340,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 19910,
+            "p95_ns": 20290,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 19950,
+            "p95_ns": 20150,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 20020,
+            "p95_ns": 20260,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 20040,
+            "p95_ns": 20280,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 20080,
+            "p95_ns": 20320,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 19900,
+            "p95_ns": 20090,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "paired_delta_percent": -19.226118500604596,
+        "slower_pairs": 0
+      },
+      {
+        "case": "churn",
+        "nodes": 1000,
+        "baseline": [
+          {
+            "median_ns": 36240,
+            "p95_ns": 37040,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 36540,
+            "p95_ns": 37120,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 36370,
+            "p95_ns": 36790,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 36210,
+            "p95_ns": 37030,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 36330,
+            "p95_ns": 37390,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 36260,
+            "p95_ns": 37360,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 36460,
+            "p95_ns": 37160,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "candidate": [
+          {
+            "median_ns": 31890,
+            "p95_ns": 32850,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 32250,
+            "p95_ns": 32860,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 31980,
+            "p95_ns": 32540,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 31810,
+            "p95_ns": 32230,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 32050,
+            "p95_ns": 32740,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 32270,
+            "p95_ns": 32780,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 32110,
+            "p95_ns": 32540,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "paired_delta_percent": -11.930883159626992,
+        "slower_pairs": 0
+      },
+      {
+        "case": "frame_idle",
+        "nodes": 1000,
+        "baseline": [
+          {
+            "median_ns": 242820,
+            "p95_ns": 244500,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 245460,
+            "p95_ns": 246860,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 242930,
+            "p95_ns": 244390,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 245140,
+            "p95_ns": 249890,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 244300,
+            "p95_ns": 245720,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 243450,
+            "p95_ns": 244790,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 242170,
+            "p95_ns": 244050,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "candidate": [
+          {
+            "median_ns": 244170,
+            "p95_ns": 245690,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 245100,
+            "p95_ns": 246730,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 244790,
+            "p95_ns": 245910,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 242220,
+            "p95_ns": 243470,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 243520,
+            "p95_ns": 245120,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 242610,
+            "p95_ns": 244190,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 245190,
+            "p95_ns": 246850,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "paired_delta_percent": -0.1466634074798301,
+        "slower_pairs": 3
+      },
+      {
+        "case": "frame_sparse",
+        "nodes": 1000,
+        "baseline": [
+          {
+            "median_ns": 264080,
+            "p95_ns": 266160,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 259860,
+            "p95_ns": 261850,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 259900,
+            "p95_ns": 261740,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 258970,
+            "p95_ns": 260990,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 258270,
+            "p95_ns": 260400,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 259350,
+            "p95_ns": 261130,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 259340,
+            "p95_ns": 261270,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "candidate": [
+          {
+            "median_ns": 264660,
+            "p95_ns": 267200,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 259240,
+            "p95_ns": 261250,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 263290,
+            "p95_ns": 264820,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 261240,
+            "p95_ns": 262780,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 261470,
+            "p95_ns": 263090,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 259490,
+            "p95_ns": 261110,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 259380,
+            "p95_ns": 261760,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "paired_delta_percent": 0.2196304150257511,
+        "slower_pairs": 6
+      },
+      {
+        "case": "frame_all",
+        "nodes": 1000,
+        "baseline": [
+          {
+            "median_ns": 420250,
+            "p95_ns": 423510,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 422830,
+            "p95_ns": 424450,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 422780,
+            "p95_ns": 424600,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 420920,
+            "p95_ns": 422810,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 422620,
+            "p95_ns": 424490,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 420950,
+            "p95_ns": 422470,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 420130,
+            "p95_ns": 422070,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "candidate": [
+          {
+            "median_ns": 420980,
+            "p95_ns": 423110,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 420100,
+            "p95_ns": 422480,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 421210,
+            "p95_ns": 422640,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 421250,
+            "p95_ns": 423670,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 420310,
+            "p95_ns": 424610,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 417970,
+            "p95_ns": 420620,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 419550,
+            "p95_ns": 421050,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "paired_delta_percent": -0.37135153034675294,
+        "slower_pairs": 2
+      },
+      {
+        "case": "mixed_update",
+        "nodes": 10000,
+        "baseline": [
+          {
+            "median_ns": 350480,
+            "p95_ns": 356560,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 351410,
+            "p95_ns": 355910,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 349250,
+            "p95_ns": 359540,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 347960,
+            "p95_ns": 351370,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 349540,
+            "p95_ns": 353540,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 347420,
+            "p95_ns": 354000,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 347610,
+            "p95_ns": 349100,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "candidate": [
+          {
+            "median_ns": 306960,
+            "p95_ns": 311960,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 306730,
+            "p95_ns": 308220,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 305680,
+            "p95_ns": 307680,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 306300,
+            "p95_ns": 310440,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 306270,
+            "p95_ns": 308840,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 306240,
+            "p95_ns": 309010,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 306660,
+            "p95_ns": 308370,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "paired_delta_percent": -12.37912685243463,
+        "slower_pairs": 0
+      },
+      {
+        "case": "mixed_fixed",
+        "nodes": 10000,
+        "baseline": [
+          {
+            "median_ns": 246320,
+            "p95_ns": 251290,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 246950,
+            "p95_ns": 251920,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 243470,
+            "p95_ns": 246960,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 243480,
+            "p95_ns": 252910,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 242470,
+            "p95_ns": 248160,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 245910,
+            "p95_ns": 249930,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 245830,
+            "p95_ns": 249950,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "candidate": [
+          {
+            "median_ns": 198290,
+            "p95_ns": 201750,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 198920,
+            "p95_ns": 201480,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 198880,
+            "p95_ns": 202330,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 197330,
+            "p95_ns": 201810,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 195350,
+            "p95_ns": 200110,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 198970,
+            "p95_ns": 211440,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 200280,
+            "p95_ns": 202410,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "paired_delta_percent": -19.08828433166606,
+        "slower_pairs": 0
+      },
+      {
+        "case": "churn",
+        "nodes": 10000,
+        "baseline": [
+          {
+            "median_ns": 354590,
+            "p95_ns": 359390,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 354460,
+            "p95_ns": 357710,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 353240,
+            "p95_ns": 356970,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 354680,
+            "p95_ns": 359920,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 352150,
+            "p95_ns": 356380,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 354770,
+            "p95_ns": 356620,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 356210,
+            "p95_ns": 359640,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "candidate": [
+          {
+            "median_ns": 312600,
+            "p95_ns": 314910,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 313440,
+            "p95_ns": 316990,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 317290,
+            "p95_ns": 322320,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 312800,
+            "p95_ns": 314760,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 314050,
+            "p95_ns": 315850,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 313400,
+            "p95_ns": 316640,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 313550,
+            "p95_ns": 319320,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "paired_delta_percent": -11.661076190207742,
+        "slower_pairs": 0
+      },
+      {
+        "case": "frame_idle",
+        "nodes": 10000,
+        "baseline": [
+          {
+            "median_ns": 2619470,
+            "p95_ns": 2702880,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 2646370,
+            "p95_ns": 2870410,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 2666750,
+            "p95_ns": 2832050,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 2608340,
+            "p95_ns": 2666770,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 2620760,
+            "p95_ns": 2714580,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 2651890,
+            "p95_ns": 2707800,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 2613400,
+            "p95_ns": 2669250,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "candidate": [
+          {
+            "median_ns": 2644380,
+            "p95_ns": 2690820,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 2624690,
+            "p95_ns": 2652630,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 2636100,
+            "p95_ns": 2716420,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 2619980,
+            "p95_ns": 2634720,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 2636420,
+            "p95_ns": 2675120,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 2648790,
+            "p95_ns": 2690570,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 2615630,
+            "p95_ns": 2659640,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "paired_delta_percent": 0.08532945588122232,
+        "slower_pairs": 4
+      },
+      {
+        "case": "frame_sparse",
+        "nodes": 10000,
+        "baseline": [
+          {
+            "median_ns": 2828080,
+            "p95_ns": 2868900,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 2815410,
+            "p95_ns": 2849470,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 2821640,
+            "p95_ns": 2859700,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 2804150,
+            "p95_ns": 2863530,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 2808940,
+            "p95_ns": 2866400,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 2828130,
+            "p95_ns": 2847860,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 2829970,
+            "p95_ns": 2871430,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "candidate": [
+          {
+            "median_ns": 2800310,
+            "p95_ns": 2837640,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 2823760,
+            "p95_ns": 2846700,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 2820500,
+            "p95_ns": 2955210,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 2783360,
+            "p95_ns": 2857100,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 2821520,
+            "p95_ns": 2863980,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 2806670,
+            "p95_ns": 2850940,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 2823320,
+            "p95_ns": 2853420,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "paired_delta_percent": -0.2349848231606666,
+        "slower_pairs": 2
+      },
+      {
+        "case": "frame_all",
+        "nodes": 10000,
+        "baseline": [
+          {
+            "median_ns": 4441380,
+            "p95_ns": 4572080,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 4441920,
+            "p95_ns": 4559060,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 4435030,
+            "p95_ns": 4598170,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 4433390,
+            "p95_ns": 4537630,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 4414360,
+            "p95_ns": 4537020,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 4417430,
+            "p95_ns": 4542680,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 4424100,
+            "p95_ns": 4603110,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "candidate": [
+          {
+            "median_ns": 4415910,
+            "p95_ns": 4555040,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 4387770,
+            "p95_ns": 4516180,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 4433330,
+            "p95_ns": 4523860,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 4423020,
+            "p95_ns": 4522440,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 4443630,
+            "p95_ns": 4596430,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 4431920,
+            "p95_ns": 4585590,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 4419380,
+            "p95_ns": 4546740,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "paired_delta_percent": -0.10668836599534437,
+        "slower_pairs": 2
+      }
+    ],
+    "allocations": [
+      {
+        "case": "mixed_update",
+        "nodes": 10000,
+        "baseline": {
+          "median_ns": 347910,
+          "p95_ns": 353470,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20112
+        },
+        "candidate": {
+          "median_ns": 306120,
+          "p95_ns": 307960,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20112
+        }
+      },
+      {
+        "case": "mixed_fixed",
+        "nodes": 10000,
+        "baseline": {
+          "median_ns": 242380,
+          "p95_ns": 247370,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20112
+        },
+        "candidate": {
+          "median_ns": 195840,
+          "p95_ns": 198090,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20112
+        }
+      },
+      {
+        "case": "churn",
+        "nodes": 10000,
+        "baseline": {
+          "median_ns": 353990,
+          "p95_ns": 373210,
+          "allocs": 15,
+          "live_delta": 47616,
+          "runtime_bytes": 20112
+        },
+        "candidate": {
+          "median_ns": 311580,
+          "p95_ns": 315110,
+          "allocs": 15,
+          "live_delta": 47616,
+          "runtime_bytes": 20112
+        }
+      },
+      {
+        "case": "frame_idle",
+        "nodes": 10000,
+        "baseline": {
+          "median_ns": 2607470,
+          "p95_ns": 2676790,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20112
+        },
+        "candidate": {
+          "median_ns": 2629740,
+          "p95_ns": 2682210,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20112
+        }
+      },
+      {
+        "case": "frame_sparse",
+        "nodes": 10000,
+        "baseline": {
+          "median_ns": 2801930,
+          "p95_ns": 2862210,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20112
+        },
+        "candidate": {
+          "median_ns": 2793730,
+          "p95_ns": 2821300,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20112
+        }
+      },
+      {
+        "case": "frame_all",
+        "nodes": 10000,
+        "baseline": {
+          "median_ns": 4449170,
+          "p95_ns": 4594210,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20112
+        },
+        "candidate": {
+          "median_ns": 4427630,
+          "p95_ns": 4531330,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20112
+        }
+      }
+    ]
+  },
+  "sparse_recheck": {
+    "cpu": 2,
+    "repeats": 11,
+    "hashes": {
+      "baseline": "5c8b481ccfa228971da5c60bca9797176d9d492783ed1b88d91c9bde1b7f63e3",
+      "candidate": "a6edbade8e41cf737c698b7eb64de32d13d7dd295771751cb710caf82c27e7a3"
+    },
+    "rows": [
+      {
+        "case": "frame_sparse",
+        "nodes": 1000,
+        "baseline": [
+          {
+            "median_ns": 260990,
+            "p95_ns": 264260,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 260660,
+            "p95_ns": 263000,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 262800,
+            "p95_ns": 265040,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 261620,
+            "p95_ns": 264230,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 259710,
+            "p95_ns": 262050,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 260540,
+            "p95_ns": 262870,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 259960,
+            "p95_ns": 262300,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 259410,
+            "p95_ns": 263660,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 259040,
+            "p95_ns": 262930,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 259930,
+            "p95_ns": 261950,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 259670,
+            "p95_ns": 262440,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "candidate": [
+          {
+            "median_ns": 260250,
+            "p95_ns": 263390,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 260060,
+            "p95_ns": 262850,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 260720,
+            "p95_ns": 263250,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 259020,
+            "p95_ns": 263730,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 262980,
+            "p95_ns": 265480,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 258710,
+            "p95_ns": 260530,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 258870,
+            "p95_ns": 261630,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 260800,
+            "p95_ns": 263760,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 260090,
+            "p95_ns": 262560,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 261090,
+            "p95_ns": 263770,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          },
+          {
+            "median_ns": 259560,
+            "p95_ns": 261840,
+            "allocs": 0,
+            "live_delta": 0,
+            "runtime_bytes": 20112
+          }
+        ],
+        "paired_delta_percent": -0.23018491521522577,
+        "slower_pairs": 4
+      }
+    ],
+    "allocations": [
+      {
+        "case": "frame_sparse",
+        "nodes": 1000,
+        "baseline": {
+          "median_ns": 260120,
+          "p95_ns": 263390,
+          "allocs": 6,
+          "live_delta": 240,
+          "runtime_bytes": 20112
+        },
+        "candidate": {
+          "median_ns": 259450,
+          "p95_ns": 262020,
+          "allocs": 6,
+          "live_delta": 240,
+          "runtime_bytes": 20112
+        }
+      }
+    ]
+  },
+  "physics_2d_recheck": {
+    "hashes": {
+      "baseline": "5ce20fb8ce3017d77b3e2ed40a468925f5104c8b307629bc75c9e24a8978caa6",
+      "candidate": "9e9f28fdf61d5c3db6a66af40ff77444537651b4fd27ca8d45475f4f3eaac8cc"
+    },
+    "baseline": [
+      [
+        2.2439,
+        2.284,
+        2.3206
+      ],
+      [
+        2.3021,
+        2.3362,
+        2.3663
+      ],
+      [
+        2.2773,
+        2.3177,
+        2.3549
+      ],
+      [
+        2.3397,
+        2.3751,
+        2.4069
+      ],
+      [
+        2.2954,
+        2.3299,
+        2.3615
+      ],
+      [
+        2.2877,
+        2.3441,
+        2.4072
+      ],
+      [
+        2.2432,
+        2.2862,
+        2.3281
+      ]
+    ],
+    "candidate": [
+      [
+        2.2518,
+        2.2857,
+        2.3171
+      ],
+      [
+        2.309,
+        2.3448,
+        2.3777
+      ],
+      [
+        2.2403,
+        2.277,
+        2.3119
+      ],
+      [
+        2.3069,
+        2.339,
+        2.3676
+      ],
+      [
+        2.2289,
+        2.2773,
+        2.3217
+      ],
+      [
+        2.2751,
+        2.3217,
+        2.3654
+      ],
+      [
+        2.3056,
+        2.3385,
+        2.3692
+      ]
+    ]
+  },
+  "physics_short_runs": {
+    "baseline_0": "Gnuplot not found, using plotters backend\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d_512\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d_512: Warming up for 500.00 ms\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d_512: Collecting 30 samples in estimated 1.4126 s (60 iterations)\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d_512: Analyzing\nphysics/runtime_fixed_step_forces/fixed_step_2d_512\n                        time:   [2.3678 ms 2.3847 ms 2.4016 ms]\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_3d_512\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_3d_512: Warming up for 500.00 ms\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_3d_512: Collecting 30 samples in estimated 1.6135 s (60 iterations)\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_3d_512: Analyzing\nphysics/runtime_fixed_step_forces/fixed_step_3d_512\n                        time:   [4.9829 ms 5.1359 ms 5.3085 ms]\nFound 1 outliers among 30 measurements (3.33%)\n  1 (3.33%) high mild\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d3d_512_each\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d3d_512_each: Warming up for 500.00 ms\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d3d_512_each: Collecting 30 samples in estimated 1.6086 s (60 iterations)\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d3d_512_each: Analyzing\nphysics/runtime_fixed_step_forces/fixed_step_2d3d_512_each\n                        time:   [6.0389 ms 6.0853 ms 6.1568 ms]\nFound 1 outliers among 30 measurements (3.33%)\n  1 (3.33%) high severe\n\n",
+    "candidate_0": "Gnuplot not found, using plotters backend\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d_512\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d_512: Warming up for 500.00 ms\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d_512: Collecting 30 samples in estimated 1.3985 s (60 iterations)\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d_512: Analyzing\nphysics/runtime_fixed_step_forces/fixed_step_2d_512\n                        time:   [2.3851 ms 2.4140 ms 2.4449 ms]\n                        change: [+0.0358% +1.2303% +2.7064%] (p = 0.11 > 0.05)\n                        No change in performance detected.\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_3d_512\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_3d_512: Warming up for 500.00 ms\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_3d_512: Collecting 30 samples in estimated 1.5854 s (60 iterations)\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_3d_512: Analyzing\nphysics/runtime_fixed_step_forces/fixed_step_3d_512\n                        time:   [4.9752 ms 5.0920 ms 5.2134 ms]\n                        change: [-4.7882% -0.8563% +2.8694%] (p = 0.68 > 0.05)\n                        No change in performance detected.\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d3d_512_each\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d3d_512_each: Warming up for 500.00 ms\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d3d_512_each: Collecting 30 samples in estimated 1.6183 s (60 iterations)\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d3d_512_each: Analyzing\nphysics/runtime_fixed_step_forces/fixed_step_2d3d_512_each\n                        time:   [6.0711 ms 6.1664 ms 6.2943 ms]\n                        change: [-0.6672% +1.3321% +3.4884%] (p = 0.25 > 0.05)\n                        No change in performance detected.\nFound 3 outliers among 30 measurements (10.00%)\n  1 (3.33%) high mild\n  2 (6.67%) high severe\n\n",
+    "baseline_1": "Gnuplot not found, using plotters backend\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d_512\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d_512: Warming up for 500.00 ms\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d_512: Collecting 30 samples in estimated 1.4057 s (60 iterations)\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d_512: Analyzing\nphysics/runtime_fixed_step_forces/fixed_step_2d_512\n                        time:   [2.3634 ms 2.3837 ms 2.4077 ms]\nFound 4 outliers among 30 measurements (13.33%)\n  2 (6.67%) high mild\n  2 (6.67%) high severe\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_3d_512\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_3d_512: Warming up for 500.00 ms\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_3d_512: Collecting 30 samples in estimated 1.5894 s (60 iterations)\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_3d_512: Analyzing\nphysics/runtime_fixed_step_forces/fixed_step_3d_512\n                        time:   [4.9876 ms 5.1288 ms 5.2836 ms]\nFound 1 outliers among 30 measurements (3.33%)\n  1 (3.33%) high mild\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d3d_512_each\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d3d_512_each: Warming up for 500.00 ms\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d3d_512_each: Collecting 30 samples in estimated 1.6169 s (60 iterations)\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d3d_512_each: Analyzing\nphysics/runtime_fixed_step_forces/fixed_step_2d3d_512_each\n                        time:   [6.1503 ms 6.2896 ms 6.4638 ms]\nFound 2 outliers among 30 measurements (6.67%)\n  1 (3.33%) high mild\n  1 (3.33%) high severe\n\n",
+    "candidate_1": "Gnuplot not found, using plotters backend\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d_512\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d_512: Warming up for 500.00 ms\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d_512: Collecting 30 samples in estimated 1.3988 s (60 iterations)\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d_512: Analyzing\nphysics/runtime_fixed_step_forces/fixed_step_2d_512\n                        time:   [2.3895 ms 2.4135 ms 2.4363 ms]\n                        change: [-0.1773% +1.2500% +2.5994%] (p = 0.09 > 0.05)\n                        No change in performance detected.\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_3d_512\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_3d_512: Warming up for 500.00 ms\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_3d_512: Collecting 30 samples in estimated 1.5946 s (60 iterations)\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_3d_512: Analyzing\nphysics/runtime_fixed_step_forces/fixed_step_3d_512\n                        time:   [4.9420 ms 5.0739 ms 5.2189 ms]\n                        change: [-4.8512% -1.0710% +3.1470%] (p = 0.60 > 0.05)\n                        No change in performance detected.\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d3d_512_each\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d3d_512_each: Warming up for 500.00 ms\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d3d_512_each: Collecting 30 samples in estimated 1.6120 s (60 iterations)\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d3d_512_each: Analyzing\nphysics/runtime_fixed_step_forces/fixed_step_2d3d_512_each\n                        time:   [6.1009 ms 6.2093 ms 6.3424 ms]\n                        change: [-4.3901% -1.2764% +1.7627%] (p = 0.45 > 0.05)\n                        No change in performance detected.\nFound 4 outliers among 30 measurements (13.33%)\n  4 (13.33%) high severe\n\n",
+    "baseline_2": "Gnuplot not found, using plotters backend\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d_512\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d_512: Warming up for 500.00 ms\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d_512: Collecting 30 samples in estimated 1.3991 s (60 iterations)\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d_512: Analyzing\nphysics/runtime_fixed_step_forces/fixed_step_2d_512\n                        time:   [2.3466 ms 2.3662 ms 2.3862 ms]\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_3d_512\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_3d_512: Warming up for 500.00 ms\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_3d_512: Collecting 30 samples in estimated 1.5875 s (60 iterations)\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_3d_512: Analyzing\nphysics/runtime_fixed_step_forces/fixed_step_3d_512\n                        time:   [5.0163 ms 5.1636 ms 5.3184 ms]\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d3d_512_each\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d3d_512_each: Warming up for 500.00 ms\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d3d_512_each: Collecting 30 samples in estimated 1.6177 s (60 iterations)\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d3d_512_each: Analyzing\nphysics/runtime_fixed_step_forces/fixed_step_2d3d_512_each\n                        time:   [6.0314 ms 6.1263 ms 6.2463 ms]\nFound 4 outliers among 30 measurements (13.33%)\n  1 (3.33%) high mild\n  3 (10.00%) high severe\n\n",
+    "candidate_2": "Gnuplot not found, using plotters backend\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d_512\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d_512: Warming up for 500.00 ms\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d_512: Collecting 30 samples in estimated 1.4019 s (60 iterations)\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d_512: Analyzing\nphysics/runtime_fixed_step_forces/fixed_step_2d_512\n                        time:   [2.4122 ms 2.4313 ms 2.4507 ms]\n                        change: [+1.5112% +2.7489% +4.0083%] (p = 0.00 < 0.05)\n                        Performance has regressed.\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_3d_512\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_3d_512: Warming up for 500.00 ms\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_3d_512: Collecting 30 samples in estimated 1.5895 s (60 iterations)\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_3d_512: Analyzing\nphysics/runtime_fixed_step_forces/fixed_step_3d_512\n                        time:   [4.9612 ms 5.0744 ms 5.1947 ms]\n                        change: [-5.2478% -1.7269% +2.1289%] (p = 0.37 > 0.05)\n                        No change in performance detected.\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d3d_512_each\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d3d_512_each: Warming up for 500.00 ms\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d3d_512_each: Collecting 30 samples in estimated 1.6174 s (60 iterations)\nBenchmarking physics/runtime_fixed_step_forces/fixed_step_2d3d_512_each: Analyzing\nphysics/runtime_fixed_step_forces/fixed_step_2d3d_512_each\n                        time:   [6.1421 ms 6.2763 ms 6.4347 ms]\n                        change: [-0.5109% +2.4490% +5.3097%] (p = 0.12 > 0.05)\n                        No change in performance detected.\nFound 3 outliers among 30 measurements (10.00%)\n  2 (6.67%) high mild\n  1 (3.33%) high severe\n\n"
+  },
+  "limits": [
+    "Single host and exercised workloads; no universal performance guarantee.",
+    "No GPU-time or cross-OS performance claim.",
+    "Build times are not a controlled incremental-compile comparison."
+  ]
+}

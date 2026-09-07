@@ -37,3 +37,8 @@ required-features = ["playback"]
 name = "midi"
 harness = false
 required-features = ["playback"]
+
+[[bench]]
+name = "audit_playback"
+harness = false
+required-features = ["playback"]

@@ -1,22 +1,22 @@
-use crate::scripts::app::editor_app as editor_app;
-use crate::scripts::app::editor_manager as editor_manager;
-use crate::scripts::app::editor_project as editor_project;
+use crate::scripts::app::editor_app;
+use crate::scripts::app::editor_manager;
+use crate::scripts::app::editor_project;
 use crate::scripts::assets::editor_assets::*;
-use crate::scripts::assets::editor_file_watch as editor_file_watch;
-use crate::scripts::assets::editor_files as editor_files;
+use crate::scripts::assets::editor_file_watch;
+use crate::scripts::assets::editor_files;
 use crate::scripts::editor::main::{
     EditorState, FILE_WATCH_INTERVAL_FRAMES, LIST_DOUBLE_CLICK_FRAMES, MAX_FILES,
-    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, cached_scene_doc, cached_scene_doc_shared,
-    cached_scene_node, capture_active_scene_session, set_state_scene_doc,
+    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, cached_scene_doc,
+    cached_scene_doc_shared, cached_scene_node, capture_active_scene_session, set_state_scene_doc,
 };
 use crate::scripts::scene::editor_animation::*;
-use crate::scripts::scene::editor_gizmos as editor_gizmos;
+use crate::scripts::scene::editor_gizmos;
 use crate::scripts::scene::editor_nav::*;
-use crate::scripts::scene::editor_scene_deps as editor_scene_deps;
-use crate::scripts::scene::editor_scene as editor_scene;
+use crate::scripts::scene::editor_scene;
+use crate::scripts::scene::editor_scene_deps;
 use crate::scripts::scene::editor_viewport::*;
 use crate::scripts::ui::editor_ui::*;
-use crate::scripts::ui::editor_view as editor_view;
+use crate::scripts::ui::editor_view;
 use perro_api::prelude::*;
 use perro_api::scene::{
     SceneDoc, SceneFieldName, SceneKey, SceneNodeData, SceneNodeEntry, SceneValue, SceneValueKey,
@@ -83,6 +83,9 @@ pub fn editor_asset_filters(kind: perro_scene::SceneAssetKind) -> &'static [Edit
     }
 }
 pub fn select_node_slot<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, idx: usize) {
+    let ctrl =
+        key_down!(ctx.ipt, KeyCode::ControlLeft) || key_down!(ctx.ipt, KeyCode::ControlRight);
+    let shift = viewport_shift_down(ctx);
     let key = with_state!(ctx.run, EditorState, ctx.id, |state| {
         if state.doc_text.is_empty() {
             None
@@ -98,10 +101,19 @@ pub fn select_node_slot<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API
             .get(idx)
             .copied()
         }
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     if let Some(key) = key {
         let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-            state.selected_key = Some(key);
+            let doc = cached_scene_doc_shared(&state.doc_text);
+            let visible = scene_tree_view(
+                &doc,
+                state.selected_key,
+                &state.scene_filter,
+                &state.collapsed_scene_keys,
+            )
+            .keys;
+            crate::scripts::scene::editor_selection::click(state, key, ctrl, shift, &visible);
             if let Some(mode) = selected_node_viewport_mode(&state.doc_text, key) {
                 state.viewport_mode = mode.to_string();
             }
@@ -139,13 +151,15 @@ pub fn click_scene_node_slot<API: ScriptAPI + ?Sized>(
             .get(idx)
             .copied()
         }
-    }).unwrap_or_default() else {
+    })
+    .unwrap_or_default() else {
         return;
     };
 
     let was_selected = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.selected_key == Some(key)
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     let should_toggle = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let frame = state.file_watch_frame;
         let should_toggle = state
@@ -161,7 +175,11 @@ pub fn click_scene_node_slot<API: ScriptAPI + ?Sized>(
     select_node_slot(ctx, idx);
     crate::scripts::scene::editor_animation::follow_player_selection(ctx);
 
-    if !should_toggle {
+    if !should_toggle
+        || key_down!(ctx.ipt, KeyCode::ControlLeft)
+        || key_down!(ctx.ipt, KeyCode::ControlRight)
+        || viewport_shift_down(ctx)
+    {
         return;
     }
 
@@ -172,7 +190,8 @@ pub fn click_scene_node_slot<API: ScriptAPI + ?Sized>(
             let doc = cached_scene_doc_shared(&state.doc_text);
             scene_child_count(&doc, key) > 0
         }
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     if !has_children {
         return;
     }
@@ -216,7 +235,8 @@ pub fn toggle_scene_node_slot<API: ScriptAPI + ?Sized>(
             .get(idx)
             .copied()
         }
-    }).unwrap_or_default() else {
+    })
+    .unwrap_or_default() else {
         return;
     };
     let has_children = with_state!(ctx.run, EditorState, ctx.id, |state| {
@@ -226,7 +246,8 @@ pub fn toggle_scene_node_slot<API: ScriptAPI + ?Sized>(
             let doc = cached_scene_doc_shared(&state.doc_text);
             scene_child_count(&doc, key) > 0
         }
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     if !has_children {
         return;
     }
@@ -270,7 +291,8 @@ pub fn set_scene_node_slot_open<API: ScriptAPI + ?Sized>(
             .get(idx)
             .copied()
         }
-    }).unwrap_or_default() else {
+    })
+    .unwrap_or_default() else {
         return;
     };
     let has_children = with_state!(ctx.run, EditorState, ctx.id, |state| {
@@ -280,7 +302,8 @@ pub fn set_scene_node_slot_open<API: ScriptAPI + ?Sized>(
             let doc = cached_scene_doc_shared(&state.doc_text);
             scene_child_count(&doc, key) > 0
         }
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     if !has_children {
         return;
     }
@@ -314,7 +337,8 @@ pub fn set_scene_node_slot_open<API: ScriptAPI + ?Sized>(
 pub fn set_activity_mode<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, mode: &str) {
     let was_glb = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.activity_mode == "glb"
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         if mode == "scene" {
             state.activity_mode = "scene".to_string();
@@ -470,11 +494,8 @@ pub fn toggle_bottom_dock<API: ScriptAPI + ?Sized>(
     animation: bool,
 ) {
     let anim_opened = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        (state.bottom_dock_open, state.anim_drawer_open) = next_bottom_dock_state(
-            state.bottom_dock_open,
-            state.anim_drawer_open,
-            animation,
-        );
+        (state.bottom_dock_open, state.anim_drawer_open) =
+            next_bottom_dock_state(state.bottom_dock_open, state.anim_drawer_open, animation);
         if state.bottom_dock_open {
             state.activity_mode = "scene".to_string();
         }
@@ -488,7 +509,11 @@ pub fn toggle_bottom_dock<API: ScriptAPI + ?Sized>(
     refresh_all(ctx);
 }
 
-pub fn next_bottom_dock_state(open: bool, current_animation: bool, target_animation: bool) -> (bool, bool) {
+pub fn next_bottom_dock_state(
+    open: bool,
+    current_animation: bool,
+    target_animation: bool,
+) -> (bool, bool) {
     if open && current_animation == target_animation {
         (false, current_animation)
     } else {
@@ -532,7 +557,8 @@ pub fn open_selected_node_asset_ref<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCon
             .map(|idx| (idx + 1) % refs.len())
             .unwrap_or(0);
         refs.get(next_idx).cloned()
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     let Some(path) = path else {
         set_log(ctx, "open ref fail\nno asset ref");
         return;
@@ -572,7 +598,7 @@ pub fn select_node_using_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptC
             .unwrap_or(0);
         let node = users[next_idx];
         let key = node.key.as_u32();
-        state.selected_key = Some(key);
+        crate::scripts::scene::editor_selection::replace(state, vec![key]);
         state.sidebar_mode = "scene".to_string();
         state.activity_mode = "scene".to_string();
         state.scene_filter.clear();
@@ -664,6 +690,53 @@ pub fn base_res_asset_path(path: &str) -> String {
 pub fn use_active_asset_on_selected_node<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
 ) {
+    let batch = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        crate::scripts::scene::editor_selection::keys(state).len() > 1
+    })
+    .unwrap_or(false);
+    if batch {
+        let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+            let keys = crate::scripts::scene::editor_selection::keys(state);
+            let mut doc = cached_scene_doc(&state.doc_text);
+            for key in &keys {
+                let Some(node) = doc
+                    .scene
+                    .nodes
+                    .to_mut()
+                    .iter_mut()
+                    .find(|n| n.key.as_u32() == *key)
+                else {
+                    return false;
+                };
+                let Some((field, value)) = asset_binding_for_node(
+                    &state.active_asset_path,
+                    node.data.type_name(),
+                    state.active_glb_mesh_index,
+                    state.active_glb_mat_index,
+                ) else {
+                    state.log = "assign asset fail\nincompatible selection".into();
+                    return false;
+                };
+                if field == "root_of" {
+                    state.log = "instance scene separately".into();
+                    return false;
+                }
+                if field == "script" {
+                    node.script = Some(Cow::Owned(value));
+                    node.clear_script = false;
+                } else {
+                    set_scene_string(&mut node.data, field, value);
+                }
+            }
+            crate::scripts::scene::editor_batch::commit(state, &doc, keys)
+        })
+        .unwrap_or(false);
+        if changed {
+            rebuild_preview(ctx);
+        }
+        refresh_selection_panels(ctx);
+        return;
+    }
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let asset_path = state.active_asset_path.clone();
         if asset_path.is_empty() || asset_path.ends_with('/') {
@@ -718,7 +791,9 @@ pub fn use_active_asset_on_selected_node<API: ScriptAPI + ?Sized>(
             }
         }
         doc.normalize_links();
-        set_state_scene_doc(state, &doc);
+        if !set_state_scene_doc(state, &doc) {
+            return false;
+        }
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -736,6 +811,36 @@ pub fn use_active_asset_on_selected_node<API: ScriptAPI + ?Sized>(
 }
 
 pub fn make_node_from_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let error = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        let path = &state.active_asset_path;
+        if !path.ends_with(".scn") {
+            return None;
+        }
+        let text = std::fs::read_to_string(res_to_abs(&state.project_root, path))
+            .map_err(|e| e.to_string());
+        match text {
+            Err(err) => Some(err),
+            Ok(text) => {
+                let deps = editor_scene_deps::collect_scene_deps(
+                    Path::new(&state.project_root),
+                    path,
+                    &text,
+                );
+                deps.error.or_else(|| {
+                    state
+                        .open_paths
+                        .get(state.active_open)
+                        .filter(|active| deps.paths.contains(active))
+                        .map(|_| "scene instance cycle".into())
+                })
+            }
+        }
+    })
+    .unwrap_or_default();
+    if let Some(error) = error {
+        set_log(ctx, &format!("instance fail\n{error}"));
+        return;
+    }
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let asset_path = state.active_asset_path.clone();
         if asset_path.is_empty() || asset_path.ends_with('/') {
@@ -804,7 +909,7 @@ pub fn make_node_from_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCont
         });
         doc.normalize_links();
         set_state_scene_doc(state, &doc);
-        state.selected_key = Some(next_id);
+        crate::scripts::scene::editor_selection::replace(state, vec![next_id]);
         if let Some(mode) = viewport_mode_for_node_type(node_type) {
             state.viewport_mode = mode.to_string();
         }
@@ -1020,7 +1125,7 @@ pub fn add_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, node_
         doc.scene.nodes.to_mut().push(node);
         doc.normalize_links();
         set_state_scene_doc(state, &doc);
-        state.selected_key = Some(next_id);
+        crate::scripts::scene::editor_selection::replace(state, vec![next_id]);
         state.add_node_as_sibling = false;
         push_recent_node_type(state, node_type.name());
         if let Some(mode) = viewport_mode_for_node_type(node_type) {
@@ -1050,7 +1155,8 @@ pub fn add_node_from_picker<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
                 .get(state.node_picker_offset + row)
                 .copied()
         })
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
     if let Some(node_type) = node_type {
         add_node(ctx, node_type.name());
     }
@@ -1504,16 +1610,15 @@ pub fn save_active_scene_to_disk<API: ScriptAPI + ?Sized>(
 }
 
 pub fn save_all_scenes<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) -> bool {
-    let (root, sessions, dirty_paths) =
-        with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-            capture_active_scene_session(state);
-            (
-                state.project_root.clone(),
-                state.scene_sessions.clone(),
-                state.dirty_scene_paths.clone(),
-            )
-        })
-        .unwrap_or_default();
+    let (root, sessions, dirty_paths) = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        capture_active_scene_session(state);
+        (
+            state.project_root.clone(),
+            state.scene_sessions.clone(),
+            state.dirty_scene_paths.clone(),
+        )
+    })
+    .unwrap_or_default();
     if sessions.is_empty() || dirty_paths.is_empty() {
         set_log(ctx, "save all\nnothing dirty");
         refresh_all(ctx);
@@ -1570,61 +1675,22 @@ pub fn save_all_scenes<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
 
 pub fn delete_selected_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        let Some(key) = state.selected_key else {
-            state.log = "delete node fail\nselect node".to_string();
-            return false;
-        };
-        if state.doc_text.is_empty() {
-            state.log = "delete node fail\nno open scene".to_string();
-            return false;
+        match crate::scripts::scene::editor_batch::delete(state) {
+            Ok(changed) => {
+                state.log = "delete_selected_node".into();
+                changed
+            }
+            Err(err) => {
+                state.log = format!("scene edit fail\n{err}");
+                false
+            }
         }
-        let mut doc = cached_scene_doc(&state.doc_text);
-        if doc.scene.root.map(|root| root.as_u32()) == Some(key) {
-            state.log = "delete node fail\nroot node".to_string();
-            return false;
-        }
-        let Some(target) = cached_scene_node(&state.doc_text, key) else {
-            state.log = "delete node fail\nmissing node".to_string();
-            return false;
-        };
-        let parent_key = target.parent.map(|parent| parent.as_u32());
-        let removed_keys = collect_scene_subtree_keys(&doc, key);
-        doc.scene
-            .nodes
-            .to_mut()
-            .retain(|node| !removed_keys.contains(&node.key.as_u32()));
-        doc.normalize_links();
-        set_state_scene_doc(state, &doc);
-        // Deleted nodes' keys must not linger in the tree-collapse toggle
-        // list forever -- prune them here instead of waiting on a full
-        // scene reload.
-        state
-            .collapsed_scene_keys
-            .retain(|key| !removed_keys.contains(key));
-        state.selected_key = parent_key
-            .filter(|parent| {
-                doc.scene
-                    .nodes
-                    .iter()
-                    .any(|node| node.key.as_u32() == *parent)
-            })
-            .or_else(|| doc.scene.nodes.first().map(|node| node.key.as_u32()));
-        state.dirty = true;
-        if let Some(path) = state.open_paths.get(state.active_open).cloned()
-            && !state.dirty_scene_paths.iter().any(|item| item == &path)
-        {
-            state.dirty_scene_paths.push(path);
-        }
-        state.log = format!("delete node\nrm {} node", removed_keys.len());
-        true
     })
     .unwrap_or(false);
     if changed {
         rebuild_preview(ctx);
-        refresh_all(ctx);
-    } else {
-        refresh_all(ctx);
     }
+    refresh_selection_panels(ctx);
 }
 
 pub fn toggle_selected_visible<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
@@ -1653,7 +1719,9 @@ pub fn toggle_selected_visible<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
         let next = !visible;
         next_visible = Some(next);
         set_scene_bool(&mut node.data, "visible", next);
-        set_state_scene_doc(state, &doc);
+        if !set_state_scene_doc(state, &doc) {
+            return false;
+        }
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -1724,7 +1792,9 @@ pub fn clear_selected_node_asset_refs<API: ScriptAPI + ?Sized>(ctx: &mut ScriptC
             return false;
         }
         doc.normalize_links();
-        set_state_scene_doc(state, &doc);
+        if !set_state_scene_doc(state, &doc) {
+            return false;
+        }
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -1743,192 +1813,52 @@ pub fn clear_selected_node_asset_refs<API: ScriptAPI + ?Sized>(ctx: &mut ScriptC
 
 pub fn duplicate_selected_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        let Some(key) = state.selected_key else {
-            state.log = "duplicate node fail\nselect node".to_string();
-            return false;
-        };
-        if state.doc_text.is_empty() {
-            state.log = "duplicate node fail\nno open scene".to_string();
-            return false;
-        }
-        let mut doc = cached_scene_doc(&state.doc_text);
-        let subtree_keys = collect_scene_subtree_keys(&doc, key);
-        if subtree_keys.is_empty() {
-            state.log = "duplicate node fail\nmissing node".to_string();
-            return false;
-        }
-        let mut map = Vec::new();
-        let mut clones = Vec::new();
-        for old_key in subtree_keys.iter().copied() {
-            let Some(source) = doc
-                .scene
-                .nodes
-                .iter()
-                .find(|node| node.key.as_u32() == old_key)
-                .cloned()
-            else {
-                continue;
-            };
-            let new_key = doc.scene.key_names.len() as u32;
-            let source_name = doc.scene.key_name_or_id(source.key).to_string();
-            let new_name = unique_node_name(&doc, &format!("{source_name}_copy"));
-            doc.scene.key_names.to_mut().push(Cow::Owned(new_name));
-            map.push((old_key, new_key));
-            clones.push(source);
-        }
-        if clones.is_empty() {
-            state.log = "duplicate node fail\nmissing node".to_string();
-            return false;
-        }
-        for mut node in clones {
-            let old_key = node.key.as_u32();
-            let Some(new_key) = mapped_scene_key(&map, old_key) else {
-                continue;
-            };
-            node.key = SceneKey::new(new_key);
-            if let Some(parent) = node.parent
-                && let Some(new_parent) = mapped_scene_key(&map, parent.as_u32())
-            {
-                node.parent = Some(SceneKey::new(new_parent));
+        match crate::scripts::scene::editor_batch::duplicate(state, false) {
+            Ok(changed) => {
+                state.log = "duplicate_selected_node".into();
+                changed
             }
-            if old_key == key {
-                offset_duplicated_node(&mut node.data);
+            Err(err) => {
+                state.log = format!("scene edit fail\n{err}");
+                false
             }
-            node.children = Cow::Owned(Vec::new());
-            doc.scene.nodes.to_mut().push(node);
         }
-        doc.normalize_links();
-        set_state_scene_doc(state, &doc);
-        state.selected_key = mapped_scene_key(&map, key);
-        state.dirty = true;
-        if let Some(path) = state.open_paths.get(state.active_open).cloned()
-            && !state.dirty_scene_paths.iter().any(|item| item == &path)
-        {
-            state.dirty_scene_paths.push(path);
-        }
-        state.log = format!("duplicate node\nadd {} node", map.len());
-        true
     })
     .unwrap_or(false);
     if changed {
         rebuild_preview(ctx);
     }
-    refresh_all(ctx);
+    refresh_selection_panels(ctx);
 }
 
 pub fn copy_selected_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
-    let copied = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        let Some(key) = state.selected_key else {
-            state.log = "copy node fail\nselect node".to_string();
-            return false;
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.log = match crate::scripts::scene::editor_batch::copy(state) {
+            Ok(()) => "copy nodes".into(),
+            Err(err) => format!("copy fail\n{err}"),
         };
-        if state.doc_text.is_empty() {
-            state.log = "copy node fail\nno open scene".to_string();
-            return false;
-        }
-        let doc = cached_scene_doc_shared(&state.doc_text);
-        let Some(node) = cached_scene_node(&state.doc_text, key) else {
-            state.log = "copy node fail\nmissing node".to_string();
-            return false;
-        };
-        state.copied_node_key = Some(key);
-        state.log = format!("copy node\n{}", doc.scene.key_name_or_id(node.key));
-        true
-    })
-    .unwrap_or(false);
-    if copied {
-        refresh_all(ctx);
-    }
+    });
+    refresh_status(ctx);
 }
 
 pub fn paste_copied_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        let Some(source_key) = state.copied_node_key else {
-            state.log = "paste node fail\ncopy node first".to_string();
-            return false;
-        };
-        if state.doc_text.is_empty() {
-            state.log = "paste node fail\nno open scene".to_string();
-            return false;
-        }
-        let mut doc = cached_scene_doc(&state.doc_text);
-        if !doc
-            .scene
-            .nodes
-            .iter()
-            .any(|node| node.key.as_u32() == source_key)
-        {
-            state.log = "paste node fail\ncopied node missing".to_string();
-            return false;
-        }
-        let root_parent = state
-            .selected_key
-            .filter(|key| *key != source_key)
-            .map(SceneKey::new)
-            .or(doc.scene.root);
-        let subtree_keys = collect_scene_subtree_keys(&doc, source_key);
-        let mut map = Vec::new();
-        let mut clones = Vec::new();
-        for old_key in subtree_keys.iter().copied() {
-            let Some(source) = doc
-                .scene
-                .nodes
-                .iter()
-                .find(|node| node.key.as_u32() == old_key)
-                .cloned()
-            else {
-                continue;
-            };
-            let new_key = doc.scene.key_names.len() as u32;
-            let source_name = doc.scene.key_name_or_id(source.key).to_string();
-            let new_name = unique_node_name(&doc, &format!("{source_name}_paste"));
-            doc.scene.key_names.to_mut().push(Cow::Owned(new_name));
-            map.push((old_key, new_key));
-            clones.push(source);
-        }
-        if clones.is_empty() {
-            state.log = "paste node fail\nempty copy".to_string();
-            return false;
-        }
-        for mut node in clones {
-            let old_key = node.key.as_u32();
-            let Some(new_key) = mapped_scene_key(&map, old_key) else {
-                continue;
-            };
-            node.key = SceneKey::new(new_key);
-            if old_key == source_key {
-                node.parent = root_parent;
-                offset_duplicated_node(&mut node.data);
-            } else if let Some(parent) = node.parent
-                && let Some(new_parent) = mapped_scene_key(&map, parent.as_u32())
-            {
-                node.parent = Some(SceneKey::new(new_parent));
+        match crate::scripts::scene::editor_batch::duplicate(state, true) {
+            Ok(changed) => {
+                state.log = "paste_copied_node".into();
+                changed
             }
-            node.children = Cow::Owned(Vec::new());
-            doc.scene.nodes.to_mut().push(node);
+            Err(err) => {
+                state.log = format!("scene edit fail\n{err}");
+                false
+            }
         }
-        doc.normalize_links();
-        set_state_scene_doc(state, &doc);
-        state.selected_key = mapped_scene_key(&map, source_key);
-        if let Some(key) = state.selected_key
-            && let Some(mode) = selected_node_viewport_mode(&state.doc_text, key)
-        {
-            state.viewport_mode = mode.to_string();
-        }
-        state.dirty = true;
-        if let Some(path) = state.open_paths.get(state.active_open).cloned()
-            && !state.dirty_scene_paths.iter().any(|item| item == &path)
-        {
-            state.dirty_scene_paths.push(path);
-        }
-        state.log = format!("paste node\nadd {} node", map.len());
-        true
     })
     .unwrap_or(false);
     if changed {
         rebuild_preview(ctx);
     }
-    refresh_all(ctx);
+    refresh_selection_panels(ctx);
 }
 
 pub fn move_selected_node_order<API: ScriptAPI + ?Sized>(
@@ -1975,7 +1905,9 @@ pub fn move_selected_node_order<API: ScriptAPI + ?Sized>(
         let other_index = siblings[next_pos];
         doc.scene.nodes.to_mut().swap(index, other_index);
         doc.normalize_links();
-        set_state_scene_doc(state, &doc);
+        if !set_state_scene_doc(state, &doc) {
+            return false;
+        }
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -2001,81 +1933,22 @@ pub fn reparent_selected_node<API: ScriptAPI + ?Sized>(
     dir: isize,
 ) {
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        let Some(key) = state.selected_key else {
-            state.log = "reparent fail\nselect node".to_string();
-            return false;
-        };
-        if state.doc_text.is_empty() {
-            state.log = "reparent fail\nno open scene".to_string();
-            return false;
-        }
-        let mut doc = cached_scene_doc(&state.doc_text);
-        if doc.scene.root.map(|root| root.as_u32()) == Some(key) {
-            state.log = "reparent fail\nroot node".to_string();
-            return false;
-        }
-        let Some(index) = doc
-            .scene
-            .nodes
-            .iter()
-            .position(|node| node.key.as_u32() == key)
-        else {
-            state.log = "reparent fail\nmissing node".to_string();
-            return false;
-        };
-        let current_parent = doc.scene.nodes[index].parent.map(|parent| parent.as_u32());
-        let next_parent = if dir < 0 {
-            let Some(parent_key) = current_parent else {
-                state.log = "reparent\nat root".to_string();
-                return false;
-            };
-            doc.scene
-                .nodes
-                .iter()
-                .find(|node| node.key.as_u32() == parent_key)
-                .and_then(|node| node.parent.map(|parent| parent.as_u32()))
-        } else {
-            let siblings = doc
-                .scene
-                .nodes
-                .iter()
-                .filter(|node| node.parent.map(|parent| parent.as_u32()) == current_parent)
-                .map(|node| node.key.as_u32())
-                .collect::<Vec<_>>();
-            let Some(pos) = siblings.iter().position(|sibling| *sibling == key) else {
-                return false;
-            };
-            if pos == 0 {
-                state.log = "reparent\nno previous sibling".to_string();
-                return false;
+        match crate::scripts::scene::editor_batch::reparent(state, dir) {
+            Ok(changed) => {
+                state.log = "reparent nodes".into();
+                changed
             }
-            Some(siblings[pos - 1])
-        };
-        if next_parent == Some(key) || current_parent == next_parent {
-            state.log = "reparent\nno change".to_string();
-            return false;
+            Err(err) => {
+                state.log = format!("reparent fail\n{err}");
+                false
+            }
         }
-        doc.scene.nodes.to_mut()[index].parent = next_parent.map(SceneKey::new);
-        doc.normalize_links();
-        set_state_scene_doc(state, &doc);
-        state.dirty = true;
-        if let Some(path) = state.open_paths.get(state.active_open).cloned()
-            && !state.dirty_scene_paths.iter().any(|item| item == &path)
-        {
-            state.dirty_scene_paths.push(path);
-        }
-        state.log = if dir < 0 {
-            "reparent\nout".to_string()
-        } else {
-            "reparent\nin".to_string()
-        };
-        true
     })
     .unwrap_or(false);
     if changed {
         rebuild_preview(ctx);
     }
-    refresh_all(ctx);
+    refresh_selection_panels(ctx);
 }
 
 pub fn collect_scene_subtree_keys(doc: &SceneDoc, root_key: u32) -> Vec<u32> {

@@ -34,13 +34,7 @@ impl PerroGraphics {
         for job in jobs {
             let tx = self.async_mesh_load_tx.clone();
             rayon::spawn(move || {
-                let error = validate_mesh_source(job.source.as_str(), static_mesh_lookup).err();
-                let mesh = if error.is_none() {
-                    load_mesh3d_from_source(job.source.as_str(), static_mesh_lookup)
-                        .map(std::sync::Arc::new)
-                } else {
-                    None
-                };
+                let (mesh, error) = decode_mesh_source(job.source.as_str(), static_mesh_lookup);
                 let _ = tx.send(AsyncMeshLoadResult {
                     request: job.request,
                     id: job.id,
@@ -59,13 +53,12 @@ impl PerroGraphics {
         id: MeshID,
         source: String,
     ) {
-        if let Err(reason) = validate_mesh_source(source.as_str(), self.static_mesh_lookup) {
+        let (mesh_data, error) = decode_mesh_source(source.as_str(), self.static_mesh_lookup);
+        if let Some(reason) = error {
             self.resources.drop_mesh(id);
             self.events.push(RenderEvent::Failed { request, reason });
             return;
         }
-        let mesh_data = load_mesh3d_from_source(source.as_str(), self.static_mesh_lookup)
-            .map(std::sync::Arc::new);
         if let Some(mesh) = mesh_data.clone() {
             self.resources
                 .set_runtime_mesh_data(source.as_str(), mesh.clone());
@@ -130,12 +123,12 @@ impl PerroGraphics {
         }
         let jobs = std::mem::take(&mut self.queued_async_texture_loads);
         let static_texture_lookup = self.static_texture_lookup;
-        // 1 spawn per job: parallel read+decode across the pool (see mesh note).
-        // The decode stage inside is capped by DECODE_GATE so a wide pool
-        // cannot hold N full-size rgba buffers in flight at once.
+        // Keep texture IO and decode-gate waits off the shared render/script
+        // pool. Four asset workers also bound concurrent file reads. Retain
+        // the gate for the fallback if private worker creation fails.
         for job in jobs {
             let tx = self.async_texture_load_tx.clone();
-            rayon::spawn(move || {
+            let load = move || {
                 let texture =
                     decode_texture_source_rgba_gated(job.source.as_str(), static_texture_lookup)
                         .ok_or_else(|| format!("failed to decode texture source `{}`", job.source));
@@ -143,7 +136,12 @@ impl PerroGraphics {
                     id: job.id,
                     texture,
                 });
-            });
+            };
+            if let Some(pool) = texture_decode_pool() {
+                pool.spawn(load);
+            } else {
+                rayon::spawn(load);
+            }
         }
     }
 
@@ -239,6 +237,19 @@ impl PerroGraphics {
     pub(super) fn flush_async_texture_loads(&mut self) {}
 }
 
+/// Loading is also validation: keep the decoded mesh instead of decoding once
+/// to validate, dropping it, and repeating the entire load. Builtin names keep
+/// their existing successful `None` result; the GPU owns their geometry.
+fn decode_mesh_source(
+    source: &str,
+    static_mesh_lookup: Option<StaticMeshLookup>,
+) -> (Option<Arc<perro_render_bridge::Mesh3D>>, Option<String>) {
+    let mesh = load_mesh3d_from_source(source, static_mesh_lookup).map(Arc::new);
+    let error = (mesh.is_none() && !source.starts_with("__"))
+        .then(|| format!("mesh source failed to decode: {source}"));
+    (mesh, error)
+}
+
 /// Decode a texture's pixels straight from its source (builtin, static PTEX
 /// lookup, or file). Shared by the initial async load and by consumers whose
 /// resident CPU copy was reclaimed by the idle sweep.
@@ -274,8 +285,42 @@ pub(crate) fn decode_texture_source_rgba(
 /// decode transiently holds the encoded bytes + a ~16MB rgba buffer + its
 /// Arc copy; an unbounded rayon fan-out on a 16-core machine peaked at ~16x
 /// that. 4 keeps the pool fed while bounding transient decode memory.
-#[cfg(all(not(target_arch = "wasm32"), not(test)))]
+#[cfg(not(target_arch = "wasm32"))]
 const MAX_CONCURRENT_TEXTURE_DECODES: usize = 4;
+
+#[cfg(not(target_arch = "wasm32"))]
+fn texture_decode_pool() -> Option<&'static rayon::ThreadPool> {
+    static POOL: std::sync::OnceLock<Option<rayon::ThreadPool>> = std::sync::OnceLock::new();
+    POOL.get_or_init(|| {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(MAX_CONCURRENT_TEXTURE_DECODES)
+            .thread_name(|index| format!("perro-texture-{index}"))
+            .build()
+            .ok()
+    })
+    .as_ref()
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[test]
+fn texture_decode_workers_are_private_and_bounded() {
+    let pool = texture_decode_pool().expect("texture worker pool");
+    assert_eq!(pool.current_num_threads(), MAX_CONCURRENT_TEXTURE_DECODES);
+    let names = std::sync::Mutex::new(Vec::new());
+    pool.scope(|scope| {
+        for _ in 0..32 {
+            scope.spawn(|_| {
+                names
+                    .lock()
+                    .expect("texture worker name lock")
+                    .push(std::thread::current().name().unwrap_or_default().to_owned());
+            });
+        }
+    });
+    let names = names.into_inner().expect("texture worker names");
+    assert_eq!(names.len(), 32);
+    assert!(names.iter().all(|name| name.starts_with("perro-texture-")));
+}
 
 #[cfg(all(not(target_arch = "wasm32"), not(test)))]
 struct DecodeGate {

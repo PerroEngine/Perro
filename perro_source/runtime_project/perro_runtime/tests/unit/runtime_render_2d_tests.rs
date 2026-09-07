@@ -406,6 +406,7 @@ fn linked_2d_water_mirrors_wake_across_overlap() {
         }
     }
     runtime
+        .physics_sync
         .force_water_impacts_2d
         .push(crate::runtime::ForceWaterImpact2D {
             world: perro_ids::NodeID::nil(),

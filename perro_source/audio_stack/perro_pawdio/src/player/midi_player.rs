@@ -414,6 +414,7 @@ impl BarkPlayer {
         } else {
             sink.play();
         }
+        state.midi_playback_lookup.invalidate();
         state.midi_playbacks.push(MidiPlayback {
             id,
             bus_id,

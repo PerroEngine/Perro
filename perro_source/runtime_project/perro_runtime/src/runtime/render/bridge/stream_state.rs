@@ -281,8 +281,8 @@ impl Runtime {
         let mut found_2d = None;
         let mut found_3d_priority: Option<(u64, u32, u32)> = None;
         let mut found_3d = None;
-        for idx in 0..self.camera_stream_node_scratch.len() {
-            let node = self.camera_stream_node_scratch[idx];
+        for idx in 0..self.extraction.camera_stream_node_scratch.len() {
+            let node = self.extraction.camera_stream_node_scratch[idx];
             let Some(scene_node) = self.nodes.get(node) else {
                 continue;
             };
@@ -381,7 +381,12 @@ impl Runtime {
         stream_node: NodeID,
         built: &[perro_structs::PostProcessEffect],
     ) -> Arc<[perro_structs::PostProcessEffect]> {
-        let lanes = self.stream_retention.lanes.entry(stream_node).or_default();
+        let lanes = self
+            .extraction
+            .stream_retention
+            .lanes
+            .entry(stream_node)
+            .or_default();
         retained_arc_lane(Some(&mut lanes.post_processing), built)
     }
 
@@ -406,8 +411,8 @@ impl Runtime {
             .then(|| self.stream_localizer_3d(stream_node));
         let mut out_2d = two_d.is_some().then(|| self.take_stream_2d_collect());
         let mut out_3d = three_d.is_some().then(|| self.take_stream_3d_collect());
-        for idx in 0..self.camera_stream_node_scratch.len() {
-            let node = self.camera_stream_node_scratch[idx];
+        for idx in 0..self.extraction.camera_stream_node_scratch.len() {
+            let node = self.extraction.camera_stream_node_scratch[idx];
             if node == stream_node
                 || !self.is_effectively_visible(node)
                 || self.stream_skips_isolated_child(node, stream_node)
@@ -430,8 +435,13 @@ impl Runtime {
             lanes.lighting_3d = finish_stream_lighting_3d(out);
         }
         {
-            let mut retained =
-                retain.then(|| self.stream_retention.lanes.entry(stream_node).or_default());
+            let mut retained = retain.then(|| {
+                self.extraction
+                    .stream_retention
+                    .lanes
+                    .entry(stream_node)
+                    .or_default()
+            });
             if let Some(out) = out_2d.as_ref() {
                 lanes.sprites_2d = retained_arc_lane(
                     retained.as_deref_mut().map(|lanes| &mut lanes.sprites_2d),
@@ -529,7 +539,7 @@ impl Runtime {
         // the membership cache; no per-stream copy). Nested sub-view
         // descendants never enter any collector for this stream.
         let owner = self.node_world(stream_node)?;
-        self.camera_stream_node_scratch = self.world_members_arc(owner);
+        self.extraction.camera_stream_node_scratch = self.world_members_arc(owner);
         let mut post_processing = match &source {
             CameraStreamSourceState::TwoD(camera) => camera.post_processing.to_vec(),
             CameraStreamSourceState::ThreeD(camera) => camera.post_processing.to_vec(),
@@ -585,7 +595,7 @@ impl Runtime {
             return None;
         }
         let owner = self.node_world(camera_node)?;
-        self.camera_stream_node_scratch = self.world_members_arc(owner);
+        self.extraction.camera_stream_node_scratch = self.world_members_arc(owner);
         let post_processing = match &source {
             CameraStreamSourceState::TwoD(camera) => camera.post_processing.clone(),
             CameraStreamSourceState::ThreeD(camera) => camera.post_processing.clone(),
@@ -647,7 +657,8 @@ impl Runtime {
                 want[axis] = explicit.clamp(1, 8192);
             }
         }
-        self.stream_retention
+        self.extraction
+            .stream_retention
             .auto_resolutions
             .entry(view_node)
             .or_default()
@@ -675,7 +686,7 @@ impl Runtime {
             None => 1.0,
         };
         self.prepare_nested_sub_views(view_node, resolution, owner_supersample);
-        self.camera_stream_node_scratch = self.world_members_arc(view_node);
+        self.extraction.camera_stream_node_scratch = self.world_members_arc(view_node);
         // root inverses once per refresh; shared by the camera pick + the
         // fused member walk (was 1 inverse per member per collector).
         let localize_2d = self.stream_localizer_2d(view_node);
@@ -957,6 +968,7 @@ mod stream_retention_tests {
         let first = Arc::new(state.clone());
         runtime.queue_camera_stream_upsert(view, first.clone());
         let retained = runtime
+            .extraction
             .stream_retention
             .states
             .get(&view)
@@ -968,6 +980,7 @@ mod stream_retention_tests {
         // gpu-side upsert compare hits Arc::ptr_eq.
         runtime.queue_camera_stream_upsert(view, Arc::new(state));
         let still_retained = runtime
+            .extraction
             .stream_retention
             .states
             .get(&view)

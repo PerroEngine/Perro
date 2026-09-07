@@ -570,6 +570,27 @@ perro import_anim <model.glb|model.gltf> --output <clip.panim> [--clip <name|ind
 
 `gltf_to_panim` and `glb_to_panim` are aliases.
 
+Use `--options <file.toml>` to load saved conversion options. Explicit flags (including `--in`, `--out`, and `--retarget`) and a positional input override saved values. Resolve file paths from the working directory; run from the project root for portable options.
+
+```toml
+# editor_tools/animation.toml
+version = 1
+input = "res/models/hero.glb"
+output = "res/animations/walk.panim"
+clip = "Walk"
+fps = 60
+skeleton = "Rig"
+# retarget_map = "res/animations/humanoid.pretarget"
+# target_rig = "res/models/hero.glb"
+```
+
+```powershell
+perro import_anim --options editor_tools/animation.toml
+perro import_anim --options editor_tools/animation.toml --clip Run --fps 30
+```
+
+Reject unknown keys, unsupported versions, and invalid value types. Conversion completes before publishing the output via a temporary sibling file, so conversion failure retains an existing output. Loading options does not trigger conversion until this command runs.
+
 What it does:
 
 1. Loads the glTF document.

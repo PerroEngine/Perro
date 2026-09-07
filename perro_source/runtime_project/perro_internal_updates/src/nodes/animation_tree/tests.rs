@@ -409,6 +409,8 @@ fn run_new(scenario: &Scenario) -> Vec<Canon> {
     EVAL_SCRATCH.with(|cell| {
         let mut scratch = cell.borrow_mut();
         scratch.begin_eval(scenario.asset.nodes.len());
+        let asset = std::sync::Arc::new(scenario.asset.clone());
+        scratch.prepare_graph(&asset);
         let mut sample = |name: &str, scratch: &mut EvalScratch| match scenario
             .slots
             .iter()
@@ -986,6 +988,59 @@ fn nested_graph_matches_hashmap_pose_path() {
 #[test]
 fn humanoid_tree_matches_hashmap_pose_path() {
     assert_parity("humanoid", &scenario_humanoid());
+}
+
+#[test]
+fn shared_graph_memo_resets_each_eval_and_cycles_keep_reference_behavior() {
+    let mut scenario = scenario_nested_graph();
+    let base = scenario.asset.output.clone();
+    let mut nodes = scenario.asset.nodes.to_vec();
+    nodes.push(graph_node(
+        "AuditDiamond",
+        AnimationTreeNodeKind::Blend {
+            inputs: Cow::Owned(vec![base.clone(), base]),
+            weights: Cow::Owned(vec![0.25, 0.75]),
+            mask: AnimationTreeMask::default(),
+        },
+    ));
+    scenario.asset.nodes = Cow::Owned(nodes);
+    scenario.asset.output = Cow::Borrowed("AuditDiamond");
+    assert_parity("shared graph", &scenario);
+
+    let asset = std::sync::Arc::new(scenario.asset.clone());
+    let mut scratch = EvalScratch::default();
+    let mut counts = Vec::new();
+    for planned in [false, true, true] {
+        scratch.begin_eval(asset.nodes.len());
+        if planned {
+            scratch.prepare_graph(&asset);
+        }
+        let mut count = 0usize;
+        let mut sample = |_: &str, scratch: &mut EvalScratch| {
+            count += 1;
+            scratch.take_pose()
+        };
+        let pose = eval_node(&asset, &[], &asset.output, &mut scratch, &mut sample)
+            .expect("acyclic graph fixture yields a pose");
+        scratch.give_pose(pose);
+        counts.push(count);
+    }
+    assert_eq!(counts[0], counts[1] * 2);
+    assert_eq!(counts[1], counts[2]);
+    assert!(!scratch.blend_pool.is_empty());
+
+    let mut cyclic = scenario.asset.nodes.to_vec();
+    cyclic.push(graph_node(
+        "AuditCycle",
+        AnimationTreeNodeKind::Blend {
+            inputs: refs(&["AuditCycle", "AuditDiamond"]),
+            weights: Cow::Owned(vec![0.5, 0.5]),
+            mask: AnimationTreeMask::default(),
+        },
+    ));
+    scenario.asset.nodes = Cow::Owned(cyclic);
+    scenario.asset.output = Cow::Borrowed("AuditCycle");
+    assert_parity("cycle fallback", &scenario);
 }
 
 #[test]

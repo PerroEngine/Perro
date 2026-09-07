@@ -69,37 +69,46 @@ pub fn generate_static_textures(
         misses.push((rel, res_path, full_path, len, mtime));
     }
 
-    let encoded = misses
-        .into_par_iter()
-        .map(|(rel, res_path, full_path, len, mtime)| -> io::Result<_> {
-            let file_bytes = fs::read(&full_path)?;
-            let (raw_rgba, width, height) = decode_image_rgba(&file_bytes)
-                .ok_or_else(|| io::Error::other(format!("failed to decode image `{res_path}`")))?;
-            let ptex = encode_ptex(&raw_rgba, width, height)?;
-            Ok((rel, res_path, len, mtime, ptex))
-        })
-        .collect::<io::Result<Vec<_>>>()?;
+    // Bound completed blobs to one worker-sized batch. Keep writes ordered:
+    // output-name collisions retain the same behavior as the serial writer.
+    for batch in misses.chunks(rayon::current_num_threads().max(1)) {
+        let encoded = batch
+            .par_iter()
+            .cloned()
+            .map(|(rel, res_path, full_path, len, mtime)| -> io::Result<_> {
+                let file_bytes = fs::read(&full_path)?;
+                let (raw_rgba, width, height) =
+                    decode_image_rgba(&file_bytes).ok_or_else(|| {
+                        io::Error::other(format!("failed to decode image `{res_path}`"))
+                    })?;
+                let ptex = encode_ptex(&raw_rgba, width, height)?;
+                Ok((rel, res_path, len, mtime, ptex))
+            })
+            .collect::<io::Result<Vec<_>>>()?;
 
-    for (rel, res_path, len, mtime, ptex) in encoded {
-        // Path-hash names stay stable when other textures come and go, so an
-        // added asset does not rename (and re-fingerprint) every blob.
-        let rel_ptex = format!(
-            "texture_{:016x}.{PTEX_EXTENSION}",
-            perro_ids::string_to_u64(&res_path)
-        );
-        write_if_changed(&embedded_textures_dir.join(&rel_ptex), &ptex)?;
-        cache.store(
-            &rel,
-            len,
-            mtime,
-            CachedSource {
-                rows: vec![vec![res_path.clone(), rel_ptex.clone()]],
-                files: vec![rel_ptex.clone()],
-            },
-        );
-        textures.push((res_path, rel_ptex));
+        for (rel, res_path, len, mtime, ptex) in encoded {
+            // Path-hash names stay stable when other textures come and go, so an
+            // added asset does not rename (and re-fingerprint) every blob.
+            let rel_ptex = format!(
+                "texture_{:016x}.{PTEX_EXTENSION}",
+                perro_ids::string_to_u64(&res_path)
+            );
+            write_if_changed(&embedded_textures_dir.join(&rel_ptex), &ptex)?;
+            cache.store(
+                &rel,
+                len,
+                mtime,
+                CachedSource {
+                    rows: vec![vec![res_path.clone(), rel_ptex.clone()]],
+                    files: vec![rel_ptex.clone()],
+                },
+            );
+            textures.push((res_path, rel_ptex));
+        }
     }
 
+    // Lazy context creation: cache-only builds never request a GPU device.
+    let mut shader_baker = crate::shader_bake::ShaderBaker::default();
     for job in crate::materials::collect_shader_bake_jobs(project_root, res_tree)? {
         baked_texture_uris.insert(job.texture_uri.clone());
         let rel_ptex = format!(
@@ -110,7 +119,7 @@ pub fn generate_static_textures(
         let fingerprint = job.fingerprint();
         let hit = cache.lookup(&cache_key, fingerprint, 0);
         if hit.is_none() {
-            let rgba = crate::shader_bake::bake_shader_texture(&job)?;
+            let rgba = shader_baker.bake(&job)?;
             let ptex = encode_ptex(&rgba, job.resolution[0], job.resolution[1])?;
             write_if_changed(&embedded_textures_dir.join(&rel_ptex), &ptex)?;
             cache.store(

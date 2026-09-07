@@ -17,6 +17,7 @@ mod water_overlays {
             }
         }
         runtime
+            .physics_sync
             .force_water_impacts_3d
             .push(crate::runtime::ForceWaterImpact3D {
                 world: perro_ids::NodeID::nil(),

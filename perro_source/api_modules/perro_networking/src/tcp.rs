@@ -104,6 +104,8 @@ pub struct TcpConnection {
     frame_buf: VecDeque<u8>,
     tx_queue: VecDeque<Vec<u8>>,
     tx_cursor: usize,
+    tx_pending_bytes: usize,
+    read_buf: Vec<u8>,
     read_eof: bool,
     disconnect_emitted: bool,
 }
@@ -128,6 +130,8 @@ impl TcpConnection {
             frame_buf: VecDeque::new(),
             tx_queue: VecDeque::new(),
             tx_cursor: 0,
+            tx_pending_bytes: 0,
+            read_buf: Vec::new(),
             read_eof: false,
             disconnect_emitted: false,
         })
@@ -148,11 +152,11 @@ impl TcpConnection {
     }
 
     pub fn read_available(&mut self, max_bytes: usize) -> NetResult<Option<Vec<u8>>> {
-        let mut buf = vec![0_u8; max_bytes.max(1)];
-        match self.stream.read(&mut buf) {
+        self.read_buf.resize(max_bytes.max(1), 0);
+        match self.stream.read(&mut self.read_buf) {
             Ok(n) => {
-                buf.truncate(n);
-                Ok(Some(buf))
+                self.read_buf.truncate(n);
+                Ok(Some(std::mem::take(&mut self.read_buf)))
             }
             Err(err) if err.kind() == io::ErrorKind::WouldBlock => Ok(None),
             Err(err) => Err(NetError::from_io(NetErrorKind::Receive, err)),
@@ -209,15 +213,17 @@ impl TcpConnection {
     }
 
     pub fn poll_frame_event(&mut self, max_frame_bytes: usize) -> NetResult<Option<NetEvent>> {
-        let peer = self.peer_string();
         let Some(bytes) = self.poll_frame(max_frame_bytes)? else {
             if self.read_eof && !self.disconnect_emitted {
                 self.frame_buf.clear();
                 self.disconnect_emitted = true;
-                return Ok(Some(NetEvent::TcpDisconnected { peer }));
+                return Ok(Some(NetEvent::TcpDisconnected {
+                    peer: self.peer_string(),
+                }));
             }
             return Ok(None);
         };
+        let peer = self.peer_string();
         if is_heartbeat_ping(&bytes) {
             return Ok(Some(NetEvent::HeartbeatPing { peer }));
         }
@@ -280,6 +286,7 @@ impl TcpConnection {
                 }
                 Ok(n) => {
                     self.tx_cursor += n;
+                    self.tx_pending_bytes -= n;
                     if self.tx_cursor == bytes.len() {
                         self.tx_queue.pop_front();
                         self.tx_cursor = 0;
@@ -294,21 +301,19 @@ impl TcpConnection {
 
     /// Bytes accepted by buffered writes but not yet sent to the socket.
     pub fn pending_write_bytes(&self) -> usize {
-        self.tx_queue
-            .iter()
-            .map(Vec::len)
-            .sum::<usize>()
-            .saturating_sub(self.tx_cursor)
+        self.tx_pending_bytes
     }
 
     fn enqueue_write(&mut self, bytes: Vec<u8>) -> NetResult<()> {
-        if self.pending_write_bytes().saturating_add(bytes.len()) > MAX_TCP_PENDING_WRITE_BYTES {
+        let pending = self.tx_pending_bytes.saturating_add(bytes.len());
+        if pending > MAX_TCP_PENDING_WRITE_BYTES {
             return Err(NetError::new(
                 NetErrorKind::Send,
                 "tcp pending write queue exceeds max",
             ));
         }
         self.tx_queue.push_back(bytes);
+        self.tx_pending_bytes = pending;
         Ok(())
     }
 }
@@ -445,3 +450,7 @@ fn frame_queue_limit(max_frame_bytes: usize) -> usize {
         .saturating_mul(MAX_QUEUED_FRAMES)
         .max(MIN_FRAME_QUEUE_BYTES)
 }
+
+#[cfg(test)]
+#[path = "tcp_audit_perf.rs"]
+mod audit_perf;

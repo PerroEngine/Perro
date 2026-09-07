@@ -9,6 +9,8 @@ use std::{
     time::SystemTime,
 };
 
+#[path = "src/demo_sync.rs"]
+mod demo_sync;
 #[path = "src/highlight.rs"]
 mod highlight;
 
@@ -25,6 +27,7 @@ struct DocOut {
     summary: String,
     headings: Vec<HeadingOut>,
     keywords: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
     markdown: String,
     html: String,
     search_text: String,
@@ -79,10 +82,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     validate_generated_docs(&docs)?;
 
-    let json = serde_json::to_string(&docs)?;
-    let out = format!("pub const DOCS_JSON: &str = {json:?};\n");
-    let out_path = PathBuf::from(env::var("OUT_DIR")?).join("generated_docs.rs");
-    fs::write(out_path, out)?;
+    let out_dir = PathBuf::from(env::var("OUT_DIR")?);
+    fs::write(out_dir.join("docs_test.json"), serde_json::to_vec(&docs)?)?;
+    // Markdown supports source-validation tests. Routes render HTML and search
+    // the already-built search text, so production need not ship a third copy.
+    for doc in &mut docs {
+        doc.markdown.clear();
+    }
+    fs::write(out_dir.join("docs.json"), serde_json::to_vec(&docs)?)?;
+    fs::write(out_dir.join("generated_docs.rs"),
+        "#[cfg(test)]\npub const DOCS_JSON: &str = include_str!(concat!(env!(\"OUT_DIR\"), \"/docs_test.json\"));\n#[cfg(not(test))]\npub const DOCS_JSON: &str = include_str!(concat!(env!(\"OUT_DIR\"), \"/docs.json\"));\n")?;
     Ok(())
 }
 
@@ -239,7 +248,7 @@ fn build_and_sync_demo(root: &Path, project_name: &str, public_name: &str) -> io
     }
 
     if bundle_complete(&output_dir) {
-        sync_dir(&output_dir, &public_dir)?;
+        demo_sync::sync_dir(&output_dir, &public_dir)?;
     }
     Ok(())
 }
@@ -339,31 +348,6 @@ fn newest_mtime(path: &Path) -> io::Result<Option<SystemTime>> {
         }
     }
     Ok(newest)
-}
-
-fn sync_dir(src: &Path, dst: &Path) -> io::Result<()> {
-    if dst.exists() {
-        fs::remove_dir_all(dst)?;
-    }
-    fs::create_dir_all(dst)?;
-    copy_dir(src, dst)
-}
-
-fn copy_dir(src: &Path, dst: &Path) -> io::Result<()> {
-    for entry in fs::read_dir(src)? {
-        let src_path = entry?.path();
-        let file_name = src_path
-            .file_name()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "source has no file name"))?;
-        let dst_path = dst.join(file_name);
-        if src_path.is_dir() {
-            fs::create_dir_all(&dst_path)?;
-            copy_dir(&src_path, &dst_path)?;
-        } else {
-            fs::copy(&src_path, &dst_path)?;
-        }
-    }
-    Ok(())
 }
 
 fn collect_markdown(

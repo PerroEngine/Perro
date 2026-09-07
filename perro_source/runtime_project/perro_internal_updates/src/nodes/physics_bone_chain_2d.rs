@@ -227,6 +227,62 @@ struct Collider {
     world_mat: Mat3,
     inv_world_mat: Mat3,
     shape: Shape2D,
+    bounds: Option<ColliderBounds>,
+}
+
+#[derive(Clone, Copy)]
+struct ColliderBounds {
+    center: Vec2,
+    half: Vec2,
+    probe: Vec2,
+}
+
+impl ColliderBounds {
+    fn new(world: Transform2D, mat: Mat3, inverse: Mat3, shape: Shape2D) -> Option<Self> {
+        let center = Vec2::from(world.position);
+        let (half, probe, condition) = match shape {
+            Shape2D::Circle { radius } => (
+                Vec2::splat(radius.abs() * world.scale.x.abs().max(world.scale.y.abs())),
+                Vec2::ONE,
+                1.0,
+            ),
+            Shape2D::Quad { width, height } | Shape2D::Triangle { width, height, .. } => {
+                if !mat.is_finite() || !inverse.is_finite() {
+                    return None;
+                }
+                let x = mat.x_axis.truncate().abs();
+                let y = mat.y_axis.truncate().abs();
+                let condition = (x.length() + y.length())
+                    * (inverse.x_axis.truncate().length() + inverse.y_axis.truncate().length());
+                if !condition.is_finite() || condition > 10_000.0 {
+                    return None;
+                }
+                (
+                    x * (width.abs() * 0.5) + y * (height.abs() * 0.5),
+                    x + y,
+                    condition,
+                )
+            }
+        };
+        if !center.is_finite() || !half.is_finite() || !probe.is_finite() {
+            return None;
+        }
+        let slack = 128.0 * f32::EPSILON * condition.max(1.0);
+        Some(Self {
+            center,
+            half: half + (center.abs() + half + Vec2::ONE) * slack,
+            probe: probe * (1.0 + slack),
+        })
+    }
+
+    fn excludes(self, point: Vector2, radius: f32) -> bool {
+        radius.is_finite()
+            && radius >= 0.0
+            && (Vec2::from(point) - self.center)
+                .abs()
+                .cmpgt(self.half + self.probe * radius)
+                .any()
+    }
 }
 
 fn collect_chain(skeleton: &Skeleton2D, end: usize, max_len: usize, out: &mut Vec<usize>) {
@@ -308,10 +364,12 @@ where
             };
             let world = Transform2D::from_mat3(collider_world.to_mat3() * shape_local.to_mat3());
             let world_mat = world.to_mat3();
+            let inv_world_mat = world_mat.inverse();
             out.push(Collider {
                 world,
                 world_mat,
-                inv_world_mat: world_mat.inverse(),
+                inv_world_mat,
+                bounds: ColliderBounds::new(world, world_mat, inv_world_mat, shape),
                 shape,
             });
         }
@@ -418,6 +476,12 @@ fn normalized_delta_2d(delta: Vector2) -> Vector2 {
 fn collide_positions(positions: &mut [Vector2], radius: f32, colliders: &[Collider]) {
     for pos in positions.iter_mut().skip(1) {
         for collider in colliders {
+            if collider
+                .bounds
+                .is_some_and(|bounds| bounds.excludes(*pos, radius))
+            {
+                continue;
+            }
             *pos = collide_point(*pos, radius, collider);
         }
     }
@@ -489,6 +553,69 @@ fn write_chain_positions(skeleton: &mut Skeleton2D, chain: &[usize], local_posit
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cached_bounds_preserve_scaled_rotated_collision_and_push_order() {
+        let mut colliders = Vec::new();
+        for index in 0..8 {
+            let shape = if index % 2 == 0 {
+                Shape2D::Circle { radius: 0.7 }
+            } else {
+                Shape2D::Quad {
+                    width: 1.0,
+                    height: 2.0,
+                }
+            };
+            let world = Transform2D::new(
+                Vector2::new(index as f32 * 0.4, 0.2),
+                0.7,
+                Vector2::new(-2.0, 0.3),
+            );
+            let world_mat = world.to_mat3();
+            let inv_world_mat = world_mat.inverse();
+            colliders.push(Collider {
+                world,
+                world_mat,
+                inv_world_mat,
+                shape,
+                bounds: ColliderBounds::new(world, world_mat, inv_world_mat, shape),
+            });
+        }
+        let mut seed = 0x1279_6523u32;
+        for radius in [0.0, 0.01, 0.3, 10.0] {
+            for _ in 0..2048 {
+                let mut coord = || {
+                    seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                    (seed >> 8) as f32 / 16777216.0 * 20.0 - 10.0
+                };
+                let point = Vector2::new(coord(), coord());
+                let mut expected = point;
+                for collider in &colliders {
+                    expected = collide_point(expected, radius, collider);
+                }
+                let mut actual = [Vector2::ZERO, point];
+                collide_positions(&mut actual, radius, &colliders);
+                assert_eq!(actual[1], expected, "radius={radius}, point={point:?}");
+            }
+        }
+        let singular = Transform2D {
+            scale: Vector2::ZERO,
+            ..Transform2D::IDENTITY
+        };
+        let mat = singular.to_mat3();
+        assert!(
+            ColliderBounds::new(
+                singular,
+                mat,
+                mat.inverse(),
+                Shape2D::Quad {
+                    width: 1.0,
+                    height: 2.0
+                }
+            )
+            .is_none()
+        );
+    }
 
     #[test]
     fn forward_backward_solve_keeps_segment_lengths() {

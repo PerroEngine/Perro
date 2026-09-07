@@ -50,55 +50,60 @@ pub fn generate_static_audios(
         misses.push((rel, len, mtime));
     }
 
-    let encoded = misses
-        .into_par_iter()
-        .map(
-            |(rel, len, mtime)| -> io::Result<(String, u64, u128, String, String, Vec<u8>)> {
-                let res_path = asset_uri(&rel);
-                let full_path = res_dir.join(&rel);
-                let raw = fs::read(&full_path)?;
-                let ext = Path::new(&rel)
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or_default();
-                if source_ext::contains(source_ext::AUDIO, ext) {
-                    let (flags, payload) = select_pawdio_payload(&raw)?;
+    // Several source extensions can share one .pawdio output path. Bounded
+    // batches cut retained bytes while preserving the existing write order.
+    for batch in misses.chunks(rayon::current_num_threads().max(1)) {
+        let encoded = batch
+            .par_iter()
+            .cloned()
+            .map(
+                |(rel, len, mtime)| -> io::Result<(String, u64, u128, String, String, Vec<u8>)> {
+                    let res_path = asset_uri(&rel);
+                    let full_path = res_dir.join(&rel);
+                    let raw = fs::read(&full_path)?;
+                    let ext = Path::new(&rel)
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or_default();
+                    if source_ext::contains(source_ext::AUDIO, ext) {
+                        let (flags, payload) = select_pawdio_payload(&raw)?;
 
-                    let mut pawdio = Vec::with_capacity(18 + payload.len());
-                    pawdio.extend_from_slice(PAWDIO_MAGIC);
-                    pawdio.extend_from_slice(&PAWDIO_VERSION.to_le_bytes());
-                    pawdio.extend_from_slice(&flags.to_le_bytes());
-                    pawdio.extend_from_slice(&(raw.len() as u32).to_le_bytes());
-                    pawdio.extend_from_slice(&payload);
+                        let mut pawdio = Vec::with_capacity(18 + payload.len());
+                        pawdio.extend_from_slice(PAWDIO_MAGIC);
+                        pawdio.extend_from_slice(&PAWDIO_VERSION.to_le_bytes());
+                        pawdio.extend_from_slice(&flags.to_le_bytes());
+                        pawdio.extend_from_slice(&(raw.len() as u32).to_le_bytes());
+                        pawdio.extend_from_slice(&payload);
 
-                    let mut rel_pawdio = PathBuf::from(&rel);
-                    rel_pawdio.set_extension(PAWDIO_EXTENSION);
-                    let rel_pawdio = rel_pawdio.to_string_lossy().replace('\\', "/");
-                    Ok((rel, len, mtime, res_path, rel_pawdio, pawdio))
-                } else {
-                    let rel_out = rel.clone();
-                    Ok((rel, len, mtime, res_path, rel_out, raw))
-                }
-            },
-        )
-        .collect::<io::Result<Vec<_>>>()?;
+                        let mut rel_pawdio = PathBuf::from(&rel);
+                        rel_pawdio.set_extension(PAWDIO_EXTENSION);
+                        let rel_pawdio = rel_pawdio.to_string_lossy().replace('\\', "/");
+                        Ok((rel, len, mtime, res_path, rel_pawdio, pawdio))
+                    } else {
+                        let rel_out = rel.clone();
+                        Ok((rel, len, mtime, res_path, rel_out, raw))
+                    }
+                },
+            )
+            .collect::<io::Result<Vec<_>>>()?;
 
-    for (rel, len, mtime, res_path, rel_pawdio, pawdio) in encoded {
-        let output_path = embedded_audios_dir.join(&rel_pawdio);
-        if let Some(parent) = output_path.parent() {
-            fs::create_dir_all(parent)?;
+        for (rel, len, mtime, res_path, rel_pawdio, pawdio) in encoded {
+            let output_path = embedded_audios_dir.join(&rel_pawdio);
+            if let Some(parent) = output_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            write_if_changed(&output_path, &pawdio)?;
+            cache.store(
+                &rel,
+                len,
+                mtime,
+                CachedSource {
+                    rows: vec![vec![res_path.clone(), rel_pawdio.clone()]],
+                    files: vec![rel_pawdio.clone()],
+                },
+            );
+            audios.push((res_path, rel_pawdio));
         }
-        write_if_changed(&output_path, &pawdio)?;
-        cache.store(
-            &rel,
-            len,
-            mtime,
-            CachedSource {
-                rows: vec![vec![res_path.clone(), rel_pawdio.clone()]],
-                files: vec![rel_pawdio.clone()],
-            },
-        );
-        audios.push((res_path, rel_pawdio));
     }
     cache.finish()?;
     audios.sort_by(|a, b| a.0.cmp(&b.0));

@@ -178,3 +178,13 @@ required-features = ["bench"]
 name = "animation_tree_pose"
 harness = false
 required-features = ["bench"]
+
+[[bench]]
+name = "audit_runtime"
+harness = false
+required-features = ["bench"]
+
+[[bench]]
+name = "audit_runtime_remaining"
+harness = false
+required-features = ["bench"]

@@ -68,13 +68,16 @@ impl NodeAPI for Runtime {
             },
         )));
         if let Some((_, delay)) = self
+            .extraction
             .pending_camera_capture_removals
             .iter_mut()
             .find(|(camera, _)| *camera == camera_id)
         {
             *delay = 1;
         } else {
-            self.pending_camera_capture_removals.push((camera_id, 1));
+            self.extraction
+                .pending_camera_capture_removals
+                .push((camera_id, 1));
         }
         true
     }
@@ -746,6 +749,7 @@ impl NodeAPI for Runtime {
 
     fn remove_node(&mut self, node_id: perro_ids::NodeID) -> bool {
         let node_id = self
+            .scene_runtime
             .scene_ownership_roots
             .get(&node_id)
             .copied()
@@ -813,10 +817,12 @@ impl NodeAPI for Runtime {
 
         // Most projects never register a scene-ownership root, so the full
         // retain scan is pure overhead on the common removal path.
-        if !self.scene_ownership_roots.is_empty() {
-            self.scene_ownership_roots.retain(|scene_root, owner| {
-                !visited.contains(scene_root) && !visited.contains(owner)
-            });
+        if !self.scene_runtime.scene_ownership_roots.is_empty() {
+            self.scene_runtime
+                .scene_ownership_roots
+                .retain(|scene_root, owner| {
+                    !visited.contains(scene_root) && !visited.contains(owner)
+                });
         }
 
         stack.clear();

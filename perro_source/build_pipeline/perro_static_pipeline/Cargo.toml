@@ -10,6 +10,13 @@ ignored = ["zune-core"]
 [lints]
 workspace = true
 
+[[bench]]
+name = "export_hotpaths"
+harness = false
+
+[dev-dependencies]
+perro_assets.workspace = true
+
 [dependencies]
 perro_structs.workspace = true
 perro_asset_formats.workspace = true

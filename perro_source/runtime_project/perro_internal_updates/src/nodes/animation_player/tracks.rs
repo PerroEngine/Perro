@@ -1,4 +1,36 @@
 use super::*;
+use std::cell::RefCell;
+
+thread_local! {
+    // Take/return instead of holding a borrow across runtime accessors.
+    static BINDING_ORDER: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
+}
+
+fn prepare_binding_order(bindings: &[AnimationObjectBinding], order: &mut Vec<usize>) {
+    order.clear();
+    if bindings.len() <= 8 {
+        return;
+    }
+    order.extend(0..bindings.len());
+    order.sort_unstable_by(|&a, &b| {
+        bindings[a]
+            .object
+            .as_ref()
+            .cmp(bindings[b].object.as_ref())
+            .then(a.cmp(&b))
+    });
+}
+
+fn matching_binding_order<'a>(
+    bindings: &[AnimationObjectBinding],
+    order: &'a [usize],
+    object: &str,
+) -> &'a [usize] {
+    let start = order.partition_point(|&index| bindings[index].object.as_ref() < object);
+    let end =
+        start + order[start..].partition_point(|&index| bindings[index].object.as_ref() == object);
+    &order[start..end]
+}
 
 pub(in super::super) struct AnimationStep {
     pub(super) frame: u32,
@@ -124,6 +156,8 @@ pub(in super::super) fn apply_clip_frame<RT>(
 ) where
     RT: RuntimeAPI + ?Sized,
 {
+    let mut binding_order = Vec::new();
+    let mut binding_order_ready = false;
     let mut has_bone_tracks = false;
     for track in clip.object_tracks.iter() {
         if track.bone_target.is_some() {
@@ -132,16 +166,39 @@ pub(in super::super) fn apply_clip_frame<RT>(
             has_bone_tracks = true;
             continue;
         }
-        for binding in bindings
-            .iter()
-            .filter(|b| b.object.as_ref() == track.object.as_ref())
-        {
-            apply_track(ctx, res, binding.node, track, frame, applied_transforms);
+        if !binding_order_ready && bindings.len() > 8 {
+            binding_order =
+                BINDING_ORDER.with(|scratch| std::mem::take(&mut *scratch.borrow_mut()));
+            prepare_binding_order(bindings, &mut binding_order);
+            binding_order_ready = true;
+        }
+        if binding_order.is_empty() {
+            for binding in bindings
+                .iter()
+                .filter(|b| b.object.as_ref() == track.object.as_ref())
+            {
+                apply_track(ctx, res, binding.node, track, frame, applied_transforms);
+            }
+        } else {
+            for &index in matching_binding_order(bindings, &binding_order, track.object.as_ref()) {
+                apply_track(
+                    ctx,
+                    res,
+                    bindings[index].node,
+                    track,
+                    frame,
+                    applied_transforms,
+                );
+            }
         }
     }
 
     if has_bone_tracks {
         apply_bone_tracks_batched(ctx, clip, frame, bindings);
+    }
+    if binding_order_ready {
+        binding_order.clear();
+        BINDING_ORDER.with(|scratch| *scratch.borrow_mut() = binding_order);
     }
 }
 
@@ -1214,5 +1271,41 @@ pub(in super::super) fn apply_camera_zoom(camera: &mut Camera3D, zoom: f32) {
     } = &mut camera.projection
     {
         *fov = fov_y_degrees;
+    }
+}
+
+#[cfg(test)]
+mod binding_index_tests {
+    use super::*;
+
+    #[test]
+    fn index_keeps_all_duplicate_bindings_in_source_order_after_direct_edits() {
+        let mut bindings: Vec<_> = (0..128)
+            .map(|i| AnimationObjectBinding {
+                object: format!("Object{}", i % 11).into(),
+                node: NodeID::new(i + 1),
+            })
+            .collect();
+        let mut order = Vec::new();
+        for pass in 0..3 {
+            if pass == 1 {
+                bindings.reverse();
+            }
+            if pass == 2 {
+                bindings[7].object = "NewName".into();
+            }
+            prepare_binding_order(&bindings, &mut order);
+            for object in ["Object0", "Object4", "Object10", "NewName", "Missing"] {
+                let expected: Vec<_> = bindings
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, binding)| (binding.object.as_ref() == object).then_some(i))
+                    .collect();
+                assert_eq!(matching_binding_order(&bindings, &order, object), expected);
+            }
+        }
+        bindings.truncate(8);
+        prepare_binding_order(&bindings, &mut order);
+        assert!(order.is_empty());
     }
 }

@@ -1,4 +1,4 @@
-use crate::scripts::app::editor_app as editor_app;
+use crate::scripts::app::editor_app;
 use crate::scripts::ui::editor_inspector_values::InspectorValueRow;
 use crate::scripts::ui::editor_ui::find_named;
 use crate::scripts::ui::inspector_value_row::inspector_value_row_inner;

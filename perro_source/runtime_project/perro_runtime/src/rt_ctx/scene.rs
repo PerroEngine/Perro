@@ -83,10 +83,12 @@ impl SceneAPI for Runtime {
     fn scene_load_preloaded_typed(&mut self, id: PreloadedSceneID) -> LoadResult<NodeID> {
         // Still on a worker: wait it out rather than failing. Loading right
         // after preloading keeps working, it just costs what it always did.
-        if !self.preloaded_scenes.contains_key(&id) && self.preloaded_scene_pending_at_runtime(id) {
+        if !self.scene_runtime.preloaded_scenes.contains_key(&id)
+            && self.preloaded_scene_pending_at_runtime(id)
+        {
             self.wait_for_preloaded_scene_at_runtime(id);
         }
-        if !self.preloaded_scenes.contains_key(&id) {
+        if !self.scene_runtime.preloaded_scenes.contains_key(&id) {
             return Err(LoadError::InvalidHandle {
                 kind: "preloaded scene",
                 id: id.as_u64(),

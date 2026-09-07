@@ -143,8 +143,8 @@ impl Runtime {
             self.ensure_physics_world_synced_2d();
             // world in-sync now (ensure just ran); safe 2 re-record if fast path
             // reproduce next full sync 4 this one body.
-            let was_synced =
-                self.physics_synced_node_revision_2d == Some(self.nodes.physics_revision());
+            let was_synced = self.physics_sync.physics_synced_node_revision_2d
+                == Some(self.nodes.physics_revision());
             let result = self.physics.move_body_2d(body_id, target, margin, filter)?;
             let mut local = self.physics_transform_2d(body_id)?;
             local.position = result.position;
@@ -159,7 +159,7 @@ impl Runtime {
             // in-sync b4 move (else other stale chg must still trigger full sync).
             if !was_synced || !self.commit_moved_body_2d_fast(body_id) {
                 // node mv aft sync -> world stale 4 next query
-                self.physics_synced_node_revision_2d = None;
+                self.physics_sync.physics_synced_node_revision_2d = None;
             }
             self.record_character_sweep_hit_2d(body_id, &result);
             Some(result)
@@ -189,7 +189,7 @@ impl Runtime {
         {
             return false;
         }
-        self.physics_synced_node_revision_2d = Some(node_revision);
+        self.physics_sync.physics_synced_node_revision_2d = Some(node_revision);
         true
     }
 
@@ -237,8 +237,8 @@ impl Runtime {
         self.activate_physics_world(world);
         let result = (|| {
             self.ensure_physics_world_synced_3d();
-            let was_synced =
-                self.physics_synced_node_revision_3d == Some(self.nodes.physics_revision());
+            let was_synced = self.physics_sync.physics_synced_node_revision_3d
+                == Some(self.nodes.physics_revision());
             let result = self.physics.move_body_3d(body_id, target, margin, filter)?;
             let mut local = self.physics_transform_3d(body_id)?;
             local.position = result.position;
@@ -251,7 +251,7 @@ impl Runtime {
             // fast path: see physics_move_body_2d.
             if !was_synced || !self.commit_moved_body_3d_fast(body_id) {
                 // node mv aft sync -> world stale 4 next query
-                self.physics_synced_node_revision_3d = None;
+                self.physics_sync.physics_synced_node_revision_3d = None;
             }
             self.record_character_sweep_hit_3d(body_id, &result);
             Some(result)
@@ -276,7 +276,7 @@ impl Runtime {
         {
             return false;
         }
-        self.physics_synced_node_revision_3d = Some(node_revision);
+        self.physics_sync.physics_synced_node_revision_3d = Some(node_revision);
         true
     }
 
@@ -402,7 +402,11 @@ impl Runtime {
             return None;
         }
         let gravity = self.physics_gravity();
-        let fall = self.character_fall_speed_2d.entry(body_id).or_insert(0.0);
+        let fall = self
+            .physics_sync
+            .character_fall_speed_2d
+            .entry(body_id)
+            .or_insert(0.0);
         let limit = max_fall_speed.abs().max(0.001);
         *fall = (*fall + gravity * dt).clamp(-limit, limit);
         let drop = *fall * dt;
@@ -410,7 +414,9 @@ impl Runtime {
         let target = Vector2::new(global.position.x, global.position.y + drop);
         let result = self.physics_move_body_2d(body_id, target, CHARACTER_MOVE_MARGIN, filter);
         if result.is_none_or(|result| result.clipped) {
-            self.character_fall_speed_2d.insert(body_id, 0.0);
+            self.physics_sync
+                .character_fall_speed_2d
+                .insert(body_id, 0.0);
         }
         result
     }
@@ -433,7 +439,11 @@ impl Runtime {
             return None;
         }
         let gravity = self.physics_gravity();
-        let fall = self.character_fall_speed_3d.entry(body_id).or_insert(0.0);
+        let fall = self
+            .physics_sync
+            .character_fall_speed_3d
+            .entry(body_id)
+            .or_insert(0.0);
         let limit = max_fall_speed.abs().max(0.001);
         *fall = (*fall + gravity * dt).clamp(-limit, limit);
         let drop = *fall * dt;
@@ -445,7 +455,9 @@ impl Runtime {
         );
         let result = self.physics_move_body_3d(body_id, target, CHARACTER_MOVE_MARGIN, filter);
         if result.is_none_or(|result| result.clipped) {
-            self.character_fall_speed_3d.insert(body_id, 0.0);
+            self.physics_sync
+                .character_fall_speed_3d
+                .insert(body_id, 0.0);
         }
         result
     }
@@ -469,6 +481,7 @@ impl Runtime {
         match result.hit {
             Some(hit) => {
                 let prev = self
+                    .physics_sync
                     .character_sweep_hit_2d
                     .insert(body_id, (hit.node, hit.point, hit.normal));
                 if prev.is_none_or(|(node, _, _)| node != hit.node) {
@@ -476,7 +489,7 @@ impl Runtime {
                 }
             }
             None => {
-                self.character_sweep_hit_2d.remove(&body_id);
+                self.physics_sync.character_sweep_hit_2d.remove(&body_id);
             }
         }
     }
@@ -496,6 +509,7 @@ impl Runtime {
         match result.hit {
             Some(hit) => {
                 let prev = self
+                    .physics_sync
                     .character_sweep_hit_3d
                     .insert(body_id, (hit.node, hit.point, hit.normal));
                 if prev.is_none_or(|(node, _, _)| node != hit.node) {
@@ -503,7 +517,7 @@ impl Runtime {
                 }
             }
             None => {
-                self.character_sweep_hit_3d.remove(&body_id);
+                self.physics_sync.character_sweep_hit_3d.remove(&body_id);
             }
         }
     }
@@ -511,25 +525,25 @@ impl Runtime {
     /// drop sweep hits 4 dead / re-typed bodies
     pub(super) fn prune_character_sweep_hits(&mut self) {
         let nodes = &self.nodes;
-        self.character_sweep_hit_2d.retain(|id, _| {
+        self.physics_sync.character_sweep_hit_2d.retain(|id, _| {
             matches!(
                 nodes.get(*id).map(|node| &node.data),
                 Some(SceneNodeData::CharacterBody2D(_))
             )
         });
-        self.character_sweep_hit_3d.retain(|id, _| {
+        self.physics_sync.character_sweep_hit_3d.retain(|id, _| {
             matches!(
                 nodes.get(*id).map(|node| &node.data),
                 Some(SceneNodeData::CharacterBody3D(_))
             )
         });
-        self.character_fall_speed_2d.retain(|id, _| {
+        self.physics_sync.character_fall_speed_2d.retain(|id, _| {
             matches!(
                 nodes.get(*id).map(|node| &node.data),
                 Some(SceneNodeData::CharacterBody2D(_))
             )
         });
-        self.character_fall_speed_3d.retain(|id, _| {
+        self.physics_sync.character_fall_speed_3d.retain(|id, _| {
             matches!(
                 nodes.get(*id).map(|node| &node.data),
                 Some(SceneNodeData::CharacterBody3D(_))
@@ -545,7 +559,7 @@ impl Runtime {
         self.activate_physics_world(world);
         self.ensure_physics_world_synced_2d();
         let mut out = self.physics.contacts_2d(body_id);
-        if let Some(&(node, point, normal)) = self.character_sweep_hit_2d.get(&body_id)
+        if let Some(&(node, point, normal)) = self.physics_sync.character_sweep_hit_2d.get(&body_id)
             && !out.iter().any(|contact| contact.node == node)
         {
             out.push(PhysicsContact2D {
@@ -567,7 +581,7 @@ impl Runtime {
         self.activate_physics_world(world);
         self.ensure_physics_world_synced_3d();
         let mut out = self.physics.contacts_3d(body_id);
-        if let Some(&(node, point, normal)) = self.character_sweep_hit_3d.get(&body_id)
+        if let Some(&(node, point, normal)) = self.physics_sync.character_sweep_hit_3d.get(&body_id)
             && !out.iter().any(|contact| contact.node == node)
         {
             out.push(PhysicsContact3D {

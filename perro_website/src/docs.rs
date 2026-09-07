@@ -17,6 +17,7 @@ pub struct DocPage {
     pub summary: String,
     pub headings: Vec<DocHeading>,
     pub keywords: String,
+    #[cfg(test)]
     pub markdown: String,
     pub html: String,
     pub search_text: String,
@@ -273,13 +274,28 @@ fn doc_matches(doc: &DocPage, needle: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{docs, find_doc, markdown_html};
+    use super::{docs, find_doc, markdown_html, DOCS_JSON};
     use pulldown_cmark::{Event, Parser, Tag};
     use std::{
         collections::{BTreeMap, BTreeSet},
         fs,
         path::{Path, PathBuf},
     };
+
+    #[test]
+    fn production_docs_omit_markdown_without_changing_route_search_or_html() {
+        let production: Vec<serde_json::Value> =
+            serde_json::from_str(include_str!(concat!(env!("OUT_DIR"), "/docs.json")))
+                .expect("production docs");
+        let full: Vec<serde_json::Value> = serde_json::from_str(DOCS_JSON).expect("test docs");
+        assert_eq!(production.len(), full.len());
+        for (production, mut full) in production.into_iter().zip(full) {
+            full.as_object_mut()
+                .expect("document object")
+                .remove("markdown");
+            assert_eq!(production, full);
+        }
+    }
 
     #[test]
     fn renders_raw_markdown_without_hiding_examples() {

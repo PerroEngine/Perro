@@ -7,10 +7,7 @@ use crate::{
     resources::{DecodedTextureRgba, ResourceStore},
     three_d::particles::renderer::Particles3DRenderer,
     three_d::renderer::Renderer3D,
-    three_d::{
-        gpu::{load_mesh3d_from_source, validate_mesh_source},
-        renderer::Draw3DKind,
-    },
+    three_d::{gpu::load_mesh3d_from_source, renderer::Draw3DKind},
     two_d::renderer::{RectInstanceGpu, Renderer2D},
     ui::renderer::UiRenderer,
 };
@@ -75,6 +72,11 @@ const PIPELINE_WARM_BOOST_MAX_COMPILES_PER_FRAME: usize = 4;
 const PIPELINE_WARM_BOOST_TIME_BUDGET: Duration = Duration::from_millis(16);
 const PARALLEL_COMMAND_SUMMARY_MIN: usize = 10_000;
 const PARALLEL_RENDER_PREPARE_MIN: usize = 4_096;
+// CPU reference accounting must run for these commands, but their metadata
+// cannot alter GPU scene staging. Material writes are resolved after apply so
+// an identical value (or an invalid target) produces no visual dirt.
+const DIRTY_RESOURCE_REFS: u32 = 1 << 10;
+const DIRTY_MATERIAL_WRITE_PENDING: u32 = 1 << 11;
 const MAX_RUNTIME_TEXTURE_DIMENSION: u32 = 8_192;
 const MAX_RUNTIME_TEXTURE_RGBA_BYTES: usize = 64 * 1024 * 1024;
 
@@ -387,12 +389,31 @@ fn command_dirty_bits(command: &RenderCommand) -> u32 {
             | Command3D::SetDecal { .. } => DIRTY_LIGHTS_3D,
             Command3D::UpsertPointParticles { .. } => DIRTY_PARTICLES_3D,
         },
-        RenderCommand::Resource(_) => DIRTY_RESOURCES,
+        RenderCommand::Resource(command) => match command.as_ref() {
+            ResourceCommand::WriteMaterialParam { .. }
+            | ResourceCommand::WriteMaterialData { .. } => DIRTY_MATERIAL_WRITE_PENDING,
+            ResourceCommand::SetSceneResourceRefs { .. }
+            | ResourceCommand::SetMeshReserved { .. }
+            | ResourceCommand::SetTextureReserved { .. }
+            | ResourceCommand::SetMaterialReserved { .. } => DIRTY_RESOURCE_REFS,
+            ResourceCommand::SaveTextureImage { .. } => 0,
+            _ => DIRTY_RESOURCES,
+        },
         RenderCommand::CameraStream(_) => DIRTY_STREAMS,
         RenderCommand::Ui(_) => DIRTY_2D,
         RenderCommand::PostProcessing(_) => DIRTY_POSTFX,
         RenderCommand::VisualAccessibility(_) => DIRTY_ACCESSIBILITY,
         RenderCommand::Display(_) => 0,
+    }
+}
+
+#[inline]
+fn resolve_material_dirty_bits(bits: u32, before: u64, after: u64) -> u32 {
+    let resolved = bits & !DIRTY_MATERIAL_WRITE_PENDING;
+    if bits & DIRTY_MATERIAL_WRITE_PENDING != 0 && before != after {
+        resolved | DIRTY_RESOURCES
+    } else {
+        resolved
     }
 }
 

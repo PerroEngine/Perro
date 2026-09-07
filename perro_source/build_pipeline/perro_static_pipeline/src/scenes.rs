@@ -29,7 +29,36 @@ pub fn generate_static_scenes(
         .collect::<Vec<_>>();
     scene_paths.sort();
     ensure_unique_hashes("scene", scene_paths.iter().map(String::as_str))?;
-    let bake_materials = crate::materials::collect_shader_bake_jobs(project_root, res_tree)?
+    // Validate bake dependencies before considering a hit. Shader paths may
+    // use arbitrary extensions, so fingerprint their actual loaded sources.
+    let bake_jobs = crate::materials::collect_shader_bake_jobs(project_root, res_tree)?;
+    let cache = crate::cache::CodegenCache::new(
+        &static_dir.join("scenes.rs"),
+        res_tree
+            .filter_ext(|ext| ext.eq_ignore_ascii_case(source_ext::SCENE))
+            .into_iter()
+            .map(|rel| res_dir.join(rel)),
+        &format!(
+            "scenes demo={} prefix={} bakes={:?}",
+            crate::demo_mode_active(),
+            asset_prefix(),
+            bake_jobs
+                .iter()
+                .map(|job| job.fingerprint())
+                .collect::<Vec<_>>()
+        ),
+    );
+    // Demo reference validation also depends on global exclusion patterns.
+    // Keep validating it until those patterns have an explicit cache key.
+    if !crate::demo_mode_active() && cache.hit() {
+        crate::record_static_assets(
+            perro_asset_formats::dlc::DlcAssetKind::SCENE,
+            perro_asset_formats::dlc::DlcAssetAccess::ENGINE_LOCAL,
+            scene_paths.iter().map(|path| (path.as_str(), false)),
+        );
+        return Ok(());
+    }
+    let bake_materials = bake_jobs
         .into_iter()
         .map(|job| job.material_uri)
         .collect::<HashSet<_>>();
@@ -126,6 +155,7 @@ use std::borrow::Cow;\n\n\
         shared_consts = shared_consts
     );
     crate::write_if_changed(&static_dir.join("scenes.rs"), scenes_src.as_bytes())?;
+    cache.store(scenes_src.as_bytes());
     crate::record_static_assets(
         perro_asset_formats::dlc::DlcAssetKind::SCENE,
         perro_asset_formats::dlc::DlcAssetAccess::ENGINE_LOCAL,

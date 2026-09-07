@@ -434,9 +434,9 @@ impl Runtime {
         // motion) must not touch clean streams. Rebuild when the node itself
         // is dirty, its watched world holds a dirty node, or the source is a
         // webcam (frames + probed resolution resolve async, O(1) state path).
-        let mut dirty_worlds = std::mem::take(&mut self.dirty_world_scratch);
+        let mut dirty_worlds = std::mem::take(&mut self.extraction.dirty_world_scratch);
         self.collect_dirty_worlds(&mut dirty_worlds);
-        let mut stream_nodes = std::mem::take(&mut self.stream_node_scratch);
+        let mut stream_nodes = std::mem::take(&mut self.extraction.stream_node_scratch);
         self.fill_stream_nodes(&mut stream_nodes);
         for node in stream_nodes.drain(..) {
             let Some(scene_node) = self.nodes.get(node) else {
@@ -464,7 +464,7 @@ impl Runtime {
                 command_ids.push(node);
             }
         }
-        self.stream_node_scratch = stream_nodes;
+        self.extraction.stream_node_scratch = stream_nodes;
         // dirty_worlds stays live: the command loop re-checks it per stream
         // visit (input passes re-add every retained command node); restored
         // to the scratch slot after the loop.
@@ -661,7 +661,7 @@ impl Runtime {
                     scene_node.data,
                     SceneNodeData::UiCameraStream(_) | SceneNodeData::UiSubView(_)
                 ) {
-                    self.ui_stream_render_info.remove(&node);
+                    self.extraction.ui_stream_render_info.remove(&node);
                     self.queue_camera_stream_remove(node);
                 }
                 self.remove_retained_ui_node(node);
@@ -688,7 +688,7 @@ impl Runtime {
                     || self
                         .node_world(camera)
                         .is_some_and(|world| dirty_worlds.contains(&world))
-                    || !self.ui_stream_render_info.contains_key(&node);
+                    || !self.extraction.ui_stream_render_info.contains_key(&node);
                 if rebuild {
                     let stream = stream_node.stream.clone();
                     if let Some(state) = self.camera_stream_state(node, &stream) {
@@ -697,7 +697,7 @@ impl Runtime {
                             CameraStreamSourceState::Webcam { resolution, .. } => Some(*resolution),
                             _ => Some(state.resolution),
                         };
-                        self.ui_stream_render_info.insert(
+                        self.extraction.ui_stream_render_info.insert(
                             node,
                             (
                                 state.output_texture,
@@ -707,10 +707,11 @@ impl Runtime {
                         );
                         self.queue_camera_stream_upsert(node, std::sync::Arc::new(state));
                     } else {
-                        self.ui_stream_render_info.remove(&node);
+                        self.extraction.ui_stream_render_info.remove(&node);
                         self.queue_camera_stream_remove(node);
                     }
-                } else if let Some((texture, resolution, _)) = self.ui_stream_render_info.get(&node)
+                } else if let Some((texture, resolution, _)) =
+                    self.extraction.ui_stream_render_info.get(&node)
                 {
                     camera_stream_texture = Some(*texture);
                     camera_stream_resolution = Some(*resolution);
@@ -724,6 +725,7 @@ impl Runtime {
                     || self.dirty.is_node_dirty(node)
                     || dirty_worlds.contains(&node)
                     || self
+                        .extraction
                         .ui_stream_render_info
                         .get(&node)
                         .is_none_or(|(_, _, rect_size)| *rect_size != rect_state.size);
@@ -749,16 +751,17 @@ impl Runtime {
                         }
                         camera_stream_texture = Some(state.output_texture);
                         camera_stream_resolution = Some(state.resolution);
-                        self.ui_stream_render_info.insert(
+                        self.extraction.ui_stream_render_info.insert(
                             node,
                             (state.output_texture, state.resolution, rect_state.size),
                         );
                         self.queue_camera_stream_upsert(node, std::sync::Arc::new(state));
                     } else {
-                        self.ui_stream_render_info.remove(&node);
+                        self.extraction.ui_stream_render_info.remove(&node);
                         self.queue_camera_stream_remove(node);
                     }
-                } else if let Some((texture, resolution, _)) = self.ui_stream_render_info.get(&node)
+                } else if let Some((texture, resolution, _)) =
+                    self.extraction.ui_stream_render_info.get(&node)
                 {
                     camera_stream_texture = Some(*texture);
                     camera_stream_resolution = Some(*resolution);
@@ -854,7 +857,7 @@ impl Runtime {
             visible_now.insert(node);
         }
         dirty_worlds.clear();
-        self.dirty_world_scratch = dirty_worlds;
+        self.extraction.dirty_world_scratch = dirty_worlds;
         self.emit_color_picker_wheel_commands(&computed, viewport);
         for node in self.render_ui.prev_visible.iter().copied() {
             if !visible_now.contains(&node)

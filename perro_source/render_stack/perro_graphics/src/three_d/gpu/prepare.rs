@@ -503,12 +503,18 @@ impl Gpu3D {
         }
         self.last_aspect = (width.max(1) as f32) / (height.max(1) as f32);
         self.last_proj_y_scale = projection_y_scale_from_projection(camera.projection);
-        self.lod_ratio_scale = lod_ratio_scale(height, self.last_proj_y_scale);
+        let next_lod_ratio_scale = lod_ratio_scale(height, self.last_proj_y_scale);
+        let lod_scale_changed = self.lod_ratio_scale != next_lod_ratio_scale;
+        self.lod_ratio_scale = next_lod_ratio_scale;
 
+        let camera_needs_restage = self.camera_dependent_staging
+            || (draws_unchanged
+                && (camera_changed || lod_scale_changed)
+                && !self.camera_lod_bands_match(draws, camera.position));
         if camera_only_reuses_staging(
             draws_unchanged,
-            camera_changed,
-            self.camera_dependent_staging,
+            camera_changed || lod_scale_changed,
+            camera_needs_restage,
         ) {
             let frustum_cull_active = self.should_run_frustum_cull();
             let hiz_active = self.should_run_hiz_occlusion(frustum_cull_active);
@@ -566,6 +572,7 @@ impl Gpu3D {
             return;
         }
         if transform_only_changed {
+            let mut caster_lanes_changed = false;
             self.dirty_instance_spans_scratch.clear();
             for (draw_index, (draw, span_range)) in draws
                 .iter()
@@ -586,6 +593,7 @@ impl Gpu3D {
                 }) {
                     continue;
                 }
+                caster_lanes_changed |= draw.cast_shadows;
                 for range in self.last_draw_instance_spans[span_range.clone()].iter() {
                     if range.start >= range.end {
                         continue;
@@ -667,6 +675,7 @@ impl Gpu3D {
                 {
                     continue;
                 }
+                caster_lanes_changed |= draw.cast_shadows;
                 let draw_model = Mat4::from_cols_array_2d(&dense.node_model);
                 let row_0 = [
                     draw_model.x_axis.x,
@@ -901,6 +910,10 @@ impl Gpu3D {
             // sphere and the instance model, neither of which animation moves).
             if animation_changed {
                 let classes = std::mem::take(&mut self.transform_only_kinds_scratch);
+                caster_lanes_changed |= draws
+                    .iter()
+                    .zip(&classes)
+                    .any(|(draw, class)| draw.cast_shadows && class.anim.any());
                 self.patch_animation_lanes(queue, draws, &classes);
                 self.transform_only_kinds_scratch = classes;
             }
@@ -909,8 +922,10 @@ impl Gpu3D {
             // snapshots stay valid -- refresh them with the draws that are now
             // reflected in the staged rows, keeping pose-Arc identity fresh.
             self.sync_multimesh_staging_cache_transforms(draws);
-            // Transform patch moved rigid + multimesh casters; drop the cache.
-            self.shadow_casters_dirty = true;
+            // Noncasters share these buffers, but neither their transforms nor
+            // their animation lanes reach a shadow depth pass or focus fit.
+            // Preserve any earlier target/resource invalidation independently.
+            self.shadow_casters_dirty |= caster_lanes_changed;
             self.update_shadow_state(device, queue, &camera, lighting, self.has_shadow_casters);
             self.sync_last_draws(draws);
             self.last_draws_revision = draws_revision;
@@ -1023,7 +1038,7 @@ impl Gpu3D {
         self.frustum_cull_dynamic_staging.clear();
         self.indirect_staging.clear();
         let mut total_meshlets = 0usize;
-        let mut camera_dependent_staging = false;
+        self.regular_lod_bands.clear();
         let frustum = extract_frustum_planes(view_proj);
         let Some(default_mesh) = mesh_arena.resolve_builtin_mesh_asset("__cube__") else {
             return;
@@ -1129,7 +1144,26 @@ impl Gpu3D {
                 draw.lod,
                 self.lod_ratio_scale,
             );
-            camera_dependent_staging |= mesh_asset.lods.len() > 1;
+            if draw.dense_multimesh.is_none()
+                && mesh_asset.lods.len() > 1
+                && let Some(model) = lod_model
+            {
+                self.regular_lod_bands.push((
+                    draw_index,
+                    MultiMeshLodBand {
+                        lod_count: mesh_asset.lods.len() as u32,
+                        bounds_radius: mesh_asset.bounds_radius,
+                        index: select_mesh_lod_index(
+                            mesh_asset.lods.len(),
+                            mesh_asset.bounds_radius,
+                            [model[3][0], model[3][1], model[3][2]],
+                            camera.position,
+                            draw.lod,
+                            self.lod_ratio_scale,
+                        ) as u32,
+                    },
+                ));
+            }
             surface_entries.clear();
             match draw.kind {
                 Draw3DKind::DebugPointCube => {
@@ -1271,7 +1305,6 @@ impl Gpu3D {
                 });
                 for entry in surface_entries.iter() {
                     let material: &Material3D = &entry.material;
-                    camera_dependent_staging |= material.alpha_mode() == 2;
                     self.ensure_standard_material_texture_slots(
                         device,
                         queue,
@@ -1614,7 +1647,6 @@ impl Gpu3D {
                         // standard_params() here cloned the vertex_modifiers
                         // Cow per surface per frame.
                         let material_alpha_mode = material.alpha_mode();
-                        camera_dependent_staging |= material_alpha_mode == 2;
                         let material_double_sided = material.double_sided();
                         let material_texture_slots = material.texture_slots();
                         self.ensure_standard_material_texture_slots(
@@ -1767,7 +1799,6 @@ impl Gpu3D {
                 // Flag/slot reads off the variant; building standard_params()
                 // here cloned the vertex_modifiers Cow per draw per frame.
                 let material_alpha_mode = material.alpha_mode();
-                camera_dependent_staging |= material_alpha_mode == 2;
                 let material_double_sided = material.double_sided();
                 let material_texture_slots = material.texture_slots();
                 self.ensure_standard_material_texture_slots(
@@ -2146,7 +2177,12 @@ impl Gpu3D {
                 order_index: self.draw_batches.len() as u32,
             });
         }
-        self.camera_dependent_staging = camera_dependent_staging;
+        // Only regular alpha batches sort by camera distance. The remaining
+        // camera dependency is the selected baked LOD, tested at the fast gate.
+        self.camera_dependent_staging = self
+            .draw_batches
+            .iter()
+            .any(|batch| batch.render_state.batch_kind == RenderBatchKind::Alpha);
         // Alpha batches must draw back-to-front by camera distance; their sort
         // key is order_index, so rewrite it from submission order to inverted
         // distance bits (monotonic for non-negative floats) before sorting.
@@ -2848,6 +2884,48 @@ impl Gpu3D {
                 self.uploaded_multimesh_custom_params_values = Some(key);
             }
         }
+    }
+
+    /// A camera move within every baked LOD band changes uniforms/culling,
+    /// but none of the staged rows. Resource dirt and draw changes must already
+    /// be excluded before calling this gate. Read current models so preceding
+    /// transform patches cannot leave stale band inputs in the cache.
+    fn camera_lod_bands_match(&self, draws: &[Draw3DInstance], camera_position: [f32; 3]) -> bool {
+        let same_band = |draw: &Draw3DInstance, model: &[[f32; 4]; 4], band: MultiMeshLodBand| {
+            select_mesh_lod_index(
+                band.lod_count as usize,
+                band.bounds_radius,
+                [model[3][0], model[3][1], model[3][2]],
+                camera_position,
+                draw.lod,
+                self.lod_ratio_scale,
+            ) == band.index as usize
+        };
+        for &(index, band) in &self.regular_lod_bands {
+            let Some(draw) = draws.get(index) else {
+                return false;
+            };
+            let Some(model) = draw.instance_mats.first() else {
+                return false;
+            };
+            if !same_band(draw, model, band) {
+                return false;
+            }
+        }
+        for snapshot in &self.multimesh_staging_cache {
+            let Some(band) = snapshot.lod_band else {
+                continue;
+            };
+            let draw = &snapshot.draw;
+            let Some(dense) = draw.dense_multimesh.as_ref() else {
+                return false;
+            };
+            let model = draw.instance_mats.first().unwrap_or(&dense.node_model);
+            if !same_band(draw, model, band) {
+                return false;
+            }
+        }
+        true
     }
 
     /// Whether the staged multimesh buffers can be carried into this rebuild

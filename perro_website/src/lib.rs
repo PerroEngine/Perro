@@ -3,6 +3,8 @@ use leptos::prelude::*;
 use leptos_meta::{provide_meta_context, MetaTags};
 use leptos_router::{components::*, path};
 
+#[cfg(test)]
+mod demo_sync;
 pub mod docs;
 mod highlight;
 mod layout;

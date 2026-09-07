@@ -27,6 +27,26 @@ pub fn generate_static_animations(
     fs::create_dir_all(&static_dir)?;
 
     let anim_paths = res_tree.filter_ext(|ext| ext.eq_ignore_ascii_case(source_ext::ANIMATION));
+    let cache = crate::cache::CodegenCache::new(
+        &static_dir.join("animations.rs"),
+        anim_paths.iter().flat_map(|rel| {
+            let path = res_dir.join(rel);
+            [path.with_extension("pretarget"), path]
+        }),
+        &format!("animations prefix={}", crate::asset_prefix()),
+    );
+    if cache.hit() {
+        let paths = anim_paths
+            .iter()
+            .map(|rel| asset_uri(rel))
+            .collect::<Vec<_>>();
+        crate::record_static_assets(
+            perro_asset_formats::dlc::DlcAssetKind::ANIMATION,
+            perro_asset_formats::dlc::DlcAssetAccess::ENGINE_LOCAL,
+            paths.iter().map(|path| (path.as_str(), false)),
+        );
+        return Ok(());
+    }
 
     let mut parsed = anim_paths
         .par_iter()
@@ -108,6 +128,7 @@ pub fn generate_static_animations(
     src.push('\n');
     src.push_str(&lookup);
     crate::write_if_changed(&static_dir.join("animations.rs"), src.as_bytes())?;
+    cache.store(src.as_bytes());
     crate::record_static_assets(
         perro_asset_formats::dlc::DlcAssetKind::ANIMATION,
         perro_asset_formats::dlc::DlcAssetAccess::ENGINE_LOCAL,

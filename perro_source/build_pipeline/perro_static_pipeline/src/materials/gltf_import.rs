@@ -4,11 +4,15 @@ pub(super) fn materials_from_gltf_file(
     path: &Path,
     res_path: &str,
 ) -> io::Result<Vec<(String, MaterialLiteral, bool)>> {
-    let (doc, _buffers, _images) = gltf::import(path).map_err(|err| {
-        io::Error::other(format!(
-            "failed to import model `{res_path}` for materials: {err}"
-        ))
-    })?;
+    // Material factors and texture slots live in the document. Loading the
+    // image pixels or vertex buffers here only duplicates other import work.
+    let doc = gltf::Gltf::open(path)
+        .map_err(|err| {
+            io::Error::other(format!(
+                "failed to import model `{res_path}` for materials: {err}"
+            ))
+        })?
+        .document;
 
     let mut out = Vec::<(String, MaterialLiteral, bool)>::new();
     for (index, material) in doc.materials().enumerate() {

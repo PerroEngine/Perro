@@ -1,4 +1,7 @@
-use super::queries::{flush_removed_colliders_bvh_2d, flush_removed_colliders_bvh_3d};
+use super::queries::{
+    flush_removed_colliders_bvh_2d, flush_removed_colliders_bvh_3d, patch_body_colliders_bvh_2d,
+    patch_body_colliders_bvh_3d,
+};
 use super::*;
 
 impl PhysicsSystem {
@@ -72,6 +75,7 @@ impl PhysicsSystem {
                 body.sync_signature == 0 || state.sync_signature != body.sync_signature;
             let prev_kind = state.kind;
             state.kind = body.kind;
+            let mut pose_changed = false;
             if needs_body_sync && let Some(rb) = world.bodies.get_mut(state.handle) {
                 mutated = true;
                 dynamic_mutated |=
@@ -97,6 +101,7 @@ impl PhysicsSystem {
                         );
                 if pos_changed {
                     rb.set_position(target_pos, true);
+                    pose_changed = true;
                 }
 
                 if let Some(rigid) = body.rigid {
@@ -131,6 +136,19 @@ impl PhysicsSystem {
                     rb.enable_ccd(false);
                 }
                 state.sync_signature = body.sync_signature;
+            }
+
+            // set_position updates Rapier's body immediately; existing
+            // collider poses/BVH leaves otherwise wait until the next step.
+            // Queries after an authored teleport need those leaves now.
+            if pose_changed && state.shape_signature == body.shape_signature {
+                patch_body_colliders_bvh_2d(
+                    &world.bodies,
+                    &mut world.colliders,
+                    &mut world.broad_phase,
+                    &world.integration_parameters,
+                    state.handle,
+                );
             }
 
             if state.shape_signature != body.shape_signature {
@@ -300,6 +318,7 @@ impl PhysicsSystem {
                 body.sync_signature == 0 || state.sync_signature != body.sync_signature;
             let prev_kind = state.kind;
             state.kind = body.kind;
+            let mut pose_changed = false;
             if needs_body_sync && let Some(rb) = world.bodies.get_mut(state.handle) {
                 mutated = true;
                 dynamic_mutated |=
@@ -326,6 +345,7 @@ impl PhysicsSystem {
                         || !approx_eq_f32(current_pos.rotation.w, target_pos.rotation.w);
                 if pos_changed {
                     rb.set_position(target_pos, true);
+                    pose_changed = true;
                 }
 
                 if let Some(rigid) = body.rigid {
@@ -374,6 +394,16 @@ impl PhysicsSystem {
                     rb.enable_ccd(false);
                 }
                 state.sync_signature = body.sync_signature;
+            }
+
+            if pose_changed && state.shape_signature == body.shape_signature {
+                patch_body_colliders_bvh_3d(
+                    &world.bodies,
+                    &mut world.colliders,
+                    &mut world.broad_phase,
+                    &world.integration_parameters,
+                    state.handle,
+                );
             }
 
             if state.shape_signature != body.shape_signature {
@@ -696,7 +726,7 @@ mod tests {
             system.sync_world_3d(&bodies, asset_context(), |_, _| {});
             for tick in 0..225 {
                 system.step_world_3d(-7.41, 1.0 / 45.0);
-                let world = system.world_3d.as_ref().unwrap();
+                let world = system.world_3d.as_ref().expect("synced bowling world");
                 let body = &world.bodies[world.body_map[&NodeID::new(2)].handle];
                 let p = body.translation();
                 let q = body.rotation();
@@ -704,12 +734,20 @@ mod tests {
                 let a = body.angvel();
                 bodies[1].global.position = Vector3::new(p.x, p.y, p.z);
                 bodies[1].global.rotation = Quaternion::new(q.x, q.y, q.z, q.w);
-                bodies[1].rigid.as_mut().unwrap().linear_velocity = Vector3::new(v.x, v.y, v.z);
-                bodies[1].rigid.as_mut().unwrap().angular_velocity = Vector3::new(a.x, a.y, a.z);
+                bodies[1]
+                    .rigid
+                    .as_mut()
+                    .expect("rigid bowling pin")
+                    .linear_velocity = Vector3::new(v.x, v.y, v.z);
+                bodies[1]
+                    .rigid
+                    .as_mut()
+                    .expect("rigid bowling pin")
+                    .angular_velocity = Vector3::new(a.x, a.y, a.z);
                 bodies[1].sync_signature = tick + 10;
                 system.sync_world_3d(&bodies, asset_context(), |_, _| {});
             }
-            let world = system.world_3d.as_ref().unwrap();
+            let world = system.world_3d.as_ref().expect("synced bowling world");
             let body = &world.bodies[world.body_map[&NodeID::new(2)].handle];
             assert!(
                 body.translation().y > 0.27,

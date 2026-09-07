@@ -1,6 +1,6 @@
 use crate::types::{AudioCompression, AudioEq, SpatialAudioParams};
 use rodio::Source;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -20,6 +20,9 @@ pub(crate) struct DspControl {
     // `DspSource::new`, so a later wet switch can size delay lines without
     // reaching into the source. 0 = no source attached yet.
     layout: AtomicU64,
+    // Count attached sources that still need delay storage. Multiple queued
+    // sources may share a control (for example, streamed microphone packets).
+    wet_waiters: AtomicUsize,
     // Delay lines the worker parks for a dry source to install at its next
     // dry->wet edge. `try_lock` only on the audio thread: it takes, never
     // blocks and never allocates.
@@ -40,6 +43,7 @@ impl DspControl {
             compression_threshold: AtomicU32::new(params.compression.threshold.to_bits()),
             compression_ratio: AtomicU32::new(params.compression.ratio.to_bits()),
             layout: AtomicU64::new(0),
+            wet_waiters: AtomicUsize::new(0),
             pending_wet: Mutex::new(None),
         })
     }
@@ -62,6 +66,11 @@ impl DspControl {
         let Ok(mut slot) = self.pending_wet.try_lock() else {
             return;
         };
+        if self.wet_waiters.load(Ordering::Acquire) == 0 {
+            // Release an abandoned spare on the worker, never in audio next().
+            *slot = None;
+            return;
+        }
         if slot.is_some() {
             return;
         }
@@ -72,7 +81,10 @@ impl DspControl {
 
     // Audio side: take the staged delay lines if any are ready. Never blocks.
     fn take_wet_delays(&self) -> Option<Box<WetDelays>> {
-        self.pending_wet.try_lock().ok()?.take()
+        let mut slot = self.pending_wet.try_lock().ok()?;
+        let wet = slot.take()?;
+        self.wet_waiters.fetch_sub(1, Ordering::AcqRel);
+        Some(wet)
     }
 
     pub(crate) fn update_spatial(&self, params: SpatialAudioParams) {
@@ -231,6 +243,14 @@ where
             .snapshot()
             .has_wet()
             .then(|| Box::new(WetDelays::new(sample_rate, channels)));
+        if wet.is_none() {
+            control.wet_waiters.fetch_add(1, Ordering::AcqRel);
+            // Close the construction/update race: a wet update before the
+            // waiter registration must still stage storage on this worker.
+            if control.snapshot().has_wet() {
+                control.stage_wet_delays();
+            }
+        }
         Self {
             input,
             control,
@@ -241,6 +261,14 @@ where
             wet_active: false,
             channel_state: vec![ChannelState::default(); channels],
             wet,
+        }
+    }
+}
+
+impl<S> Drop for DspSource<S> {
+    fn drop(&mut self) {
+        if self.wet.is_none() {
+            self.control.wet_waiters.fetch_sub(1, Ordering::AcqRel);
         }
     }
 }
@@ -572,5 +600,61 @@ mod tests {
         }
         assert!(source.wet.is_some());
         assert!(control.pending_wet.lock().expect("stage slot").is_none());
+        control.update_spatial(params);
+        assert!(control.pending_wet.lock().expect("stage slot").is_none());
+    }
+
+    #[test]
+    fn wet_source_updates_do_not_allocate_spare_delays() {
+        let mut params = DspParams::dry();
+        params.echo = 0.5;
+        let control = DspControl::new(params);
+        let source = DspSource::new(
+            rodio::buffer::SamplesBuffer::new(2, 48_000, vec![0.25_f32; 256]),
+            Arc::clone(&control),
+        );
+        for _ in 0..4 {
+            control.update_spatial(SpatialAudioParams {
+                echo: 0.5,
+                ..Default::default()
+            });
+        }
+        assert!(source.wet.is_some());
+        assert!(control.pending_wet.lock().expect("stage slot").is_none());
+        assert_eq!(control.wet_waiters.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn shared_control_tracks_dry_sources_until_take_or_drop() {
+        let control = DspControl::new(DspParams::dry());
+        let make_source = || {
+            DspSource::new(
+                rodio::buffer::SamplesBuffer::new(2, 48_000, vec![0.25_f32; 256]),
+                Arc::clone(&control),
+            )
+        };
+        let mut first = make_source();
+        let mut second = make_source();
+        let abandoned = make_source();
+        drop(abandoned);
+        assert_eq!(control.wet_waiters.load(Ordering::Acquire), 2);
+        let params = SpatialAudioParams {
+            echo: 0.5,
+            ..Default::default()
+        };
+        control.update_spatial(params);
+        first.next();
+        assert!(first.wet.is_some());
+        assert_eq!(control.wet_waiters.load(Ordering::Acquire), 1);
+        control.update_spatial(params);
+        second.next();
+        assert!(second.wet.is_some());
+        control.update_spatial(params);
+        assert!(control.pending_wet.lock().expect("stage slot").is_none());
+        assert_eq!(control.wet_waiters.load(Ordering::Acquire), 0);
     }
 }
+
+#[cfg(test)]
+#[path = "dsp_audit_perf.rs"]
+mod audit_perf;

@@ -255,6 +255,7 @@ impl PerroGraphics {
         self.reserve_command_buckets(&command_summary);
         let camera_2d_before = self.renderer_2d.camera();
         let camera_3d_before = self.renderer_3d.camera();
+        let materials_before = self.resources.material_revision();
         let mut camera_commands = std::mem::take(&mut self.frame.scratch_camera_commands);
         camera_commands.clear();
         let mut write = 0usize;
@@ -287,6 +288,11 @@ impl PerroGraphics {
             &self.renderer_2d.camera(),
             &camera_3d_before,
             &self.renderer_3d.camera(),
+        );
+        frame_dirty_bits = resolve_material_dirty_bits(
+            frame_dirty_bits,
+            materials_before,
+            self.resources.material_revision(),
         );
         let process_commands = process_start.elapsed();
         // Runtime camera extraction may resend byte-identical cameras every
@@ -577,7 +583,7 @@ impl PerroGraphics {
         // images + sprites, so DIRTY_STREAMS gates the recount too.
         if sprites_refs_changed
             || draws_refs_changed
-            || (frame_dirty_bits & (DIRTY_RESOURCES | DIRTY_STREAMS)) != 0
+            || (frame_dirty_bits & (DIRTY_RESOURCES | DIRTY_RESOURCE_REFS | DIRTY_STREAMS)) != 0
         {
             self.resources.reset_ref_counts();
             for (texture, count) in &self.used_texture_refs_cache {

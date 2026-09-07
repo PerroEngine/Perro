@@ -255,8 +255,8 @@ mod ssao;
 #[path = "gpu/targets.rs"]
 mod targets;
 
+pub(crate) use asset_bridge::load_mesh3d_from_source;
 use asset_bridge::*;
-pub(crate) use asset_bridge::{load_mesh3d_from_source, validate_mesh_source};
 use camera::*;
 // TAA reprojection (gpu/frame.rs) needs the same unjittered view-proj rule
 // the 3D prepare uses; re-exported so present-time code never re-derives it.
@@ -1394,6 +1394,8 @@ pub struct Gpu3D {
     // Full staging bakes camera-dependent mesh LOD choices and alpha order.
     // Camera-only prepares may retain staging only when this is false.
     camera_dependent_staging: bool,
+    // Regular draws with baked LODs. The dense lane keeps its own band cache.
+    regular_lod_bands: Vec<(usize, MultiMeshLodBand)>,
     // Per-prepare upload accounting (reset at the top of `prepare`). Every
     // gated staging upload notes its byte count here, so the skip gates below
     // are directly observable from tests / debug overlays.

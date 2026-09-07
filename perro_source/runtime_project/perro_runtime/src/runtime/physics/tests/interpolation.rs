@@ -1,6 +1,118 @@
 mod interpolation {
     use super::*;
 
+    fn independent_awake_worlds(runtime: &mut Runtime) -> Vec<(NodeID, NodeID)> {
+        (0..4)
+            .map(|_| {
+                let view = NodeAPI::create::<SubView3D>(runtime);
+                let body = NodeAPI::create::<RigidBody3D>(runtime);
+                let shape = NodeAPI::create::<CollisionShape3D>(runtime);
+                assert!(runtime.reparent(view, body));
+                assert!(runtime.reparent(body, shape));
+                runtime
+                    .with_node_mut::<RigidBody3D, _, _>(body, |node| {
+                        node.gravity_scale = 0.0;
+                        node.can_sleep = false;
+                        node.linear_velocity = Vector3::new(1.0, 0.0, 0.0);
+                    })
+                    .expect("live body");
+                (view, body)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn independent_world_pullback_keeps_peer_queries_synced() {
+        let mut runtime = Runtime::new();
+        let worlds = independent_awake_worlds(&mut runtime);
+        runtime.time.fixed_delta = 1.0 / 60.0;
+        runtime.physics_fixed_step();
+        runtime.physics_fixed_step();
+        let baseline = runtime.physics_collect_calls_3d.get();
+        for _ in 0..4 {
+            runtime.physics_fixed_step();
+            for &(_, body) in &worlds {
+                let x = runtime
+                    .with_node::<RigidBody3D, _>(body, |node| node.position.x)
+                    .expect("live body");
+                runtime.active_runtime_nodes.push(body);
+                let hit = runtime.physics_raycast_3d(
+                    Vector3::new(x, 0.0, -5.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    10.0,
+                    false,
+                );
+                runtime.active_runtime_nodes.pop();
+                assert_eq!(hit.expect("local world hit").node, body);
+            }
+        }
+        assert_eq!(
+            runtime.physics_collect_calls_3d.get(),
+            baseline,
+            "internal peer pullback must not recollect"
+        );
+        let body = worlds[2].1;
+        runtime
+            .with_node_mut::<RigidBody3D, _, _>(body, |node| node.position.x = 20.0)
+            .expect("live body");
+        runtime.active_runtime_nodes.push(body);
+        let hit = runtime.physics_raycast_3d(
+            Vector3::new(20.0, 0.0, -5.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            10.0,
+            false,
+        );
+        runtime.active_runtime_nodes.pop();
+        assert_eq!(hit.expect("fresh external pose").node, body);
+        assert!(runtime.physics_collect_calls_3d.get() > baseline);
+    }
+
+    #[test]
+    fn moving_ancestor_of_nested_world_keeps_conservative_sync() {
+        let mut runtime = Runtime::new();
+        let worlds = independent_awake_worlds(&mut runtime);
+        assert!(runtime.reparent(worlds[0].1, worlds[1].0));
+        runtime
+            .with_node_mut::<RigidBody3D, _, _>(worlds[1].1, |node| node.top_level = true)
+            .expect("live body");
+        runtime.time.fixed_delta = 1.0 / 60.0;
+        runtime.physics_fixed_step();
+        runtime.physics_fixed_step();
+        let baseline = runtime.physics_collect_calls_3d.get();
+        runtime.physics_fixed_step();
+        assert!(
+            runtime.physics_collect_calls_3d.get() > baseline,
+            "nested world basis change still invalidates"
+        );
+    }
+
+    #[test]
+    fn reparent_between_world_steps_invalidates_ancestor_guard() {
+        let mut runtime = Runtime::new();
+        let worlds = independent_awake_worlds(&mut runtime);
+        runtime.time.fixed_delta = 1.0 / 60.0;
+        runtime.physics_fixed_step();
+        runtime.physics_fixed_step();
+        // Model a signal callback: topology changes after the outer fixed-step
+        // loop took its world/ancestor snapshot, followed by a local query.
+        assert!(runtime.reparent(worlds[0].1, worlds[1].0));
+        runtime
+            .with_node_mut::<RigidBody3D, _, _>(worlds[1].1, |node| node.top_level = true)
+            .expect("nested world fixture body exists");
+        runtime.activate_physics_world(worlds[1].0);
+        runtime.ensure_physics_world_synced_3d();
+        runtime.activate_physics_world(worlds[0].0);
+        runtime.physics_fixed_step_active_timed();
+        let before_query = runtime.physics_collect_calls_3d.get();
+        runtime.activate_physics_world(worlds[1].0);
+        runtime.ensure_physics_world_synced_3d();
+        assert!(
+            runtime.physics_collect_calls_3d.get() > before_query,
+            "stale ancestor snapshot must not advance peer query epoch"
+        );
+        runtime.activate_physics_world(NodeID::nil());
+    }
+
     #[test]
     fn physics_interp_2d_uses_prev_curr_alpha_and_keeps_scale() {
         let mut runtime = Runtime::new();
@@ -34,7 +146,7 @@ mod interpolation {
 
         let descs = runtime.collect_body_descs_3d();
         assert!(descs.iter().any(|desc| desc.id == body && desc.enabled));
-        runtime.physics_body_descs_3d = descs;
+        runtime.physics_sync.physics_body_descs_3d = descs;
 
         if let Some(mut node) = runtime.nodes.get_mut(viewport)
             && let SceneNodeData::UiSubView(viewport) = &mut node.data
@@ -43,7 +155,7 @@ mod interpolation {
         }
         let descs = runtime.collect_body_descs_3d();
         assert!(descs.iter().any(|desc| desc.id == body && !desc.enabled));
-        runtime.physics_body_descs_3d = descs;
+        runtime.physics_sync.physics_body_descs_3d = descs;
         runtime.activate_physics_world(NodeID::nil());
     }
 
@@ -188,7 +300,7 @@ mod interpolation {
             .find(|desc| desc.id == joint)
             .expect("joint desc");
         assert!(!desc.enabled);
-        runtime.physics_joint_descs_3d = joints;
+        runtime.physics_sync.physics_joint_descs_3d = joints;
         runtime.activate_physics_world(NodeID::nil());
     }
 
@@ -434,7 +546,7 @@ mod interpolation {
         let live_water_id = NodeAPI::create::<WaterBody3D>(&mut runtime);
 
         for id in [water_id, live_water_id] {
-            runtime.water_samples.insert(
+            runtime.physics_sync.water_samples.insert(
                 id,
                 perro_nodes::WaterPhysicsSample {
                     height: 1.0,
@@ -442,10 +554,10 @@ mod interpolation {
                     foam: 0.0,
                 },
             );
-            runtime.water_sample_times.insert(id, 0.5);
+            runtime.physics_sync.water_sample_times.insert(id, 0.5);
         }
         for water in [water_id, live_water_id] {
-            runtime.water_body_samples.insert(
+            runtime.physics_sync.water_body_samples.insert(
                 crate::runtime::WaterBodySampleKey {
                     water,
                     body: body_id,
@@ -464,19 +576,29 @@ mod interpolation {
         assert!(NodeAPI::remove_node(&mut runtime, water_id));
         runtime.prune_dead_water_samples();
 
-        assert!(!runtime.water_samples.contains_key(&water_id));
-        assert!(!runtime.water_sample_times.contains_key(&water_id));
-        assert!(runtime.water_samples.contains_key(&live_water_id));
-        assert_eq!(runtime.water_body_samples.len(), 1);
+        assert!(!runtime.physics_sync.water_samples.contains_key(&water_id));
+        assert!(
+            !runtime
+                .physics_sync
+                .water_sample_times
+                .contains_key(&water_id)
+        );
+        assert!(
+            runtime
+                .physics_sync
+                .water_samples
+                .contains_key(&live_water_id)
+        );
+        assert_eq!(runtime.physics_sync.water_body_samples.len(), 1);
 
         // Dead *body* side of the key prunes too, which re-enables the
         // physics fast-path skip.
         assert!(NodeAPI::remove_node(&mut runtime, body_id));
         assert!(NodeAPI::remove_node(&mut runtime, live_water_id));
         runtime.prune_dead_water_samples();
-        assert!(runtime.water_samples.is_empty());
-        assert!(runtime.water_sample_times.is_empty());
-        assert!(runtime.water_body_samples.is_empty());
+        assert!(runtime.physics_sync.water_samples.is_empty());
+        assert!(runtime.physics_sync.water_sample_times.is_empty());
+        assert!(runtime.physics_sync.water_body_samples.is_empty());
     }
 
     #[test]
@@ -803,7 +925,8 @@ mod interpolation {
             velocity: Vector2::ZERO,
             foam: 0.6,
         };
-        let synced = water_physics_sample_for_body_cached(&surface, local, elapsed, None, Some(cached));
+        let synced =
+            water_physics_sample_for_body_cached(&surface, local, elapsed, None, Some(cached));
 
         assert!((synced.height - analytic.height - 0.75).abs() < 0.001);
         assert_eq!(synced.foam, 0.6);
@@ -866,5 +989,4 @@ mod interpolation {
         assert!(light.x > 0.0);
         assert!(heavy.x > light.x);
     }
-
 }

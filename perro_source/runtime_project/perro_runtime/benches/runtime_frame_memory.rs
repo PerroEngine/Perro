@@ -344,6 +344,10 @@ fn internal_times() {
 }
 
 fn main() {
+    if std::env::args().any(|arg| arg == "--architecture-probe") {
+        architecture_probe();
+        return;
+    }
     if std::env::args().any(|arg| arg == "--internal-times") {
         internal_times();
         return;
@@ -366,4 +370,97 @@ fn main() {
     let mut c = Criterion::default().configure_from_args();
     timing(&mut c);
     c.final_summary();
+}
+
+// Same fixture is copied into the preserved baseline for architecture A/B runs.
+fn architecture_probe() {
+    use perro_nodes::{
+        AnimatedSprite, AnimatedSprite2D, BoneAttachment2D, BoneAttachment3D, IKTarget3D,
+    };
+    let allocations = std::env::args().any(|arg| arg == "--architecture-alloc");
+    TRACKING.store(allocations, Ordering::Relaxed);
+    let count = probe_arg("--nodes=", 10_000);
+    let case = std::env::args()
+        .find_map(|arg| arg.strip_prefix("--case=").map(str::to_owned))
+        .unwrap_or_else(|| "mixed_update".into());
+    let mut runtime;
+    let mut commands = Vec::new();
+    if case.starts_with("frame_") {
+        let stride = match case.as_str() {
+            "frame_idle" => 0,
+            "frame_sparse" => 100,
+            _ => 1,
+        };
+        (runtime, _, commands) = runtime_fixture(count, stride);
+    } else {
+        runtime = Runtime::new();
+        for index in 0..count {
+            if case == "mixed_fixed" {
+                NodeAPI::create::<PhysicsBoneChain2D>(&mut runtime);
+            } else {
+                match index % 5 {
+                    0 => {
+                        NodeAPI::create::<IKTarget2D>(&mut runtime);
+                    }
+                    1 => {
+                        NodeAPI::create::<IKTarget3D>(&mut runtime);
+                    }
+                    2 => {
+                        NodeAPI::create::<BoneAttachment2D>(&mut runtime);
+                    }
+                    3 => {
+                        NodeAPI::create::<BoneAttachment3D>(&mut runtime);
+                    }
+                    _ => {
+                        let mut sprite = AnimatedSprite2D::new();
+                        let mut anim = AnimatedSprite::new("probe");
+                        anim.frame_count = 4;
+                        anim.fps = 12.0;
+                        sprite.animations.push(anim);
+                        NodeAPI::create_nodes(
+                            &mut runtime,
+                            &[NodeSpec::new(sprite)],
+                            NodeID::nil(),
+                        );
+                    }
+                }
+            }
+        }
+    }
+    let mut tick = |runtime: &mut Runtime| {
+        if case.starts_with("frame_") {
+            frame(runtime, &mut commands);
+        } else if case == "mixed_fixed" {
+            runtime.fixed_update(1.0 / 60.0);
+        } else {
+            if case == "churn" {
+                let id = NodeAPI::create::<IKTarget2D>(runtime);
+                black_box(NodeAPI::remove_node(runtime, id));
+            }
+            runtime.update(1.0 / 60.0);
+        }
+    };
+    for _ in 0..60 {
+        tick(&mut runtime);
+    }
+    let mut samples = Vec::with_capacity(101);
+    let base = reset_sample();
+    for _ in 0..101 {
+        let start = std::time::Instant::now();
+        for _ in 0..10 {
+            tick(&mut runtime);
+        }
+        samples.push(start.elapsed().as_nanos() / 10);
+    }
+    let live = LIVE.load(Ordering::Relaxed);
+    let requests = REQUESTS.load(Ordering::Relaxed);
+    samples.sort_unstable();
+    println!(
+        "architecture/{case}/{count}: median_ns={} p95_ns={} allocs={} live_delta={} runtime_bytes={}",
+        samples[50],
+        samples[95],
+        requests,
+        live.saturating_sub(base),
+        size_of::<Runtime>()
+    );
 }
