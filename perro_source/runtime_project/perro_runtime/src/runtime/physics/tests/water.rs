@@ -249,6 +249,30 @@ mod water {
     }
 
     #[test]
+    fn physics_raycast_2d_batch_matches_single_world_queries() {
+        let mut runtime = Runtime::new();
+        let body = NodeAPI::create::<StaticBody2D>(&mut runtime);
+        let shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+        assert!(NodeAPI::reparent(&mut runtime, body, shape));
+
+        let rays = [
+            PhysicsRayQuery2D::new(Vector2::new(-5.0, 0.0), Vector2::new(1.0, 0.0), 10.0),
+            PhysicsRayQuery2D::new(Vector2::new(-5.0, 10.0), Vector2::new(1.0, 0.0), 10.0),
+        ];
+        let mut hits = Vec::with_capacity(rays.len());
+
+        runtime.physics_raycast_2d_batch(&rays, &PhysicsQueryFilter::default(), &mut hits);
+
+        assert_eq!(hits.len(), 2);
+        assert_eq!(hits[0].as_ref().map(|hit| hit.node), Some(body));
+        assert!(hits[1].is_none());
+
+        let capacity = hits.capacity();
+        runtime.physics_raycast_2d_batch(&rays, &PhysicsQueryFilter::default(), &mut hits);
+        assert_eq!(hits.capacity(), capacity);
+    }
+
+    #[test]
     fn physics_shape_cast_2d_and_3d_hit_static_bodies() {
         let mut runtime = Runtime::new();
 

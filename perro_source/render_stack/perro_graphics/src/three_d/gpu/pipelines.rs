@@ -385,14 +385,6 @@ impl Gpu3D {
         self.pipeline_compiles
     }
 
-    /// True while the shared registry still has base pipeline families left to
-    /// build. The frame pump + the startup-splash exit gate read this, so it
-    /// must go false as soon as a drain finds them all built.
-    #[inline]
-    pub(crate) fn base_families_pending(&self) -> bool {
-        !self.base_families_warmed
-    }
-
     #[cfg(test)]
     pub(super) fn builtin_variant_pipeline_count(&self) -> usize {
         self.builtin_variant_pipelines.len()
@@ -459,27 +451,6 @@ impl Gpu3D {
             }
         }
         materials.drain(..consumed);
-        // Leftover budget warms the shared registry's base families (rigid +
-        // depth/shadow, multimesh trio, sky) so they compile during the
-        // startup splash instead of the first visible draw. Materials keep
-        // priority: an actual scene draw needs them first.
-        if !self.base_families_warmed {
-            while compiled < max_compiles {
-                if compiled > 0
-                    && let (Some(start), Some(budget)) = (start, time_budget)
-                    && start.elapsed() >= budget
-                {
-                    break;
-                }
-                if self.pipelines.warm_next_base_family() {
-                    compiled += 1;
-                    self.pipeline_compiles += 1;
-                } else {
-                    self.base_families_warmed = true;
-                    break;
-                }
-            }
-        }
         compiled
     }
 

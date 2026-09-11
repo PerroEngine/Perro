@@ -25,6 +25,9 @@ pub struct InternalAnimationData {
     pub playback_frame: f32,
     pub boomerang_direction: f32,
     pub applied_transforms: Vec<AppliedAnimationTransform>,
+    /// Binding indices sorted by object name. Reused while bindings stay
+    /// stable so large clips avoid a per-frame sort.
+    pub binding_order: Vec<u32>,
     /// Crossed event-frame scratch reused across updates.
     pub event_frames_scratch: Vec<u32>,
 }
@@ -79,6 +82,7 @@ impl AnimationPlayer {
                 playback_frame: 0.0,
                 boomerang_direction: 1.0,
                 applied_transforms: Vec::new(),
+                binding_order: Vec::new(),
                 event_frames_scratch: Vec::new(),
             },
         }

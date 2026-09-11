@@ -102,6 +102,47 @@ fn combo_material(i: u32) -> Arc<Material3D> {
     }))
 }
 
+/// A small menu must not warm sky/multimesh or generic base families merely
+/// because its first 3D draw created the shared registry.
+#[test]
+fn pipeline_warm_leaves_unused_base_families_lazy() {
+    let Some((device, queue)) = pollster::block_on(test_device()) else {
+        eprintln!("[skip] no wgpu adapter for pipeline warm test");
+        return;
+    };
+    let arena = SharedMeshArena::new(&device, false, false);
+    let mut gpu = new_gpu_3d(&device, &queue, &arena);
+
+    let mut queued = Vec::new();
+    assert_eq!(
+        gpu.warm_material_pipelines_budgeted(&device, &mut queued, None, usize::MAX, None),
+        0,
+        "an empty material queue must not compile unrelated base families"
+    );
+    assert_eq!(gpu.pipeline_compiles(), 0);
+
+    queued.push(combo_material(1));
+    assert_eq!(
+        gpu.warm_material_pipelines_budgeted(&device, &mut queued, None, usize::MAX, None),
+        1,
+        "leftover budget must not compile beyond the queued material"
+    );
+    assert!(queued.is_empty());
+    assert_eq!(gpu.builtin_variant_pipeline_count(), 1);
+    let registry = gpu.pipeline_registry_for_test();
+    assert_eq!(registry.base_family_count_for_test(), 0);
+
+    // The same getters used by real render passes still build and cache each
+    // requested family. All other families remain cold.
+    let depth = registry.depth_prepass_rigid();
+    assert_eq!(registry.base_family_count_for_test(), 1);
+    assert!(std::ptr::eq(depth, registry.depth_prepass_rigid()));
+    let sky = registry.sky();
+    assert_eq!(registry.base_family_count_for_test(), 2);
+    assert!(std::ptr::eq(sky, registry.sky()));
+    assert_eq!(registry.base_family_count_for_test(), 2);
+}
+
 #[test]
 fn scene_load_pipeline_warm_cost_is_per_distinct_combo() {
     let Some((device, queue)) = pollster::block_on(test_device()) else {

@@ -1,5 +1,20 @@
 use super::*;
 
+#[inline]
+fn background_frame_rate_cap(
+    window_focused: bool,
+    window_occluded: bool,
+    minimized: bool,
+) -> Option<f32> {
+    if minimized || window_occluded {
+        Some(HIDDEN_FRAME_RATE_CAP_FPS)
+    } else if !window_focused {
+        Some(UNFOCUSED_FRAME_RATE_CAP_FPS)
+    } else {
+        None
+    }
+}
+
 impl<B: GraphicsBackend> RunnerState<B> {
     pub(super) fn new(
         app: App<B>,
@@ -101,13 +116,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             .as_ref()
             .and_then(|window| window.is_minimized())
             .unwrap_or(false);
-        let fps = if minimized || self.window_occluded {
-            Some(super::HIDDEN_FRAME_RATE_CAP_FPS)
-        } else if !self.window_focused {
-            Some(super::UNFOCUSED_FRAME_RATE_CAP_FPS)
-        } else {
-            None
-        };
+        let fps = background_frame_rate_cap(self.window_focused, self.window_occluded, minimized);
         if self.pacer.set_background_cap(fps) {
             crate::boot_log::mark(&format!("background pacing -> {fps:?} fps"));
         }
@@ -451,5 +460,27 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     .frame_index
                     .is_multiple_of(LOG_TIMING_SAMPLE_STRIDE as u64)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn background_frame_rate_cap_prefers_hidden_over_focus() {
+        assert_eq!(background_frame_rate_cap(true, false, false), None);
+        assert_eq!(
+            background_frame_rate_cap(false, false, false),
+            Some(UNFOCUSED_FRAME_RATE_CAP_FPS)
+        );
+        assert_eq!(
+            background_frame_rate_cap(true, true, false),
+            Some(HIDDEN_FRAME_RATE_CAP_FPS)
+        );
+        assert_eq!(
+            background_frame_rate_cap(false, false, true),
+            Some(HIDDEN_FRAME_RATE_CAP_FPS)
+        );
     }
 }

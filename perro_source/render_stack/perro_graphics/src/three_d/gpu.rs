@@ -1010,9 +1010,6 @@ pub struct Gpu3D {
     // is restricted to these paths (plus Rigid) so a scene with no skinned or
     // multimesh geometry never compiles those variants.
     render_paths_drawn: u8,
-    // True once warm_next_base_family reports the shared registry's base
-    // families all built; skips the per-frame probe after that.
-    base_families_warmed: bool,
     shader_variant_mode: crate::ShaderVariantMode,
     custom_pipeline_tokens: AHashMap<CustomPipelineKey, u32>,
     custom_shader_sources: AHashMap<Arc<str>, Arc<str>>,

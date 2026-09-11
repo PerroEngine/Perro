@@ -559,10 +559,10 @@ struct DoctorField {
 /// merged def info per method name across scripts
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct DoctorMethodDef {
-    /// true when any def has `pub`; runtime call glue needs pub
+    /// true when a frontend script ctx method has any `pub` form
     is_pub: bool,
-    /// true when any def takes ScriptContext -> call glue exists 4 it;
-    /// plain helper fns never get glue, pub on them is free
+    /// true when a frontend script method takes ScriptContext;
+    /// plain helper types never get glue, even when their methods take ctx
     dispatch: bool,
     files: Vec<PathBuf>,
     /// files whose def has `pub`
@@ -589,18 +589,19 @@ fn validate_script_warnings(
         report.checked_files += 1;
         let text = fs::read_to_string(&file)
             .map_err(|err| format!("failed to read script {}: {err}", file.display()))?;
+        let script_ty = perro_compiler::frontend_script_type(&text);
         let text = strip_comments_for_doctor(&text, false);
-        sources.push((file, text));
+        sources.push((file, text, script_ty));
     }
 
     let mut index = ScriptDoctorIndex::default();
-    for (file, text) in &sources {
-        index_script_source(file, text, &mut index);
+    for (file, text, script_ty) in &sources {
+        index_script_source_with_type(file, text, script_ty.as_deref(), &mut index);
     }
 
     collect_resource_signal_emits(project_dir, &mut index)?;
 
-    for (file, text) in &sources {
+    for (file, text, _) in &sources {
         let mut seen_refs = HashSet::new();
         for text_ref in extract_aggressive_virtual_refs(text) {
             if !seen_refs.insert(text_ref.raw.clone()) {
@@ -1127,7 +1128,18 @@ fn trim_virtual_ref_tail(raw: &str) -> &str {
     raw.trim_end_matches(['.', ':', '!', '?'])
 }
 
+#[cfg(test)]
 fn index_script_source(file: &Path, text: &str, index: &mut ScriptDoctorIndex) {
+    let script_ty = perro_compiler::frontend_script_type(text);
+    index_script_source_with_type(file, text, script_ty.as_deref(), index);
+}
+
+fn index_script_source_with_type(
+    file: &Path,
+    text: &str,
+    script_ty: Option<&str>,
+    index: &mut ScriptDoctorIndex,
+) {
     for type_name in parse_struct_names(text) {
         let fields = parse_struct_fields(text, &type_name);
         if !fields.is_empty() {
@@ -1182,10 +1194,10 @@ fn index_script_source(file: &Path, text: &str, index: &mut ScriptDoctorIndex) {
             index.state_fields.insert(field.name);
         }
     }
-    for method in parse_script_methods(text) {
+    for method in parse_script_methods(text, script_ty) {
         let def = index.methods.entry(method.name).or_default();
-        def.is_pub |= method.is_pub;
-        def.dispatch |= method.has_ctx;
+        def.is_pub |= method.is_pub && method.dispatch;
+        def.dispatch |= method.dispatch;
         if !def.files.iter().any(|known| known == file) {
             def.files.push(file.to_path_buf());
         }
@@ -1193,7 +1205,7 @@ fn index_script_source(file: &Path, text: &str, index: &mut ScriptDoctorIndex) {
             def.pub_files.push(file.to_path_buf());
         }
         if method.is_pub
-            && method.has_ctx
+            && method.dispatch
             && !def.dispatch_pub_files.iter().any(|known| known == file)
         {
             def.dispatch_pub_files.push(file.to_path_buf());

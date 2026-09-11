@@ -66,6 +66,54 @@ fn texture_upsert_requires_existing_resource() {
 }
 
 #[test]
+fn queued_packet_buffers_keep_capacity_across_frames() {
+    let mut renderer = Renderer2D::new();
+    let mut resources = ResourceStore::new();
+    let texture = resources.create_texture("__test__", false);
+    renderer.reserve_queued_sprites(64);
+    renderer.reserve_queued_rects(64);
+    let sprite_capacity = renderer.queued_sprites.capacity();
+    let rect_capacity = renderer.queued_rects.capacity();
+
+    for frame in 0..2 {
+        renderer.queue_sprite(
+            NodeID::from_parts(40, 0),
+            Sprite2DCommand {
+                texture,
+                z_index: frame,
+                ..Sprite2DCommand::default()
+            },
+        );
+        renderer.queue_rect(
+            NodeID::from_parts(41, 0),
+            Rect2DCommand {
+                center: [0.0, 0.0],
+                size: [16.0, 16.0],
+                color: Color::WHITE,
+                z_index: frame,
+            },
+        );
+        let _ = renderer.prepare_frame(&resources);
+        assert_eq!(renderer.queued_sprites.capacity(), sprite_capacity);
+        assert_eq!(renderer.queued_rects.capacity(), rect_capacity);
+    }
+}
+
+#[test]
+fn packet_buffer_restore_keeps_packets_queued_during_flush() {
+    let mut processed = Vec::with_capacity(8);
+    processed.extend([1_u32, 2]);
+    let capacity = processed.capacity();
+    let mut pending = vec![3_u32, 4];
+
+    super::restore_packet_buffer(&mut processed, &mut pending);
+
+    assert!(processed.is_empty());
+    assert_eq!(pending, vec![3, 4]);
+    assert_eq!(pending.capacity(), capacity);
+}
+
+#[test]
 fn rect_upload_plan_tracks_incremental_updates() {
     let mut renderer = Renderer2D::new();
     let resources = ResourceStore::new();

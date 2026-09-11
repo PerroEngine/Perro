@@ -45,6 +45,25 @@ pub(in super::super) fn sample_track_value(
     }
 }
 
+/// Borrow an asset-path key directly. `AssetPath` has no interpolation; even
+/// a linear-authored track uses its previous key, matching `interpolate_values`
+/// without cloning a dev-owned path for every bound target.
+#[inline]
+pub(in super::super) fn sample_asset_path(
+    track: &AnimationObjectTrack,
+    frame: u32,
+) -> Option<&str> {
+    if track.keys.is_empty() {
+        return None;
+    }
+    let split = track.keys.partition_point(|key| key.frame <= frame);
+    let prev_index = if split == 0 { 0 } else { split - 1 };
+    match &track.keys[prev_index].value {
+        AnimationTrackValue::AssetPath(path) => Some(path.as_ref()),
+        _ => None,
+    }
+}
+
 #[inline]
 pub(in super::super) fn ease_sample(ease: AnimationEase, t: f32) -> f32 {
     let t = t.clamp(0.0, 1.0);

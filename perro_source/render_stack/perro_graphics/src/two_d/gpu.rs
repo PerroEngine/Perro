@@ -11,6 +11,7 @@ use crate::shared_textures::{
 use crate::texture_mips::{sampler_descriptor, write_texture_base_level};
 use ahash::{AHashMap, AHashSet};
 use bytemuck::{Pod, Zeroable};
+use perro_graphics_assets::logical_texture_size_for_source;
 use perro_ids::{NodeID, TextureID};
 use perro_render_bridge::{
     Light2DState, PointParticles2DState, ShadowCaster2DShapeState, ShadowCaster2DState,
@@ -113,6 +114,8 @@ struct CachedSpriteTexture {
     bind_group: wgpu::BindGroup,
     width: u32,
     height: u32,
+    logical_width: u32,
+    logical_height: u32,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -623,33 +626,47 @@ impl Gpu2D {
             let mut candidates_sorted = true;
             let mut last_candidate_key = None;
             for sprite in sprites {
-                let (texture_width, texture_height) = match last_sprite_texture {
-                    Some((texture_id, width, height)) if texture_id == sprite.texture => {
-                        (width, height)
-                    }
-                    _ => {
-                        if !self.sprite_textures.contains_key(&sprite.texture)
-                            && !self.ensure_sprite_texture(
-                                device,
-                                queue,
-                                shared_textures,
-                                resources,
-                                sprite.texture,
-                                static_texture_lookup,
-                            )
+                let (texture_width, texture_height, logical_width, logical_height) =
+                    match last_sprite_texture {
+                        Some((texture_id, width, height, logical_width, logical_height))
+                            if texture_id == sprite.texture =>
                         {
-                            continue;
+                            (width, height, logical_width, logical_height)
                         }
-                        let Some(texture) = self.sprite_textures.get(&sprite.texture) else {
-                            continue;
-                        };
-                        let dims = (texture.width, texture.height);
-                        last_sprite_texture = Some((sprite.texture, dims.0, dims.1));
-                        dims
-                    }
-                };
-                let (sprite_size, uv_min, uv_max) =
-                    resolve_sprite_geometry(sprite, texture_width, texture_height);
+                        _ => {
+                            if !self.sprite_textures.contains_key(&sprite.texture)
+                                && !self.ensure_sprite_texture(
+                                    device,
+                                    queue,
+                                    shared_textures,
+                                    resources,
+                                    sprite.texture,
+                                    static_texture_lookup,
+                                )
+                            {
+                                continue;
+                            }
+                            let Some(texture) = self.sprite_textures.get(&sprite.texture) else {
+                                continue;
+                            };
+                            let dims = (
+                                texture.width,
+                                texture.height,
+                                texture.logical_width,
+                                texture.logical_height,
+                            );
+                            last_sprite_texture =
+                                Some((sprite.texture, dims.0, dims.1, dims.2, dims.3));
+                            dims
+                        }
+                    };
+                let (sprite_size, uv_min, uv_max) = resolve_sprite_geometry(
+                    sprite,
+                    texture_width,
+                    texture_height,
+                    logical_width,
+                    logical_height,
+                );
                 let original_order = self.sprite_batch_candidates.len();
                 let texture_key = sprite.texture.as_u64();
                 let candidate_key =
@@ -857,6 +874,8 @@ impl Gpu2D {
                 bind_group,
                 width: width.max(1),
                 height: height.max(1),
+                logical_width: width.max(1),
+                logical_height: height.max(1),
             },
         );
         self.last_sprite_stage = None;
@@ -1077,6 +1096,8 @@ impl Gpu2D {
             ],
         });
         let (width, height) = (shared.width, shared.height);
+        let (logical_width, logical_height) =
+            logical_texture_size_for_source(source, width, height);
         self.sprite_textures.insert(
             texture_key,
             CachedSpriteTexture {
@@ -1086,6 +1107,8 @@ impl Gpu2D {
                 bind_group,
                 width,
                 height,
+                logical_width,
+                logical_height,
             },
         );
         true
@@ -1365,8 +1388,11 @@ fn resolve_sprite_geometry(
     sprite: &Sprite2DCommand,
     texture_width: u32,
     texture_height: u32,
+    logical_width: u32,
+    logical_height: u32,
 ) -> ([f32; 2], [f32; 2], [f32; 2]) {
     let texture_size = [texture_width.max(1) as f32, texture_height.max(1) as f32];
+    let logical_size = [logical_width.max(1) as f32, logical_height.max(1) as f32];
     let uv_span = [
         (sprite.uv_max[0] - sprite.uv_min[0]).abs(),
         (sprite.uv_max[1] - sprite.uv_min[1]).abs(),
@@ -1391,7 +1417,7 @@ fn resolve_sprite_geometry(
     {
         (sprite.size, uv_min, uv_max)
     } else {
-        (texture_size, [0.0, 0.0], texture_size)
+        (logical_size, [0.0, 0.0], texture_size)
     }
 }
 
@@ -1481,7 +1507,7 @@ mod tests {
             ..Sprite2DCommand::default()
         };
         assert_eq!(
-            resolve_sprite_geometry(&sprite, 32, 64),
+            resolve_sprite_geometry(&sprite, 32, 64, 32, 64),
             ([32.0, 64.0], [0.0, 0.0], [32.0, 64.0])
         );
 
@@ -1492,8 +1518,33 @@ mod tests {
             ..Sprite2DCommand::default()
         };
         assert_eq!(
-            resolve_sprite_geometry(&sprite, 32, 64),
+            resolve_sprite_geometry(&sprite, 32, 64, 32, 64),
             ([16.0, 8.0], [4.0, 6.0], [20.0, 14.0])
+        );
+    }
+
+    #[test]
+    fn svg_sprite_uses_logical_fallback_size_but_keeps_raster_uvs() {
+        let auto_size = Sprite2DCommand {
+            size: [0.0, 0.0],
+            uv_min: [0.0, 0.0],
+            uv_max: [0.0, 0.0],
+            ..Sprite2DCommand::default()
+        };
+        assert_eq!(
+            resolve_sprite_geometry(&auto_size, 64, 32, 32, 16),
+            ([32.0, 16.0], [0.0, 0.0], [64.0, 32.0])
+        );
+
+        let explicit = Sprite2DCommand {
+            size: [12.0, 8.0],
+            uv_min: [5.0, 3.0],
+            uv_max: [17.0, 11.0],
+            ..Sprite2DCommand::default()
+        };
+        assert_eq!(
+            resolve_sprite_geometry(&explicit, 64, 32, 32, 16),
+            ([12.0, 8.0], [5.0, 3.0], [17.0, 11.0])
         );
     }
 
@@ -1506,7 +1557,7 @@ mod tests {
             ..Sprite2DCommand::default()
         };
         assert_eq!(
-            resolve_sprite_geometry(&sprite, 32, 64),
+            resolve_sprite_geometry(&sprite, 32, 64, 32, 64),
             ([16.0, 8.0], [0.0, 0.0], [32.0, 64.0])
         );
     }
@@ -1521,7 +1572,7 @@ mod tests {
             ..Sprite2DCommand::default()
         };
         assert_eq!(
-            resolve_sprite_geometry(&sprite, 300, 150),
+            resolve_sprite_geometry(&sprite, 300, 150, 300, 150),
             ([30.0, 20.0], [100.0, 50.0], [200.0, 100.0])
         );
     }

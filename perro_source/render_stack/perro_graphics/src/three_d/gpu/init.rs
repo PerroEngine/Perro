@@ -1915,7 +1915,6 @@ impl Gpu3D {
             pipeline_gc_tick: 0,
             pipeline_compiles: 0,
             render_paths_drawn: 0,
-            base_families_warmed: false,
             shader_variant_mode,
             custom_pipeline_tokens: AHashMap::new(),
             custom_shader_sources: AHashMap::new(),

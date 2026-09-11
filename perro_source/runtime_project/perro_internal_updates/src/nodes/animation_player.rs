@@ -64,17 +64,24 @@ pub fn internal_update<RT, R, IP>(
     }
 
     let mut applied_transforms = Vec::new();
+    let mut binding_order = Vec::new();
     if step.should_apply {
-        let Some(previous_transforms) = with_node_mut!(ctx, AnimationPlayer, id, |player| {
-            std::mem::take(&mut player.internal.applied_transforms)
-        })
-        .warn_none_once(format_args!(
-            "animation apply skip: node={} expect=AnimationPlayer missing",
-            id.as_u64()
-        )) else {
+        let Some((previous_transforms, previous_binding_order)) =
+            with_node_mut!(ctx, AnimationPlayer, id, |player| {
+                (
+                    std::mem::take(&mut player.internal.applied_transforms),
+                    std::mem::take(&mut player.internal.binding_order),
+                )
+            })
+            .warn_none_once(format_args!(
+                "animation apply skip: node={} expect=AnimationPlayer missing",
+                id.as_u64()
+            ))
+        else {
             return;
         };
         applied_transforms = previous_transforms;
+        binding_order = previous_binding_order;
         apply_clip_frame(
             ctx,
             res,
@@ -82,6 +89,7 @@ pub fn internal_update<RT, R, IP>(
             step.frame,
             &step.bindings,
             &mut applied_transforms,
+            &mut binding_order,
         );
     }
     for frame in step.event_frames.iter().copied() {
@@ -90,6 +98,7 @@ pub fn internal_update<RT, R, IP>(
     let _ = with_node_mut!(ctx, AnimationPlayer, id, |player| {
         if step.should_apply {
             player.internal.applied_transforms = applied_transforms;
+            player.internal.binding_order = binding_order;
         }
         // Hand the moved-out bindings back. A script reached by a frame event
         // may have pushed onto the (emptied) list mid-apply; kp its version
@@ -120,6 +129,16 @@ mod tests {
             interpolation: AnimationInterpolation::Linear,
             ease: AnimationEase::Linear,
             value: AnimationTrackValue::F32(value),
+        }
+    }
+
+    fn asset_key(frame: u32, path: &str) -> AnimationObjectKey {
+        AnimationObjectKey {
+            frame,
+            mode: AnimationKeyMode::Closed,
+            interpolation: AnimationInterpolation::Linear,
+            ease: AnimationEase::Linear,
+            value: AnimationTrackValue::AssetPath(Cow::Owned(path.to_string())),
         }
     }
 
@@ -179,6 +198,28 @@ mod tests {
         assert_eq!(f32_value(sample_track_value(&track, 0)), 42.0);
         assert_eq!(f32_value(sample_track_value(&track, 3)), 42.0);
         assert_eq!(f32_value(sample_track_value(&track, 999)), 42.0);
+    }
+
+    #[test]
+    fn sample_asset_path_borrows_previous_owned_key() {
+        let track = track_with_keys(vec![
+            asset_key(0, "res://textures/idle.png"),
+            asset_key(10, "res://textures/run.png"),
+        ]);
+        let AnimationTrackValue::AssetPath(first) = &track.keys[0].value else {
+            unreachable!();
+        };
+        let AnimationTrackValue::AssetPath(second) = &track.keys[1].value else {
+            unreachable!();
+        };
+
+        let sampled_first = sample_asset_path(&track, 5).expect("first asset path");
+        assert_eq!(sampled_first, first.as_ref());
+        assert_eq!(sampled_first.as_ptr(), first.as_ref().as_ptr());
+
+        let sampled_second = sample_asset_path(&track, 10).expect("second asset path");
+        assert_eq!(sampled_second, second.as_ref());
+        assert_eq!(sampled_second.as_ptr(), second.as_ref().as_ptr());
     }
 
     #[test]

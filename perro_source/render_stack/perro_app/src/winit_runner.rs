@@ -1008,6 +1008,8 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler<RunnerUserEvent>
             crate::boot_log::mark("window_created");
             self.app.attach_window(window.clone());
             self.window = Some(window.clone());
+            self.window_focused = window.has_focus();
+            self.sync_background_pacing();
             let initial_size = window.inner_size();
             crate::boot_log::mark(&format!(
                 "window actual {}x{} (scale_factor {:.3})",
@@ -1102,6 +1104,7 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler<RunnerUserEvent>
                     sync_web_window_size(window.as_ref());
                 }
                 self.app.resize_surface(size.width, size.height);
+                self.sync_background_pacing();
             }
             WindowEvent::Moved(position) => {
                 self.sync_window_position(position);

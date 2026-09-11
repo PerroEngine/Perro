@@ -157,6 +157,16 @@ pub fn apply_nested_object(
     let mut changed = false;
     let mut path = member_path(prefix);
     for (key, value) in obj {
+        // Scene/editor patches almost always name a direct member. Avoid a
+        // complete hash walk of the target for those common one-level writes.
+        // Keep the hashed fallback for dotted/ambiguous names.
+        let value = match set_direct_child(target, key.as_ref(), value, field_names) {
+            Ok(()) => {
+                changed = true;
+                continue;
+            }
+            Err(value) => value,
+        };
         push_member(&mut path, key.as_ref());
         let member = ScriptMemberID::from_string(&path);
         path.truncate(prefix.len());
@@ -164,6 +174,42 @@ pub fn apply_nested_object(
         changed |= set_nested(&mut path, target, member, &mut value, field_names);
     }
     changed
+}
+
+/// Replace an exact direct child without building or hashing its full path.
+///
+/// The fallback walker still handles dotted keys that name deeper members.
+fn set_direct_child(
+    target: &mut Variant,
+    key: &str,
+    value: Variant,
+    field_names: &[&str],
+) -> Result<(), Variant> {
+    // A dot can either belong to a literal key or separate a nested member.
+    // Preserve the walker ordering for that ambiguous legacy form.
+    if key.as_bytes().contains(&b'.') {
+        return Err(value);
+    }
+    match target {
+        Variant::Object(obj) => {
+            let Some(child) = obj.get_mut(key) else {
+                return Err(value);
+            };
+            *child = value;
+            Ok(())
+        }
+        Variant::Array(items) => {
+            let Some(index) = field_names.iter().position(|name| *name == key) else {
+                return Err(value);
+            };
+            let Some(child) = items.get_mut(index) else {
+                return Err(value);
+            };
+            *child = value;
+            Ok(())
+        }
+        _ => Err(value),
+    }
 }
 
 fn has_members(value: &Variant, field_names: &[&str]) -> bool {
@@ -246,6 +292,85 @@ mod tests {
             get_nested_by_hash("leaf", root, ScriptMemberID::from_string("leaf.label"), &[]),
             Some(number(5))
         );
+    }
+
+    #[test]
+    fn apply_direct_members_handles_object_and_array_roots() {
+        let mut object_root = object(&[
+            ("first", number(1)),
+            ("second", number(2)),
+            ("nested", object(&[("value", number(3))])),
+        ]);
+        assert!(apply_nested_object(
+            "root",
+            &mut object_root,
+            object(&[("first", number(9)), ("second", number(8))]),
+            &[],
+        ));
+        assert_eq!(
+            get_nested_by_hash(
+                "root",
+                object_root.clone(),
+                ScriptMemberID::from_string("root.first"),
+                &[],
+            ),
+            Some(number(9))
+        );
+        assert_eq!(
+            get_nested_by_hash(
+                "root",
+                object_root,
+                ScriptMemberID::from_string("root.second"),
+                &[],
+            ),
+            Some(number(8))
+        );
+
+        let mut array_root = Variant::Array(vec![number(1), number(2)]);
+        assert!(apply_nested_object(
+            "root",
+            &mut array_root,
+            object(&[("first", number(7)), ("second", number(6))]),
+            &["first", "second"],
+        ));
+        assert_eq!(
+            get_nested_by_hash(
+                "root",
+                array_root.clone(),
+                ScriptMemberID::from_string("root.first"),
+                &["first", "second"],
+            ),
+            Some(number(7))
+        );
+        assert_eq!(
+            get_nested_by_hash(
+                "root",
+                array_root,
+                ScriptMemberID::from_string("root.second"),
+                &["first", "second"],
+            ),
+            Some(number(6))
+        );
+    }
+
+    #[test]
+    fn apply_dotted_member_keeps_legacy_nested_walk_order() {
+        let mut root = object(&[("a", object(&[("b", number(1))])), ("a.b", number(2))]);
+        assert!(apply_nested_object(
+            "root",
+            &mut root,
+            object(&[("a.b", number(9))]),
+            &[],
+        ));
+
+        let Variant::Object(root) = root else {
+            panic!("test setup must create object root");
+        };
+        assert_eq!(root.get("a.b"), Some(&number(2)));
+        let Some(Variant::Object(a)) = root.get("a") else {
+            panic!("test setup must create nested a object");
+        };
+        assert_eq!(a.get("b"), Some(&number(9)));
     }
 
     #[test]

@@ -35,6 +35,29 @@ fn transpile_frontend_script(source: &str, source_include: &str) -> String {
     transpile_frontend_script_with_scene_vars(source, source_include, &SceneVarUsage::AllPub)
 }
 
+/// Script type that receives generated dispatch glue, if this source uses the frontend.
+pub fn frontend_script_type(source: &str) -> Option<String> {
+    if source.contains("impl ScriptBehavior") {
+        return None;
+    }
+    let has_state = parse_marked_struct_name(source, "@State")
+        .or_else(|| parse_attributed_struct_name(source, "state"))
+        .is_some();
+    if !has_state
+        && !has_script_macro_invocation(source, "lifecycle")
+        && !has_script_macro_invocation(source, "methods")
+    {
+        return None;
+    }
+    Some(
+        parse_marked_struct_name(source, "@Script")
+            .or_else(|| parse_attributed_struct_name(source, "script"))
+            .or_else(|| parse_script_macro_target(source, "lifecycle"))
+            .or_else(|| parse_script_macro_target(source, "methods"))
+            .unwrap_or_else(|| "Script".to_string()),
+    )
+}
+
 fn transpile_frontend_script_with_scene_vars(
     source: &str,
     source_include: &str,
@@ -43,25 +66,14 @@ fn transpile_frontend_script_with_scene_vars(
     let debug_methods = methods_debug_enabled();
     let source = ensure_script_allows(source);
     let source_include = escape_str(&normalize_generated_include_path(source_include));
-    if source.contains("impl ScriptBehavior") {
+    let Some(script_ty) = frontend_script_type(&source) else {
         return format!("include!(\"{source_include}\");\n");
-    }
+    };
     let stripped_source = strip_transpiler_attributes(&source);
 
     let state_ty = parse_marked_struct_name(&source, "@State")
         .or_else(|| parse_attributed_struct_name(&source, "state"));
     let has_lifecycle_macro = has_script_macro_invocation(&source, "lifecycle");
-    let has_methods_macro = has_script_macro_invocation(&source, "methods");
-    if state_ty.is_none() && !has_lifecycle_macro && !has_methods_macro {
-        return format!("include!(\"{source_include}\");\n");
-    }
-
-    let script_ty = parse_marked_struct_name(&source, "@Script")
-        .or_else(|| parse_attributed_struct_name(&source, "script"))
-        .or_else(|| parse_script_macro_target(&source, "lifecycle"))
-        .or_else(|| parse_script_macro_target(&source, "methods"))
-        .or_else(|| parse_named_struct(&stripped_source, "Script"))
-        .unwrap_or_else(|| "Script".to_string());
     let needs_implicit_script_struct = parse_marked_struct_name(&source, "@Script").is_none()
         && parse_attributed_struct_name(&source, "script").is_none()
         && parse_named_struct(&stripped_source, &script_ty).is_none()

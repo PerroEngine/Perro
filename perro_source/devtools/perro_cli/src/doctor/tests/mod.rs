@@ -710,6 +710,148 @@ fn unused_pub_members_warn_and_dynamic_uses_suppress() {
 }
 
 #[test]
+fn native_ctx_helpers_get_no_dispatch_or_unused_pub_warning() {
+    let source = r#"
+        pub struct Helper;
+        impl Helper {
+            pub fn draw<API: ScriptAPI + ?Sized>(
+                &self,
+                ctx: &mut ScriptContext<'_, API>,
+            ) {}
+            pub(crate) fn hide<API: ScriptAPI + ?Sized>(
+                &self,
+                ctx: &mut ScriptContext<'_, API>,
+            ) {}
+        }
+        struct Script;
+        impl Script {
+            pub fn plain(ctx: &mut ScriptContext<'_, API>) {}
+        }
+    "#;
+    let file = Path::new("res/presentation/helper.rs");
+    let mut index = ScriptDoctorIndex::default();
+    index_script_source(file, source, &mut index);
+    let mut report = ValidationReport::default();
+    validate_unused_pub_members(Path::new(""), &index, &mut report);
+    assert_eq!(report.warnings, 0, "{:?}", report.messages);
+    for name in ["draw", "hide", "plain"] {
+        assert!(!index.methods[name].dispatch, "{name}");
+        let caller = format!("call_method!(ctx.run, other, \"{name}\", params![]);");
+        validate_script_member_calls(Path::new(""), file, &caller, &index, &mut report);
+    }
+    assert_eq!(report.warnings, 3, "{:?}", report.messages);
+    assert!(
+        report
+            .messages
+            .iter()
+            .all(|m| m.contains("script member not callable"))
+    );
+}
+
+#[test]
+fn only_selected_script_type_gets_dispatch_beside_native_ctx_helpers() {
+    for (preamble, script_ty) in [
+        ("#[State]\nstruct Data;", "Script"),
+        ("#[State]\nstruct Data;\n#[Script]\nstruct Actor;", "Actor"),
+        ("//@State\nstruct Data;\n//@Script\nstruct Actor;", "Actor"),
+        ("lifecycle!(Actor {});", "Actor"),
+        ("methods!(Actor {});", "Actor"),
+    ] {
+        let source = format!(
+            r#"
+            {preamble}
+            impl {script_ty} {{
+                pub fn unused(&self, ctx: &mut ScriptContext<'_, API>) {{}}
+                pub(crate) fn scoped(&self, ctx: &mut ScriptContext<'_, API>) {{}}
+                fn private_script(&self, ctx: &mut ScriptContext<'_, API>) {{}}
+            }}
+            impl<T> Helper<T> {{
+                pub fn native<API: ScriptAPI + ?Sized>(
+                    &self,
+                    ctx: &mut ScriptContext<'_, API>,
+                ) {{}}
+                pub(crate) fn scoped_native<API: ScriptAPI + ?Sized>(
+                    &self,
+                    ctx: &mut ScriptContext<'_, API>,
+                ) {{}}
+                pub fn private_script(&self, ctx: &mut ScriptContext<'_, API>) {{}}
+            }}
+            impl {script_ty}Helper {{
+                pub fn prefix_match(&self, ctx: &mut ScriptContext<'_, API>) {{}}
+            }}
+        "#
+        );
+        let file = Path::new("res/scripts/main.rs");
+        let mut index = ScriptDoctorIndex::default();
+        index_script_source(file, &source, &mut index);
+        let mut report = ValidationReport::default();
+        validate_unused_pub_members(Path::new(""), &index, &mut report);
+        assert_eq!(report.warnings, 2, "{preamble}: {:?}", report.messages);
+        assert!(index.methods["unused"].dispatch);
+        assert!(index.methods["scoped"].is_pub);
+        assert!(!index.methods["private_script"].is_pub);
+        for name in ["native", "scoped_native", "prefix_match"] {
+            assert!(!index.methods[name].dispatch, "{preamble}: {name}");
+        }
+        validate_script_member_calls(
+            Path::new(""),
+            file,
+            "call_method!(ctx.run, other, \"private_script\", params![]);",
+            &index,
+            &mut report,
+        );
+        assert_eq!(report.warnings, 3, "{preamble}: {:?}", report.messages);
+        assert!(report.messages[2].contains("script member private"));
+    }
+}
+
+#[test]
+fn methods_macro_for_other_type_gets_no_dispatch() {
+    let source = r#"
+        lifecycle!(Actor {});
+        methods!(Helper {
+            pub fn native(&self, ctx: &mut ScriptContext<'_, API>) {}
+        });
+        methods!(Actor {
+            pub(crate) fn unused(&self, ctx: &mut ScriptContext<'_, API>) {}
+        });
+    "#;
+    let mut index = ScriptDoctorIndex::default();
+    index_script_source(Path::new("res/scripts/main.rs"), source, &mut index);
+    let mut report = ValidationReport::default();
+    validate_unused_pub_members(Path::new(""), &index, &mut report);
+    assert_eq!(report.warnings, 1, "{:?}", report.messages);
+    assert!(report.messages[0].contains("`unused`"));
+    assert!(!index.methods["native"].dispatch);
+}
+
+#[test]
+fn marked_script_target_survives_doctor_comment_stripping() {
+    let project = temp_project();
+    fs::create_dir_all(project.join("res")).expect("test setup/result must succeed");
+    fs::write(
+        project.join("res/main.rs"),
+        r#"
+            //@State
+            struct Data;
+            //@Script
+            struct Actor;
+            impl Actor {
+                pub fn unused(&self, ctx: &mut ScriptContext<'_, API>) {}
+            }
+            impl Helper {
+                pub fn native(&self, ctx: &mut ScriptContext<'_, API>) {}
+            }
+        "#,
+    )
+    .expect("test setup/result must succeed");
+    let mut report = ValidationReport::default();
+    validate_script_warnings(&project, &mut report).expect("test setup/result must succeed");
+    assert_eq!(report.warnings, 1, "{:?}", report.messages);
+    assert!(report.messages[0].contains("`unused`"));
+}
+
+#[test]
 fn call_method_on_ctx_less_helper_warns_not_callable() {
     let file = PathBuf::from("res/scripts/caller.rs");
     let target_source = r#"

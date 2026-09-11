@@ -10,8 +10,8 @@ use perro_nodes::{SceneNodeData, Shape2D, Shape3D, WaterShape};
 use perro_physics::*;
 use perro_runtime_api::sub_apis::{
     NodeAPI, PhysicsContact2D, PhysicsContact3D, PhysicsMoveResult2D, PhysicsMoveResult3D,
-    PhysicsQueryFilter, PhysicsRayHit2D, PhysicsRayHit3D, PhysicsShapeHit2D, PhysicsShapeHit3D,
-    PhysicsSlideResult2D, PhysicsSlideResult3D, SignalAPI,
+    PhysicsQueryFilter, PhysicsRayHit2D, PhysicsRayHit3D, PhysicsRayQuery2D, PhysicsRayQuery3D,
+    PhysicsShapeHit2D, PhysicsShapeHit3D, PhysicsSlideResult2D, PhysicsSlideResult3D, SignalAPI,
 };
 #[cfg(test)]
 use perro_structs::BitMask;

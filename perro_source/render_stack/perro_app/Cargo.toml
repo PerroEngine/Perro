@@ -39,9 +39,13 @@ tokio = { version = "1.48.0", features = ["rt", "time"] }
 gilrs = "0.11"
 
 [features]
-fps = []
-profile = ["perro_runtime/profile", "profile_heavy"]
-ui_profile = []
+fps = ["perro_graphics/gpu_timestamps"]
+profile = [
+    "perro_runtime/profile",
+    "profile_heavy",
+    "perro_graphics/gpu_timestamps",
+]
+ui_profile = ["perro_graphics/gpu_timestamps"]
 mem_profile = []
 profile_heavy = []
 steamworks = [

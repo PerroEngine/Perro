@@ -1,34 +1,128 @@
 use super::*;
+use perro_ids::{MaterialID, MeshID, TextureID};
 use std::cell::RefCell;
 
+const BINDING_SORT_THRESHOLD: usize = 8;
+
 thread_local! {
-    // Take/return instead of holding a borrow across runtime accessors.
-    static BINDING_ORDER: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
+    // Per-apply cache: one asset track may fan out to multiple bindings. Keep
+    // the resolved ID so only its first target enters the resource API.
+    static ASSET_TRACK_CACHE: RefCell<AssetTrackCache> = RefCell::new(AssetTrackCache::default());
 }
 
-fn prepare_binding_order(bindings: &[AnimationObjectBinding], order: &mut Vec<usize>) {
-    order.clear();
+#[derive(Default)]
+struct AssetTrackCache {
+    textures: Vec<(usize, TextureID)>,
+    meshes: Vec<(usize, MeshID)>,
+    materials: Vec<(usize, MaterialID)>,
+}
+
+impl AssetTrackCache {
+    #[inline]
+    fn clear(&mut self) {
+        self.textures.clear();
+        self.meshes.clear();
+        self.materials.clear();
+    }
+
+    #[inline]
+    fn texture(
+        &mut self,
+        track: &AnimationObjectTrack,
+        load: impl FnOnce() -> TextureID,
+    ) -> TextureID {
+        cached_track_asset(&mut self.textures, track, load)
+    }
+
+    #[inline]
+    fn mesh(&mut self, track: &AnimationObjectTrack, load: impl FnOnce() -> MeshID) -> MeshID {
+        cached_track_asset(&mut self.meshes, track, load)
+    }
+
+    #[inline]
+    fn material(
+        &mut self,
+        track: &AnimationObjectTrack,
+        load: impl FnOnce() -> MaterialID,
+    ) -> MaterialID {
+        cached_track_asset(&mut self.materials, track, load)
+    }
+}
+
+#[inline]
+fn cached_track_asset<T: Copy>(
+    cache: &mut Vec<(usize, T)>,
+    track: &AnimationObjectTrack,
+    load: impl FnOnce() -> T,
+) -> T {
+    let key = track as *const AnimationObjectTrack as usize;
+    if let Some((_, id)) = cache.iter().find(|(cached, _)| *cached == key) {
+        return *id;
+    }
+    let id = load();
+    cache.push((key, id));
+    id
+}
+
+/// Rebuild only when a public direct edit changes object ordering. Node-only
+/// binding edits keep their index valid, so common rebinding stays O(bindings)
+/// validation instead of O(bindings log bindings) sorting every frame.
+fn prepare_binding_order(bindings: &[AnimationObjectBinding], order: &mut Vec<u32>) {
     if bindings.len() <= 8 {
+        order.clear();
         return;
     }
-    order.extend(0..bindings.len());
+
+    if binding_order_matches(bindings, order) {
+        return;
+    }
+
+    order.clear();
+    order.extend(0..bindings.len() as u32);
     order.sort_unstable_by(|&a, &b| {
-        bindings[a]
+        bindings[a as usize]
             .object
             .as_ref()
-            .cmp(bindings[b].object.as_ref())
+            .cmp(bindings[b as usize].object.as_ref())
             .then(a.cmp(&b))
     });
 }
 
+fn binding_order_matches(bindings: &[AnimationObjectBinding], order: &[u32]) -> bool {
+    if bindings.len() <= BINDING_SORT_THRESHOLD {
+        return order.is_empty();
+    }
+    if order.len() != bindings.len() {
+        return false;
+    }
+    order.windows(2).all(|pair| {
+        let [left, right] = pair else {
+            return true;
+        };
+        let Some(left_binding) = bindings.get(*left as usize) else {
+            return false;
+        };
+        let Some(right_binding) = bindings.get(*right as usize) else {
+            return false;
+        };
+        left_binding
+            .object
+            .as_ref()
+            .cmp(right_binding.object.as_ref())
+            .then(left.cmp(right))
+            .is_lt()
+    })
+}
+
 fn matching_binding_order<'a>(
     bindings: &[AnimationObjectBinding],
-    order: &'a [usize],
+    order: &'a [u32],
     object: &str,
-) -> &'a [usize] {
-    let start = order.partition_point(|&index| bindings[index].object.as_ref() < object);
-    let end =
-        start + order[start..].partition_point(|&index| bindings[index].object.as_ref() == object);
+) -> &'a [u32] {
+    let start = order.partition_point(|&index| bindings[index as usize].object.as_ref() < object);
+    let end = start
+        + order[start..]
+            .partition_point(|&index| bindings[index as usize].object.as_ref() == object);
     &order[start..end]
 }
 
@@ -153,10 +247,13 @@ pub(in super::super) fn apply_clip_frame<RT>(
     frame: u32,
     bindings: &[AnimationObjectBinding],
     applied_transforms: &mut Vec<AppliedAnimationTransform>,
+    binding_order: &mut Vec<u32>,
 ) where
     RT: RuntimeAPI + ?Sized,
 {
-    let mut binding_order = Vec::new();
+    let mut asset_cache =
+        ASSET_TRACK_CACHE.with(|scratch| std::mem::take(&mut *scratch.borrow_mut()));
+    asset_cache.clear();
     let mut binding_order_ready = false;
     let mut has_bone_tracks = false;
     for track in clip.object_tracks.iter() {
@@ -166,10 +263,8 @@ pub(in super::super) fn apply_clip_frame<RT>(
             has_bone_tracks = true;
             continue;
         }
-        if !binding_order_ready && bindings.len() > 8 {
-            binding_order =
-                BINDING_ORDER.with(|scratch| std::mem::take(&mut *scratch.borrow_mut()));
-            prepare_binding_order(bindings, &mut binding_order);
+        if !binding_order_ready && bindings.len() > BINDING_SORT_THRESHOLD {
+            prepare_binding_order(bindings, binding_order);
             binding_order_ready = true;
         }
         if binding_order.is_empty() {
@@ -177,17 +272,26 @@ pub(in super::super) fn apply_clip_frame<RT>(
                 .iter()
                 .filter(|b| b.object.as_ref() == track.object.as_ref())
             {
-                apply_track(ctx, res, binding.node, track, frame, applied_transforms);
-            }
-        } else {
-            for &index in matching_binding_order(bindings, &binding_order, track.object.as_ref()) {
                 apply_track(
                     ctx,
                     res,
-                    bindings[index].node,
+                    binding.node,
                     track,
                     frame,
                     applied_transforms,
+                    &mut asset_cache,
+                );
+            }
+        } else {
+            for &index in matching_binding_order(bindings, binding_order, track.object.as_ref()) {
+                apply_track(
+                    ctx,
+                    res,
+                    bindings[index as usize].node,
+                    track,
+                    frame,
+                    applied_transforms,
+                    &mut asset_cache,
                 );
             }
         }
@@ -196,10 +300,8 @@ pub(in super::super) fn apply_clip_frame<RT>(
     if has_bone_tracks {
         apply_bone_tracks_batched(ctx, clip, frame, bindings);
     }
-    if binding_order_ready {
-        binding_order.clear();
-        BINDING_ORDER.with(|scratch| *scratch.borrow_mut() = binding_order);
-    }
+    asset_cache.clear();
+    ASSET_TRACK_CACHE.with(|scratch| *scratch.borrow_mut() = asset_cache);
 }
 
 /// Apply every bone track of a skeleton under a single mutable borrow and a
@@ -658,16 +760,50 @@ where
     }
 }
 
-pub(in super::super) fn apply_track<RT>(
+fn apply_track<RT>(
     ctx: &mut RuntimeWindow<'_, RT>,
     res: &ResourceWindow<'_, impl ResourceAPI + ?Sized>,
     node_id: NodeID,
     track: &AnimationObjectTrack,
     frame: u32,
     applied_transforms: &mut Vec<AppliedAnimationTransform>,
+    asset_cache: &mut AssetTrackCache,
 ) where
     RT: RuntimeAPI + ?Sized,
 {
+    // Asset paths never interpolate. Borrow their key instead of cloning an
+    // owned dev path for every target, and reuse one resolved resource ID when
+    // an object binding fans the track out to multiple nodes.
+    if track.bone_target.is_none() {
+        match track.field {
+            NodeField::Sprite2D(Sprite2DField::Texture) => {
+                let Some(path) = sample_asset_path(track, frame) else {
+                    return;
+                };
+                let id = asset_cache.texture(track, || texture_load!(res, path));
+                apply_sprite_texture(ctx, node_id, id);
+                return;
+            }
+            NodeField::MeshInstance3D(MeshInstance3DField::Mesh) => {
+                let Some(path) = sample_asset_path(track, frame) else {
+                    return;
+                };
+                let id = asset_cache.mesh(track, || mesh_load!(res, path));
+                apply_mesh_instance_mesh(ctx, node_id, id);
+                return;
+            }
+            NodeField::MeshInstance3D(MeshInstance3DField::Material) => {
+                let Some(path) = sample_asset_path(track, frame) else {
+                    return;
+                };
+                let id = asset_cache.material(track, || material_load!(res, path));
+                apply_mesh_instance_material(ctx, node_id, id);
+                return;
+            }
+            _ => {}
+        }
+    }
+
     let Some(value) = sample_track_value(track, frame) else {
         return;
     };
@@ -682,6 +818,57 @@ pub(in super::super) fn apply_track<RT>(
         &value,
         applied_transforms,
     );
+}
+
+#[inline]
+fn apply_sprite_texture<RT>(ctx: &mut RuntimeWindow<'_, RT>, node_id: NodeID, texture: TextureID)
+where
+    RT: RuntimeAPI + ?Sized,
+{
+    let needs_apply =
+        with_base_node!(ctx, Sprite2D, node_id, |node| node.texture != texture).unwrap_or(false);
+    if needs_apply {
+        let _ = with_base_node_mut!(ctx, Sprite2D, node_id, |node| {
+            node.texture = texture;
+        });
+    }
+}
+
+#[inline]
+fn apply_mesh_instance_mesh<RT>(ctx: &mut RuntimeWindow<'_, RT>, node_id: NodeID, mesh: MeshID)
+where
+    RT: RuntimeAPI + ?Sized,
+{
+    let needs_apply =
+        with_base_node!(ctx, MeshInstance3D, node_id, |node| node.mesh != mesh).unwrap_or(false);
+    if needs_apply {
+        let _ = with_base_node_mut!(ctx, MeshInstance3D, node_id, |node| {
+            node.mesh = mesh;
+        });
+    }
+}
+
+#[inline]
+fn apply_mesh_instance_material<RT>(
+    ctx: &mut RuntimeWindow<'_, RT>,
+    node_id: NodeID,
+    material: MaterialID,
+) where
+    RT: RuntimeAPI + ?Sized,
+{
+    let needs_apply = with_base_node!(ctx, MeshInstance3D, node_id, |node| {
+        node.surfaces.first().and_then(|surface| surface.material) != Some(material)
+    })
+    .unwrap_or(false);
+    if needs_apply {
+        let _ = with_base_node_mut!(ctx, MeshInstance3D, node_id, |node| {
+            if node.surfaces.is_empty() {
+                node.surfaces
+                    .push(perro_nodes::MeshSurfaceBinding::default());
+            }
+            node.surfaces[0].material = Some(material);
+        });
+    }
 }
 
 /// Value-application core shared by `apply_track` (sample-then-apply) and the
@@ -771,29 +958,19 @@ pub(in super::super) fn apply_track_value<RT>(
         NodeField::Sprite2D(Sprite2DField::Texture) => {
             if let AnimationTrackValue::AssetPath(path) = value {
                 let id = texture_load!(res, path.as_ref());
-                let _ = with_base_node_mut!(ctx, Sprite2D, node_id, |node| {
-                    node.texture = id;
-                });
+                apply_sprite_texture(ctx, node_id, id);
             }
         }
         NodeField::MeshInstance3D(MeshInstance3DField::Mesh) => {
             if let AnimationTrackValue::AssetPath(path) = value {
                 let id = mesh_load!(res, path.as_ref());
-                let _ = with_base_node_mut!(ctx, MeshInstance3D, node_id, |node| {
-                    node.mesh = id;
-                });
+                apply_mesh_instance_mesh(ctx, node_id, id);
             }
         }
         NodeField::MeshInstance3D(MeshInstance3DField::Material) => {
             if let AnimationTrackValue::AssetPath(path) = value {
                 let id = material_load!(res, path.as_ref());
-                let _ = with_base_node_mut!(ctx, MeshInstance3D, node_id, |node| {
-                    if node.surfaces.is_empty() {
-                        node.surfaces
-                            .push(perro_nodes::MeshSurfaceBinding::default());
-                    }
-                    node.surfaces[0].material = Some(id);
-                });
+                apply_mesh_instance_material(ctx, node_id, id);
             }
         }
         NodeField::Camera3D(channel) => {
@@ -1027,6 +1204,7 @@ pub(in super::super) fn previous_transform_2d(
 ) -> Transform2D {
     applied_transforms
         .iter()
+        .rev()
         .find(|entry| entry.node == node_id && entry.kind == AppliedAnimationTransformKind::Node2D)
         .map(|entry| entry.transform_2d)
         .unwrap_or(Transform2D::IDENTITY)
@@ -1038,6 +1216,7 @@ pub(in super::super) fn previous_transform_3d(
 ) -> Transform3D {
     applied_transforms
         .iter()
+        .rev()
         .find(|entry| entry.node == node_id && entry.kind == AppliedAnimationTransformKind::Node3D)
         .map(|entry| entry.transform_3d)
         .unwrap_or(Transform3D::IDENTITY)
@@ -1050,6 +1229,7 @@ pub(in super::super) fn save_transform_2d(
 ) {
     if let Some(entry) = applied_transforms
         .iter_mut()
+        .rev()
         .find(|entry| entry.node == node_id && entry.kind == AppliedAnimationTransformKind::Node2D)
     {
         entry.transform_2d = transform;
@@ -1070,6 +1250,7 @@ pub(in super::super) fn save_transform_3d(
 ) {
     if let Some(entry) = applied_transforms
         .iter_mut()
+        .rev()
         .find(|entry| entry.node == node_id && entry.kind == AppliedAnimationTransformKind::Node3D)
     {
         entry.transform_3d = transform;
@@ -1277,6 +1458,7 @@ pub(in super::super) fn apply_camera_zoom(camera: &mut Camera3D, zoom: f32) {
 #[cfg(test)]
 mod binding_index_tests {
     use super::*;
+    use std::cell::Cell;
 
     #[test]
     fn index_keeps_all_duplicate_bindings_in_source_order_after_direct_edits() {
@@ -1299,7 +1481,9 @@ mod binding_index_tests {
                 let expected: Vec<_> = bindings
                     .iter()
                     .enumerate()
-                    .filter_map(|(i, binding)| (binding.object.as_ref() == object).then_some(i))
+                    .filter_map(|(i, binding)| {
+                        (binding.object.as_ref() == object).then_some(i as u32)
+                    })
                     .collect();
                 assert_eq!(matching_binding_order(&bindings, &order, object), expected);
             }
@@ -1307,5 +1491,80 @@ mod binding_index_tests {
         bindings.truncate(8);
         prepare_binding_order(&bindings, &mut order);
         assert!(order.is_empty());
+    }
+
+    #[test]
+    fn binding_order_keeps_node_only_edits_and_rebuilds_object_edits() {
+        let mut bindings: Vec<_> = (0..16)
+            .map(|i| AnimationObjectBinding {
+                object: format!("Object{i:02}").into(),
+                node: NodeID::new(i + 1),
+            })
+            .collect();
+        let mut order = Vec::new();
+        prepare_binding_order(&bindings, &mut order);
+        assert!(binding_order_matches(&bindings, &order));
+
+        bindings[4].node = NodeID::new(99);
+        assert!(binding_order_matches(&bindings, &order));
+
+        bindings[4].object = "Zed".into();
+        assert!(!binding_order_matches(&bindings, &order));
+        prepare_binding_order(&bindings, &mut order);
+        assert!(binding_order_matches(&bindings, &order));
+    }
+
+    #[test]
+    fn asset_track_cache_resolves_each_track_once_per_apply() {
+        let first = AnimationObjectTrack::default();
+        let second = AnimationObjectTrack::default();
+        let mut cache = AssetTrackCache::default();
+        let calls = Cell::new(0_u32);
+
+        let first_id = cache.texture(&first, || {
+            calls.set(calls.get() + 1);
+            TextureID::new(7)
+        });
+        let repeated_id = cache.texture(&first, || {
+            calls.set(calls.get() + 1);
+            TextureID::new(8)
+        });
+        let second_id = cache.texture(&second, || {
+            calls.set(calls.get() + 1);
+            TextureID::new(9)
+        });
+
+        assert_eq!(first_id, TextureID::new(7));
+        assert_eq!(repeated_id, first_id);
+        assert_eq!(second_id, TextureID::new(9));
+        assert_eq!(calls.get(), 2);
+
+        cache.clear();
+        let refreshed_id = cache.texture(&first, || {
+            calls.set(calls.get() + 1);
+            TextureID::new(10)
+        });
+        assert_eq!(refreshed_id, TextureID::new(10));
+        assert_eq!(calls.get(), 3);
+    }
+
+    #[test]
+    fn transform_state_updates_without_duplicate_entries() {
+        let mut states = Vec::new();
+        for id in 1..=32 {
+            let mut transform = Transform2D::IDENTITY;
+            transform.position = Vector2::new(id as f32, 0.0);
+            save_transform_2d(&mut states, NodeID::new(id), transform);
+        }
+
+        let id = NodeID::new(32);
+        assert_eq!(previous_transform_2d(&states, id).position.x, 32.0);
+
+        let mut updated = Transform2D::IDENTITY;
+        updated.position = Vector2::new(99.0, 0.0);
+        save_transform_2d(&mut states, id, updated);
+
+        assert_eq!(states.len(), 32);
+        assert_eq!(previous_transform_2d(&states, id), updated);
     }
 }

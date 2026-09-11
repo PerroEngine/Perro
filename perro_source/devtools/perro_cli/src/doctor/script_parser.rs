@@ -249,34 +249,38 @@ pub(super) fn normalize_type_name_for_doctor(input: &str) -> String {
 pub(super) struct DoctorParsedMethod {
     pub(super) name: String,
     pub(super) is_pub: bool,
-    /// sig takes ScriptContext/ScriptCtx -> compiler emits call glue 4 it;
-    /// plain helper fns get no glue, pub on them is free
-    pub(super) has_ctx: bool,
+    /// ScriptContext/ScriptCtx method on the frontend script type;
+    /// native helper types get no glue, even when they take ctx.
+    pub(super) dispatch: bool,
 }
 
 /// all script method defs in file; dup names kp per-def flags,
 /// index merge happens at insert time
-pub(super) fn parse_script_methods(text: &str) -> Vec<DoctorParsedMethod> {
+pub(super) fn parse_script_methods(text: &str, script_ty: Option<&str>) -> Vec<DoctorParsedMethod> {
     let mut methods = Vec::new();
-    methods.extend(parse_methods_macro_fns(text));
-    methods.extend(parse_inherent_method_fns(text));
+    methods.extend(parse_methods_macro_fns(text, script_ty));
+    methods.extend(parse_inherent_method_fns(text, script_ty));
     methods
 }
 
-pub(super) fn parse_methods_macro_fns(text: &str) -> Vec<DoctorParsedMethod> {
+fn parse_methods_macro_fns(text: &str, script_ty: Option<&str>) -> Vec<DoctorParsedMethod> {
     let mut names = Vec::new();
     for inner in find_macro_calls(text, "methods") {
-        if let Some(body) = parse_methods_macro_body(&inner) {
-            names.extend(parse_method_fns_from_block(body));
+        if let Some((target, body)) = parse_methods_macro_body(&inner) {
+            let mut methods = parse_method_fns_from_block(body);
+            for method in &mut methods {
+                method.dispatch &= Some(target) == script_ty;
+            }
+            names.extend(methods);
         }
     }
     names
 }
 
-pub(super) fn parse_methods_macro_body(inner: &str) -> Option<&str> {
+fn parse_methods_macro_body(inner: &str) -> Option<(&str, &str)> {
     let trimmed = inner.trim();
     if trimmed.starts_with('{') {
-        return extract_brace_block_for_doctor(trimmed);
+        return Some(("Script", extract_brace_block_for_doctor(trimmed)?));
     }
     let target_len = trimmed
         .chars()
@@ -286,10 +290,13 @@ pub(super) fn parse_methods_macro_body(inner: &str) -> Option<&str> {
     if target_len == 0 {
         return None;
     }
-    extract_brace_block_for_doctor(trimmed[target_len..].trim_start())
+    Some((
+        &trimmed[..target_len],
+        extract_brace_block_for_doctor(trimmed[target_len..].trim_start())?,
+    ))
 }
 
-pub(super) fn parse_inherent_method_fns(text: &str) -> Vec<DoctorParsedMethod> {
+fn parse_inherent_method_fns(text: &str, script_ty: Option<&str>) -> Vec<DoctorParsedMethod> {
     let lines = lex_code_lines_for_doctor(text);
     let mut methods = Vec::new();
     let mut i = 0usize;
@@ -303,6 +310,7 @@ pub(super) fn parse_inherent_method_fns(text: &str) -> Vec<DoctorParsedMethod> {
         // multi-line sigs kp their ctx params visible
         let mut depth = brace_delta_for_doctor(line);
         let mut opened = line.contains('{');
+        let mut header = line.split('{').next().unwrap_or(line).to_string();
         let mut body: Vec<String> = Vec::new();
         if opened && let Some(pos) = lines[i].find('{') {
             body.push(lines[i][pos + 1..].to_string());
@@ -311,6 +319,8 @@ pub(super) fn parse_inherent_method_fns(text: &str) -> Vec<DoctorParsedMethod> {
         while i < lines.len() {
             let l = lines[i].as_str();
             if !opened {
+                header.push(' ');
+                header.push_str(l.split('{').next().unwrap_or(l));
                 if let Some(pos) = l.find('{') {
                     opened = true;
                     body.push(l[pos + 1..].to_string());
@@ -330,10 +340,30 @@ pub(super) fn parse_inherent_method_fns(text: &str) -> Vec<DoctorParsedMethod> {
             }
             i += 1;
         }
-        methods.extend(parse_method_fns_from_lexed(body.into_iter()));
+        let is_script = script_ty.is_some() && parse_impl_target_for_doctor(&header) == script_ty;
+        let mut impl_methods = parse_method_fns_from_lexed(body.into_iter());
+        for method in &mut impl_methods {
+            method.dispatch &= is_script;
+        }
+        methods.extend(impl_methods);
         i += 1;
     }
     methods
+}
+
+fn parse_impl_target_for_doctor(header: &str) -> Option<&str> {
+    let mut target = header.strip_prefix("impl")?.trim_start();
+    if target.starts_with('<') {
+        let end = find_matching_delim_for_doctor(target, 0, '<', '>')?;
+        target = target[end + 1..].trim_start();
+    }
+    if target.contains(" for ") {
+        return None;
+    }
+    let name = target
+        .split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
+        .next()?;
+    is_ident_for_doctor(name).then_some(name)
 }
 
 pub(super) fn parse_method_fns_from_block(body: &str) -> Vec<DoctorParsedMethod> {
@@ -350,7 +380,7 @@ fn parse_method_fns_from_lexed(lines: impl Iterator<Item = String>) -> Vec<Docto
             methods.push(DoctorParsedMethod {
                 name,
                 is_pub,
-                has_ctx: sig.contains("ScriptContext") || sig.contains("ScriptCtx"),
+                dispatch: sig.contains("ScriptContext") || sig.contains("ScriptCtx"),
             });
         }
     };
@@ -644,7 +674,7 @@ pub(super) fn warn_private_or_missing_method(
             let found = format_member_found_in(project_dir, Some(def.files.as_slice()));
             let source = format_source_location(project_dir, Some(file), Some(line));
             report.warn(format!(
-                "script member not callable: {source}`{macro_label}` references `{member}`{found}, but no definition takes `ctx: &mut ScriptContext<'_, API>` — only ctx methods get call glue"
+                "script member not callable: {source}`{macro_label}` references `{member}`{found}, but no frontend script definition takes `ctx: &mut ScriptContext<'_, API>` — only ctx methods on the script type get call glue"
             ));
         }
         Some(def) if !def.is_pub => {

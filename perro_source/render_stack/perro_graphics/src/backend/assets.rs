@@ -30,11 +30,9 @@ fn custom_shader_reads_frame_globals(
 }
 
 impl PerroGraphics {
-    // true while pipeline warming still has work to drain: queued materials or
-    // the shared registry's base families. both need drawn frames, so the frame
-    // pump + the startup-splash exit gate must read the same predicate or one
-    // stalls the other. gated on the lazy 3D world existing - warming is a
-    // no-op w/o it + a 2D-only session must not spin.
+    // Frame pump + splash gate share the same material/post warm predicate.
+    // Base families stay lazy: actual render passes compile only what they use.
+    // Material warming needs the lazy 3D world; 2D-only sessions must not spin.
     pub(super) fn pipeline_warm_pending(&self) -> bool {
         self.gpu.as_ref().is_some_and(|gpu| {
             let main_post_requested = crate::postprocess::PostProcessor::has_effects(
@@ -44,8 +42,7 @@ impl PerroGraphics {
             ) || crate::postprocess::PostProcessor::has_effects(
                 self.global_post_processing_cache.as_ref(),
             ) || !self.retained_waters_3d_cache.is_empty();
-            (gpu.has_three_d()
-                && (!self.pending_pipeline_warms.is_empty() || gpu.base_families_pending()))
+            (gpu.has_three_d() && !self.pending_pipeline_warms.is_empty())
                 || gpu.post_pipelines_pending(main_post_requested, &self.retained_camera_streams)
         })
     }

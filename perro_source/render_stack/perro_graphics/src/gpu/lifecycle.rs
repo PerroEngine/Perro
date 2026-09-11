@@ -769,15 +769,16 @@ impl Gpu {
 #[cfg(not(target_arch = "wasm32"))]
 fn gpu_timestamp_queries_requested() -> bool {
     let explicit = std::env::var("PERRO_GPU_TIMESTAMPS").ok();
-    let profiling = std::env::var_os("PERRO_TIMING_CSV").is_some()
+    let profiling = cfg!(feature = "gpu_timestamps")
+        || std::env::var_os("PERRO_TIMING_CSV").is_some()
         || std::env::var_os("PERRO_PROFILE_CSV").is_some()
         || std::env::var_os("PERRO_GPU_BENCH").is_some();
-    gpu_timestamp_query_policy(explicit.as_deref(), cfg!(debug_assertions), profiling)
+    gpu_timestamp_query_policy(explicit.as_deref(), profiling)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn gpu_timestamp_query_policy(explicit: Option<&str>, debug: bool, profiling: bool) -> bool {
-    explicit.map_or(debug || profiling, |value| {
+fn gpu_timestamp_query_policy(explicit: Option<&str>, profiling: bool) -> bool {
+    explicit.map_or(profiling, |value| {
         !matches!(
             value.trim().to_ascii_lowercase().as_str(),
             "0" | "off" | "false" | "no"
@@ -800,21 +801,20 @@ mod timestamp_query_tests {
     }
 
     #[test]
-    fn release_default_skips_timestamp_readback() {
-        assert!(!gpu_timestamp_query_policy(None, false, false));
+    fn default_skips_timestamp_readback() {
+        assert!(!gpu_timestamp_query_policy(None, false));
     }
 
     #[test]
-    fn debug_and_profile_keep_timestamps() {
-        assert!(gpu_timestamp_query_policy(None, true, false));
-        assert!(gpu_timestamp_query_policy(None, false, true));
+    fn profile_keeps_timestamps() {
+        assert!(gpu_timestamp_query_policy(None, true));
     }
 
     #[test]
     fn explicit_timestamp_setting_wins() {
-        assert!(gpu_timestamp_query_policy(Some("1"), false, false));
-        assert!(gpu_timestamp_query_policy(Some("yes"), false, false));
-        assert!(!gpu_timestamp_query_policy(Some("0"), true, true));
-        assert!(!gpu_timestamp_query_policy(Some("OFF"), true, true));
+        assert!(gpu_timestamp_query_policy(Some("1"), false));
+        assert!(gpu_timestamp_query_policy(Some("yes"), false));
+        assert!(!gpu_timestamp_query_policy(Some("0"), true));
+        assert!(!gpu_timestamp_query_policy(Some("OFF"), true));
     }
 }

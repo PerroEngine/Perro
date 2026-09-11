@@ -36,6 +36,35 @@ impl Runtime {
         result
     }
 
+    /// Batch same-world rays under one world activation + synchronization.
+    ///
+    /// Callers must not mutate physics between entries. `out` stays caller-owned
+    /// so steady-state batches need no result allocation.
+    pub fn physics_raycast_3d_batch(
+        &mut self,
+        rays: &[PhysicsRayQuery3D],
+        filter: &PhysicsQueryFilter,
+        out: &mut Vec<Option<PhysicsRayHit3D>>,
+    ) {
+        out.clear();
+        out.reserve(rays.len().saturating_sub(out.capacity()));
+        if rays.is_empty() {
+            return;
+        }
+        let previous = self.active_physics_world();
+        self.activate_physics_world(self.free_physics_query_world());
+        self.ensure_physics_world_synced_3d();
+        for ray in rays {
+            out.push(self.physics.raycast_3d_filtered(
+                ray.origin,
+                ray.direction,
+                ray.max_distance,
+                filter,
+            ));
+        }
+        self.activate_physics_world(previous);
+    }
+
     pub fn physics_raycast_2d(
         &mut self,
         origin: Vector2,
@@ -51,6 +80,33 @@ impl Runtime {
             .raycast_2d(origin, direction, max_distance, filter);
         self.activate_physics_world(previous);
         result
+    }
+
+    /// Batch same-world rays under one world activation + synchronization.
+    ///
+    /// Callers must not mutate physics between entries. `out` stays caller-owned
+    /// so steady-state batches need no result allocation.
+    pub fn physics_raycast_2d_batch(
+        &mut self,
+        rays: &[PhysicsRayQuery2D],
+        filter: &PhysicsQueryFilter,
+        out: &mut Vec<Option<PhysicsRayHit2D>>,
+    ) {
+        out.clear();
+        out.reserve(rays.len().saturating_sub(out.capacity()));
+        if rays.is_empty() {
+            return;
+        }
+        let previous = self.active_physics_world();
+        self.activate_physics_world(self.free_physics_query_world());
+        self.ensure_physics_world_synced_2d();
+        for ray in rays {
+            out.push(
+                self.physics
+                    .raycast_2d(ray.origin, ray.direction, ray.max_distance, filter),
+            );
+        }
+        self.activate_physics_world(previous);
     }
 
     pub(crate) fn prepare_audio_raycast_2d(&mut self) {

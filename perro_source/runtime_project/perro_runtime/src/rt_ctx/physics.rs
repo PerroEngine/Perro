@@ -3,8 +3,8 @@ use perro_nodes::{PhysicsForceEmitter2D, PhysicsForceEmitter3D, SceneNodeData};
 use perro_runtime_api::sub_apis::{
     PhysicsAPI, PhysicsBodyPrediction2D, PhysicsBodyPrediction3D, PhysicsContact2D,
     PhysicsContact3D, PhysicsMoveResult2D, PhysicsMoveResult3D, PhysicsQueryFilter,
-    PhysicsRayHit2D, PhysicsRayHit3D, PhysicsShapeHit2D, PhysicsShapeHit3D, PhysicsSlideResult2D,
-    PhysicsSlideResult3D,
+    PhysicsRayHit2D, PhysicsRayHit3D, PhysicsRayQuery2D, PhysicsRayQuery3D, PhysicsShapeHit2D,
+    PhysicsShapeHit3D, PhysicsSlideResult2D, PhysicsSlideResult3D,
 };
 use perro_structs::{Quaternion, Vector2, Vector3};
 
@@ -135,6 +135,15 @@ impl PhysicsAPI for Runtime {
         self.physics_raycast_3d_filtered(origin, direction, max_distance, filter)
     }
 
+    fn raycast_3d_batch(
+        &mut self,
+        rays: &[PhysicsRayQuery3D],
+        filter: &PhysicsQueryFilter,
+        out: &mut Vec<Option<PhysicsRayHit3D>>,
+    ) {
+        self.physics_raycast_3d_batch(rays, filter, out);
+    }
+
     fn raycast_2d(
         &mut self,
         origin: Vector2,
@@ -143,6 +152,15 @@ impl PhysicsAPI for Runtime {
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsRayHit2D> {
         self.physics_raycast_2d(origin, direction, max_distance, filter)
+    }
+
+    fn raycast_2d_batch(
+        &mut self,
+        rays: &[PhysicsRayQuery2D],
+        filter: &PhysicsQueryFilter,
+        out: &mut Vec<Option<PhysicsRayHit2D>>,
+    ) {
+        self.physics_raycast_2d_batch(rays, filter, out);
     }
 
     fn shape_cast_2d(

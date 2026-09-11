@@ -280,9 +280,11 @@ impl Renderer2D {
     }
 
     fn apply_queued_rect_updates(&mut self) -> Renderer2DStats {
-        let queued = std::mem::take(&mut self.queued_rects);
+        // Keep command-buffer capacity across frames. Retained scenes enqueue
+        // the same set of rect updates every frame in the common dev path.
+        let mut queued = std::mem::take(&mut self.queued_rects);
         let mut stats = Renderer2DStats::default();
-        for RectPacket { node, rect } in queued {
+        for RectPacket { node, rect } in queued.drain(..) {
             if let Some(rect) = retained_rect_instance(rect) {
                 self.upsert_retained_rect(node, rect);
                 stats.accepted_rects = stats.accepted_rects.saturating_add(1);
@@ -291,6 +293,7 @@ impl Renderer2D {
                 stats.rejected_rects = stats.rejected_rects.saturating_add(1);
             }
         }
+        restore_packet_buffer(&mut queued, &mut self.queued_rects);
         stats
     }
 
@@ -451,33 +454,40 @@ impl Renderer2D {
     }
 
     fn flush_sprite_packets(&mut self, resources: &ResourceStore) -> Renderer2DStats {
-        let queued = std::mem::take(&mut self.queued_sprites);
-        if let Some((stats, changed)) =
+        // Reattach the drained packet vec below. `mem::take` alone drops its
+        // backing allocation every frame, even when sprite count stays flat.
+        let mut queued = std::mem::take(&mut self.queued_sprites);
+        let stats = if let Some((stats, changed)) =
             self.try_apply_sequential_sprite_packets(queued.as_slice(), resources)
         {
             if changed {
                 self.retained_sprites_revision = self.retained_sprites_revision.wrapping_add(1);
             }
-            return stats;
-        }
-        let mut stats = Renderer2DStats::default();
-        let mut changed = false;
-        for SpritePacket { node, sprite } in queued {
-            if resources.has_texture(sprite.texture) {
-                changed |= self.upsert_retained_sprite(node, sprite);
-                stats.accepted_draws = stats.accepted_draws.saturating_add(1);
-            } else {
-                if let Some(retained) = self.retained_sprite_mut(node) {
-                    // Keep previous texture binding until replacement exists,
-                    // but still apply latest transform/depth updates.
-                    changed |= update_unready_retained_sprite(retained, sprite);
+            stats
+        } else {
+            let mut stats = Renderer2DStats::default();
+            let mut changed = false;
+            for SpritePacket { node, sprite } in queued.drain(..) {
+                if resources.has_texture(sprite.texture) {
+                    changed |= self.upsert_retained_sprite(node, sprite);
+                    stats.accepted_draws = stats.accepted_draws.saturating_add(1);
+                } else {
+                    if let Some(retained) = self.retained_sprite_mut(node) {
+                        // Keep previous texture binding until replacement exists,
+                        // but still apply latest transform/depth updates.
+                        changed |= update_unready_retained_sprite(retained, sprite);
+                    }
+                    stats.rejected_draws = stats.rejected_draws.saturating_add(1);
                 }
-                stats.rejected_draws = stats.rejected_draws.saturating_add(1);
             }
-        }
-        if changed {
-            self.retained_sprites_revision = self.retained_sprites_revision.wrapping_add(1);
-        }
+            if changed {
+                self.retained_sprites_revision = self.retained_sprites_revision.wrapping_add(1);
+            }
+            stats
+        };
+        // Sequential fast path only reads the slice. Merge packets that land
+        // while this batch runs, then give `self` back the old allocation.
+        restore_packet_buffer(&mut queued, &mut self.queued_sprites);
         stats
     }
 
@@ -802,6 +812,14 @@ fn coalesce_ranges(mut ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
     }
     merged.push(current);
     merged
+}
+
+/// Drop processed packets, retain packet-buffer capacity, and preserve any
+/// packets queued while a flush temporarily owns the prior buffer.
+fn restore_packet_buffer<T>(processed: &mut Vec<T>, pending: &mut Vec<T>) {
+    processed.clear();
+    processed.append(pending);
+    std::mem::swap(processed, pending);
 }
 
 #[inline]

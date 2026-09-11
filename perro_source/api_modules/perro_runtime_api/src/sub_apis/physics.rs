@@ -18,6 +18,52 @@ pub struct PhysicsQueryFilter {
     pub exclude_nodes: Vec<NodeID>,
 }
 
+/// One 2D ray in a batch query.
+///
+/// Every ray in a batch shares one [`PhysicsQueryFilter`]. This lets an engine
+/// implementation synchronize and select its query world once instead of once
+/// per ray.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PhysicsRayQuery2D {
+    pub origin: Vector2,
+    pub direction: Vector2,
+    pub max_distance: f32,
+}
+
+impl PhysicsRayQuery2D {
+    #[inline]
+    pub const fn new(origin: Vector2, direction: Vector2, max_distance: f32) -> Self {
+        Self {
+            origin,
+            direction,
+            max_distance,
+        }
+    }
+}
+
+/// One 3D ray in a batch query.
+///
+/// Every ray in a batch shares one [`PhysicsQueryFilter`]. This lets an engine
+/// implementation synchronize and select its query world once instead of once
+/// per ray.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PhysicsRayQuery3D {
+    pub origin: Vector3,
+    pub direction: Vector3,
+    pub max_distance: f32,
+}
+
+impl PhysicsRayQuery3D {
+    #[inline]
+    pub const fn new(origin: Vector3, direction: Vector3, max_distance: f32) -> Self {
+        Self {
+            origin,
+            direction,
+            max_distance,
+        }
+    }
+}
+
 impl Default for PhysicsQueryFilter {
     fn default() -> Self {
         Self {
@@ -192,6 +238,22 @@ pub trait PhysicsAPI {
     ) -> Option<PhysicsRayHit3D> {
         self.raycast_3d(origin, direction, max_distance, filter.include_areas)
     }
+    /// Cast a same-world 3D ray batch into caller-owned storage.
+    ///
+    /// Default fallback preserves behavior for lightweight implementations.
+    /// Runtime implementations can synchronize their query world once.
+    fn raycast_3d_batch(
+        &mut self,
+        rays: &[PhysicsRayQuery3D],
+        filter: &PhysicsQueryFilter,
+        out: &mut Vec<Option<PhysicsRayHit3D>>,
+    ) {
+        out.clear();
+        out.reserve(rays.len().saturating_sub(out.capacity()));
+        for ray in rays {
+            out.push(self.raycast_3d_filtered(ray.origin, ray.direction, ray.max_distance, filter));
+        }
+    }
     fn raycast_2d(
         &mut self,
         origin: Vector2,
@@ -199,6 +261,22 @@ pub trait PhysicsAPI {
         max_distance: f32,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsRayHit2D>;
+    /// Cast a same-world 2D ray batch into caller-owned storage.
+    ///
+    /// Default fallback preserves behavior for lightweight implementations.
+    /// Runtime implementations can synchronize their query world once.
+    fn raycast_2d_batch(
+        &mut self,
+        rays: &[PhysicsRayQuery2D],
+        filter: &PhysicsQueryFilter,
+        out: &mut Vec<Option<PhysicsRayHit2D>>,
+    ) {
+        out.clear();
+        out.reserve(rays.len().saturating_sub(out.capacity()));
+        for ray in rays {
+            out.push(self.raycast_2d(ray.origin, ray.direction, ray.max_distance, filter));
+        }
+    }
     fn shape_cast_2d(
         &mut self,
         shape: Shape2D,
@@ -552,6 +630,20 @@ impl<'rt, R: PhysicsAPI + ?Sized> PhysicsModule<'rt, R> {
             .raycast_3d_filtered(origin, direction, max_distance, &filter)
     }
 
+    /// Cast multiple 3D rays after one query-world synchronization.
+    ///
+    /// Keep `rays`, `filter`, and `out` alive for this call only. Any runtime
+    /// mutation between batches can require another synchronization.
+    #[inline]
+    pub fn raycast_3d_batch_into(
+        &mut self,
+        rays: &[PhysicsRayQuery3D],
+        filter: &PhysicsQueryFilter,
+        out: &mut Vec<Option<PhysicsRayHit3D>>,
+    ) {
+        self.rt.raycast_3d_batch(rays, filter, out);
+    }
+
     pub fn raycast_2d(
         &mut self,
         origin: Vector2,
@@ -574,6 +666,20 @@ impl<'rt, R: PhysicsAPI + ?Sized> PhysicsModule<'rt, R> {
         filter: PhysicsQueryFilter,
     ) -> Option<PhysicsRayHit2D> {
         self.rt.raycast_2d(origin, direction, max_distance, &filter)
+    }
+
+    /// Cast multiple 2D rays after one query-world synchronization.
+    ///
+    /// Keep `rays`, `filter`, and `out` alive for this call only. Any runtime
+    /// mutation between batches can require another synchronization.
+    #[inline]
+    pub fn raycast_2d_batch_into(
+        &mut self,
+        rays: &[PhysicsRayQuery2D],
+        filter: &PhysicsQueryFilter,
+        out: &mut Vec<Option<PhysicsRayHit2D>>,
+    ) {
+        self.rt.raycast_2d_batch(rays, filter, out);
     }
 
     pub fn shape_cast_2d(

@@ -255,13 +255,18 @@ macro_rules! script_set_fixed_update_enabled {
 ///
 /// Usage:
 /// - `get_var!(ctx, node_id, var!("health")) -> Variant`
-/// - `get_var!(ctx, node_id, "health") -> Variant`
+/// - `get_var!(ctx, node_id, "health") -> Variant` (const id)
 /// - `get_var!(ctx, node_id, dynamic_name_string) -> Variant`
 ///
 /// Accepted member inputs:
 /// - `var!("...")`, `ScriptMemberID`, `&str`, `String`, `Cow<str>`
 #[macro_export]
 macro_rules! get_var {
+    ($ctx:expr, $id:expr, $member:literal) => {{
+        const __PERRO_MEMBER: $crate::perro_ids::ScriptMemberID =
+            $crate::perro_ids::ScriptMemberID::from_string($member);
+        $ctx.Scripts().get_var($id, __PERRO_MEMBER)
+    }};
     ($ctx:expr, $id:expr, $member:expr) => {
         $ctx.Scripts().get_var($id, $member)
     };
@@ -281,6 +286,11 @@ macro_rules! get_var {
 /// - `var!("...")`, `ScriptMemberID`, `&str`, `String`, `Cow<str>`
 #[macro_export]
 macro_rules! get_node_var {
+    ($ctx:expr, $id:expr, $member:literal) => {{
+        const __PERRO_MEMBER: $crate::perro_ids::ScriptMemberID =
+            $crate::perro_ids::ScriptMemberID::from_string($member);
+        $ctx.Scripts().get_var($id, __PERRO_MEMBER).as_node_or_nil()
+    }};
     ($ctx:expr, $id:expr, $member:expr) => {
         $ctx.Scripts().get_var($id, $member).as_node_or_nil()
     };
@@ -293,13 +303,18 @@ macro_rules! get_node_var {
 ///
 /// Usage:
 /// - `set_var!(ctx, node_id, var!("health"), variant!(100_i32)) -> ()`
-/// - `set_var!(ctx, node_id, "health", variant!(100_i32)) -> ()`
+/// - `set_var!(ctx, node_id, "health", variant!(100_i32)) -> ()` (const id)
 /// - `set_var!(ctx, node_id, dynamic_name_string, resolved_value) -> ()`
 ///
 /// Accepted member inputs:
 /// - `var!("...")`, `ScriptMemberID`, `&str`, `String`, `Cow<str>`
 #[macro_export]
 macro_rules! set_var {
+    ($ctx:expr, $id:expr, $member:literal, $value:expr) => {{
+        const __PERRO_MEMBER: $crate::perro_ids::ScriptMemberID =
+            $crate::perro_ids::ScriptMemberID::from_string($member);
+        $ctx.Scripts().set_var($id, __PERRO_MEMBER, $value)
+    }};
     ($ctx:expr, $id:expr, $member:expr, $value:expr) => {
         $ctx.Scripts().set_var($id, $member, $value)
     };
@@ -313,14 +328,111 @@ macro_rules! set_var {
 /// Usage:
 /// - `call_method!(ctx, node_id, method!("take_damage"), params![10_i32]) -> Variant`
 /// - `call_method!(ctx, node_id, func!("take_damage"), params![10_i32]) -> Variant`
-/// - `call_method!(ctx, node_id, "take_damage", params![10_i32]) -> Variant`
+/// - `call_method!(ctx, node_id, "take_damage", params![10_i32]) -> Variant` (const id)
 /// - `call_method!(ctx, node_id, dynamic_name_string, &values) -> Variant`
 ///
 /// Accepted method inputs:
 /// - `method!("...")`, `func!("...")`, `ScriptMemberID`, `&str`, `String`, `Cow<str>`
 #[macro_export]
 macro_rules! call_method {
+    ($ctx:expr, $id:expr, $method:literal, $params:expr) => {{
+        const __PERRO_METHOD: $crate::perro_ids::ScriptMemberID =
+            $crate::perro_ids::ScriptMemberID::from_string($method);
+        $ctx.Scripts().call_method($id, __PERRO_METHOD, $params)
+    }};
     ($ctx:expr, $id:expr, $method:expr, $params:expr) => {
         $ctx.Scripts().call_method($id, $method, $params)
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::RuntimeWindow;
+
+    #[derive(Default)]
+    struct CaptureApi {
+        members: Vec<ScriptMemberID>,
+    }
+
+    impl ScriptAPI for CaptureApi {
+        fn with_state<T: 'static, V, F>(&mut self, _script_id: NodeID, _f: F) -> Option<V>
+        where
+            F: FnOnce(&T) -> V,
+        {
+            None
+        }
+
+        fn with_state_mut<T: 'static, V, F>(&mut self, _script_id: NodeID, _f: F) -> Option<V>
+        where
+            F: FnOnce(&mut T) -> V,
+        {
+            None
+        }
+
+        fn script_attach(&mut self, _node_id: NodeID, _script_path: &str) -> bool {
+            false
+        }
+
+        fn script_attach_hashed(&mut self, _node_id: NodeID, _script_path_hash: u64) -> bool {
+            false
+        }
+
+        fn script_detach(&mut self, _node_id: NodeID) -> bool {
+            false
+        }
+
+        fn remove_script(&mut self, _script_id: NodeID) -> bool {
+            false
+        }
+
+        fn script_set_update_enabled(&mut self, _script_id: NodeID, _enabled: bool) -> bool {
+            false
+        }
+
+        fn script_set_fixed_update_enabled(&mut self, _script_id: NodeID, _enabled: bool) -> bool {
+            false
+        }
+
+        fn get_var(&mut self, _script_id: NodeID, member: ScriptMemberID) -> Variant {
+            self.members.push(member);
+            Variant::Null
+        }
+
+        fn set_var(&mut self, _script_id: NodeID, member: ScriptMemberID, _value: Variant) {
+            self.members.push(member);
+        }
+
+        fn call_method(
+            &mut self,
+            _script_id: NodeID,
+            method: ScriptMemberID,
+            _params: &[Variant],
+        ) -> Variant {
+            self.members.push(method);
+            Variant::Null
+        }
+    }
+
+    #[test]
+    fn literal_member_macros_forward_const_hashed_ids() {
+        let mut api = CaptureApi::default();
+        let mut ctx = RuntimeWindow::new(&mut api);
+        let script_id = NodeID::new(7);
+
+        let _ = get_var!(&mut ctx, script_id, "health");
+        set_var!(&mut ctx, script_id, "health", Variant::from(10_i32));
+        let _ = call_method!(&mut ctx, script_id, "heal", &[]);
+
+        drop(ctx);
+
+        assert_eq!(
+            api.members,
+            vec![
+                ScriptMemberID::from_string("health"),
+                ScriptMemberID::from_string("health"),
+                ScriptMemberID::from_string("heal"),
+            ]
+        );
+    }
 }

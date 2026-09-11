@@ -41,11 +41,12 @@ pub mod prelude {
         NodeScriptVar, NodeSpec, Note, PhysicsAPI, PhysicsBodyPrediction2D,
         PhysicsBodyPrediction3D, PhysicsLaunchSolution2D, PhysicsLaunchSolution3D, PhysicsModule,
         PhysicsMoveResult2D, PhysicsMoveResult3D, PhysicsQueryFilter, PhysicsRayHit2D,
-        PhysicsRayHit3D, PhysicsShapeHit2D, PhysicsShapeHit3D, PhysicsSlideResult2D,
-        PhysicsSlideResult3D, PreloadedSceneTarget, ProfilingSnapshot, QueryBounds, QueryExpr,
-        QueryScope, RuntimeMidiModule, SceneAPI, SceneLoadSource, SceneModule, ScriptAPI,
-        ScriptModule, SignalAPI, SignalModule, SpatialAudioOptions, TimeAPI, TimeModule, TimerAPI,
-        TimerModule, WindowAPI, WindowMode, WindowModule, WindowRequest, program,
+        PhysicsRayHit3D, PhysicsRayQuery2D, PhysicsRayQuery3D, PhysicsShapeHit2D,
+        PhysicsShapeHit3D, PhysicsSlideResult2D, PhysicsSlideResult3D, PreloadedSceneTarget,
+        ProfilingSnapshot, QueryBounds, QueryExpr, QueryScope, RuntimeMidiModule, SceneAPI,
+        SceneLoadSource, SceneModule, ScriptAPI, ScriptModule, SignalAPI, SignalModule,
+        SpatialAudioOptions, TimeAPI, TimeModule, TimerAPI, TimerModule, WindowAPI, WindowMode,
+        WindowModule, WindowRequest, program,
     };
 
     // Convenience macros.

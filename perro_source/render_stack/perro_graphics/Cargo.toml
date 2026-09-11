@@ -6,6 +6,11 @@ edition = "2024"
 [lints]
 workspace = true
 
+[features]
+# GPU timestamp resolve/readback costs a frame sync on some drivers.  Only
+# enable it from an explicit profiling path or PERRO_GPU_TIMESTAMPS.
+gpu_timestamps = []
+
 [dependencies]
 perro_builtin_assets.workspace = true
 bytemuck = { version = "1.24.0", features = ["derive"] }

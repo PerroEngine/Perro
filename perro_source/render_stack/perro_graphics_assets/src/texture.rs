@@ -21,6 +21,39 @@ const SVG_MAX_RASTER_DIM: u32 = 8192;
 const SVG_CACHE_LIMIT: usize = 32;
 const SVG_RGBA_CACHE_MAX_BYTES: usize = 64 * 1024 * 1024;
 
+/// Logical display size for a decoded texture source.
+///
+/// SVGs rasterize at [`SVG_RASTER_SCALE`] for sharper filtering, while their
+/// scene-space size stays equal to the SVG's declared size. Static builds keep
+/// the original source path alongside the baked PTEX payload, so this applies
+/// to both loose and packed texture loads.
+#[inline]
+pub fn logical_texture_size_for_source(
+    source: &str,
+    raster_width: u32,
+    raster_height: u32,
+) -> (u32, u32) {
+    let raster_width = raster_width.max(1);
+    let raster_height = raster_height.max(1);
+    if !is_svg_texture_source(source) {
+        return (raster_width, raster_height);
+    }
+    (
+        raster_width.div_ceil(SVG_RASTER_SCALE),
+        raster_height.div_ceil(SVG_RASTER_SCALE),
+    )
+}
+
+#[inline]
+fn is_svg_texture_source(source: &str) -> bool {
+    if source.eq_ignore_ascii_case("__perro_builtin_logo_svg__") {
+        return true;
+    }
+    let path = source.split(['#', '?']).next().unwrap_or_default();
+    path.rsplit_once('.')
+        .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("svg"))
+}
+
 pub fn encode_rgba_image(
     rgba: &[u8],
     width: u32,
@@ -834,6 +867,33 @@ mod tests {
         assert_eq!(rgba.len(), 4 * 6 * 4);
         assert_eq!(decode_image_size(svg), Some((4, 6)));
         assert_eq!(decode_image_logical_size(svg), Some((2, 3)));
+    }
+
+    #[test]
+    fn source_logical_size_keeps_svg_display_size_after_raster_scale() {
+        assert_eq!(
+            super::logical_texture_size_for_source("res://icon.svg", 6, 4),
+            (3, 2)
+        );
+        assert_eq!(
+            super::logical_texture_size_for_source("res://ICON.SVG#frame", 6, 4),
+            (3, 2)
+        );
+        assert_eq!(
+            super::logical_texture_size_for_source("res://icon.png", 6, 4),
+            (6, 4)
+        );
+    }
+
+    #[test]
+    fn source_logical_size_uses_same_scale_for_capped_svg_rasters() {
+        // A capped raster cannot retain the original declared 5000px width in
+        // PTEX v2 metadata. Keep the same scale derivation in loose + packed
+        // paths, rather than letting one mode change the sprite footprint.
+        assert_eq!(
+            super::logical_texture_size_for_source("res://wide.svg", 8192, 164),
+            (4096, 82)
+        );
     }
 
     #[test]
