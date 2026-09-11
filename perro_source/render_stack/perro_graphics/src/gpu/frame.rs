@@ -1833,6 +1833,70 @@ impl Gpu {
             [self.render_width, self.render_height],
             taa_frame.as_ref(),
         );
+        // Camera FX stop at scene handoff; UI + late overlay stay above it.
+        self.composite
+            .set_constrained(self.max_render_pixels < MAX_FRAME_RENDER_PIXELS);
+        let composite_generation = self.composite.generation();
+        let camera_cache_key = scene_fast_path.then_some(
+            self.post_view_generation
+                ^ u64::from(self.render_width).rotate_left(13)
+                ^ u64::from(self.render_height).rotate_left(29),
+        );
+        let (camera_stage_active, camera_post_time) = self.composite.apply_camera(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            self.render_format,
+            &composite_view,
+            composite_generation,
+            &camera_3d,
+            camera_post_chain,
+            self.three_d.as_ref().map(|gpu| {
+                (
+                    gpu.depth_prepass_view(),
+                    gpu.depth_prepass_view_generation(),
+                )
+            }),
+            static_shader_lookup,
+            static_texture_lookup,
+            self.hdr_status.active,
+            camera_cache_key,
+        );
+        if camera_stage_active {
+            let camera_view = self
+                .composite
+                .camera_scene_view()
+                .expect("camera post target");
+            self.present.blit_scene(
+                &mut encoder,
+                camera_view,
+                self.composite.camera_generation(),
+                1,
+                &composite_view,
+                self.render_format,
+            );
+        }
+        // A post result may survive only when every producer keeps its pixels:
+        // retained scene, unchanged camera stage, unchanged UI, no stream
+        // writes, no late overlay, and no world-projected UI that can move
+        // under a stable revision.
+        let post_cache_key = (scene_fast_path
+            && rendered_stream_textures.is_empty()
+            && late_overlay_upload_2d.draw_count == 0
+            && late_overlay_sprites_2d.is_empty()
+            && late_overlay_point_lights_2d.is_empty()
+            && late_overlay_rects_2d.is_empty()
+            && ui_textures_delta.is_empty()
+            && ui_world_projections.iter().all(Option::is_none)
+            && !exposure_settings.auto_exposure
+            && !accessibility_enabled)
+            .then_some(
+                ui_revision
+                    ^ self.post_view_generation.rotate_left(17)
+                    ^ u64::from(self.render_width).rotate_left(31)
+                    ^ u64::from(self.render_height).rotate_left(47)
+                    ^ self.composite.camera_generation().rotate_left(59),
+            );
         if ui_primitives.is_empty() {
             if let Some(ui) = self.ui.as_mut() {
                 ui.clear();
@@ -1922,17 +1986,16 @@ impl Gpu {
                 );
             }
         }
-        self.composite
-            .post
-            .set_constrained(self.max_render_pixels < MAX_FRAME_RENDER_PIXELS);
-        let (final_intermediate, post_time, accessibility_time) = self.composite.apply(
+        // Global FX run aft UI + late overlay.
+        let (final_intermediate, post_time, accessibility_time) = self.composite.apply_global(
             &self.device,
             &self.queue,
             &mut encoder,
             &self.present,
             self.render_format,
+            &composite_view,
+            composite_generation,
             &camera_3d,
-            camera_post_chain,
             global_post_chain,
             self.three_d.as_ref().map(|gpu| {
                 (
@@ -1944,14 +2007,16 @@ impl Gpu {
             static_shader_lookup,
             static_texture_lookup,
             self.hdr_status.active,
+            post_cache_key,
         );
-        timing.post_process = post_time;
+        timing.post_process = camera_post_time + post_time;
         timing.accessibility = accessibility_time;
         if let Some(output_view) = swap_view.as_ref() {
+            let final_bind_group = self.composite.present_bind_group(final_intermediate);
             self.present.apply(
                 &self.queue,
                 &mut encoder,
-                self.composite.present_bind_group(final_intermediate),
+                final_bind_group,
                 output_view,
                 composite_size,
                 frame_delta_seconds,

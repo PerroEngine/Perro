@@ -368,8 +368,8 @@ pub struct PostProcessor {
     ping_b_view: wgpu::TextureView,
     ping_targets_full_size: bool,
     // Lazily-allocated scratch targets for multi-pass effects. Sized from the
-    // main targets and dropped on resize. blur_scratch is full-res (separable
-    // blur intermediate); bloom half targets are half-res (downsampled bloom).
+    // main targets and dropped on resize. blur_scratch is half-res; bloom half
+    // targets use adapter-scaled resolution.
     blur_scratch: Option<CachedPostTexture>,
     bloom_half_a: Option<CachedPostTexture>,
     bloom_half_b: Option<CachedPostTexture>,
@@ -1244,14 +1244,16 @@ impl PostProcessor {
         self.merged_descriptors_scratch = merged_descriptors;
     }
 
-    /// Ensure the full-res blur scratch target exists.
+    /// Ensure the half-res blur scratch target exists.
     fn ensure_blur_scratch(&mut self, device: &wgpu::Device) -> Option<wgpu::TextureView> {
         if self.blur_scratch.is_none() {
+            let width = (self.width / 2).max(1);
+            let height = (self.height / 2).max(1);
             let (texture, view) = create_color_target(
                 device,
                 self.intermediate_format,
-                self.width,
-                self.height,
+                width,
+                height,
                 "perro_post_blur_scratch",
             );
             self.blur_scratch = Some(CachedPostTexture { texture, view });
@@ -1314,13 +1316,29 @@ impl PostProcessor {
     ) {
         let width = target_dims[0].max(1) as f32;
         let height = target_dims[1].max(1) as f32;
+        // Blur runs between differently sized targets. Its shader step must
+        // follow the sampled source texels, not the output viewport texels.
+        let source_dims = if effect_type == EFFECT_BLUR {
+            if params0[1] >= 0.5 {
+                [(self.width / 2).max(1), (self.height / 2).max(1)]
+            } else {
+                [self.width.max(1), self.height.max(1)]
+            }
+        } else {
+            target_dims
+        };
         let uniform = PostUniform {
             effect_type,
             param_count: 0,
             projection_mode: ctx.projection_mode,
             _pad0: 0,
             params0,
-            params1: [0.0; 4],
+            params1: [
+                1.0 / source_dims[0].max(1) as f32,
+                1.0 / source_dims[1].max(1) as f32,
+                0.0,
+                0.0,
+            ],
             params2: [0.0; 4],
             params3: [0.0; 4],
             params4: [0.0; 4],
@@ -1377,8 +1395,8 @@ impl PostProcessor {
         pass.draw(0..3, 0..1);
     }
 
-    /// Separable gaussian blur: horizontal pass into blur_scratch, vertical pass
-    /// into the effect's output target.
+    /// Half-res separable gaussian blur: horizontal pass into blur_scratch,
+    /// vertical pass into the effect's output target.
     #[allow(clippy::too_many_arguments)]
     fn run_blur_effect(
         &mut self,
@@ -1395,7 +1413,8 @@ impl PostProcessor {
         let Some(scratch) = self.ensure_blur_scratch(device) else {
             return;
         };
-        let dims = [self.width, self.height];
+        let full_dims = [self.width.max(1), self.height.max(1)];
+        let half_dims = [(self.width / 2).max(1), (self.height / 2).max(1)];
         let default_lut = self.default_lut_2d_view.clone();
         // Horizontal (axis 0): input -> scratch.
         self.record_sub_pass(
@@ -1406,7 +1425,7 @@ impl PostProcessor {
             subpass_base,
             EFFECT_BLUR,
             [strength, 0.0, 0.0, 0.0],
-            dims,
+            half_dims,
             input_view,
             &default_lut,
             depth_view,
@@ -1421,7 +1440,7 @@ impl PostProcessor {
             subpass_base + 1,
             EFFECT_BLUR,
             [strength, 1.0, 0.0, 0.0],
-            dims,
+            full_dims,
             &scratch,
             &default_lut,
             depth_view,

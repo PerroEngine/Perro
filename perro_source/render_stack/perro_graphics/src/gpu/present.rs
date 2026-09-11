@@ -4,7 +4,7 @@ pub(super) struct SceneBlit {
     format: wgpu::TextureFormat,
     layout: wgpu::BindGroupLayout,
     pipeline: wgpu::RenderPipeline,
-    input: Option<(u64, wgpu::BindGroup)>,
+    input: Option<(u64, u8, wgpu::BindGroup)>,
 }
 
 impl PresentProcessor {
@@ -33,6 +33,22 @@ impl PresentProcessor {
         if let Some(taa) = self.taa.as_mut() {
             taa.history_valid = false;
         }
+        self.blit_scene(encoder, input, input_generation, 0, output, format);
+    }
+
+    /// Blit an already-resolved scene into the clean composite target.
+    /// Unlike `compose_scene`, this never touches TAA history and supports the
+    /// camera-post -> UI handoff.
+    pub(super) fn blit_scene(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        input: &wgpu::TextureView,
+        input_generation: u64,
+        input_slot: u8,
+        output: &wgpu::TextureView,
+        format: wgpu::TextureFormat,
+    ) {
+        self.scene_composed = true;
         if self
             .scene_blit
             .as_ref()
@@ -59,11 +75,9 @@ impl PresentProcessor {
             });
         }
         let blit = self.scene_blit.as_mut().expect("scene blit initialized");
-        if blit
-            .input
-            .as_ref()
-            .is_none_or(|(generation, _)| *generation != input_generation)
-        {
+        if blit.input.as_ref().is_none_or(|(generation, slot, _)| {
+            *generation != input_generation || *slot != input_slot
+        }) {
             let group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("perro_scene_composite_input"),
                 layout: &blit.layout,
@@ -78,7 +92,7 @@ impl PresentProcessor {
                     },
                 ],
             });
-            blit.input = Some((input_generation, group));
+            blit.input = Some((input_generation, input_slot, group));
         }
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("perro_scene_composite_pass"),
@@ -91,7 +105,7 @@ impl PresentProcessor {
         pass.set_pipeline(&blit.pipeline);
         pass.set_bind_group(
             0,
-            &blit.input.as_ref().expect("scene input initialized").1,
+            &blit.input.as_ref().expect("scene input initialized").2,
             &[],
         );
         pass.draw(0..3, 0..1);

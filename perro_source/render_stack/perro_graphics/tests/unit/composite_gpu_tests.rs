@@ -233,20 +233,23 @@ impl Fixture {
             self.stream_color,
         );
         let camera = Camera3DState::default();
-        self.stream_post.apply(
+        let stream_input = self.stream_post.post.scene_view().clone();
+        self.stream_post.apply_global(
             device,
             queue,
             &mut encoder,
             &self.present,
             LINEAR,
+            &stream_input,
+            1,
             &camera,
             &[tint()],
-            &[],
             None,
             VisualAccessibilitySettings::default(),
             None,
             None,
             false,
+            None,
         );
         let stream_view = self
             .stream_post
@@ -274,6 +277,35 @@ impl Fixture {
             [32, 32],
             taa_frame.as_ref(),
         );
+        let (camera_active, _) = self.composite.apply_camera(
+            device,
+            queue,
+            &mut encoder,
+            LINEAR,
+            &view,
+            self.composite.generation(),
+            &camera,
+            camera_fx,
+            None,
+            None,
+            None,
+            false,
+            None,
+        );
+        if camera_active {
+            let camera_view = self
+                .composite
+                .camera_scene_view()
+                .expect("camera test post target");
+            self.present.blit_scene(
+                &mut encoder,
+                camera_view,
+                self.composite.camera_generation(),
+                1,
+                &view,
+                LINEAR,
+            );
+        }
         if layers {
             let paint = self.label.prepare_paint([64.0, 64.0]);
             let mut primitives = paint.primitives.to_vec();
@@ -339,20 +371,22 @@ impl Fixture {
             );
             self.overlay.render_pass(&mut encoder, &view, None, 1);
         }
-        let (intermediate, _, _) = self.composite.apply(
+        let (intermediate, _, _) = self.composite.apply_global(
             device,
             queue,
             &mut encoder,
             &self.present,
             LINEAR,
+            &view,
+            1,
             &camera,
-            camera_fx,
             global_fx,
             None,
             access,
             None,
             None,
             false,
+            None,
         );
         self.present.apply(
             queue,
@@ -586,14 +620,16 @@ fn final_composite_handles_depth_resize_msaa_and_output_formats() {
                         [16, 16],
                         None,
                     );
-                    let (intermediate, _, _) = composite.apply(
+                    let composite_input = composite.post.scene_view().clone();
+                    let (intermediate, _, _) = composite.apply_global(
                         &device,
                         &queue,
                         &mut encoder,
                         &present,
                         LINEAR,
+                        &composite_input,
+                        1,
                         &Camera3DState::default(),
-                        &[],
                         &custom,
                         depth
                             .as_ref()
@@ -602,6 +638,7 @@ fn final_composite_handles_depth_resize_msaa_and_output_formats() {
                         Some(depth_shader),
                         None,
                         false,
+                        None,
                     );
                     let output = target(&device, size, OUTPUT);
                     present.apply(
@@ -665,7 +702,7 @@ fn final_composite_handles_depth_resize_msaa_and_output_formats() {
 }
 
 #[test]
-fn final_effects_cover_scene_ui_text_subviews_and_late_overlay() {
+fn camera_effects_stop_before_ui_and_global_effects_cover_final_composite() {
     pollster::block_on(async {
         let Some((device, queue)) = device().await else {
             eprintln!("skip composite GPU test: no adapter");
@@ -681,47 +718,53 @@ fn final_effects_cover_scene_ui_text_subviews_and_late_overlay() {
                 p[1] > p[0].saturating_add(30)
             })
             .expect("real font glyph must render green");
-        let points = [(28, 28), (8, 8), (40, 8), (48, 48), glyph];
         let bw = [PostProcessEffect::BlackWhite { amount: 1.0 }];
-        for (camera, global, access) in [
-            (bw.as_slice(), &[][..], no_access),
-            (&[][..], bw.as_slice(), no_access),
+        let camera_only = f.frame(&device, &queue, &bw, &[], no_access, true);
+        let scene = pixel(&camera_only, 28, 28);
+        assert!(
+            scene[0].abs_diff(scene[1]) <= 1 && scene[1].abs_diff(scene[2]) <= 1,
+            "camera FX must affect the scene: {scene:?}"
+        );
+        let ui = pixel(&camera_only, glyph.0, glyph.1);
+        assert!(
+            ui[1] > ui[0].saturating_add(30),
+            "camera FX must not affect UI: {ui:?}"
+        );
+        let all_layers = [(28, 28), (8, 8), (40, 8), (48, 48), glyph];
+        for (global, access) in [
+            (bw.as_slice(), no_access),
             (
-                &[][..],
-                &[][..],
-                no_access.with_color_blind(perro_structs::ColorBlindFilter::Achroma, 1.0),
-            ),
-            (
-                bw.as_slice(),
                 &[][..],
                 no_access.with_color_blind(perro_structs::ColorBlindFilter::Achroma, 1.0),
             ),
         ] {
-            let result = f.frame(&device, &queue, camera, global, access, true);
-            for (x, y) in points {
+            let result = f.frame(&device, &queue, &[], global, access, true);
+            for (x, y) in all_layers {
                 let p = pixel(&result, x, y);
                 assert!(
                     p[0].abs_diff(p[1]) <= 1 && p[1].abs_diff(p[2]) <= 1,
-                    "layer ({x}, {y}): {p:?}"
+                    "global FX must affect layer ({x}, {y}): {p:?}"
                 );
-                assert_ne!(p, pixel(&baseline, x, y));
             }
         }
         let filtered = f.frame(&device, &queue, &bw, &[tint()], no_access, true);
-        for (x, y) in points {
-            let p = pixel(&filtered, x, y);
-            assert!(
-                p[0] < p[1] && p[1].abs_diff(p[2]) <= 1,
-                "camera grayscale -> global tint: {p:?}"
-            );
-        }
+        let p = pixel(&filtered, 28, 28);
+        assert!(
+            p[0] < p[1] && p[1].abs_diff(p[2]) <= 1,
+            "camera grayscale must feed global tint: {p:?}"
+        );
         let repeated = f.frame(&device, &queue, &bw, &[tint()], no_access, true);
         assert_eq!(filtered, repeated, "no repeated tint or alpha buildup");
         let tint_only = f.frame(&device, &queue, &[tint()], &[], no_access, true);
-        let p = pixel(&tint_only, 40, 8);
+        let scene = pixel(&tint_only, 28, 28);
         assert!(
-            p[0].abs_diff(p[1]) <= 2,
-            "subview local tint + final tint must each run once: {p:?}"
+            scene[0] < pixel(&baseline, 28, 28)[0],
+            "camera tint must affect the scene: {scene:?}"
+        );
+        assert_eq!(
+            pixel(&tint_only, glyph.0, glyph.1),
+            pixel(&baseline, glyph.0, glyph.1),
+            "camera tint must leave UI unchanged"
         );
         // Pure scene / no UI / no 3D depth also uses the final effects path.
         let plain = f.frame(&device, &queue, &[], &bw, no_access, false);
