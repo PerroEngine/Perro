@@ -115,7 +115,7 @@ pub fn resolve_path_string<P: ResPathSource>(path: P) -> String {
 }
 
 fn validate_write_path(path: &str) -> io::Result<()> {
-    if path.starts_with("user://") {
+    if path.starts_with("user://") || path.starts_with("demo://") {
         validate_virtual_asset_path(path)?;
         return Ok(());
     }
@@ -126,7 +126,7 @@ fn validate_write_path(path: &str) -> io::Result<()> {
 
     Err(io::Error::new(
         io::ErrorKind::PermissionDenied,
-        "writes are restricted to `user://` or absolute paths",
+        "writes are restricted to `user://`, `demo://`, or absolute paths",
     ))
 }
 

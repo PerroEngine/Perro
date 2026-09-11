@@ -15,7 +15,6 @@ pub use script_trait::*;
 
 /// Common imports for generated and hand-written scripts.
 pub mod prelude {
-    pub use crate::demo_exclude;
     pub use crate::lifecycle;
     pub use crate::methods;
     pub use crate::script_trait::{
@@ -24,6 +23,7 @@ pub mod prelude {
         ScriptContext, ScriptFlags, ScriptLifecycle, state_mut_unchecked, state_ref_unchecked,
     };
     pub use crate::{State, Variant};
+    pub use crate::{demo_exclude, playtest_exclude, playtest_include};
     pub use perro_ids::prelude::*;
     pub use perro_input_api::prelude::*;
     pub use perro_resource_api::prelude::*;

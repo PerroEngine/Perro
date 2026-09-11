@@ -97,33 +97,6 @@ fn every_single_change_signal_forces_a_full_render() {
     }
 }
 
-#[test]
-fn single_post_stage_keeps_fast_path_two_stages_do_not() {
-    // One stage reads the scene texture and writes the intermediate, leaving
-    // the retained pixels intact. Two stages ping-pong back into the scene
-    // texture and overwrite them.
-    for stages in 0..=1 {
-        let signals = SceneFastPathSignals {
-            post_stage_count: stages,
-            ..static_frame()
-        };
-        assert!(
-            scene_fast_path_allowed(&signals),
-            "{stages} post stage(s) must keep the fast path"
-        );
-    }
-    for stages in 2..=3 {
-        let signals = SceneFastPathSignals {
-            post_stage_count: stages,
-            ..static_frame()
-        };
-        assert!(
-            !scene_fast_path_allowed(&signals),
-            "{stages} post stages write the retained scene texture"
-        );
-    }
-}
-
 /// The headline case: a UI-only frame (FPS counter, HUD text) over a static
 /// 3D scene. UI commands raise DIRTY_2D, but the UI composites onto the
 /// swapchain after the scene texture, so the scene chain can still be skipped.

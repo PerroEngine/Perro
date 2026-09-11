@@ -179,6 +179,7 @@ const BUILD: &[FlagSpec] = &[
     switch("--headless"),
     switch("--fresh"),
     switch("--demo"),
+    switch("--playtest"),
 ];
 const DLC: &[FlagSpec] = &[value("--name"), value("--path")];
 const DEV: &[FlagSpec] = &[
@@ -194,6 +195,7 @@ const DEV: &[FlagSpec] = &[
     value("--port"),
     switch("--headless"),
     switch("--demo"),
+    switch("--playtest"),
     value("--sim"),
 ];
 const BENCH: &[FlagSpec] = &[
@@ -244,6 +246,9 @@ fn command_help_requested(args: &[String]) -> bool {
 }
 
 fn validate_command_args(command: &str, args: &[String]) -> Result<(), String> {
+    if args.iter().any(|a| a == "--demo") && args.iter().any(|a| a == "--playtest") {
+        return Err("--demo and --playtest are mutually exclusive".into());
+    }
     let Some(schema) = command_schema(command) else {
         return Ok(());
     };
@@ -302,14 +307,14 @@ fn print_usage() {
         "  perro_cli test [--path <project_dir>] [-- <cargo_test_args>]    # sync scripts + run cargo test for .perro/scripts"
     );
     eprintln!(
-        "  perro_cli build [--path <project_dir>] [--target native|web|android] [--triple <rust_target> | --universal-macos] [--profile] [--console] [--headless] [--fresh] [--demo]    # static project bundle + build"
+        "  perro_cli build [--path <project_dir>] [--target native|web|android] [--triple <rust_target> | --universal-macos] [--profile] [--console] [--headless] [--fresh] [--demo | --playtest]    # static project bundle + build"
     );
     eprintln!("  perro_cli targets [--host windows|linux|macos]    # show build support by dev OS");
     eprintln!(
         "  perro_cli dlc --name <dlc_name> [--path <project_dir>] # build one runtime-loadable DLC package"
     );
     eprintln!(
-        "  perro_cli dev [--path <project_dir>] [--scene res://path.scn] [--target native|web|android] [--headless] [--demo] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--sim igpu|low_end|half|potato|cores=N] [--host <addr>] [--port <num>]      # build scripts + run dev runner, web server, or android app"
+        "  perro_cli dev [--path <project_dir>] [--scene res://path.scn] [--target native|web|android] [--headless] [--demo | --playtest] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--sim igpu|low_end|half|potato|cores=N] [--host <addr>] [--port <num>]      # build scripts + run dev runner, web server, or android app"
     );
     eprintln!(
         "  perro_cli bench [--path <project_dir>] [--script <hash>] [--method <name>] [--var <name>] [-- <criterion_args>]    # criterion bench scripts"
@@ -504,6 +509,12 @@ mod cli_arg_tests {
 
     #[test]
     fn demo_flag_valid_for_build_and_dev() {
+        for cmd in ["build", "dev"] {
+            assert!(validate_command_args(cmd, &args(&["perro", cmd, "--playtest"])).is_ok());
+            assert!(
+                validate_command_args(cmd, &args(&["perro", cmd, "--demo", "--playtest"])).is_err()
+            );
+        }
         assert_eq!(
             validate_command_args("build", &args(&["perro", "build", "--demo"])),
             Ok(())

@@ -102,7 +102,11 @@ impl Runtime {
                 .iter()
                 .filter_map(|&raw_index| self.nodes.slot_get(raw_index as usize).map(|(id, _)| id)),
         );
-        dirty_ids.retain(|id| self.node_world(*id) == Some(NodeID::nil()));
+        // A visible node reparented into a subview must visit extraction once
+        // more so its old main-world retained draw is removed.
+        dirty_ids.retain(|id| {
+            self.node_world(*id) == Some(NodeID::nil()) || self.render_3d.prev_visible.contains(id)
+        });
         let include_all_nodes = self.render_3d.full_scan_pending()
             || bootstrap_scan
             || camera_changed

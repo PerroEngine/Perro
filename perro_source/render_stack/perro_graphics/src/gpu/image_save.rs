@@ -8,6 +8,10 @@ pub(super) struct CameraImageSaveRequest {
     tone_mapped: bool,
 }
 
+pub(super) struct DisplayImageSaveRequest {
+    path: String,
+}
+
 pub(super) struct PendingCameraImageSave {
     buffer: wgpu::Buffer,
     map_tx: Option<mpsc::Sender<Result<(), wgpu::BufferAsyncError>>>,
@@ -28,6 +32,18 @@ impl Gpu {
                 path,
                 tone_mapped,
             });
+    }
+
+    pub fn request_display_image_save(&mut self, path: String) -> bool {
+        if !self.config.usage.contains(wgpu::TextureUsages::COPY_SRC) {
+            eprintln!(
+                "[perro] display image save failed path={path} error=surface COPY_SRC unsupported"
+            );
+            return false;
+        }
+        self.display_image_save_requests
+            .push(DisplayImageSaveRequest { path });
+        true
     }
 
     pub(super) fn poll_camera_image_saves(&mut self) {
@@ -107,65 +123,125 @@ impl Gpu {
                 );
                 continue;
             };
-            let bytes_per_pixel = match self.render_format {
-                wgpu::TextureFormat::Rgba8Unorm
-                | wgpu::TextureFormat::Rgba8UnormSrgb
-                | wgpu::TextureFormat::Bgra8Unorm
-                | wgpu::TextureFormat::Bgra8UnormSrgb => 4,
-                wgpu::TextureFormat::Rgba16Float => 8,
-                format => {
-                    eprintln!(
-                        "[perro] texture image save failed path={} error=unsupported GPU format {format:?}",
-                        request.path
-                    );
-                    continue;
-                }
-            };
             let [width, height] = target.resolution;
-            let unpadded = width.saturating_mul(bytes_per_pixel);
-            let padded_bytes_per_row = unpadded.div_ceil(256) * 256;
-            let size = u64::from(padded_bytes_per_row) * u64::from(height);
-            let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("perro_camera_image_save_readback"),
-                size,
-                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-                mapped_at_creation: false,
-            });
-            encoder.copy_texture_to_buffer(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &target.texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                wgpu::TexelCopyBufferInfo {
-                    buffer: &buffer,
-                    layout: wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(padded_bytes_per_row),
-                        rows_per_image: Some(height),
-                    },
-                },
-                wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-            );
-            let (tx, rx) = mpsc::channel();
-            self.camera_image_save_pending.push(PendingCameraImageSave {
-                buffer,
-                map_tx: Some(tx),
-                rx,
-                path: request.path,
+            if let Some(pending) = encode_image_save(
+                &self.device,
+                encoder,
+                &target.texture,
+                request.path,
                 width,
                 height,
-                padded_bytes_per_row,
-                format: self.render_format,
-                tone_mapped: request.tone_mapped,
-            });
+                self.render_format,
+                request.tone_mapped,
+                "perro_camera_image_save_readback",
+            ) {
+                self.camera_image_save_pending.push(pending);
+            }
         }
     }
+
+    pub(super) fn encode_display_image_saves(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        texture: &wgpu::Texture,
+    ) {
+        for request in self.display_image_save_requests.drain(..) {
+            if let Some(pending) = encode_image_save(
+                &self.device,
+                encoder,
+                texture,
+                request.path,
+                self.config.width,
+                self.config.height,
+                display_readback_format(self.config.format, self.surface_view_format),
+                // HDR display output is linear extended sRGB (scRGB), not PQ;
+                // down-map it to SDR for ordinary image formats. SDR surface
+                // views have already encoded their display-ready bytes.
+                !self.hdr_status.active,
+                "perro_display_image_save_readback",
+            ) {
+                self.camera_image_save_pending.push(pending);
+            }
+        }
+    }
+}
+
+fn display_readback_format(
+    _surface_format: wgpu::TextureFormat,
+    surface_view_format: wgpu::TextureFormat,
+) -> wgpu::TextureFormat {
+    // Render-target conversion follows the view format. A Bgra8Unorm surface
+    // viewed as Bgra8UnormSrgb therefore contains sRGB-encoded copied bytes.
+    surface_view_format
+}
+
+#[allow(clippy::too_many_arguments)]
+fn encode_image_save(
+    device: &wgpu::Device,
+    encoder: &mut wgpu::CommandEncoder,
+    texture: &wgpu::Texture,
+    path: String,
+    width: u32,
+    height: u32,
+    format: wgpu::TextureFormat,
+    tone_mapped: bool,
+    label: &'static str,
+) -> Option<PendingCameraImageSave> {
+    let bytes_per_pixel = match format {
+        wgpu::TextureFormat::Rgba8Unorm
+        | wgpu::TextureFormat::Rgba8UnormSrgb
+        | wgpu::TextureFormat::Bgra8Unorm
+        | wgpu::TextureFormat::Bgra8UnormSrgb => 4,
+        wgpu::TextureFormat::Rgba16Float => 8,
+        format => {
+            eprintln!(
+                "[perro] image save failed path={path} error=unsupported GPU format {format:?}"
+            );
+            return None;
+        }
+    };
+    let unpadded = width.saturating_mul(bytes_per_pixel);
+    let padded_bytes_per_row = unpadded.div_ceil(256) * 256;
+    let size = u64::from(padded_bytes_per_row) * u64::from(height);
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    encoder.copy_texture_to_buffer(
+        wgpu::TexelCopyTextureInfo {
+            texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::TexelCopyBufferInfo {
+            buffer: &buffer,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(padded_bytes_per_row),
+                rows_per_image: Some(height),
+            },
+        },
+        wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+    );
+    let (tx, rx) = mpsc::channel();
+    Some(PendingCameraImageSave {
+        buffer,
+        map_tx: Some(tx),
+        rx,
+        path,
+        width,
+        height,
+        padded_bytes_per_row,
+        format,
+        tone_mapped,
+    })
 }
 
 fn read_camera_image_rgba(pending: &PendingCameraImageSave) -> Result<Vec<u8>, String> {
@@ -252,5 +328,32 @@ fn linear_to_srgb(value: f32) -> f32 {
         value * 12.92
     } else {
         1.055 * value.powf(1.0 / 2.4) - 0.055
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::display_readback_format;
+
+    #[test]
+    fn display_readback_uses_srgb_view_encoding() {
+        assert_eq!(
+            display_readback_format(
+                wgpu::TextureFormat::Bgra8Unorm,
+                wgpu::TextureFormat::Bgra8UnormSrgb,
+            ),
+            wgpu::TextureFormat::Bgra8UnormSrgb
+        );
+    }
+
+    #[test]
+    fn display_readback_keeps_linear_hdr_view() {
+        assert_eq!(
+            display_readback_format(
+                wgpu::TextureFormat::Rgba16Float,
+                wgpu::TextureFormat::Rgba16Float,
+            ),
+            wgpu::TextureFormat::Rgba16Float
+        );
     }
 }

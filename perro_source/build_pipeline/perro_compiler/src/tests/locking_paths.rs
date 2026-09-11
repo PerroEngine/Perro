@@ -233,7 +233,7 @@ mod locking_paths {
 
         let selected = android_apk_artifact_path(&root, &target, true).expect("artifact path");
         assert_eq!(selected, exact);
-        export_project_android_bundle(&root, &selected, false).expect("export exact apk");
+        export_project_android_bundle(&root, &selected, false, false).expect("export exact apk");
         assert_eq!(
             std::fs::read(root.join(".output/android/Android Pick.apk")).expect("exported apk"),
             b"current project"
@@ -241,7 +241,7 @@ mod locking_paths {
         assert!(!stale.exists(), "stale output must be removed");
 
         std::fs::remove_file(&exact).expect("remove exact apk");
-        assert!(export_project_android_bundle(&root, &selected, false).is_err());
+        assert!(export_project_android_bundle(&root, &selected, false, false).is_err());
         std::fs::remove_dir_all(root).expect("remove fixture");
     }
 
@@ -657,9 +657,10 @@ mod locking_paths {
         assert!(generated.contains("perro_script_abi_descriptor_v2"));
         assert!(generated.contains("ScriptAbiDescriptor::v2()"));
         assert!(generated.contains("-> *const ScriptAbiDescriptorHeader"));
-        assert!(generated.contains(
-            "#[cfg(not(feature = \"dynamic-scripts\"))]\npub static SCRIPT_REGISTRY"
-        ));
+        assert!(
+            generated
+                .contains("#[cfg(not(feature = \"dynamic-scripts\"))]\npub static SCRIPT_REGISTRY")
+        );
         assert!(generated.contains("#[cfg(feature = \"dynamic-scripts\")]"));
         assert!(generated.contains("DYNAMIC_SCRIPT_REGISTRY"));
         assert!(generated.contains("perro_create_script_dynamic as DynamicScriptConstructor"));

@@ -83,6 +83,25 @@ pub(crate) fn demo_mode_active() -> bool {
     DEMO_MODE.load(Ordering::SeqCst)
 }
 
+static PLAYTEST_MODE: AtomicBool = AtomicBool::new(false);
+
+#[must_use = "dropping guard restores prior playtest mode"]
+pub struct StaticPlaytestModeGuard(bool);
+
+pub fn push_playtest_mode(active: bool) -> StaticPlaytestModeGuard {
+    StaticPlaytestModeGuard(PLAYTEST_MODE.swap(active, Ordering::SeqCst))
+}
+
+impl Drop for StaticPlaytestModeGuard {
+    fn drop(&mut self) {
+        PLAYTEST_MODE.store(self.0, Ordering::SeqCst);
+    }
+}
+
+pub(crate) fn playtest_mode_active() -> bool {
+    PLAYTEST_MODE.load(Ordering::SeqCst)
+}
+
 #[derive(Clone, Debug)]
 pub struct StaticPipelineOverrides {
     pub res_dir: PathBuf,

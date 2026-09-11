@@ -52,8 +52,13 @@ impl SyncCache {
     ///
     /// Returns `None` when the context cannot be established (no readable
     /// executable), which disables caching rather than risking a stale hit.
+    #[cfg(test)]
     pub fn probe(project_root: &Path, demo: bool) -> Option<Self> {
-        let context = cache_context(demo)?;
+        Self::probe_variant(project_root, demo, false)
+    }
+
+    pub fn probe_variant(project_root: &Path, demo: bool, playtest: bool) -> Option<Self> {
+        let context = format!("{}\tplaytest={playtest}", cache_context(demo)?);
         let inputs = collect_input_stats(project_root);
         Some(Self {
             path: project_root
@@ -134,12 +139,7 @@ fn collect_input_stats(project_root: &Path) -> BTreeMap<String, StatKey> {
     out
 }
 
-fn collect_dir_stats(
-    root: &Path,
-    dir: &Path,
-    prefix: &str,
-    out: &mut BTreeMap<String, StatKey>,
-) {
+fn collect_dir_stats(root: &Path, dir: &Path, prefix: &str, out: &mut BTreeMap<String, StatKey>) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
@@ -246,8 +246,12 @@ mod sync_cache_tests {
         let copied = vec!["scripts/a.rs".to_string()];
         let scripts_src = fake_outputs(&root, &copied);
 
-        SyncCache::probe(&root, false).expect("probe").store(&copied);
-        let hit = SyncCache::probe(&root, false).expect("probe").hit(&scripts_src);
+        SyncCache::probe(&root, false)
+            .expect("probe")
+            .store(&copied);
+        let hit = SyncCache::probe(&root, false)
+            .expect("probe")
+            .hit(&scripts_src);
 
         assert_eq!(hit, Some(copied));
         fs::remove_dir_all(root).expect("cleanup");
@@ -260,29 +264,41 @@ mod sync_cache_tests {
         write(&script, "fn a() {}");
         let copied = vec!["scripts/a.rs".to_string()];
         let scripts_src = fake_outputs(&root, &copied);
-        SyncCache::probe(&root, false).expect("probe").store(&copied);
+        SyncCache::probe(&root, false)
+            .expect("probe")
+            .store(&copied);
 
         // Edited: same path, different length.
         write(&script, "fn a() { let _ = 1; }");
         assert_eq!(
-            SyncCache::probe(&root, false).expect("probe").hit(&scripts_src),
+            SyncCache::probe(&root, false)
+                .expect("probe")
+                .hit(&scripts_src),
             None
         );
-        SyncCache::probe(&root, false).expect("probe").store(&copied);
+        SyncCache::probe(&root, false)
+            .expect("probe")
+            .store(&copied);
 
         // Added: a new scene the index would have to read.
         let added = root.join("res/scenes/main.scn");
         write(&added, "[main]\n");
         assert_eq!(
-            SyncCache::probe(&root, false).expect("probe").hit(&scripts_src),
+            SyncCache::probe(&root, false)
+                .expect("probe")
+                .hit(&scripts_src),
             None
         );
-        SyncCache::probe(&root, false).expect("probe").store(&copied);
+        SyncCache::probe(&root, false)
+            .expect("probe")
+            .store(&copied);
 
         // Removed.
         fs::remove_file(&added).expect("remove");
         assert_eq!(
-            SyncCache::probe(&root, false).expect("probe").hit(&scripts_src),
+            SyncCache::probe(&root, false)
+                .expect("probe")
+                .hit(&scripts_src),
             None
         );
         fs::remove_dir_all(root).expect("cleanup");
@@ -294,11 +310,21 @@ mod sync_cache_tests {
         write(&root.join("res/scripts/a.rs"), "fn a() {}");
         let copied = vec!["scripts/a.rs".to_string()];
         let scripts_src = fake_outputs(&root, &copied);
-        SyncCache::probe(&root, false).expect("probe").store(&copied);
+        SyncCache::probe(&root, false)
+            .expect("probe")
+            .store(&copied);
 
+        assert_eq!(
+            SyncCache::probe_variant(&root, false, true)
+                .expect("playtest probe")
+                .hit(&scripts_src),
+            None
+        );
         // Same inputs, different demo flag -> different context -> miss.
         assert_eq!(
-            SyncCache::probe(&root, true).expect("probe").hit(&scripts_src),
+            SyncCache::probe(&root, true)
+                .expect("probe")
+                .hit(&scripts_src),
             None
         );
 
@@ -307,10 +333,16 @@ mod sync_cache_tests {
         let path = root.join(".perro/scripts").join(SYNC_CACHE_FILE);
         let text = fs::read_to_string(&path).expect("sidecar");
         let mut lines = text.lines();
-        let stale = format!("{}-stale\n{}", lines.next().expect("context"), lines.collect::<Vec<_>>().join("\n"));
+        let stale = format!(
+            "{}-stale\n{}",
+            lines.next().expect("context"),
+            lines.collect::<Vec<_>>().join("\n")
+        );
         fs::write(&path, stale).expect("rewrite");
         assert_eq!(
-            SyncCache::probe(&root, false).expect("probe").hit(&scripts_src),
+            SyncCache::probe(&root, false)
+                .expect("probe")
+                .hit(&scripts_src),
             None
         );
         fs::remove_dir_all(root).expect("cleanup");
@@ -322,12 +354,16 @@ mod sync_cache_tests {
         write(&root.join("res/scripts/a.rs"), "fn a() {}");
         let copied = vec!["scripts/a.rs".to_string()];
         let scripts_src = fake_outputs(&root, &copied);
-        SyncCache::probe(&root, false).expect("probe").store(&copied);
+        SyncCache::probe(&root, false)
+            .expect("probe")
+            .store(&copied);
 
         fs::remove_file(scripts_src.join(generated_script_rel("scripts/a.rs")))
             .expect("remove generated");
         assert_eq!(
-            SyncCache::probe(&root, false).expect("probe").hit(&scripts_src),
+            SyncCache::probe(&root, false)
+                .expect("probe")
+                .hit(&scripts_src),
             None
         );
         fs::remove_dir_all(root).expect("cleanup");

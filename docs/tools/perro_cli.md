@@ -23,7 +23,7 @@ Commands use `perro`, assuming you ran `perro_cli install` and reloaded your she
 
 ## Use Cases
 
-- **Start a new game.** `perro new --name MyGame` scaffolds `project.toml`, `input_map.toml`, `deps.toml`, a `res/main.scn`, and the `.perro` crates.
+- **Start a new game.** `perro new --name MyGame` scaffolds `project.toml`, `input_map.toml`, `deps.toml`, `AGENTS.md`, `README.md`, a `res/main.scn`, and the `.perro` crates.
 - **Fast edit-run loop.** `perro dev` compiles scripts, builds a project-local dev runner, and runs the game reading assets live from disk, so scene and script edits show up quickly.
 - **Add content without hand-writing boilerplate.** `perro new_script`, `perro new_scene`, `perro new_animation`, and `perro new_panimtree` drop templated files into `res/` (or a DLC) and rebuild.
 - **Cook a shippable build.** `perro build` bakes supported assets and links a release executable into `.output/`; `perro build --target web` and `perro build --target android` export browser and Android bundles.
@@ -205,6 +205,7 @@ Flags:
 - `--target native|web|android`: selects native runner, browser wasm bundle, or Android app target. Default `native`.
 - `--scene res://path.scn`: boots this scene instead of the project's `main_scene`. Forwarded to the runner as `PERRO_BOOT_SCENE`. Use it to profile a heavy scene directly instead of landing on the project menu.
 - `--headless`: runs the native `perro_headless` dev path with no window, input, or GPU render loop. Native only; rejected with `--target web` or `--target android`, and cannot combine with `--timings` or `--ui-profile`.
+- `--playtest`: apply `[playtest]` overrides + exclusions; select Playtest App ID; split `user://` saves under base name + `_Playtest`; enable `playtest_include!` + `playtest_exclude!`. Reject combo with `--demo`.
 - `--demo`: applies `[demo]` config overrides, skips excluded scripts/assets/scenes, strips tagged node trees, and enables `demo_exclude!`.
 - `--timings`: prints lightweight native timing averages: sim, gfx, delta, fps.
 - `--profile`: enables profiling feature for the selected dev target.
@@ -385,7 +386,7 @@ perro new [--path <parent_dir>] [--name <project_name>]
 What it does:
 
 1. Creates a new project directory under `<parent_dir>`.
-2. Writes default project files: `project.toml`, `input_map.toml`, `deps.toml`, `res/main.scn`, scripts scaffold, and `.perro` crates.
+2. Writes default project files: `project.toml`, `input_map.toml`, `deps.toml`, `AGENTS.md`, `README.md`, `res/main.scn`, scripts scaffold, and `.perro` crates. `AGENTS.md` explains Perro's state model and links to authoring examples; the README links to it. Shared project bootstrap also adds this file when absent, preserving existing agent files and READMEs.
 3. Prompts to open the project in VS Code.
 
 Notes:

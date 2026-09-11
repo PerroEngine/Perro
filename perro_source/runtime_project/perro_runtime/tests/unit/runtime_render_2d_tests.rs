@@ -233,6 +233,21 @@ fn label_2d_emits_ui_label_with_world_rect() {
 }
 
 #[test]
+fn viewport_resize_reextracts_clean_world_labels_without_input() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let label = NodeAPI::create::<Label2D>(&mut runtime);
+    let mut commands = Vec::new();
+    runtime.extract_render_snapshot_commands(&mut commands);
+    commands.clear();
+    runtime.set_viewport_size(1280, 720);
+    runtime.extract_render_snapshot_commands(&mut commands);
+    assert!(commands.iter().any(|command| matches!(command,
+        RenderCommand::Ui(command) if matches!(&**command,
+            UiCommand::UpsertLabel { node, .. } if *node == label))));
+}
+
+#[test]
 fn camera_stream_2d_uses_source_camera_render_mask() {
     let mut runtime = Runtime::new();
     let camera = NodeAPI::create::<Camera2D>(&mut runtime);
@@ -1456,6 +1471,40 @@ fn button_2d_mouse_click_uses_world_hitbox() {
     runtime.set_mouse_button_state(MouseButton::Left, false);
     runtime.extract_render_2d_commands();
 
+    assert_eq!(
+        runtime.render_ui.button_states.get(&button).copied(),
+        Some(UiButtonVisualState::Hover)
+    );
+}
+
+#[test]
+fn image_button_below_camera_hits_lower_screen_half() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(1920, 1080);
+    let camera = NodeAPI::create::<Camera2D>(&mut runtime);
+    if let Some(mut node) = runtime.nodes.get_mut(camera)
+        && let SceneNodeData::Camera2D(data) = &mut node.data
+    {
+        data.active = true;
+    }
+    let button = NodeAPI::create::<ImageButton2D>(&mut runtime);
+    if let Some(mut node) = runtime.nodes.get_mut(button)
+        && let SceneNodeData::ImageButton2D(data) = &mut node.data
+    {
+        data.transform.position = Vector2::new(0.0, -300.0);
+    }
+    runtime.begin_input_frame();
+    runtime.set_mouse_position(960.0, 840.0);
+    runtime.set_mouse_button_state(MouseButton::Left, true);
+    let mut commands = Vec::new();
+    runtime.extract_render_snapshot_commands(&mut commands);
+    assert_eq!(
+        runtime.render_ui.button_states.get(&button).copied(),
+        Some(UiButtonVisualState::Pressed)
+    );
+    runtime.begin_input_frame();
+    runtime.set_mouse_button_state(MouseButton::Left, false);
+    runtime.extract_render_snapshot_commands(&mut commands);
     assert_eq!(
         runtime.render_ui.button_states.get(&button).copied(),
         Some(UiButtonVisualState::Hover)

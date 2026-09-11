@@ -124,6 +124,14 @@ impl SceneVariantResolver for TestSceneResolver {
 
 #[test]
 fn scene_asset_ids_decode_paths_but_runtime_decode_stays_strict() {
+    let demo_path = Variant::from("demo://ok.asset");
+    assert_eq!(
+        demo_path
+            .parse_scene::<MaterialID>(&mut TestSceneResolver)
+            .expect("valid test input"),
+        MaterialID::from_u64(2)
+    );
+    assert!(demo_path.parse::<MaterialID>().is_err());
     let path = Variant::from("res://ok.asset");
     let mut resolver = TestSceneResolver;
     assert_eq!(

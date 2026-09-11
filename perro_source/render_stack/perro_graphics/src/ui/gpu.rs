@@ -50,8 +50,9 @@ const UI_MIN_INDEX_BYTES: usize = 4 * 1024;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Zeroable, Pod)]
 struct UiVertexGpu {
-    pos: [f32; 2],
+    pos: [f32; 4],
     uv: [f32; 2],
+    // [homogeneous world position, sample scene depth]. Both are per primitive.
     depth_test: [f32; 2],
     color: [u8; 4],
 }
@@ -171,6 +172,7 @@ pub struct GpuUi {
     // Prepared meshes that sample scene depth cannot be retained: the depth
     // buffer changes whenever the 3D pass runs under the same view id.
     prepared_uses_depth_test: bool,
+    prepared_uses_world_projection: bool,
     prepared_live_texture_ids: AHashSet<TextureID>,
     // Ids bound to externally owned views (camera-stream outputs): the view
     // stays put while its pixels are re-rendered every frame.
@@ -192,7 +194,7 @@ pub struct UiPrepareInput<'a> {
     pub(crate) shared_textures: &'a mut SharedTextureStore,
     pub viewport: [u32; 2],
     pub primitives: &'a [Arc<ClippedPrimitive>],
-    pub primitive_depths: &'a [Option<Arc<[f32]>>],
+    pub world_projections: &'a [Option<crate::ui::painter::UiWorldProjection>],
     pub textures_delta: &'a TexturesDelta,
     pub texture_size: [u32; 2],
     pub revision: u64,
@@ -357,23 +359,23 @@ impl GpuUi {
                         step_mode: wgpu::VertexStepMode::Vertex,
                         attributes: &[
                             wgpu::VertexAttribute {
-                                format: wgpu::VertexFormat::Float32x2,
+                                format: wgpu::VertexFormat::Float32x4,
                                 offset: 0,
                                 shader_location: 0,
                             },
                             wgpu::VertexAttribute {
                                 format: wgpu::VertexFormat::Float32x2,
-                                offset: 8,
+                                offset: 16,
                                 shader_location: 1,
                             },
                             wgpu::VertexAttribute {
                                 format: wgpu::VertexFormat::Float32x2,
-                                offset: 16,
+                                offset: 24,
                                 shader_location: 2,
                             },
                             wgpu::VertexAttribute {
                                 format: wgpu::VertexFormat::Unorm8x4,
-                                offset: 24,
+                                offset: 32,
                                 shader_location: 3,
                             },
                         ],
@@ -425,11 +427,20 @@ impl GpuUi {
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &composite_shader,
-                    entry_point: Some(if output_format.is_srgb() {
-                        "fs_composite_linear_framebuffer"
-                    } else {
-                        "fs_composite_gamma_framebuffer"
-                    }),
+                    // Float frame composites store scene-linear color. Only
+                    // non-sRGB UNORM display targets need shader gamma encode.
+                    entry_point: Some(
+                        if output_format.is_srgb()
+                            || matches!(
+                                output_format,
+                                wgpu::TextureFormat::Rgba16Float | wgpu::TextureFormat::Rgba32Float
+                            )
+                        {
+                            "fs_composite_linear_framebuffer"
+                        } else {
+                            "fs_composite_gamma_framebuffer"
+                        },
+                    ),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: output_format,
                         blend: Some(wgpu::BlendState {
@@ -496,6 +507,7 @@ impl GpuUi {
             rasterized_signature: None,
             rasterized_render_viewport: [0, 0],
             prepared_uses_depth_test: false,
+            prepared_uses_world_projection: false,
             prepared_live_texture_ids: AHashSet::new(),
             external_image_texture_ids: AHashSet::new(),
             shrink_vertices: ShrinkTracker::default(),
@@ -533,7 +545,7 @@ impl GpuUi {
             shared_textures,
             viewport,
             primitives,
-            primitive_depths,
+            world_projections,
             textures_delta,
             texture_size,
             revision,
@@ -597,12 +609,15 @@ impl GpuUi {
                 static_texture_lookup,
             },
         );
-        let unchanged = self.prepared_mesh_signature == Some(mesh_signature);
+        // Projection can change while local glyph mesh Arcs stay the same.
+        let unchanged = self.prepared_mesh_signature == Some(mesh_signature)
+            && !self.prepared_uses_world_projection
+            && !world_projections.iter().any(Option::is_some);
         let patched = !unchanged
             && self.patch_mesh_buffers(
                 queue,
                 primitives,
-                primitive_depths,
+                world_projections,
                 mesh_signature,
                 render_viewport,
                 render_scale,
@@ -669,23 +684,30 @@ impl GpuUi {
                     .iter()
                     .map(|index| index.saturating_add(vertex_offset)),
             );
-            let depths = primitive_depths
+            let projection = world_projections
                 .get(primitive_index)
-                .and_then(Option::as_deref)
-                .filter(|depths| depths.len() == mesh.vertices.len());
-            uses_depth_test |= depths.is_some();
+                .and_then(Option::as_ref)
+                .filter(|projection| projection.clip_positions.len() == mesh.vertices.len());
+            uses_depth_test |= projection.is_some_and(|projection| projection.depth_test);
             self.vertices
                 .extend(
                     mesh.vertices
                         .iter()
                         .enumerate()
                         .map(|(index, vertex)| UiVertexGpu {
-                            pos: [
-                                vertex.pos.x * render_scale[0],
-                                vertex.pos.y * render_scale[1],
-                            ],
+                            pos: projection.map_or(
+                                [
+                                    vertex.pos.x * render_scale[0],
+                                    vertex.pos.y * render_scale[1],
+                                    0.0,
+                                    1.0,
+                                ],
+                                |projection| projection.clip_positions[index],
+                            ),
                             uv: [vertex.uv.x, vertex.uv.y],
-                            depth_test: depths.map_or([0.0, 0.0], |depths| [depths[index], 1.0]),
+                            depth_test: projection.map_or([0.0, 0.0], |projection| {
+                                [1.0, u8::from(projection.depth_test) as f32]
+                            }),
                             color: vertex.color.to_array(),
                         }),
                 );
@@ -700,8 +722,12 @@ impl GpuUi {
         }
         self.perf_counters.draw_calls = self.meshes.len() as u32;
         self.upload_mesh_buffers(device, queue);
+        if self.prepared_uses_world_projection || world_projections.iter().any(Option::is_some) {
+            self.supersample_dirty = true;
+        }
         self.prepared_mesh_signature = Some(mesh_signature);
         self.prepared_uses_depth_test = uses_depth_test;
+        self.prepared_uses_world_projection = world_projections.iter().any(Option::is_some);
         self.prepared_revision = revision;
         self.prepared_viewport = viewport;
         self.prepared_render_viewport = render_viewport;
@@ -865,6 +891,7 @@ impl GpuUi {
         self.signature_pins.clear();
         self.prepared_revision = u64::MAX;
         self.prepared_uses_depth_test = false;
+        self.prepared_uses_world_projection = false;
         self.prepared_live_texture_ids.clear();
         self.supersample_dirty = true;
         // The buffers keep their high-water capacity; tell the GC the live
@@ -991,7 +1018,7 @@ impl GpuUi {
         &mut self,
         queue: &wgpu::Queue,
         primitives: &[Arc<ClippedPrimitive>],
-        primitive_depths: &[Option<Arc<[f32]>>],
+        world_projections: &[Option<crate::ui::painter::UiWorldProjection>],
         signature: UiMeshSignature,
         render_viewport: [u32; 2],
         render_scale: [f32; 2],
@@ -1001,8 +1028,8 @@ impl GpuUi {
         };
         if self.prepared_render_viewport != render_viewport
             || viewport_scale(self.prepared_viewport, self.prepared_render_viewport) != render_scale
-            || self.prepared_uses_depth_test
-            || primitive_depths.iter().any(Option::is_some)
+            || self.prepared_uses_world_projection
+            || world_projections.iter().any(Option::is_some)
             || previous.mesh_count != primitives.len()
             || signature.mesh_count != primitives.len()
             || self.signature_pins.len() != primitives.len()
@@ -1078,6 +1105,8 @@ impl GpuUi {
                         pos: [
                             vertex.pos.x * render_scale[0],
                             vertex.pos.y * render_scale[1],
+                            0.0,
+                            1.0,
                         ],
                         uv: [vertex.uv.x, vertex.uv.y],
                         depth_test: [0.0, 0.0],

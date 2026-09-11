@@ -22,6 +22,7 @@ impl Gpu {
         self.camera_stream_particles_3d.remove(&node);
         self.camera_stream_water.remove(&node);
         self.camera_stream_post.remove(&node);
+        self.camera_stream_ui.remove(&node);
         // Consumer caches (2D sprite, UI image, 3D material slot) retain views
         // + bind groups built from the removed target. Without this unbind the
         // whole GpuCameraStreamTarget (color + post_input + tonemap_input +
@@ -74,7 +75,7 @@ impl Gpu {
         main_requested: bool,
         streams: &[(perro_ids::NodeID, std::sync::Arc<CameraStreamState>)],
     ) -> bool {
-        (main_requested && self.post.builtin_pipeline_pending())
+        (main_requested && self.composite.post.builtin_pipeline_pending())
             || streams.iter().any(|(node, stream)| {
                 PostProcessor::has_effects(stream.post_processing.as_ref())
                     && self
@@ -102,7 +103,7 @@ impl Gpu {
         // panics in the browser ("time not implemented on this platform").
         let started = Instant::now();
         let mut compiled = 0usize;
-        if main_requested && self.post.warm_builtin_pipeline(&self.device) {
+        if main_requested && self.composite.post.warm_builtin_pipeline(&self.device) {
             compiled += 1;
         }
         for (node, stream) in streams {

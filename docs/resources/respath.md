@@ -75,6 +75,7 @@ Use it for paths with these schemes:
 - `dlc://NAME/path/to/file.ext`
 - `dlc://self/path/to/file.ext`
 - `user://path/to/file.ext`
+- `demo://path/to/file.ext` (alias for `user://demo/path/to/file.ext`)
 
 Do not use `std::path::Path` for these paths.
 
@@ -121,7 +122,7 @@ let owned = path.to_buf();
 
 ## Rules
 
-- Must start with `res://`, `dlc://`, or `user://`.
+- Must start with `res://`, `dlc://`, `user://`, or `demo://`.
 - `dlc://` must include mount name: `dlc://NAME/...`.
 - `dlc://self/...` means current DLC mount while loading DLC-authored content.
 - Use `/`, not `\`.
@@ -172,3 +173,6 @@ Use `ResPathBuf` when path changes at runtime.
 `res_path!` and `res_path_buf!` require string literals and fail at compile time for bad paths.
 
 Use `ResPath::try_new` or `ResPathBuf::try_new` when you want to handle dynamic paths as `Result`.
+
+Use `--playtest` -> `user://` save identity = base project name + `_Playtest`.
+Windows: `%LOCALAPPDATA%/NAME_Playtest/data/`. Keep full/demo saves separate.

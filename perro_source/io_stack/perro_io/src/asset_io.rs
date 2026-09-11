@@ -56,6 +56,7 @@ struct ProjectAssetState {
     root_has_res_dir: bool,
     archive: Option<Arc<PerroAssetsArchive>>,
     demo: bool,
+    playtest: bool,
     // Precompiled at `set_demo_asset_filter`; matched against the split path
     // under the read lock, so the non-demo fast path never clones anything.
     demo_excludes: Option<Arc<[CompiledPathPattern]>>,
@@ -66,6 +67,7 @@ static PROJECT_ASSET_STATE: RwLock<ProjectAssetState> = RwLock::new(ProjectAsset
     root_has_res_dir: false,
     archive: None,
     demo: false,
+    playtest: false,
     demo_excludes: None,
 });
 static DLC_MOUNTS: LazyLock<RwLock<HashMap<String, DlcMount>>> =
@@ -160,6 +162,10 @@ pub fn set_project_root(root: ProjectRoot) {
 }
 
 pub fn set_demo_asset_filter(active: bool, excludes: Vec<String>) {
+    set_build_asset_filter(active, false, excludes);
+}
+
+pub fn set_build_asset_filter(demo: bool, playtest: bool, excludes: Vec<String>) {
     let compiled: Option<Arc<[CompiledPathPattern]>> = (!excludes.is_empty()).then(|| {
         excludes
             .iter()
@@ -169,8 +175,16 @@ pub fn set_demo_asset_filter(active: bool, excludes: Vec<String>) {
     let mut state = PROJECT_ASSET_STATE
         .write()
         .expect("required value must be present");
-    state.demo = active;
+    state.demo = demo;
+    state.playtest = playtest;
     state.demo_excludes = compiled;
+}
+
+pub fn playtest_mode_active() -> bool {
+    PROJECT_ASSET_STATE
+        .read()
+        .expect("required value must be present")
+        .playtest
 }
 
 pub fn demo_mode_active() -> bool {
@@ -343,8 +357,20 @@ fn user_storage_key(app_name: &str, relative_path: &str) -> String {
     format!("perro:user:{app_name}:data:{relative_path}")
 }
 
+fn user_relative_path(path: &str) -> Option<Cow<'_, str>> {
+    if let Some(relative) = path.strip_prefix("user://") {
+        Some(Cow::Borrowed(relative))
+    } else {
+        path.strip_prefix("demo://")
+            .map(|relative| Cow::Owned(format!("demo/{relative}")))
+    }
+}
+
 pub fn validate_virtual_asset_path(path: &str) -> io::Result<()> {
-    if let Some(stripped) = path.strip_prefix("user://") {
+    if let Some(stripped) = path
+        .strip_prefix("user://")
+        .or_else(|| path.strip_prefix("demo://"))
+    {
         return validate_asset_relative_path(stripped);
     }
 
@@ -417,7 +443,7 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
             .expect("required value must be present");
         // Demo off (the common case) short-circuits before any pattern work,
         // and the root detaches with an Arc bump instead of a deep clone.
-        let demo_excluded = state.demo
+        let demo_excluded = (state.demo || state.playtest)
             && path.strip_prefix("res://").is_some_and(|relative| {
                 state.demo_excludes.as_deref().is_some_and(|patterns| {
                     let segments = split_path_segments(relative);
@@ -432,13 +458,13 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
         return ResolvedPath::Excluded(path.to_string());
     }
 
-    // Handle user:// paths (always disk)
-    if let Some(stripped) = path.strip_prefix("user://") {
+    // Both builds share user data; demo:// aliases the demo subdirectory.
+    if let Some(stripped) = user_relative_path(path) {
         let app_name = user_app_name(&project_root_opt);
 
         #[cfg(target_arch = "wasm32")]
         {
-            return ResolvedPath::WebUserStorage(user_storage_key(&app_name, stripped));
+            return ResolvedPath::WebUserStorage(user_storage_key(&app_name, &stripped));
         }
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -447,7 +473,7 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
                 .unwrap_or_else(std::env::temp_dir)
                 .join(app_name)
                 .join("data");
-            return ResolvedPath::Disk(base.join(stripped));
+            return ResolvedPath::Disk(base.join(stripped.as_ref()));
         }
     }
 
@@ -555,7 +581,7 @@ fn try_static_binary_slice(path: &str) -> Option<io::Result<Cow<'static, [u8]>>>
         let state = PROJECT_ASSET_STATE
             .read()
             .expect("required value must be present");
-        if state.demo {
+        if state.demo || state.playtest {
             // Let `resolve_path` own exclusion so the error text stays single-sourced.
             return None;
         }
@@ -574,7 +600,7 @@ fn load_resolved(resolved: ResolvedPath) -> io::Result<Vec<u8>> {
     match resolved {
         ResolvedPath::Excluded(path) => Err(io::Error::new(
             io::ErrorKind::NotFound,
-            format!("asset `{path}` excluded from demo"),
+            format!("asset `{path}` excluded from build"),
         )),
         ResolvedPath::Disk(pb) => fs::read(pb),
         ResolvedPath::WebUserStorage(key) => load_web_user_asset(&key),
@@ -616,7 +642,7 @@ pub fn stream_asset(path: &str) -> io::Result<Box<dyn ReadSeek>> {
     match resolve_path(path) {
         ResolvedPath::Excluded(path) => Err(io::Error::new(
             io::ErrorKind::NotFound,
-            format!("asset `{path}` excluded from demo"),
+            format!("asset `{path}` excluded from build"),
         )),
         ResolvedPath::Disk(pb) => {
             let file = File::open(pb)?;
@@ -668,7 +694,7 @@ pub fn save_asset(path: &str, data: &[u8]) -> io::Result<()> {
     match resolve_path(path) {
         ResolvedPath::Excluded(path) => Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
-            format!("asset `{path}` excluded from demo"),
+            format!("asset `{path}` excluded from build"),
         )),
         ResolvedPath::Disk(pb) => {
             if let Some(parent) = pb.parent() {
@@ -1036,7 +1062,89 @@ mod tests {
     }
 
     #[test]
+    fn demo_alias_shares_disk_and_web_user_paths_in_both_modes() {
+        let _guard = TEST_LOCK.lock().expect("test lock");
+        set_project_root(ProjectRoot::Disk {
+            root: PathBuf::from("perro-demo-alias-test"),
+            name: "My Game".to_string(),
+        });
+        for active in [true, false] {
+            set_demo_asset_filter(active, vec!["demo/**".to_string()]);
+            let ResolvedPath::Disk(demo) = resolve_path("demo://save/slot1.dat") else {
+                panic!("expected demo disk path");
+            };
+            let ResolvedPath::Disk(user) = resolve_path("user://demo/save/slot1.dat") else {
+                panic!("expected user disk path");
+            };
+            assert_eq!(demo, user);
+            assert!(demo.ends_with("My_Game/data/demo/save/slot1.dat"));
+        }
+        set_demo_asset_filter(false, Vec::new());
+        for path in ["demo://save/slot1.dat", "user://demo/save/slot1.dat"] {
+            assert_eq!(
+                user_storage_key(
+                    "My_Game",
+                    &user_relative_path(path).expect("user relative path")
+                ),
+                "perro:user:My_Game:data:demo/save/slot1.dat"
+            );
+        }
+    }
+
+    #[test]
+    fn playtest_filters_assets_and_uses_separate_user_root() {
+        let _guard = TEST_LOCK.lock().expect("test lock");
+        let mut paths = Vec::new();
+        for (active, name) in [
+            (false, "My Game"),
+            (true, "My Game_Playtest"),
+            (false, "My Game"),
+        ] {
+            set_project_root(ProjectRoot::Disk {
+                root: PathBuf::from("playtest-save-test"),
+                name: name.into(),
+            });
+            set_build_asset_filter(false, active, vec!["full/**".into()]);
+            assert_eq!(playtest_mode_active(), active);
+            assert_eq!(
+                matches!(
+                    resolve_path("res://full/level.scn"),
+                    ResolvedPath::Excluded(_)
+                ),
+                active
+            );
+            let ResolvedPath::Disk(path) = resolve_path("user://save.json") else {
+                panic!("disk path")
+            };
+            assert!(path.ends_with(if active {
+                "My_Game_Playtest/data/save.json"
+            } else {
+                "My_Game/data/save.json"
+            }));
+            paths.push(path);
+        }
+        assert_ne!(paths[0], paths[1]);
+        assert_eq!(paths[0], paths[2]);
+        assert_ne!(
+            user_storage_key("My_Game", "save.json"),
+            user_storage_key("My_Game_Playtest", "save.json")
+        );
+        set_demo_asset_filter(false, Vec::new());
+    }
+
+    #[test]
     fn virtual_asset_paths_reject_root_escape() {
+        for path in [
+            "demo://../save.dat",
+            "demo:///save.dat",
+            "demo://save\\slot.dat",
+        ] {
+            assert!(
+                validate_virtual_asset_path(path).is_err(),
+                "accepted {path}"
+            );
+        }
+        assert!(validate_virtual_asset_path("demo://save/slot1.dat").is_ok());
         assert!(validate_virtual_asset_path("user://../save.dat").is_err());
         assert!(validate_virtual_asset_path("res://../secret.txt").is_err());
         assert!(validate_virtual_asset_path("dlc://Expansion/../secret.txt").is_err());

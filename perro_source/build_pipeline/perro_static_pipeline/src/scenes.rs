@@ -39,8 +39,9 @@ pub fn generate_static_scenes(
             .into_iter()
             .map(|rel| res_dir.join(rel)),
         &format!(
-            "scenes demo={} prefix={} bakes={:?}",
+            "scenes demo={} playtest={} prefix={} bakes={:?}",
             crate::demo_mode_active(),
+            crate::playtest_mode_active(),
             asset_prefix(),
             bake_jobs
                 .iter()
@@ -50,7 +51,7 @@ pub fn generate_static_scenes(
     );
     // Demo reference validation also depends on global exclusion patterns.
     // Keep validating it until those patterns have an explicit cache key.
-    if !crate::demo_mode_active() && cache.hit() {
+    if !crate::demo_mode_active() && !crate::playtest_mode_active() && cache.hit() {
         crate::record_static_assets(
             perro_asset_formats::dlc::DlcAssetKind::SCENE,
             perro_asset_formats::dlc::DlcAssetAccess::ENGINE_LOCAL,
@@ -74,6 +75,8 @@ pub fn generate_static_scenes(
             let mut parsed = std::panic::catch_unwind(|| Parser::new(&src).parse_scene())
                 .map_err(|_| io::Error::other(format!("failed to parse scene: {res_path}")))?;
             perro_scene::filter_demo_scene(&mut parsed, crate::demo_mode_active())
+                .map_err(|err| io::Error::other(format!("{res_path}: {err}")))?;
+            perro_scene::filter_playtest_scene(&mut parsed, crate::playtest_mode_active())
                 .map_err(|err| io::Error::other(format!("{res_path}: {err}")))?;
             validate_demo_scene_paths(&parsed)
                 .map_err(|err| io::Error::other(format!("{res_path}: {err}")))?;
@@ -274,7 +277,7 @@ fn rewrite_material_value(
 }
 
 fn validate_demo_scene_paths(scene: &perro_scene::Scene) -> Result<(), String> {
-    if !crate::demo_mode_active() {
+    if !crate::demo_mode_active() && !crate::playtest_mode_active() {
         return Ok(());
     }
     for node in scene.nodes.iter() {
@@ -329,7 +332,7 @@ fn validate_demo_path(field: &str, path: &str) -> Result<(), String> {
         return Ok(());
     };
     if perro_io::walkdir::is_relative_path_excluded(relative) {
-        Err(format!("field `{field}` refs demo-excluded path `{path}`"))
+        Err(format!("field `{field}` refs build-excluded path `{path}`"))
     } else {
         Ok(())
     }

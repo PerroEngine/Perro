@@ -140,6 +140,7 @@ keywords = ["game", "perro"]
 | `main_scene`     | `res://` string | need             | first scene    |
 | `icon`           | `res://` string | `res://icon.png` | app icon       |
 | `startup_splash` | `res://` string | `res://icon.png` | startup splash |
+| `startup_splash_size` | positive number | `1` | splash img scale: `0.5`, `1`, `2`, `3`, `4`, etc.; kp center + aspect; large vals may crop |
 | `version`        | string          | none             | Windows version info |
 | `description`    | string          | none             | Windows version info |
 | `company`        | string          | none             | Windows version info |
@@ -180,11 +181,11 @@ choice with `hdr_set!(ctx.res, HdrMode::...)`.
 
 `anti_alias` picks one anti-aliasing technique (never two at once):
 
-- `"fxaa"` (default): FXAA 3.11-quality post pass on the tonemapped scene, before the UI
-  composites, so UI stays sharp. Costs a few texture taps per pixel with an early exit on
+- `"fxaa"` (default): FXAA 3.11-quality post pass on the full tonemapped frame, including UI,
+  at output resolution. Costs a few texture taps per pixel with an early exit on
   flat regions; its GPU resources only allocate while the pass actually runs.
-- `"smaa"`: SMAA 1x, a three-pass morphological chain on the same tonemapped scene (UI stays
-  sharp here too). Reconstructs edge shapes instead of blurring along them, so gradients on
+- `"smaa"`: SMAA 1x, a three-pass morphological chain on the same full tonemapped frame.
+  Reconstructs edge shapes instead of blurring along them, so gradients on
   long edges and diagonals come out noticeably cleaner than FXAA at roughly 2-3x its GPU
   cost — still cheaper than `msaa4` on most GPUs, and it also applies to alpha-tested and
   shader-created edges that MSAA misses. Both lookup tables it needs are generated on the
@@ -198,9 +199,9 @@ choice with `hdr_set!(ctx.res, HdrMode::...)`.
   camera only (no per-object motion vectors yet), so fast-moving objects can leave a
   short ghosting trail bounded by the neighborhood clamp; camera motion reprojects
   correctly, and the history rejects on depth disocclusions, off-screen reprojection,
-  resizes, and 3D-scene gaps. Runs post-tonemap before the UI composites (UI stays
-  sharp), and like the other post modes its GPU resources (two history targets + LDR
-  copy) only exist while the mode is active.
+  resizes, and 3D-scene gaps. Resolves scene-linear color before UI and final effects;
+  UI never enters temporal history. Its two history targets only exist while the mode
+  is active, and the resolve samples the scene directly without an extra input copy.
 - `"msaa2"` / `"msaa4"`: hardware MSAA at 2x/4x samples. FXAA/SMAA/TAA turn off
   automatically.
 - `"off"`: no anti-aliasing.
@@ -367,10 +368,14 @@ input = "off"
 | Field     | Type   | Default | Note                              |
 | --------- | ------ | ------- | --------------------------------- |
 | `enabled` | bool   | `false` | Steamworks on/off                 |
-| `app_id`  | int    | none    | need when enabled                 |
+| `app_id`  | int    | none    | base Steam App ID                 |
+| `demo_id` | int | none | Steam Demo App ID; select with `--demo` |
+| `playtest_id` | int | none | Steam Playtest App ID; select with `--playtest` |
 | `input`   | string | `"fallback"` | Steam Input mode: off/metadata/fallback/actions; fallback merges pads not covered by native input |
 
-`app_id` must fit `u32`.
+`app_id`, `demo_id`, and `playtest_id` must fit `u32`.
+Use `demo_id` with `--demo`; use `playtest_id` with `--playtest`.
+Omit variant ID -> fall back to `app_id`.
 
 Use `input = "off"` to keep native Perro input only.
 Use `input = "metadata"` to read Steam controller type/glyph/origin data without Steam Input action reads.
@@ -408,6 +413,27 @@ Older projects keep working. All legacy forms parse; the flat form wins when bot
 
 `perro dev --demo` and `perro build --demo` apply demo overrides and exclusions.
 Normal dev/build ignore the overrides and keep every asset.
+
+Set the demo's Steam App ID with `[steam].demo_id`. `perro build --demo` and
+`perro dev --demo` select that ID; normal builds use `[steam].app_id`.
+
+```toml
+[steam]
+enabled = true
+app_id = 123456
+demo_id = 654321
+playtest_id = 987654
+```
+
+Both builds use the base `[project].name` for `user://`, even when
+`[demo.project].name` changes the display name. Spaces still become underscores.
+`demo://save.json` aliases `user://demo/save.json` in both builds, so the full
+game can read demo progress. Use `user://` for shared settings and compatible
+saves; use `demo://` for demo-specific state. Existing saves under an old demo
+name are not moved automatically.
+
+On web, both schemes use the same base-name `localStorage` namespace within
+the same origin. Steam Cloud sharing requires separate Steamworks configuration.
 
 ```toml
 [demo]
@@ -451,3 +477,40 @@ demo_exclude!({
 - Prefer `aspect_ratio = "16:9"` over exact virtual size.
 - Put localization csv next to `project.toml`, not inside `res/`.
 - Unknown tables warn + get ignored; check spelling when a setting seems dead.
+
+## Playtest
+
+Use `perro dev --playtest` or `perro build --playtest`.
+Use `[playtest]` overrides + exclusions like `[demo]`.
+Reject `--demo` + `--playtest` together.
+
+```toml
+[steam]
+enabled = true
+app_id = 123456
+demo_id = 654321
+playtest_id = 987654
+
+[playtest]
+exclude = ["res://full/**", "res://scripts/full_only.rs"]
+
+[playtest.project]
+name = "My Game Playtest"
+main_scene = "res://playtest/main.scn"
+
+```
+
+Set `[steam].playtest_id` to Steam Playtest App ID.
+Use base `[project].name` + `_Playtest` for save identity, even with display-name overrides.
+Resolve `user://save.json` on Windows -> `%LOCALAPPDATA%/My_Game_Playtest/data/save.json`
+for base name `My Game`. Keep full/demo saves in `My_Game/data`.
+Use same split for other platforms + web storage. No save migration.
+
+Use `playtest_exclude!({ ... })` to omit code from playtests.
+Use `playtest_include!({ ... })` for playtest-only code.
+Use scene tag `playtest_exclude` to omit node + child tree from playtests.
+Use scene tag `playtest_include` to keep tree only in playtests.
+Strip reserved tags from retained nodes. Reject refs to removed nodes.
+
+Enable Cargo feature `perro-playtest` through CLI; scaffold + manifest repair
+wire it to scripts. Asset exclusion globs use `res://` + same rules as demo.

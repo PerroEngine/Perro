@@ -829,6 +829,8 @@ Camera streams show explicitly referenced cameras from the existing world; SubVi
 Legacy `UiViewport` scene names remain a load alias for `UiSubView`.
 `UiLabel` draws text.
 Use `Label2D` or `Label3D` for world-space text that still uses `UiLabel` text, alignment, and locale binding fields.
+
+Use `Label3D` inside `UiSubView`, `SubView2D`, or `SubView3D` -> local camera projection + subview scene depth; keep `visible_through_objects` 4 depth bypass.
 `UiTextBox` edits one line of text.
 `UiTextBlock` edits multi-line text.
 `UiLayout`, `UiHLayout`, `UiVLayout`, and `UiGrid` add automatic child placement.

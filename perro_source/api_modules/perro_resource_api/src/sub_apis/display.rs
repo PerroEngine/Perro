@@ -1,6 +1,6 @@
 //! Display HDR state + control.
 
-use crate::api::ViewportAPI;
+use crate::{ResPathSource, api::ViewportAPI};
 use perro_render_bridge::{HdrMode, HdrStatus};
 
 pub struct DisplayModule<'a, R: ViewportAPI + ?Sized> {
@@ -11,6 +11,12 @@ impl<'a, R: ViewportAPI + ?Sized> DisplayModule<'a, R> {
     #[inline]
     pub const fn new(api: &'a R) -> Self {
         Self { api }
+    }
+
+    /// Queue the active viewport, including main UI and late overlays, for save.
+    #[inline]
+    pub fn save_image<P: ResPathSource>(&self, path: P) -> bool {
+        self.api.save_display_image(path.as_res_path_str())
     }
 
     #[inline]
@@ -32,6 +38,13 @@ impl<'a, R: ViewportAPI + ?Sized> DisplayModule<'a, R> {
     pub fn hdr_active(&self) -> bool {
         self.hdr_status().active
     }
+}
+
+#[macro_export]
+macro_rules! display_save_image {
+    ($res:expr, $path:expr) => {
+        $res.Display().save_image($path)
+    };
 }
 
 #[macro_export]

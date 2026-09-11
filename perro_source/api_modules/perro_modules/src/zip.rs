@@ -86,7 +86,7 @@ fn writable_disk_path(path: &str) -> io::Result<PathBuf> {
 }
 
 fn writable_file_path(path: &str) -> io::Result<PathBuf> {
-    if path.starts_with("user://") {
+    if path.starts_with("user://") || path.starts_with("demo://") {
         return writable_disk_path(path);
     }
     if Path::new(path).is_absolute() {
@@ -94,12 +94,12 @@ fn writable_file_path(path: &str) -> io::Result<PathBuf> {
     }
     Err(io::Error::new(
         io::ErrorKind::PermissionDenied,
-        "writes are restricted to `user://` or absolute paths",
+        "writes are restricted to `user://`, `demo://`, or absolute paths",
     ))
 }
 
 fn validate_write_path(path: &str) -> io::Result<()> {
-    if path.starts_with("user://") {
+    if path.starts_with("user://") || path.starts_with("demo://") {
         validate_virtual_asset_path(path)?;
         return Ok(());
     }
@@ -108,6 +108,6 @@ fn validate_write_path(path: &str) -> io::Result<()> {
     }
     Err(io::Error::new(
         io::ErrorKind::PermissionDenied,
-        "writes are restricted to `user://` or absolute paths",
+        "writes are restricted to `user://`, `demo://`, or absolute paths",
     ))
 }

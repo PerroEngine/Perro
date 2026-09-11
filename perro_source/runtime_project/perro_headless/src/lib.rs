@@ -47,6 +47,8 @@ pub fn run_static_embedded_project(
         input.project.virtual_width,
         input.project.virtual_height,
     )
+    .with_base_name(input.project.base_name)
+    .with_startup_splash_size(input.project.startup_splash_size)
     .with_target_fixed_update(input.runtime.target_fixed_update)
     .with_frame_rate_cap(input.runtime.frame_rate_cap)
     .with_physics_gravity(input.runtime.physics_gravity)
@@ -224,9 +226,11 @@ pub struct StaticEmbeddedProject<'a> {
 pub struct StaticEmbeddedProjectInfo<'a> {
     pub project_root: &'a Path,
     pub project_name: &'static str,
+    pub base_name: &'static str,
     pub main_scene_hash: u64,
     pub icon_hash: u64,
     pub startup_splash_hash: u64,
+    pub startup_splash_size: f32,
     pub virtual_width: u32,
     pub virtual_height: u32,
 }

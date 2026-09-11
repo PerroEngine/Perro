@@ -363,9 +363,10 @@ pub enum RenderCommand {
 // small. Box any variant that would push this over the limit.
 const _: () = assert!(std::mem::size_of::<RenderCommand>() <= 128);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DisplayCommand {
     SetHdrMode(HdrMode),
+    SaveImage { path: String },
 }
 
 #[derive(Debug, Clone)]

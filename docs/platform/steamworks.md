@@ -81,12 +81,35 @@ Add Steam cfg to `project.toml`:
 [steam]
 enabled = true
 app_id = 480
+# demo_id = 481
+# playtest_id = 482
 input = "off"
 ```
 
 Use `480` for local Steamworks tests.
 
 When Steam cfg disabled, Steam calls return `Err(steam::SteamError::Disabled)`.
+
+Use compile-time wraps from `perro_api::prelude::*`:
+
+```rust
+is_steam! {
+    let _ = steam_ach_unlock!("ACH_FIRST_WIN");
+}
+is_not_steam! {
+    // Local progress path.
+}
+```
+
+Select via `perro_api/steamworks`; no caller-side feature declaration needed.
+Support items + statements + `is_steam!({ ... })` block form, like `demo_exclude!`.
+Discard inactive tokens before type checks; wrap Steam-only imports + code.
+Check build support, not live Steam readiness or `[steam].enabled`.
+Use wraps as items or statements; inactive wraps yield no value.
+
+Without Steam build support, normal Steam APIs + macros stay in prelude and
+return `SteamError::Disabled` via stubs. No Steam SDK dependency for this path.
+Keep `steam::game_server` behind Steam build support.
 
 `input` controls Steam Input access:
 

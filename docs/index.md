@@ -36,6 +36,7 @@ Avoid using history pages as current guidance.
 
 ### Start
 
+- [AI agents: start with Perro state](scripting/authoring_guide.md#ai-agents-start-with-perro-state)
 - [Install + tools](../perro_book/install.md)
 - [First project](../perro_book/first_project.md)
 - [Perro CLI](tools/perro_cli.md)

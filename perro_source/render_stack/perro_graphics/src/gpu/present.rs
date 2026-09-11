@@ -1,5 +1,103 @@
 use super::*;
 
+pub(super) struct SceneBlit {
+    format: wgpu::TextureFormat,
+    layout: wgpu::BindGroupLayout,
+    pipeline: wgpu::RenderPipeline,
+    input: Option<(u64, wgpu::BindGroup)>,
+}
+
+impl PresentProcessor {
+    /// Resolve only scene history, then upscale into the clean full-size
+    /// composite. UI and final effects never enter temporal history.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn compose_scene(
+        &mut self,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        input: &wgpu::TextureView,
+        input_generation: u64,
+        output: &wgpu::TextureView,
+        format: wgpu::TextureFormat,
+        dimensions: [u32; 2],
+        taa_frame: Option<&PresentTaaFrame>,
+    ) {
+        self.scene_composed = true;
+        if self.taa_active
+            && let Some(frame) = taa_frame
+        {
+            self.ensure_taa(dimensions, format, true);
+            self.encode_taa(queue, encoder, frame, output, Some(input));
+            return;
+        }
+        if let Some(taa) = self.taa.as_mut() {
+            taa.history_valid = false;
+        }
+        if self
+            .scene_blit
+            .as_ref()
+            .is_none_or(|blit| blit.format != format)
+        {
+            let layout = self
+                .device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("perro_scene_composite_layout"),
+                    entries: &[smaa_texture_entry(0), smaa_sampler_entry(1)],
+                });
+            let pipeline = create_smaa_pipeline(
+                &self.device,
+                "perro_scene_composite_pipeline",
+                TAA_BLIT_WGSL,
+                &layout,
+                format,
+            );
+            self.scene_blit = Some(SceneBlit {
+                format,
+                layout,
+                pipeline,
+                input: None,
+            });
+        }
+        let blit = self.scene_blit.as_mut().expect("scene blit initialized");
+        if blit
+            .input
+            .as_ref()
+            .is_none_or(|(generation, _)| *generation != input_generation)
+        {
+            let group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("perro_scene_composite_input"),
+                layout: &blit.layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(input),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                ],
+            });
+            blit.input = Some((input_generation, group));
+        }
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("perro_scene_composite_pass"),
+            color_attachments: &[clear_store_attachment(output)],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&blit.pipeline);
+        pass.set_bind_group(
+            0,
+            &blit.input.as_ref().expect("scene input initialized").1,
+            &[],
+        );
+        pass.draw(0..3, 0..1);
+    }
+}
+
 pub(super) fn sky_clear_color(lighting: &Lighting3DState) -> Option<wgpu::Color> {
     let sky = lighting.sky.as_ref()?;
     let day = sample_gradient_color(sky.day_colors.as_ref(), 0.32);
@@ -866,6 +964,8 @@ impl PresentProcessor {
             smaa: None,
             taa_active: false,
             taa: None,
+            scene_blit: None,
+            scene_composed: false,
             output_size: [0, 0],
             last_taa_passes: 0,
         }
@@ -1142,19 +1242,28 @@ impl PresentProcessor {
     }
 
     /// Lazily (re)build TAA resources for the current render size. The
-    /// pipelines, layouts and uniform buffer survive resizes; the LDR target,
+    /// pipelines, layouts and uniform buffer survive resizes; the optional input,
     /// history pair and blit bind groups rebuild when dimensions change
     /// (which also invalidates the history so no stale image is reprojected
     /// across a resize).
-    fn ensure_taa(&mut self, dimensions: [u32; 2]) {
+    fn ensure_taa(
+        &mut self,
+        dimensions: [u32; 2],
+        output_format: wgpu::TextureFormat,
+        external_input: bool,
+    ) {
         let size = [dimensions[0].max(1), dimensions[1].max(1)];
-        if self.taa.as_ref().is_some_and(|taa| taa.size == size) {
+        if self.taa.as_ref().is_some_and(|taa| {
+            taa.size == size
+                && taa.output_format == output_format
+                && taa.ldr_view.is_none() == external_input
+        }) {
             return;
         }
         let device = self.device.clone();
         let core = match self.taa.take() {
-            Some(prev) => prev.core,
-            None => create_taa_core(&device, self.output_format),
+            Some(prev) if prev.output_format == output_format => prev.core,
+            _ => create_taa_core(&device, output_format),
         };
 
         let make_target = |label: &str, format: wgpu::TextureFormat| {
@@ -1174,8 +1283,11 @@ impl PresentProcessor {
                 view_formats: &[],
             })
         };
-        let ldr_target = make_target("perro_taa_ldr_target", self.output_format);
-        let ldr_view = ldr_target.create_view(&wgpu::TextureViewDescriptor::default());
+        let ldr_target =
+            (!external_input).then(|| make_target("perro_taa_ldr_target", output_format));
+        let ldr_view = ldr_target
+            .as_ref()
+            .map(|target| target.create_view(&wgpu::TextureViewDescriptor::default()));
         let history_a = make_target("perro_taa_history_a", TAA_HISTORY_FORMAT);
         let history_b = make_target("perro_taa_history_b", TAA_HISTORY_FORMAT);
         let history_views = [
@@ -1200,6 +1312,7 @@ impl PresentProcessor {
         });
 
         self.taa = Some(TaaResources {
+            output_format,
             core,
             _ldr_target: ldr_target,
             ldr_view,
@@ -1224,6 +1337,7 @@ impl PresentProcessor {
         encoder: &mut wgpu::CommandEncoder,
         frame: &PresentTaaFrame,
         output_view: &wgpu::TextureView,
+        scene_input: Option<&wgpu::TextureView>,
     ) {
         let Some(taa) = self.taa.as_mut() else {
             return;
@@ -1252,7 +1366,9 @@ impl PresentProcessor {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&taa.ldr_view),
+                    resource: wgpu::BindingResource::TextureView(
+                        scene_input.or(taa.ldr_view.as_ref()).expect("TAA input"),
+                    ),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
@@ -1403,10 +1519,12 @@ impl PresentProcessor {
         // TAA needs scene depth; frames without a live 3D pipeline (2D-only
         // scenes) tonemap straight to the swapchain and drop history validity
         // so the accumulation restarts cleanly when 3D returns.
-        let taa_run = self.taa_active && taa_frame.is_some();
+        let scene_composed = std::mem::take(&mut self.scene_composed);
+        let taa_run = !scene_composed && self.taa_active && taa_frame.is_some();
         if taa_run {
-            self.ensure_taa(dimensions);
-        } else if self.taa_active
+            self.ensure_taa(dimensions, self.output_format, false);
+        } else if !scene_composed
+            && self.taa_active
             && let Some(taa) = self.taa.as_mut()
         {
             taa.history_valid = false;
@@ -1485,13 +1603,9 @@ impl PresentProcessor {
             self.last_exposure_groups = 0;
             write_manual_exposure(queue, self, settings.exposure);
         }
-        // With FXAA, SMAA or TAA active the tonemap resolves into a
-        // render-resolution LDR target; the AA pass chain then reads it and
-        // writes the swapchain (doing the upscale when the render size is
-        // capped). UI composites onto the swapchain after this whole method,
-        // so it stays un-blurred. The modes are mutually exclusive (one
-        // anti_alias config value); TAA wins over SMAA wins over FXAA if
-        // several flags are ever set.
+        // The full composite (including UI) enters final tonemap. FXAA/SMAA
+        // operate at output resolution. Scene TAA has already resolved before
+        // UI; the standalone path can still resolve its own supplied frame.
         let taa = if taa_run { self.taa.as_ref() } else { None };
         let smaa = if taa.is_none() && self.smaa_active {
             self.smaa.as_ref()
@@ -1505,7 +1619,7 @@ impl PresentProcessor {
         };
         let taa_encode = taa.is_some();
         let tonemap_view = taa
-            .map(|taa| &taa.ldr_view)
+            .and_then(|taa| taa.ldr_view.as_ref())
             .or_else(|| smaa.map(|smaa| &smaa.ldr_view))
             .or_else(|| fxaa.map(|fxaa| &fxaa.target_view))
             .unwrap_or(output_view);
@@ -1607,7 +1721,7 @@ impl PresentProcessor {
         // TAA resolve + blit (mutually exclusive with the blocks above; runs
         // after them only to end their borrows before taking &mut self).
         if taa_encode && let Some(frame) = taa_frame {
-            self.encode_taa(queue, encoder, frame, output_view);
+            self.encode_taa(queue, encoder, frame, output_view, None);
         }
     }
 }

@@ -124,6 +124,8 @@ pub enum CameraStreamSourceState {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CameraStreamState {
+    /// World labels projected into this target.
+    pub ui_commands: Arc<[crate::UiCommand]>,
     pub source: CameraStreamSourceState,
     /// Convert scene-linear output for direct UI composition. World-space
     /// hosts leave this false and use the main final present conversion.

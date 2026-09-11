@@ -425,6 +425,7 @@ fn camera_stream_2d_state(
     sprites_2d: Arc<[Sprite2DCommand]>,
 ) -> CameraStreamState {
     CameraStreamState {
+        ui_commands: std::sync::Arc::from([]),
         tone_map_output: false,
         source: CameraStreamSourceState::TwoD(Camera2DState::default()),
         overlay_camera_2d: None,
@@ -451,6 +452,7 @@ fn camera_stream_3d_state(
     draws_3d: Arc<[CameraStreamDraw3DState]>,
 ) -> CameraStreamState {
     CameraStreamState {
+        ui_commands: std::sync::Arc::from([]),
         tone_map_output: false,
         source: CameraStreamSourceState::ThreeD(Camera3DState::default()),
         overlay_camera_2d: None,

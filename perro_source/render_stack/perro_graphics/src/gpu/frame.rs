@@ -18,6 +18,7 @@ impl Gpu {
             timing.gpu_timestamp_post = timer.last_post;
         }
         let RenderFrame {
+            ui_font_config,
             resources,
             camera_3d,
             lighting_3d,
@@ -60,7 +61,7 @@ impl Gpu {
             static_mesh_lookup,
             static_shader_lookup,
             ui_primitives,
-            ui_primitive_depths,
+            ui_world_projections,
             ui_textures_delta,
             ui_texture_size,
             ui_revision,
@@ -73,10 +74,6 @@ impl Gpu {
         self.window_handle.id();
 
         let underwater_water = camera_underwater(&camera_3d, waters_3d);
-        let post_requested = underwater_water.is_some()
-            || PostProcessor::has_effects(camera_3d.post_processing.as_ref())
-            || PostProcessor::has_effects(post_processing_2d.as_ref())
-            || PostProcessor::has_effects(post_processing_global.as_ref());
 
         let has = |bit: u32| (frame_dirty_bits & bit) != 0;
 
@@ -118,14 +115,15 @@ impl Gpu {
             || needs_water
             || !decals_3d.is_empty()
             || lighting_3d.sky.is_some()
-            || ui_primitive_depths.iter().any(Option::is_some);
+            || ui_world_projections
+                .iter()
+                .flatten()
+                .any(|projection| projection.depth_test);
         let three_d_dirty =
             has(DIRTY_3D) || has(DIRTY_CAMERA_3D) || has(DIRTY_LIGHTS_3D) || has(DIRTY_RESOURCES);
 
-        let needs_3d_pipeline = has_3d_content
-            || post_requested
-            || three_d_content_changed
-            || (self.three_d.is_some() && three_d_dirty);
+        let needs_3d_pipeline =
+            has_3d_content || three_d_content_changed || (self.three_d.is_some() && three_d_dirty);
 
         // Prepare only on actual change: dirty bits or tracked content deltas.
         // `has_3d_content` alone must NOT force prepare — it is true every
@@ -203,7 +201,7 @@ impl Gpu {
                 if self.ui.is_none() {
                     self.ui = Some(GpuUi::new(
                         &self.device,
-                        self.surface_view_format,
+                        self.render_format,
                         self.texture_filter,
                     ));
                 }
@@ -564,7 +562,10 @@ impl Gpu {
         let depth_prepass_needed = !waters_3d.is_empty()
             || (camera_post_enabled && PostProcessor::uses_depth(camera_post_chain))
             || (global_post_enabled && PostProcessor::uses_depth(global_post_chain))
-            || ui_primitive_depths.iter().any(Option::is_some);
+            || ui_world_projections
+                .iter()
+                .flatten()
+                .any(|projection| projection.depth_test);
         let mut frame = None;
         let mut swap_view = None;
         if direct_present || msaa_direct_present {
@@ -588,41 +589,6 @@ impl Gpu {
             swap_view = Some(view);
         }
         let scene_view = self.post.scene_view().clone();
-        let intermediate_needed =
-            camera_post_enabled || global_post_enabled || accessibility_enabled;
-        if intermediate_needed {
-            if self.accessibility.is_none() {
-                let processor = VisualAccessibilityProcessor::new(
-                    &self.device,
-                    self.render_format,
-                    self.render_width,
-                    self.render_height,
-                );
-                self.present_intermediate_bind_group = Some(
-                    self.present
-                        .create_bind_group(&self.device, processor.intermediate_view()),
-                );
-                self.accessibility = Some(processor);
-            } else if let Some(processor) = self.accessibility.as_mut() {
-                // Re-promote an idle-released intermediate; the present bind
-                // group built on the old view is stale after recreation.
-                if processor.resize(&self.device, self.render_width, self.render_height) {
-                    self.present_intermediate_bind_group = Some(
-                        self.present
-                            .create_bind_group(&self.device, processor.intermediate_view()),
-                    );
-                }
-            }
-        } else if let Some(processor) = self.accessibility.as_mut()
-            && processor.note_idle_frame(&self.device)
-        {
-            self.present_intermediate_bind_group = None;
-        }
-        let intermediate_view = self
-            .accessibility
-            .as_ref()
-            .map(|processor| processor.intermediate_view().clone())
-            .unwrap_or_else(|| scene_view.clone());
         let color_view = if direct_present {
             let Some(view) = swap_view.as_ref() else {
                 timing.total = total_start.elapsed();
@@ -1089,7 +1055,7 @@ impl Gpu {
                         &mut encoder,
                         render_view,
                         stream_clear_color,
-                        false,
+                        !stream.ui_commands.is_empty(),
                         camera,
                         !stream.transparent_background,
                         // Streams share the main view's query slots; only the
@@ -1333,6 +1299,64 @@ impl Gpu {
                     }
                 }
             }
+            if !stream.ui_commands.is_empty() {
+                let entry = camera_stream_cache_entry(&mut self.camera_stream_ui, *node, || {
+                    (
+                        crate::ui::renderer::UiRenderer::new(),
+                        GpuUi::new(&self.device, self.render_format, self.texture_filter),
+                        Arc::from([]),
+                    )
+                });
+                let (renderer, ui, previous) = entry;
+                if let Some(lookup) = ui_font_config.0 {
+                    renderer.set_static_font_lookup(lookup);
+                }
+                renderer.set_default_font(ui_font_config.1.clone());
+                if previous.as_ref() != stream.ui_commands.as_ref() {
+                    for command in previous.iter() {
+                        if let perro_render_bridge::UiCommand::UpsertLabel { node: old, .. } =
+                            command
+                            && !stream.ui_commands.iter().any(|cmd| matches!(cmd, perro_render_bridge::UiCommand::UpsertLabel { node, .. } if node == old)) {
+                                renderer.submit(perro_render_bridge::UiCommand::RemoveNode { node: *old });
+                        }
+                    }
+                    for command in stream.ui_commands.iter() {
+                        renderer.submit(command.clone());
+                    }
+                    *previous = stream.ui_commands.clone();
+                }
+                let paint = renderer
+                    .prepare_paint([stream.resolution[0] as f32, stream.resolution[1] as f32]);
+                ui.prepare(
+                    &self.device,
+                    &self.queue,
+                    UiPrepareInput {
+                        resources,
+                        shared_textures: &mut self.shared_textures,
+                        viewport: stream.resolution,
+                        primitives: paint.primitives,
+                        world_projections: paint.world_projections,
+                        textures_delta: paint.textures_delta,
+                        texture_size: paint.texture_size,
+                        revision: paint.revision,
+                        static_texture_lookup,
+                    },
+                );
+                ui.render_pass(
+                    &self.device,
+                    &mut encoder,
+                    render_view,
+                    stream.resolution,
+                    self.camera_stream_3d.get(node).map(|gpu| {
+                        (
+                            gpu.depth_prepass_view(),
+                            gpu.depth_prepass_view_generation(),
+                        )
+                    }),
+                );
+            } else {
+                self.camera_stream_ui.remove(node);
+            }
             if has_stream_post {
                 let post = camera_stream_cache_entry(&mut self.camera_stream_post, *node, || {
                     PostProcessor::new(
@@ -1412,21 +1436,8 @@ impl Gpu {
             post.note_frame(&self.device);
         }
 
-        // Retained-scene fast path. `post.scene_view()` (and the scene depth
-        // target) survive across frames, so a frame that provably reproduces
-        // the same scene image can leave the whole scene chain out of the
-        // encoder and present the retained texture. Present/tonemap, the post
-        // chain, UI and the late overlay always still run: the swapchain image
-        // is new every frame (concern 1).
-        //
-        // Under MSAA the scene texture is the RESOLVE target of the mesh/2D
-        // passes and `present_scene_bind_group` samples exactly it, so the
-        // retained pixels are the resolved ones (concern 3).
-        //
-        // `post_stage_count` counts the stages that ping-pong scene <->
-        // intermediate. One stage reads the scene and writes the intermediate;
-        // two or more write BACK into the scene texture, destroying the very
-        // pixels the fast path retains, so the gate rejects that case.
+        // Retain only the resolved scene. UI and effects use separate full-size
+        // targets, so no final stage can overwrite these cached pixels.
         let post_stage_count = u32::from(camera_post_enabled)
             + u32::from(global_post_enabled)
             + u32::from(accessibility_enabled);
@@ -1463,7 +1474,6 @@ impl Gpu {
             scene_continuous_updates: scene_continuous_updates || sky_animating,
             streams_rendered: false,
             decals_texture_pending,
-            post_stage_count,
             camera_image_saves_pending: !self.camera_image_save_requests.is_empty(),
         };
         // Consumer scan only when every other signal already allows the skip,
@@ -1720,112 +1730,6 @@ impl Gpu {
         }
         timing.encode_main = encode_start.elapsed();
 
-        let post_start = Instant::now();
-        self.post
-            .set_constrained(self.max_render_pixels < MAX_FRAME_RENDER_PIXELS);
-        #[derive(Clone, Copy)]
-        enum FrameTex {
-            Scene,
-            Intermediate,
-        }
-        let mut current_tex = FrameTex::Scene;
-        let post_view_generation = self.post_view_generation;
-        // Opened before the post closure borrows the encoder; closed just
-        // before the frame end marker, so the pair spans post + UI + present.
-        if gpu_timer_active && let Some(timer) = self.gpu_timer.as_ref() {
-            timer.write_post_start(&mut encoder);
-        }
-        let mut apply_post_chain = |effects: &[perro_structs::PostProcessEffect],
-                                    current_tex: &mut FrameTex| {
-            if effects.is_empty() {
-                return;
-            }
-            let (input_view, output_view, next_tex, input_slot) = match *current_tex {
-                FrameTex::Scene => (&scene_view, &intermediate_view, FrameTex::Intermediate, 1),
-                FrameTex::Intermediate => (&intermediate_view, &scene_view, FrameTex::Scene, 2),
-            };
-            let view_key_base = post_view_generation.wrapping_mul(8);
-            let post_context = PostProcessContext {
-                device: &self.device,
-                queue: &self.queue,
-                output_view,
-                camera: &camera_3d,
-                external_input_view_key: view_key_base.wrapping_add(input_slot),
-                depth_view_key: view_key_base.wrapping_add(3),
-                static_shader_lookup,
-                static_texture_lookup,
-                hdr_output: self.hdr_status.active,
-            };
-            let Some(three_d) = self.three_d.as_ref() else {
-                return;
-            };
-            let post_chain_data = PostProcessChainData {
-                input_view,
-                depth_view: three_d.depth_prepass_view(),
-                effects,
-            };
-            self.post
-                .apply_chain(&post_context, &post_chain_data, &mut encoder);
-            *current_tex = next_tex;
-        };
-        if camera_post_enabled {
-            apply_post_chain(camera_post_chain, &mut current_tex);
-        }
-        if global_post_enabled {
-            apply_post_chain(global_post_chain, &mut current_tex);
-        }
-        if !camera_post_enabled && !global_post_enabled {
-            // Promoted ping / bloom scratch targets otherwise latch full-res
-            // after the last effect is removed.
-            self.post.note_idle_frame(&self.device);
-        }
-        timing.post_process = post_start.elapsed();
-
-        let accessibility_start = Instant::now();
-        if accessibility_enabled {
-            let (accessibility_input_view, accessibility_output_view, next_tex) = match current_tex
-            {
-                FrameTex::Scene => (&scene_view, &intermediate_view, FrameTex::Intermediate),
-                FrameTex::Intermediate => (&intermediate_view, &scene_view, FrameTex::Scene),
-            };
-            if let Some(processor) = self.accessibility.as_mut() {
-                processor.apply(
-                    &self.device,
-                    &self.queue,
-                    &mut encoder,
-                    accessibility_input_view,
-                    accessibility_output_view,
-                    accessibility,
-                );
-                current_tex = next_tex;
-            }
-        }
-        timing.accessibility = accessibility_start.elapsed();
-
-        // TAA resolve inputs: UNJITTERED current/previous view-proj (same
-        // rule the 3D prepare uses) + scene depth. At 1x — the only sample
-        // count TAA runs at — the depth prepass texture IS the scene depth
-        // target, so by this point it holds final opaque depth with no copy.
-        let taa_frame = if taa_run {
-            let current_view_proj = crate::three_d::gpu::compute_view_proj_mat(
-                &camera_3d,
-                self.render_width,
-                self.render_height,
-            );
-            let prev_view_proj = self.taa_prev_view_proj.unwrap_or(current_view_proj);
-            self.taa_prev_view_proj = Some(current_view_proj);
-            let inv = current_view_proj.inverse();
-            self.three_d.as_ref().map(|three_d| PresentTaaFrame {
-                depth_view: three_d.depth_prepass_view().clone(),
-                inv_view_proj: if inv.is_finite() { inv } else { Mat4::IDENTITY }
-                    .to_cols_array_2d(),
-                prev_view_proj: prev_view_proj.to_cols_array_2d(),
-            })
-        } else {
-            self.taa_prev_view_proj = None;
-            None
-        };
-
         // ---- idle-frame skip. Everything below (acquire, encode, submit,
         // present) reproduces the image already on screen when these hold, so
         // the cheapest correct frame is no frame at all. See
@@ -1838,7 +1742,14 @@ impl Gpu {
                 .as_ref()
                 .is_some_and(|ui| ui.composite_is_idle(ui_viewport, ui_revision));
         let idle_signals = IdleFrameSignals {
-            scene_fast_path,
+            scene_fast_path: scene_fast_path
+                && !camera_post_enabled
+                && !global_post_enabled
+                && !accessibility_enabled
+                && !exposure_settings.auto_exposure
+                && !has(DIRTY_POSTFX)
+                && !has(DIRTY_ACCESSIBILITY)
+                && rendered_stream_textures.is_empty(),
             ui_idle,
             late_overlay_empty: late_overlay_upload_2d.draw_count == 0
                 && late_overlay_sprites_2d.is_empty()
@@ -1848,6 +1759,7 @@ impl Gpu {
             within_force_interval: self
                 .last_present
                 .is_some_and(|at| at.elapsed() < IDLE_FORCE_PRESENT_INTERVAL),
+            display_image_save_pending: !self.display_image_save_requests.is_empty(),
         };
         if idle_frame_skip_allowed(&idle_signals) {
             timing.idle_frame_skips = 1;
@@ -1873,27 +1785,54 @@ impl Gpu {
             });
             timing.acquire_view = acquire_view_start.elapsed();
             timing.acquire = acquire_start.elapsed();
-            let final_bind_group = match current_tex {
-                FrameTex::Scene => &self.present_scene_bind_group,
-                FrameTex::Intermediate => self
-                    .present_intermediate_bind_group
-                    .as_ref()
-                    .expect("intermediate frame needs present bind group"),
-            };
-            self.present.apply(
-                &self.queue,
-                &mut encoder,
-                final_bind_group,
-                &view,
-                [self.render_width, self.render_height],
-                frame_delta_seconds,
-                exposure_settings,
-                self.hdr_status,
-                taa_frame.as_ref(),
-            );
             swap_view = Some(view);
             frame = Some(acquired);
         }
+        // Rebuild from the clean scene on every presented frame. Never load a
+        // previous frame's UI or effects into this composite.
+        let composite_size = [self.config.width.max(1), self.config.height.max(1)];
+        self.composite
+            .resize(&self.device, composite_size, &self.present);
+        self.present
+            .set_output_size(composite_size[0], composite_size[1]);
+        let composite_view = self.composite.post.scene_view().clone();
+        if gpu_timer_active && let Some(timer) = self.gpu_timer.as_ref() {
+            timer.write_post_start(&mut encoder);
+        }
+        // TAA resolve inputs: UNJITTERED current/previous view-proj (same
+        // rule the 3D prepare uses) + scene depth. At 1x — the only sample
+        // count TAA runs at — the depth prepass texture IS the scene depth
+        // target, so by this point it holds final opaque depth with no copy.
+        let taa_frame = if taa_run {
+            let current_view_proj = crate::three_d::gpu::compute_view_proj_mat(
+                &camera_3d,
+                self.render_width,
+                self.render_height,
+            );
+            let prev_view_proj = self.taa_prev_view_proj.unwrap_or(current_view_proj);
+            self.taa_prev_view_proj = Some(current_view_proj);
+            let inv = current_view_proj.inverse();
+            self.three_d.as_ref().map(|three_d| PresentTaaFrame {
+                depth_view: three_d.depth_prepass_view().clone(),
+                inv_view_proj: if inv.is_finite() { inv } else { Mat4::IDENTITY }
+                    .to_cols_array_2d(),
+                prev_view_proj: prev_view_proj.to_cols_array_2d(),
+            })
+        } else {
+            self.taa_prev_view_proj = None;
+            None
+        };
+
+        self.present.compose_scene(
+            &self.queue,
+            &mut encoder,
+            &scene_view,
+            self.post_view_generation,
+            &composite_view,
+            self.render_format,
+            [self.render_width, self.render_height],
+            taa_frame.as_ref(),
+        );
         if ui_primitives.is_empty() {
             if let Some(ui) = self.ui.as_mut() {
                 ui.clear();
@@ -1902,13 +1841,17 @@ impl Gpu {
             if self.ui.is_none() {
                 self.ui = Some(GpuUi::new(
                     &self.device,
-                    self.surface_view_format,
+                    self.render_format,
                     self.texture_filter,
                 ));
             }
-            if let (Some(ui), Some(output_view)) = (self.ui.as_mut(), swap_view.as_ref()) {
+            if let Some(ui) = self.ui.as_mut() {
+                let output_view = &composite_view;
                 let viewport = [self.config.width.max(1), self.config.height.max(1)];
-                ui.set_max_render_pixels(self.max_render_pixels);
+                ui.set_max_render_pixels(
+                    self.max_render_pixels
+                        .max(u64::from(viewport[0]) * u64::from(viewport[1])),
+                );
                 ui.prepare(
                     &self.device,
                     &self.queue,
@@ -1917,7 +1860,7 @@ impl Gpu {
                         shared_textures: &mut self.shared_textures,
                         viewport,
                         primitives: ui_primitives,
-                        primitive_depths: ui_primitive_depths,
+                        world_projections: ui_world_projections,
                         textures_delta: ui_textures_delta,
                         texture_size: ui_texture_size,
                         revision: ui_revision,
@@ -1945,14 +1888,13 @@ impl Gpu {
             if self.late_overlay_2d.is_none() {
                 self.late_overlay_2d = Some(Gpu2D::new(
                     &self.device,
-                    self.surface_view_format,
+                    self.render_format,
                     1,
                     self.texture_filter,
                 ));
             }
-            if let (Some(late_overlay_2d), Some(output_view)) =
-                (self.late_overlay_2d.as_mut(), swap_view.as_ref())
-            {
+            if let Some(late_overlay_2d) = self.late_overlay_2d.as_mut() {
+                let output_view = &composite_view;
                 late_overlay_2d.prepare(
                     &self.device,
                     &self.queue,
@@ -1980,6 +1922,44 @@ impl Gpu {
                 );
             }
         }
+        self.composite
+            .post
+            .set_constrained(self.max_render_pixels < MAX_FRAME_RENDER_PIXELS);
+        let (final_intermediate, post_time, accessibility_time) = self.composite.apply(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            &self.present,
+            self.render_format,
+            &camera_3d,
+            camera_post_chain,
+            global_post_chain,
+            self.three_d.as_ref().map(|gpu| {
+                (
+                    gpu.depth_prepass_view(),
+                    gpu.depth_prepass_view_generation(),
+                )
+            }),
+            accessibility,
+            static_shader_lookup,
+            static_texture_lookup,
+            self.hdr_status.active,
+        );
+        timing.post_process = post_time;
+        timing.accessibility = accessibility_time;
+        if let Some(output_view) = swap_view.as_ref() {
+            self.present.apply(
+                &self.queue,
+                &mut encoder,
+                self.composite.present_bind_group(final_intermediate),
+                output_view,
+                composite_size,
+                frame_delta_seconds,
+                exposure_settings,
+                self.hdr_status,
+                None,
+            );
+        }
         if gpu_timer_active && let Some(timer) = self.gpu_timer.as_ref() {
             // Post pair closes immediately before the frame end marker, so it
             // spans the post chain + UI + tonemap/present tail.
@@ -1990,6 +1970,9 @@ impl Gpu {
             water.encode_readback(&mut encoder);
         }
         self.encode_camera_image_saves(&mut encoder);
+        if let Some(surface_frame) = frame.as_ref() {
+            self.encode_display_image_saves(&mut encoder, &surface_frame.texture);
+        }
         let submit_start = Instant::now();
         let submit_finish_start = Instant::now();
         let command_buffer = encoder.finish();

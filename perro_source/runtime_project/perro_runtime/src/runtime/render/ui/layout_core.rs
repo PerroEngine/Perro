@@ -320,7 +320,19 @@ impl Runtime {
 
     pub(super) fn remove_retained_ui_node(&mut self, node: NodeID) {
         self.render_ui.retained_rects.remove(&node);
-        self.render_ui.button_states.remove(&node);
+        // The 2D pass owns live world-button state in this shared cache.
+        // A node absent from UI layout must not lose its pressed state.
+        let live_world_button = self.nodes.get(node).is_some_and(|node| {
+            matches!(
+                node.data,
+                SceneNodeData::Button2D(_)
+                    | SceneNodeData::ImageButton2D(_)
+                    | SceneNodeData::NineSliceButton2D(_)
+            )
+        });
+        if !live_world_button {
+            self.render_ui.button_states.remove(&node);
+        }
         if self.render_ui.hovered_text_edit == Some(node) {
             self.render_ui.hovered_text_edit = None;
         }

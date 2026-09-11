@@ -137,11 +137,11 @@ fn fallback_camera_3d_state() -> Camera3DState {
     }
 }
 
-fn viewport_clip_3d(viewport: Vector2) -> [f32; 4] {
+pub(crate) fn viewport_clip_3d(viewport: Vector2) -> [f32; 4] {
     [0.0, 0.0, viewport.x.max(1.0), viewport.y.max(1.0)]
 }
 
-fn text_align_state_3d(align: perro_ui::UiTextAlign) -> UiTextAlignState {
+pub(crate) fn text_align_state_3d(align: perro_ui::UiTextAlign) -> UiTextAlignState {
     match align {
         perro_ui::UiTextAlign::Start => UiTextAlignState::Start,
         perro_ui::UiTextAlign::Center => UiTextAlignState::Center,
@@ -149,7 +149,7 @@ fn text_align_state_3d(align: perro_ui::UiTextAlign) -> UiTextAlignState {
     }
 }
 
-fn label_3d_content_size(rect_size: [f32; 2], padding: perro_ui::UiRect) -> [f32; 2] {
+pub(crate) fn label_3d_content_size(rect_size: [f32; 2], padding: perro_ui::UiRect) -> [f32; 2] {
     [
         (rect_size[0] * (1.0 - padding.left.max(0.0) - padding.right.max(0.0))).max(0.001),
         (rect_size[1] * (1.0 - padding.top.max(0.0) - padding.bottom.max(0.0))).max(0.001),
@@ -163,7 +163,7 @@ fn label_3d_content_size(rect_size: [f32; 2], padding: perro_ui::UiRect) -> [f32
 // the projected screen center) keeps the draw byte-stable across camera and
 // label motion, which is what lets the painter's per-node cache reuse the
 // tessellation every frame instead of re-shaping + re-tessellating.
-fn label_3d_canonical_layout_rect(size: Vector2, font_size: f32) -> UiRectState {
+pub(crate) fn label_3d_canonical_layout_rect(size: Vector2, font_size: f32) -> UiRectState {
     let height = font_size.max(1.0);
     let aspect = (size.x.abs() / size.y.abs().max(0.001)).max(0.001);
     UiRectState {
@@ -178,7 +178,7 @@ fn label_3d_canonical_layout_rect(size: Vector2, font_size: f32) -> UiRectState 
 // Billboard orientation for a non-locked Label3D: camera rotation, so the
 // quad is parallel to the image plane (all four corners share one view depth
 // -> projects to an exact screen-aligned rectangle, like the old rect path).
-fn label_billboard_transform_3d(
+pub(crate) fn label_billboard_transform_3d(
     mut transform: perro_structs::Transform3D,
     camera: &Camera3DState,
 ) -> perro_structs::Transform3D {
@@ -250,7 +250,7 @@ fn world_rect_3d(
     })
 }
 
-fn label_projected_quad_3d(
+pub(crate) fn label_projected_quad_3d(
     transform: perro_structs::Transform3D,
     size: Vector2,
     camera: &Camera3DState,
@@ -301,7 +301,7 @@ fn projected_axis_size_3d(
     size.is_finite().then_some(size)
 }
 
-fn world_rect_front_facing_3d(
+pub(crate) fn world_rect_front_facing_3d(
     transform: perro_structs::Transform3D,
     camera: &Camera3DState,
 ) -> bool {

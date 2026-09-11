@@ -709,6 +709,7 @@ fn webcam_camera_stream_does_not_overwrite_webcam_texture() {
         Command3D::UpsertCameraStream {
             node,
             stream: Arc::new(CameraStreamState {
+                ui_commands: std::sync::Arc::from([]),
                 tone_map_output: false,
                 source: CameraStreamSourceState::Webcam {
                     texture,
@@ -758,6 +759,7 @@ fn render_target_camera_stream_registers_dims_without_cpu_pixels() {
             perro_render_bridge::CameraStreamCommand::Upsert {
                 node,
                 state: Arc::new(CameraStreamState {
+                    ui_commands: std::sync::Arc::from([]),
                     tone_map_output: false,
                     source: CameraStreamSourceState::ThreeD(Camera3DState {
                         position: [0.0, 0.0, 0.0],

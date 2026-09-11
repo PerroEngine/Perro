@@ -300,6 +300,7 @@ pub struct ProjectRoutesConfig {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StaticProjectConfig {
     pub name: &'static str,
+    pub base_name: &'static str,
     pub metadata_description: Option<&'static str>,
     pub metadata_company: Option<&'static str>,
     pub metadata_version: Option<&'static str>,
@@ -308,6 +309,7 @@ pub struct StaticProjectConfig {
     pub main_scene_hash: u64,
     pub icon_hash: u64,
     pub startup_splash_hash: u64,
+    pub startup_splash_size: f32,
     pub virtual_width: u32,
     pub virtual_height: u32,
     pub vsync: bool,
@@ -362,6 +364,7 @@ impl StaticProjectConfig {
     ) -> Self {
         Self {
             name,
+            base_name: name,
             metadata_description: None,
             metadata_company: None,
             metadata_version: None,
@@ -370,6 +373,7 @@ impl StaticProjectConfig {
             main_scene_hash,
             icon_hash,
             startup_splash_hash,
+            startup_splash_size: 1.0,
             virtual_width,
             virtual_height,
             vsync: false,
@@ -411,6 +415,11 @@ impl StaticProjectConfig {
             steam_app_id: None,
             steam_input_mode: SteamInputMode::Fallback,
         }
+    }
+
+    pub const fn with_startup_splash_size(mut self, size: f32) -> Self {
+        self.startup_splash_size = size;
+        self
     }
 
     pub const fn with_vsync(mut self, enabled: bool) -> Self {
@@ -570,9 +579,15 @@ impl StaticProjectConfig {
         self
     }
 
+    pub const fn with_base_name(mut self, base_name: &'static str) -> Self {
+        self.base_name = base_name;
+        self
+    }
+
     pub fn to_runtime(self) -> ProjectConfig {
         ProjectConfig {
             name: self.name.to_string(),
+            base_name: self.base_name.to_string(),
             metadata: ProjectMetadata {
                 description: self.metadata_description.map(str::to_string),
                 company: self.metadata_company.map(str::to_string),
@@ -587,6 +602,7 @@ impl StaticProjectConfig {
             icon_hash: Some(self.icon_hash),
             startup_splash: self.startup_splash_hash.to_string(),
             startup_splash_hash: Some(self.startup_splash_hash),
+            startup_splash_size: self.startup_splash_size,
             virtual_width: self.virtual_width,
             virtual_height: self.virtual_height,
             vsync: self.vsync,
@@ -643,6 +659,7 @@ impl StaticProjectConfig {
                 input_mode: self.steam_input_mode,
             },
             demo: DemoBuildConfig::default(),
+            playtest: DemoBuildConfig::default(),
         }
     }
 }
@@ -650,6 +667,8 @@ impl StaticProjectConfig {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProjectConfig {
     pub name: String,
+    /// Save identity from the base project; playtests append `_Playtest`.
+    pub base_name: String,
     pub metadata: ProjectMetadata,
     pub web: ProjectWebConfig,
     pub main_scene: String,
@@ -658,6 +677,7 @@ pub struct ProjectConfig {
     pub icon_hash: Option<u64>,
     pub startup_splash: String,
     pub startup_splash_hash: Option<u64>,
+    pub startup_splash_size: f32,
     pub virtual_width: u32,
     pub virtual_height: u32,
     pub vsync: bool,
@@ -689,6 +709,21 @@ pub struct ProjectConfig {
     pub input_map: perro_input_api::InputMap,
     pub steam: SteamConfig,
     pub demo: DemoBuildConfig,
+    pub playtest: DemoBuildConfig,
+}
+
+impl ProjectConfig {
+    pub fn build_excludes(&self, path: &str) -> bool {
+        self.demo.excludes(path) || self.playtest.excludes(path)
+    }
+
+    pub fn build_exclusion_patterns(&self) -> Vec<String> {
+        self.demo
+            .relative_patterns()
+            .into_iter()
+            .chain(self.playtest.relative_patterns())
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -770,8 +805,10 @@ fn demo_glob_matches(pattern: &str, path: &str) -> bool {
 
 impl ProjectConfig {
     pub fn default_for_name(name: impl Into<String>) -> Self {
+        let name = name.into();
         Self {
-            name: name.into(),
+            base_name: name.clone(),
+            name,
             metadata: ProjectMetadata::default(),
             web: ProjectWebConfig::default(),
             main_scene: "res://main.scn".to_string(),
@@ -780,6 +817,7 @@ impl ProjectConfig {
             icon_hash: None,
             startup_splash: "res://icon.png".to_string(),
             startup_splash_hash: None,
+            startup_splash_size: 1.0,
             virtual_width: 1920,
             virtual_height: 1080,
             vsync: false,
@@ -810,6 +848,7 @@ impl ProjectConfig {
             input_map: perro_input_api::InputMap::new(),
             steam: SteamConfig::default(),
             demo: DemoBuildConfig::default(),
+            playtest: DemoBuildConfig::default(),
         }
     }
 }

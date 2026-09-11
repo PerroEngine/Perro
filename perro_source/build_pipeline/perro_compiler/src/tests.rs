@@ -33,23 +33,107 @@ mod tests {
     }
 
     #[test]
+    fn demo_entries_keep_base_name_and_select_steam_app() {
+        let root = unique_temp_dir("demo_entry_identity");
+        ensure_project_layout(&root).expect("layout");
+        ensure_project_toml(&root, "My Game").expect("project toml");
+        ensure_project_scaffold(&root, "My Game").expect("scaffold");
+        let config_path = root.join("project.toml");
+        let mut source = std::fs::read_to_string(&config_path).expect("test setup must succeed");
+        source.push_str(
+            r#"
+[steam]
+enabled = true
+app_id = 123456
+demo_id = 654321
+[demo.project]
+name = "My Game Demo"
+"#,
+        );
+        std::fs::write(config_path, source).expect("test setup must succeed");
+        for (demo, name, app_id) in [(true, "My Game Demo", 654321), (false, "My Game", 123456)] {
+            for headless in [false, true] {
+                let mut options = ProjectBuildOptions::new(false, false).with_demo(demo);
+                options.headless = headless;
+                crate::generate_embedded_entry_files_with_options(&root, options).expect("test setup must succeed");
+                let entry =
+                    std::fs::read_to_string(root.join(".perro/project/src/entry_shared.rs"))
+                        .expect("test setup must succeed");
+                assert_eq!(entry.matches("base_name: \"My Game\"").count(), 3);
+                assert_eq!(entry.matches(&format!("project_name: {name:?}")).count(), 3);
+                assert!(entry.contains(&emit_static_steam_app_id_fn(Some(app_id), name)));
+                if headless {
+                    assert!(entry.contains("perro_headless::StaticEmbeddedProjectInfo"));
+                }
+            }
+        }
+        std::fs::remove_dir_all(root).expect("test setup must succeed");
+    }
+
+    #[test]
+    fn playtest_entries_keep_base_name_and_select_steam_app() {
+        let root = unique_temp_dir("playtest_entry_identity");
+        ensure_project_layout(&root).expect("layout");
+        ensure_project_toml(&root, "My Game").expect("project toml");
+        ensure_project_scaffold(&root, "My Game").expect("scaffold");
+        let config_path = root.join("project.toml");
+        let mut source = std::fs::read_to_string(&config_path).expect("test setup must succeed");
+        source.push_str(
+            r#"
+[steam]
+enabled = true
+app_id = 123456
+playtest_id = 654321
+[playtest.project]
+name = "My Game Playtest"
+"#,
+        );
+        std::fs::write(config_path, source).expect("test setup must succeed");
+        for (playtest, name, app_id) in [
+            (true, "My Game Playtest", 654321),
+            (false, "My Game", 123456),
+        ] {
+            for headless in [false, true] {
+                let mut options = ProjectBuildOptions::new(false, false).with_playtest(playtest);
+                options.headless = headless;
+                crate::generate_embedded_entry_files_with_options(&root, options).expect("test setup must succeed");
+                let entry =
+                    std::fs::read_to_string(root.join(".perro/project/src/entry_shared.rs"))
+                        .expect("test setup must succeed");
+                let base = if playtest {
+                    "My Game_Playtest"
+                } else {
+                    "My Game"
+                };
+                assert_eq!(entry.matches(&format!("base_name: {base:?}")).count(), 3);
+                assert_eq!(entry.matches(&format!("project_name: {name:?}")).count(), 3);
+                assert!(entry.contains(&emit_static_steam_app_id_fn(Some(app_id), name)));
+                if headless {
+                    assert!(entry.contains("perro_headless::StaticEmbeddedProjectInfo"));
+                }
+            }
+        }
+        std::fs::remove_dir_all(root).expect("test setup must succeed");
+    }
+
+    #[test]
     fn release_paths_use_project_identity() {
         let root = std::path::Path::new(r"C:\Magnet Monkeys\Games\BozoSort");
         let mut flags = Vec::new();
         append_private_path_remaps(&mut flags, root);
 
-        assert!(flags.iter().any(|flag| {
-            flag == &format!(
-                "--remap-path-prefix={}={}",
-                root.display(),
-                "s"
-            )
-        }));
+        assert!(
+            flags
+                .iter()
+                .any(|flag| { flag == &format!("--remap-path-prefix={}={}", root.display(), "s") })
+        );
         assert!(flags.iter().any(|flag| flag.ends_with("=d")));
         assert!(flags.iter().any(|flag| flag.ends_with("=r")));
-        assert!(flags.iter().any(|flag| {
-            flag.contains("../../../../res=") && flag.ends_with("=s")
-        }));
+        assert!(
+            flags
+                .iter()
+                .any(|flag| { flag.contains("../../../../res=") && flag.ends_with("=s") })
+        );
         assert!(flags.iter().all(|flag| !flag.contains("=Magnet Monkeys")));
         let user = flags
             .iter()
@@ -411,12 +495,8 @@ lifecycle!({});
         assert!(!transpiled.contains("unsafe fn __perro_state_ref"));
         assert!(!transpiled.contains("unsafe fn __perro_state_mut"));
         assert!(!transpiled.contains("std::any::TypeId::of"));
-        assert!(
-            transpiled.contains("state.downcast_ref::<AllVariantState>()")
-        );
-        assert!(
-            transpiled.contains("state.downcast_mut::<AllVariantState>()")
-        );
+        assert!(transpiled.contains("state.downcast_ref::<AllVariantState>()"));
+        assert!(transpiled.contains("state.downcast_mut::<AllVariantState>()"));
         assert!(transpiled.contains("value.parse::<NestedCombo>()"));
         assert!(transpiled.contains("value.into_parse::<Arc<str>>()"));
         assert!(transpiled.contains("value.into_parse::<String>()"));

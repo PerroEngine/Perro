@@ -1027,7 +1027,8 @@ impl Runtime {
             .finish_visible_pass(traversal_ids, visible_now);
     }
 
-    pub(super) fn active_render_camera_2d(&mut self) -> Option<Camera2DState> {
+    /// Scene camera for restoring render state after an app-level overlay.
+    pub fn active_render_camera_2d(&mut self) -> Option<Camera2DState> {
         let mut found = None;
         // shared member view: refcount clone, no per-call Vec copy.
         let members = self.world_members_arc(NodeID::nil());

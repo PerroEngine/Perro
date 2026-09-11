@@ -45,7 +45,10 @@ use winit::window::Window;
 mod camera_stream_tonemap;
 #[path = "gpu/image_save.rs"]
 mod image_save;
-use image_save::{CameraImageSaveRequest, PendingCameraImageSave};
+use image_save::{CameraImageSaveRequest, DisplayImageSaveRequest, PendingCameraImageSave};
+#[path = "gpu/composite.rs"]
+mod composite;
+use composite::FrameComposite;
 #[path = "gpu/present.rs"]
 mod present;
 #[path = "gpu/smaa_lut.rs"]
@@ -461,6 +464,8 @@ struct PresentProcessor {
     // with FXAA/SMAA by construction (one anti_alias mode).
     taa_active: bool,
     taa: Option<TaaResources>,
+    scene_blit: Option<SceneBlit>,
+    scene_composed: bool,
     // Swapchain size, pushed by the surface lifecycle. Equal to the render
     // size unless the render size is capped; the TAA resolve merges its
     // swapchain write into the resolve pass only in the equal case. [0, 0]
@@ -536,21 +541,15 @@ struct TaaCore {
     uniform_buffer: wgpu::Buffer,
 }
 
-/// Lazily allocated TAA v1 stage (camera-reprojection only, no per-object
-/// motion vectors — moving objects ghost within the neighborhood clamp; see
-/// taa.wgsl). The present pass tonemaps into the render-resolution LDR
-/// target; the resolve pass reads it + scene depth + the previous history
-/// texture and writes the blended result into the other history texture
-/// (rgb = resolved color, a = device depth for next frame's disocclusion
-/// test); the blit pass then copies/upscales that history to the swapchain.
-/// The ping-pong pair means no extra copy: next frame samples what this
-/// frame rendered. Only exists while TAA runs; render-size targets and the
-/// blit bind groups rebuild when dimensions change (history restarts from
-/// the current frame via `history_valid`).
+/// Scene-linear camera-reprojection history, resolved before UI and final
+/// effects. History alpha stores device depth for disocclusion rejection.
+/// The optional LDR input exists only for callers of the standalone present
+/// path; scene composition samples the retained scene directly.
 struct TaaResources {
+    output_format: wgpu::TextureFormat,
     core: TaaCore,
-    _ldr_target: wgpu::Texture,
-    ldr_view: wgpu::TextureView,
+    _ldr_target: Option<wgpu::Texture>,
+    ldr_view: Option<wgpu::TextureView>,
     _history: [wgpu::Texture; 2],
     history_views: [wgpu::TextureView; 2],
     // Bind group for blitting history[i] to the swapchain.
@@ -773,6 +772,12 @@ impl GpuTimestampTimer {
     }
 }
 
+type CameraStreamUi = (
+    crate::ui::renderer::UiRenderer,
+    GpuUi,
+    Arc<[perro_render_bridge::UiCommand]>,
+);
+
 pub struct Gpu {
     window_handle: Arc<Window>,
     surface: wgpu::Surface<'static>,
@@ -820,10 +825,8 @@ pub struct Gpu {
     msaa_color: Option<MsaaColorTarget>,
     post: PostProcessor,
     post_view_generation: u64,
-    accessibility: Option<VisualAccessibilityProcessor>,
+    composite: FrameComposite,
     present: PresentProcessor,
-    present_scene_bind_group: PresentBindGroups,
-    present_intermediate_bind_group: Option<PresentBindGroups>,
     // One texel upload per (source, color space, mips) shared by every
     // consumer cache below; consumers keep handles + their own bind groups.
     shared_textures: SharedTextureStore,
@@ -860,10 +863,12 @@ pub struct Gpu {
     camera_stream_3d: AHashMap<NodeID, Box<Gpu3D>>,
     camera_stream_particles_3d: AHashMap<NodeID, Box<GpuPointParticles3D>>,
     camera_stream_water: AHashMap<NodeID, Box<GpuWater>>,
+    camera_stream_ui: AHashMap<NodeID, Box<CameraStreamUi>>,
     camera_stream_post: AHashMap<NodeID, Box<PostProcessor>>,
     camera_stream_tonemap: CameraStreamTonemap,
     camera_stream_draws_scratch: Vec<Draw3DInstance>,
     camera_image_save_requests: Vec<CameraImageSaveRequest>,
+    display_image_save_requests: Vec<DisplayImageSaveRequest>,
     camera_image_save_pending: Vec<PendingCameraImageSave>,
     last_prepare_particles_revision: u64,
     last_prepare_water_2d_revision: u64,
@@ -1027,7 +1032,8 @@ fn camera_stream_cache_entry<T>(
 }
 
 fn camera_stream_needs_3d_world(stream: &CameraStreamState) -> bool {
-    !stream.draws_3d.is_empty()
+    !stream.ui_commands.is_empty()
+        || !stream.draws_3d.is_empty()
         || !stream.point_particles_3d.is_empty()
         || !stream.waters_3d.is_empty()
         || stream.lighting_3d.ambient_light.is_some()
@@ -1038,6 +1044,7 @@ fn camera_stream_needs_3d_world(stream: &CameraStreamState) -> bool {
 }
 
 pub struct RenderFrame<'a> {
+    pub ui_font_config: (Option<crate::StaticFontLookup>, perro_ui::UiFont),
     pub resources: &'a ResourceStore,
     pub camera_3d: Camera3DState,
     pub lighting_3d: &'a Lighting3DState,
@@ -1074,7 +1081,7 @@ pub struct RenderFrame<'a> {
     pub late_overlay_shadow_casters_2d: &'a [ShadowCaster2DState],
     pub late_overlay_shadow_casters_2d_revision: u64,
     pub ui_primitives: &'a [Arc<ClippedPrimitive>],
-    pub ui_primitive_depths: &'a [Option<Arc<[f32]>>],
+    pub ui_world_projections: &'a [Option<crate::ui::painter::UiWorldProjection>],
     pub ui_textures_delta: &'a TexturesDelta,
     pub ui_texture_size: [u32; 2],
     pub ui_revision: u64,
@@ -1154,7 +1161,7 @@ pub(crate) struct SceneFastPathSignals {
     /// upload / resources / redraw, AND there is 2D content to draw. The
     /// "and content" half matters: every UI command raises DIRTY_2D, and a UI
     /// change alone cannot alter the 2D scene pass (UI composites onto the
-    /// swapchain, after the scene texture).
+    /// final composite, after the scene texture).
     pub two_d_scene_changed: bool,
     /// TAA is converging over jittered frames; a "static" frame still changes
     /// the image, so the fast path never runs with TAA on.
@@ -1168,14 +1175,11 @@ pub(crate) struct SceneFastPathSignals {
     /// at least one camera stream re-rendered (or re-bound) a target this
     /// frame AND a retained main-scene draw / decal / 2D sprite samples that
     /// output texture. A stream consumed only by the UI pass or the late
-    /// overlay does not set this: both re-encode onto the swapchain after the
+    /// overlay does not set this: both re-encode onto the final composite after the
     /// retained scene texture, so their pixels are new every frame anyway.
     pub streams_rendered: bool,
     /// a decal texture is still decoding and must be retried next frame.
     pub decals_texture_pending: bool,
-    /// post / accessibility stages that ping-pong scene <-> intermediate.
-    /// Two or more stages write the retained scene texture, which destroys it.
-    pub post_stage_count: u32,
     /// a camera image save copies out of a stream target this frame.
     pub camera_image_saves_pending: bool,
 }
@@ -1255,6 +1259,8 @@ pub(crate) struct IdleFrameSignals {
     pub presented_once: bool,
     /// Time since that last present is inside the safety valve.
     pub within_force_interval: bool,
+    /// A full-display readback needs a newly composited swapchain image.
+    pub display_image_save_pending: bool,
 }
 
 /// Skip the whole frame -- no acquire, no encode, no submit, no present.
@@ -1270,6 +1276,7 @@ pub(crate) fn idle_frame_skip_allowed(signals: &IdleFrameSignals) -> bool {
         && signals.late_overlay_empty
         && signals.presented_once
         && signals.within_force_interval
+        && !signals.display_image_save_pending
 }
 
 pub(crate) fn scene_fast_path_allowed(signals: &SceneFastPathSignals) -> bool {
@@ -1287,7 +1294,6 @@ pub(crate) fn scene_fast_path_allowed(signals: &SceneFastPathSignals) -> bool {
         && !signals.streams_rendered
         && !signals.decals_texture_pending
         && !signals.camera_image_saves_pending
-        && signals.post_stage_count <= 1
 }
 
 #[inline]
@@ -1617,6 +1623,7 @@ mod idle_frame_tests {
             late_overlay_empty: true,
             presented_once: true,
             within_force_interval: true,
+            display_image_save_pending: false,
         }
     }
 
@@ -1690,6 +1697,15 @@ mod idle_frame_tests {
     fn force_interval_breaks_a_latched_gate() {
         let signals = IdleFrameSignals {
             within_force_interval: false,
+            ..all_idle()
+        };
+        assert!(!idle_frame_skip_allowed(&signals));
+    }
+
+    #[test]
+    fn display_save_never_skips_composite() {
+        let signals = IdleFrameSignals {
+            display_image_save_pending: true,
             ..all_idle()
         };
         assert!(!idle_frame_skip_allowed(&signals));

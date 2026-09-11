@@ -81,8 +81,7 @@ fn collect_project_scene_var_index(project_root: &Path) -> SceneVarIndex {
             if !path.is_dir() {
                 continue;
             }
-            let Some(dlc_name) = path.file_name().and_then(|n| n.to_str()).map(String::from)
-            else {
+            let Some(dlc_name) = path.file_name().and_then(|n| n.to_str()).map(String::from) else {
                 continue;
             };
             collect_scene_var_sources(&path, Some(&dlc_name), &mut index);
@@ -288,14 +287,22 @@ pub fn sync_scripts_after_overrides(
     project_root: &Path,
     demo: bool,
 ) -> Result<Vec<String>, CompilerError> {
-    let cfg = perro_project::load_project_toml_with_demo(project_root, demo)
+    sync_scripts_after_overrides_with_variants(project_root, demo, false)
+}
+
+pub fn sync_scripts_after_overrides_with_variants(
+    project_root: &Path,
+    demo: bool,
+    playtest: bool,
+) -> Result<Vec<String>, CompilerError> {
+    let cfg = perro_project::load_project_toml_with_variants(project_root, demo, playtest)
         .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
-    let _exclude_guard = perro_io::walkdir::push_path_exclusions(cfg.demo.relative_patterns());
+    let _exclude_guard = perro_io::walkdir::push_path_exclusions(cfg.build_exclusion_patterns());
 
     // Cached on input stats plus a fingerprint of this binary, so an engine
     // change always forces a re-sync. See `sync_cache.rs`.
     let scripts_src = project_root.join(".perro").join("scripts").join("src");
-    let cache = SyncCache::probe(project_root, demo);
+    let cache = SyncCache::probe_variant(project_root, demo, playtest);
     if let Some(cache) = &cache
         && let Some(copied) = cache.hit(&scripts_src)
     {
@@ -677,7 +684,7 @@ fn write_dlc_scripts_manifest(
             .join("perro_runtime"),
     );
     let mut manifest = format!(
-        "[workspace]\n\n[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\ncrate-type = [\"cdylib\", \"rlib\"]\n\n[dependencies]\nperro_api = {{ path = \"{perro_api_path}\" }}\nperro_runtime = {{ path = \"{perro_runtime_path}\" }}\n\n[features]\ndynamic-scripts = []\nperro-demo = []\nperro-spec = [\"perro_api/spec\"]\nsteamworks = [\"perro_api/steamworks\", \"perro_runtime/steamworks\"]\n"
+        "[workspace]\n\n[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\ncrate-type = [\"cdylib\", \"rlib\"]\n\n[dependencies]\nperro_api = {{ path = \"{perro_api_path}\" }}\nperro_runtime = {{ path = \"{perro_runtime_path}\" }}\n\n[features]\ndynamic-scripts = []\nperro-demo = []\nperro-playtest = []\nperro-spec = [\"perro_api/spec\"]\nsteamworks = [\"perro_api/steamworks\", \"perro_runtime/steamworks\"]\n"
     );
     let extra_deps = read_extra_script_deps(project_root)?;
     if !extra_deps.is_empty() {

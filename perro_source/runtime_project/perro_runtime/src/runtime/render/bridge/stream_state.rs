@@ -130,6 +130,99 @@ impl Default for StreamCollectedLanes {
 }
 
 impl Runtime {
+    fn sub_view_label_commands(
+        &mut self,
+        view_node: NodeID,
+        camera: &Camera3DState,
+        resolution: [u32; 2],
+    ) -> Arc<[perro_render_bridge::UiCommand]> {
+        use crate::runtime::render_3d::*;
+        use perro_render_bridge::UiCommand;
+        let localize = self.stream_localizer_3d(view_node);
+        let overlay_viewport = Vector2::new(resolution[0] as f32, resolution[1] as f32);
+        let mut commands = Vec::new();
+        for idx in 0..self.extraction.camera_stream_node_scratch.len() {
+            let node = self.extraction.camera_stream_node_scratch[idx];
+            if node == view_node
+                || !self.is_effectively_visible(node)
+                || self.stream_skips_isolated_child(node, view_node)
+            {
+                continue;
+            }
+            let Some(label) = self.nodes.get(node).and_then(|n| match &n.data {
+                SceneNodeData::Label3D(label)
+                    if label.visible
+                        && stream_render_mask_matches(camera.render_mask, label.render_layers) =>
+                {
+                    Some((**label).clone())
+                }
+                _ => None,
+            }) else {
+                continue;
+            };
+            let transform = self
+                .stream_localized_transform_3d(node, &localize)
+                .unwrap_or(label.transform);
+            if label.lock_orientation
+                && label.backface_cull
+                && !world_rect_front_facing_3d(transform, camera)
+            {
+                continue;
+            }
+            let transform = if label.lock_orientation {
+                transform
+            } else {
+                label_billboard_transform_3d(transform, camera)
+            };
+            let Some(projected_quad) =
+                label_projected_quad_3d(transform, label.size, camera, overlay_viewport)
+            else {
+                continue;
+            };
+            let perro_nodes::Label3D {
+                size,
+                font_size,
+                padding,
+                text,
+                color,
+                font,
+                h_align,
+                v_align,
+                backdrop_color,
+                corner_radii,
+                visible_through_objects,
+                ..
+            } = label;
+            let modulate = self.effective_self_modulate(node);
+            let rect = label_3d_canonical_layout_rect(size, font_size);
+            let content_size = label_3d_content_size(rect.size, padding);
+            commands.push(UiCommand::UpsertLabel {
+                node,
+                rect,
+                clip_rect: viewport_clip_3d(overlay_viewport),
+                text,
+                color: Runtime::color_modulate(color, modulate),
+                font_size: font_size.max(0.001).min(content_size[1]),
+                font,
+                wrap_width: Some(content_size[0]),
+                h_align: text_align_state_3d(h_align),
+                v_align: text_align_state_3d(v_align),
+                backdrop_color: Runtime::color_modulate(backdrop_color, modulate),
+                corner_radii: perro_render_bridge::UiCornerRadiiState {
+                    tl: corner_radii.tl,
+                    tr: corner_radii.tr,
+                    br: corner_radii.br,
+                    bl: corner_radii.bl,
+                },
+                padding: [padding.left, padding.top, padding.right, padding.bottom],
+                projected_quad: Some(projected_quad),
+                depth_test: !visible_through_objects,
+                fit_content: true,
+            });
+        }
+        arc_slice_from_vec(commands)
+    }
+
     /// Shared 1x factor for auto (0) sub-view resolution.
     ///
     /// # Single-scale invariant
@@ -510,6 +603,7 @@ impl Runtime {
             };
             let post_processing = self.retained_post_fx(stream_node, &post_processing);
             return Some(CameraStreamState {
+                ui_commands: empty_arc_slice(),
                 source,
                 tone_map_output: matches!(
                     self.nodes.get(stream_node).map(|node| &node.data),
@@ -558,6 +652,7 @@ impl Runtime {
             _ => Self::camera_stream_texture_id(stream_node),
         };
         Some(CameraStreamState {
+            ui_commands: empty_arc_slice(),
             source,
             tone_map_output: matches!(
                 self.nodes.get(stream_node).map(|node| &node.data),
@@ -611,6 +706,7 @@ impl Runtime {
         // one-shot capture: no retention entry (always paired upsert/remove).
         let lanes = self.collect_camera_stream_lanes(camera_node, two_d, three_d, false);
         Some(CameraStreamState {
+            ui_commands: empty_arc_slice(),
             source,
             tone_map_output: true,
             overlay_camera_2d: None,
@@ -726,6 +822,7 @@ impl Runtime {
         post_processing.extend(camera_2d.post_processing.iter().cloned());
         post_processing.extend(view.post_processing.to_effects_vec());
         let post_processing = self.retained_post_fx(view_node, &post_processing);
+        let ui_commands = self.sub_view_label_commands(view_node, &camera_3d, resolution);
         let source = CameraStreamSourceState::ThreeD(camera_3d);
         let overlay_camera_2d = Some(camera_2d);
         let lanes = self.collect_camera_stream_lanes(
@@ -736,6 +833,7 @@ impl Runtime {
         );
 
         Some(CameraStreamState {
+            ui_commands,
             source,
             // Keep owned sub-view output scene-linear. The UI composite writes
             // it through the surface view, which performs the display transfer.
@@ -915,6 +1013,148 @@ mod stream_retention_tests {
             ambient.intensity = 1.0;
         }
         (view, light, mover)
+    }
+
+    #[test]
+    fn sub_view_labels_use_local_camera_and_target() {
+        use perro_render_bridge::UiCommand;
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(1920, 1080);
+        let (view, _, _) = retention_scene(&mut runtime);
+        let label = NodeAPI::create::<perro_nodes::Label3D>(&mut runtime);
+        assert!(runtime.reparent(view, label));
+        if let Some(mut n) = runtime.nodes.get_mut(label)
+            && let SceneNodeData::Label3D(data) = &mut n.data
+        {
+            data.text = "Subview".into();
+            data.transform.position.z = -5.0;
+        }
+        if let Some(mut n) = runtime.nodes.get_mut(view)
+            && let SceneNodeData::SubView3D(data) = &mut n.data
+        {
+            data.transform.position.x = 100.0;
+        }
+        runtime.mark_transform_dirty_recursive(view);
+        let cfg = sub_view_of(&runtime, view);
+        let first = runtime
+            .sub_view_state(view, &cfg, Some([320.0, 200.0]))
+            .expect("test setup must succeed");
+        assert_eq!(first.ui_commands.len(), 1);
+        let UiCommand::UpsertLabel {
+            node,
+            text,
+            projected_quad: Some(quad),
+            clip_rect,
+            depth_test,
+            rect,
+            ..
+        } = &first.ui_commands[0]
+        else {
+            panic!("expected projected label");
+        };
+        assert_eq!(*node, label);
+        assert_eq!(text.as_ref(), "Subview");
+        assert!(*depth_test);
+        assert_eq!(
+            *clip_rect,
+            [
+                0.0,
+                0.0,
+                first.resolution[0] as f32,
+                first.resolution[1] as f32
+            ]
+        );
+        let camera = match &first.source {
+            CameraStreamSourceState::ThreeD(camera) => camera,
+            _ => unreachable!(),
+        };
+        let mut transform = perro_structs::Transform3D::default();
+        transform.position.z = -5.0;
+        let expected = crate::runtime::render_3d::label_projected_quad_3d(
+            crate::runtime::render_3d::label_billboard_transform_3d(transform, camera),
+            Vector2::new(1.0, 0.25),
+            camera,
+            Vector2::new(first.resolution[0] as f32, first.resolution[1] as f32),
+        )
+        .expect("test setup must succeed");
+        assert_eq!(*quad, expected);
+        let mut moved = cfg.clone();
+        moved.view_position.x += 1.0;
+        let second = runtime
+            .sub_view_state(view, &moved, Some([320.0, 200.0]))
+            .expect("test setup must succeed");
+        let UiCommand::UpsertLabel {
+            projected_quad: Some(next),
+            rect: next_rect,
+            ..
+        } = &second.ui_commands[0]
+        else {
+            panic!("expected projected label");
+        };
+        assert_ne!(quad, next);
+        assert_eq!(rect, next_rect);
+        assert!(!camera_stream_state_matches(&first, &second));
+        if let Some(mut n) = runtime.nodes.get_mut(label)
+            && let SceneNodeData::Label3D(data) = &mut n.data
+        {
+            data.visible_through_objects = true;
+        }
+        let through = runtime
+            .sub_view_state(view, &cfg, None)
+            .expect("test setup must succeed");
+        assert!(!camera_stream_state_matches(&first, &through));
+        assert!(matches!(
+            &through.ui_commands[0],
+            UiCommand::UpsertLabel {
+                depth_test: false,
+                ..
+            }
+        ));
+        if let Some(mut n) = runtime.nodes.get_mut(label)
+            && let SceneNodeData::Label3D(data) = &mut n.data
+        {
+            data.visible = false;
+        }
+        assert!(
+            runtime
+                .sub_view_state(view, &cfg, None)
+                .expect("test setup must succeed")
+                .ui_commands
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn sub_view_labels_stay_in_owned_world() {
+        let mut runtime = Runtime::new();
+        let (outer, _, _) = retention_scene(&mut runtime);
+        let (inner, _, _) = retention_scene(&mut runtime);
+        assert!(runtime.reparent(outer, inner));
+        let label = NodeAPI::create::<perro_nodes::Label3D>(&mut runtime);
+        assert!(runtime.reparent(inner, label));
+        if let Some(mut n) = runtime.nodes.get_mut(label)
+            && let SceneNodeData::Label3D(data) = &mut n.data
+        {
+            data.text = "Nested".into();
+            data.transform.position.z = -5.0;
+        }
+        let outer_cfg = sub_view_of(&runtime, outer);
+        let inner_cfg = sub_view_of(&runtime, inner);
+        assert!(
+            runtime
+                .sub_view_state(outer, &outer_cfg, None)
+                .expect("test setup must succeed")
+                .ui_commands
+                .is_empty()
+        );
+        assert_eq!(
+            runtime
+                .sub_view_state(inner, &inner_cfg, None)
+                .expect("test setup must succeed")
+                .ui_commands
+                .len(),
+            1
+        );
     }
 
     #[test]

@@ -8,6 +8,61 @@ Scripts own behavior for one attached node. `#[State]` holds data for each
 instance of that script. Scene files may override state fields before
 `on_init` runs.
 
+## AI Agents: Start With Perro State
+
+Read this guide and the relevant [state](state.md), [lifecycle](lifecycle.md),
+and [method examples](methods.md#direct-calls) before choosing a gameplay
+structure. Use Perro's scripting model rather than assuming it follows another
+Rust engine's ownership model.
+
+`&self` in a callback does not prevent mutable gameplay state. The runtime
+stores a separate `#[State]` value for each node using the script and provides
+access through `ctx.run`. Start with `#[State] struct Name`, `lifecycle!`, and
+`methods!`; no handwritten `impl Name` is needed for script behavior.
+
+```rust
+use perro_api::prelude::*;
+
+#[State]
+struct PlayerState {
+    #[default = 100]
+    pub health: i32,
+}
+
+lifecycle!({
+    fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
+        self.heal(ctx, 10);
+    }
+});
+
+methods!({
+    pub fn heal(&self, ctx: &mut ScriptContext<'_, API>, amount: i32) {
+        with_state_mut!(ctx.run, PlayerState, ctx.id, |state| {
+            state.health = (state.health + amount).clamp(0, 100);
+        });
+    }
+});
+```
+
+Use these defaults for a first pass:
+
+- Use `with_state!` / `with_state_mut!` for known state types on this node or
+  another node. Use direct calls such as `self.heal(ctx, 10)` within a script.
+- Use `get_var!` / `set_var!` for dynamic access to `pub` state fields and
+  `call_method!` for dynamic calls to `pub fn` methods in `methods!`.
+- End each state-access closure before another `ctx.run` call. Copy the needed
+  result out; do not add shared mutable wrappers to work around that borrow.
+- Keep behavior with its owning node, scene coordination in a controller
+  script, and shared constants or pure helpers in plain Rust modules.
+- Do not default to `Mutex`, `RefCell`, or `thread_local!` for gameplay state.
+  Perro's state and method APIs are enough for most games. Add extra ownership
+  or synchronization machinery only for a concrete need those APIs do not meet,
+  such as a library requirement or actual cross-thread data sharing.
+
+This is not a ban on Rust `impl` blocks for helper types or on legitimate
+threading primitives. Check the relevant Perro docs and examples first; do not
+introduce that complexity merely because callbacks take `&self`.
+
 ## Choose Script State
 
 Put a value in `#[State]` when it belongs to one script instance and must

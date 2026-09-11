@@ -602,7 +602,11 @@ fn resolve_scene_asset<T>(
     extract: fn(&Variant) -> Option<T>,
 ) -> Option<T> {
     let path = value.as_str()?;
-    if !(path.starts_with("res://") || path.starts_with("dlc://") || path.starts_with("user://")) {
+    if !(path.starts_with("res://")
+        || path.starts_with("dlc://")
+        || path.starts_with("user://")
+        || path.starts_with("demo://"))
+    {
         return None;
     }
     resolver

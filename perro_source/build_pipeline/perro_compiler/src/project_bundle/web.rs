@@ -7,8 +7,12 @@ pub(super) fn export_project_web_bundle(
 ) -> Result<(), CompilerError> {
     let package_name = read_project_package_name(project_root)?;
     let library_name = read_project_library_name(project_root, &package_name)?;
-    let project_cfg = perro_project::load_project_toml_with_demo(project_root, options.demo)
-        .map_err(|err| CompilerError::SceneParse(format!("failed to load project.toml: {err}")))?;
+    let project_cfg = perro_project::load_project_toml_with_variants(
+        project_root,
+        options.demo,
+        options.playtest,
+    )
+    .map_err(|err| CompilerError::SceneParse(format!("failed to load project.toml: {err}")))?;
     let routes = perro_project::load_routes_toml(project_root, &project_cfg)
         .map_err(|err| CompilerError::SceneParse(format!("failed to load routes.toml: {err}")))?;
     let profile_dir = if options.release { "release" } else { "debug" };

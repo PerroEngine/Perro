@@ -1,6 +1,6 @@
 // TAA v1 resolve — camera-reprojection only.
 //
-// Runs post-tonemap on the LDR output (like FXAA/SMAA) at render resolution.
+// Resolves scene-linear color at render resolution before UI and final effects.
 // History is reprojected through the previous frame's camera using current
 // scene depth and the current/previous UNJITTERED view-proj matrices; the
 // scene itself renders with a per-frame sub-pixel Halton(2,3) camera jitter
@@ -102,7 +102,7 @@ fn taa_resolve(in: VsOut) -> vec4<f32> {
         history_weight = 0.0;
     }
 
-    // Standard 3x3 neighborhood min/max AABB clamp in output color space:
+    // Standard 3x3 neighborhood min/max AABB clamp in scene color space:
     // bounds stale/ghosting history to colors present around this pixel.
     var c_min = current;
     var c_max = current;

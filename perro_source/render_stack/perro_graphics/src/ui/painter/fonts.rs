@@ -63,7 +63,7 @@ pub(super) const HARFBUZZ_FAMILY_CACHE_LIMIT: usize = 16;
 pub(super) const HARFBUZZ_ATLAS_REBUILD_FILL: f32 = 0.8;
 
 /// Fill ratio under which the atlas counts as idle. The atlas only ever grows
-/// (height doubling), so a one-off CJK burst at 3x raster scale leaves a
+/// (height doubling), so a one-off CJK burst at 2x raster scale can leave a
 /// 4096x2048 image — 32 MiB of pixels plus a same-size GPU texture — retained
 /// for the rest of the process at a few percent fill.
 pub(super) const HARFBUZZ_ATLAS_IDLE_FILL: f32 = 0.25;

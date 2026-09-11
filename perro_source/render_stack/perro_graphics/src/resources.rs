@@ -1680,6 +1680,7 @@ fn redecodable_texture_source(source: &str) -> bool {
         || source == "__perro_builtin_logo_svg__"
         || source.starts_with("res://")
         || source.starts_with("user://")
+        || source.starts_with("demo://")
         || source.starts_with("dlc://")
         || (!source.is_empty() && source.bytes().all(|b| b.is_ascii_digit()))
 }

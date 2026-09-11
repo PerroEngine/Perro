@@ -1183,6 +1183,9 @@ app_id = 480
     assert!(manifest_dep_has_path(&scripts_manifest, "perro_api"));
     assert!(!scripts_manifest.contains("\nperro_steamworks = \"0.1.0\""));
     assert!(project_manifest.contains("\"scripts/steamworks\""));
+    assert!(project_manifest.contains("perro-playtest"));
+    assert!(project_manifest.contains("\"scripts/perro-playtest\""));
+    assert!(scripts_manifest.contains("perro-playtest = []"));
     assert!(project_manifest.contains("perro-demo"));
     assert!(project_manifest.contains("\"scripts/perro-demo\""));
     assert!(scripts_manifest.contains("perro-demo = []"));
@@ -1478,6 +1481,7 @@ fn ensure_source_overrides_recreates_missing_scripts_manifest() {
     assert!(repaired.contains("crate-type = [\"cdylib\", \"rlib\"]"));
     assert!(repaired.contains("dynamic-scripts = []"));
     assert!(repaired.contains("perro-demo = []"));
+    assert!(repaired.contains("perro-playtest = []"));
     assert!(repaired.contains("perro-spec = [\"perro_api/spec\"]"));
     assert!(manifest_dep_has_path(&repaired, "perro_api"));
     assert!(manifest_dep_has_path(&repaired, "perro_runtime"));
@@ -1867,4 +1871,150 @@ company = "Legacy Studio"
     let cfg = parse_project_toml(toml).expect("identity precedence");
     assert_eq!(cfg.metadata.version.as_deref(), Some("2.0.0"));
     assert_eq!(cfg.metadata.company.as_deref(), Some("Legacy Studio"));
+}
+
+#[test]
+fn demo_keeps_base_save_name_and_selects_steam_app() {
+    let source = r#"
+[project]
+name = "My Game"
+main_scene = "res://main.scn"
+[steam]
+enabled = true
+app_id = 123456
+demo_id = 654321
+input = "actions"
+[demo.project]
+name = "My Game Demo"
+main_scene = "res://demo.scn"
+"#;
+    let full = parse_project_toml_with_demo(source, false).expect("full config");
+    let demo = parse_project_toml_with_demo(source, true).expect("demo config");
+    assert_eq!(full.name, "My Game");
+    assert_eq!(demo.name, "My Game Demo");
+    assert_eq!(full.base_name, "My Game");
+    assert_eq!(demo.base_name, full.base_name);
+    assert_eq!(full.steam.app_id, Some(123456));
+    assert_eq!(demo.steam.app_id, Some(654321));
+    assert!(demo.steam.enabled);
+    assert_eq!(demo.steam.input_mode, SteamInputMode::Actions);
+    assert_eq!(demo.main_scene, "res://demo.scn");
+}
+
+#[test]
+fn static_demo_keeps_base_save_name() {
+    let full = StaticProjectConfig::new("My Game", 1, 2, 3, 1920, 1080).to_runtime();
+    let demo = StaticProjectConfig::new("My Game Demo", 1, 2, 3, 1920, 1080)
+        .with_base_name("My Game")
+        .to_runtime();
+    assert_eq!(demo.name, "My Game Demo");
+    assert_eq!(demo.base_name, full.base_name);
+    assert_eq!(full.base_name, "My Game");
+    assert_eq!(
+        ProjectConfig::default_for_name("My Game").base_name,
+        full.base_name
+    );
+}
+
+#[test]
+fn startup_splash_size_defaults_and_accepts_positive_numbers() {
+    let base = "[project]\nname = \"Game\"\nmain_scene = \"res://main.scn\"\n";
+    assert_eq!(parse_project_toml(base).expect("valid test input").startup_splash_size, 1.0);
+    for (value, expected) in [("0.5", 0.5), ("1", 1.0), ("2", 2.0), ("3", 3.0), ("4", 4.0)] {
+        let cfg = parse_project_toml(&format!("{base}startup_splash_size = {value}\n")).expect("valid test input");
+        assert_eq!(cfg.startup_splash_size, expected);
+    }
+    let cfg = StaticProjectConfig::new("Game", 1, 2, 3, 1920, 1080);
+    assert_eq!(cfg.to_runtime().startup_splash_size, 1.0);
+    assert_eq!(
+        cfg.with_startup_splash_size(2.0)
+            .to_runtime()
+            .startup_splash_size,
+        2.0
+    );
+}
+
+#[test]
+fn startup_splash_size_rejects_invalid_values() {
+    for value in ["0", "-1", "nan", "inf", "1e100", "1e-100", "true", "\"2x\""] {
+        let src = format!(
+            "[project]\nname = \"Game\"\nmain_scene = \"res://main.scn\"\nstartup_splash_size = {value}\n"
+        );
+        let err = parse_project_toml(&src).expect_err("invalid test input");
+        assert!(
+            err.to_string().contains("project.startup_splash_size"),
+            "{value}: {err}"
+        );
+    }
+}
+
+#[test]
+fn playtest_selects_app_filters_assets_and_isolates_saves() {
+    let source = r#"
+[project]
+name = "My Game"
+main_scene = "res://main.scn"
+[steam]
+enabled = true
+app_id = 123456
+demo_id = 654321
+playtest_id = 987654
+[playtest]
+exclude = ["res://full/**", "res://secret.rs"]
+[playtest.project]
+name = "Public Test"
+main_scene = "res://test.scn"
+"#;
+    let full = parse_project_toml(source).expect("valid test input");
+    let demo = parse_project_toml_with_demo(source, true).expect("valid test input");
+    let test = parse_project_toml_with_variants(source, false, true).expect("valid test input");
+    assert_eq!(test.name, "Public Test");
+    assert_eq!(test.base_name, "My Game_Playtest");
+    assert_eq!(full.base_name, "My Game");
+    assert_eq!(demo.base_name, "My Game");
+    assert_eq!(test.steam.app_id, Some(987654));
+    assert_eq!(full.steam.app_id, Some(123456));
+    assert_eq!(demo.steam.app_id, Some(654321));
+    assert_eq!(test.main_scene, "res://test.scn");
+    assert!(test.build_excludes("res://full/level.scn"));
+    assert!(test.build_excludes("res://secret.rs"));
+    assert!(!test.build_excludes("res://test.scn"));
+    assert!(!full.build_excludes("res://secret.rs"));
+    assert!(!demo.build_excludes("res://secret.rs"));
+    assert_eq!(test.build_exclusion_patterns(), ["full/**", "secret.rs"]);
+    assert!(parse_project_toml_with_variants(source, true, true).is_err());
+}
+
+#[test]
+fn playtest_validates_exclusions_and_isolates_without_overlay() {
+    let base = "[project]\nname = \"Game\"\nmain_scene = \"res://main.scn\"\n";
+    let test = parse_project_toml_with_variants(base, false, true).expect("valid test input");
+    assert_eq!(test.base_name, "Game_Playtest");
+    assert!(test.playtest.active);
+    for value in ["[1]", "true", "[\"res://../save\"]", "[\"user://save\"]"] {
+        let src = format!("{base}[playtest]\nexclude = {value}\n");
+        let err = parse_project_toml_with_variants(&src, false, true).expect_err("invalid test input");
+        assert!(err.to_string().contains("playtest.exclude"));
+    }
+}
+
+#[test]
+fn steam_variant_ids_validate_and_fall_back() {
+    let base = "[project]\nname = \"Game\"\nmain_scene = \"res://main.scn\"\n[steam]\nenabled = true\napp_id = 480\n";
+    for (demo, playtest) in [(false, false), (true, false), (false, true)] {
+        assert_eq!(
+            parse_project_toml_with_variants(base, demo, playtest)
+                .expect("valid test input")
+                .steam
+                .app_id,
+            Some(480)
+        );
+        for key in ["demo_id", "playtest_id"] {
+            for value in ["-1", "4294967296", "true", "\"bad\""] {
+                let src = format!("{base}{key} = {value}\n");
+                let err = parse_project_toml_with_variants(&src, demo, playtest).expect_err("invalid test input");
+                assert!(err.to_string().contains(&format!("steam.{key}")));
+            }
+        }
+    }
 }

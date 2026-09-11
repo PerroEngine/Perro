@@ -100,7 +100,7 @@ impl Runtime {
             .project()
             .ok_or_else(|| "Runtime project is not set".to_string())?
             .config
-            .name
+            .base_name
             .clone();
 
         if self.provider_mode() == ProviderMode::Dynamic

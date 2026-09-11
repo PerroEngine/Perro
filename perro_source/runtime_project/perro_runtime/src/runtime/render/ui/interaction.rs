@@ -122,6 +122,8 @@ impl Runtime {
     }
 
     pub(crate) fn mark_ui_viewport_dirty(&mut self) {
+        // World-space labels cache screen rects derived from the viewport too.
+        self.request_full_2d_scan_once();
         let ids: Vec<NodeID> = self
             .nodes
             .iter()

@@ -70,6 +70,8 @@ rays_per_tick_3d = 128
 # [steam]
 # enabled = false
 # app_id = 480
+# demo_id = 481
+# playtest_id = 482
 # input = "off" # off | metadata | fallback | actions
 
 # Optional web export metadata.
@@ -90,8 +92,16 @@ pub fn load_project_toml(root: &Path) -> Result<ProjectConfig, ProjectError> {
 }
 
 pub fn load_project_toml_with_demo(root: &Path, demo: bool) -> Result<ProjectConfig, ProjectError> {
+    load_project_toml_with_variants(root, demo, false)
+}
+
+pub fn load_project_toml_with_variants(
+    root: &Path,
+    demo: bool,
+    playtest: bool,
+) -> Result<ProjectConfig, ProjectError> {
     let project_toml = fs::read_to_string(root.join("project.toml"))?;
-    let mut config = parse_project_toml_with_demo(&project_toml, demo)?;
+    let mut config = parse_project_toml_with_variants(&project_toml, demo, playtest)?;
     apply_sibling_localization(root, &mut config)?;
     config.input_map = load_input_map_toml(root)?;
     Ok(config)
@@ -131,6 +141,7 @@ const KNOWN_PROJECT_TOML_TABLES: &[&str] = &[
     "localization",
     "steam",
     "demo",
+    "playtest",
 ];
 
 pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError> {
@@ -141,8 +152,37 @@ pub fn parse_project_toml_with_demo(
     contents: &str,
     demo: bool,
 ) -> Result<ProjectConfig, ProjectError> {
+    parse_project_toml_with_variants(contents, demo, false)
+}
+
+pub fn parse_project_toml_with_variants(
+    contents: &str,
+    demo: bool,
+    playtest: bool,
+) -> Result<ProjectConfig, ProjectError> {
+    if demo && playtest {
+        return Err(ProjectError::InvalidField(
+            "playtest",
+            "demo and playtest are mutually exclusive".into(),
+        ));
+    }
     let mut value = parse_toml_document_value(contents)?;
-    let demo_config = apply_demo_overlay(&mut value, demo)?;
+    let base_name = value
+        .get("project")
+        .and_then(Value::as_table)
+        .ok_or(ProjectError::MissingField("project"))?
+        .get("name")
+        .and_then(Value::as_str)
+        .ok_or(ProjectError::MissingField("project.name"))?
+        .to_string();
+    let demo_config = apply_build_overlay(&mut value, demo, "demo", "demo.exclude")?;
+    let playtest_config =
+        apply_build_overlay(&mut value, playtest, "playtest", "playtest.exclude")?;
+    let base_name = if playtest {
+        format!("{base_name}_Playtest")
+    } else {
+        base_name
+    };
     let project_table = value
         .get("project")
         .and_then(Value::as_table)
@@ -198,6 +238,23 @@ pub fn parse_project_toml_with_demo(
         .to_string();
     validate_res_path("project.startup_splash", &startup_splash)?;
 
+    let startup_splash_size = match project_table.get("startup_splash_size") {
+        None => 1.0,
+        Some(value) => {
+            let size = value
+                .as_float()
+                .or_else(|| value.as_integer().map(|v| v as f64))
+                .unwrap_or(f64::NAN) as f32;
+            if !size.is_finite() || size <= 0.0 {
+                return Err(ProjectError::InvalidField(
+                    "project.startup_splash_size",
+                    "must be a finite positive number".to_string(),
+                ));
+            }
+            size
+        }
+    };
+
     let (virtual_width, virtual_height) = parse_virtual_canvas(graphics_table)?;
 
     if virtual_width == 0 || virtual_height == 0 {
@@ -248,13 +305,14 @@ pub fn parse_project_toml_with_demo(
     let localization = parse_localization(localization_table)?;
     let mut metadata = parse_metadata(metadata_table)?;
     apply_project_identity(project_table, &mut metadata)?;
-    let steam = parse_steam(steam_table)?;
+    let steam = parse_steam(steam_table, demo, playtest)?;
     let audio = parse_audio(audio_table)?;
     let web = parse_web(web_table)?;
     let rendering = parse_rendering(graphics_table, rendering_table, ui_table)?;
 
     Ok(ProjectConfig {
         name,
+        base_name,
         metadata,
         web,
         main_scene,
@@ -263,6 +321,7 @@ pub fn parse_project_toml_with_demo(
         icon_hash: None,
         startup_splash,
         startup_splash_hash: None,
+        startup_splash_size,
         virtual_width,
         virtual_height,
         vsync,
@@ -291,14 +350,20 @@ pub fn parse_project_toml_with_demo(
         input_map: perro_input_api::InputMap::new(),
         steam,
         demo: demo_config,
+        playtest: playtest_config,
     })
 }
 
-fn apply_demo_overlay(value: &mut Value, active: bool) -> Result<DemoBuildConfig, ProjectError> {
+fn apply_build_overlay(
+    value: &mut Value,
+    active: bool,
+    section: &'static str,
+    exclude_field: &'static str,
+) -> Result<DemoBuildConfig, ProjectError> {
     let root = value.as_table_mut().ok_or_else(|| {
         ProjectError::InvalidField("project.toml", "must be a TOML table".to_string())
     })?;
-    let Some(demo_value) = root.remove("demo") else {
+    let Some(demo_value) = root.remove(section) else {
         return Ok(DemoBuildConfig {
             active,
             exclude: Vec::new(),
@@ -307,39 +372,37 @@ fn apply_demo_overlay(value: &mut Value, active: bool) -> Result<DemoBuildConfig
     let mut demo = demo_value
         .as_table()
         .cloned()
-        .ok_or_else(|| ProjectError::InvalidField("demo", "must be a TOML table".to_string()))?;
+        .ok_or_else(|| ProjectError::InvalidField(section, "must be a TOML table".to_string()))?;
     let exclude = match demo.remove("exclude") {
         None => Vec::new(),
         Some(Value::Array(values)) => values
             .into_iter()
             .map(|value| {
                 let path = value.as_str().ok_or_else(|| {
-                    ProjectError::InvalidField(
-                        "demo.exclude",
-                        "entries must be strings".to_string(),
-                    )
+                    ProjectError::InvalidField(exclude_field, "entries must be strings".to_string())
                 })?;
-                validate_demo_pattern(path)?;
+                validate_demo_pattern(path, exclude_field)?;
                 Ok(path.to_string())
             })
             .collect::<Result<Vec<_>, ProjectError>>()?,
         Some(_) => {
             return Err(ProjectError::InvalidField(
-                "demo.exclude",
+                exclude_field,
                 "must be an array of strings".to_string(),
             ));
         }
     };
     for key in demo.keys() {
-        if !KNOWN_PROJECT_TOML_TABLES.contains(&key.as_str()) || key == "demo" {
+        if !KNOWN_PROJECT_TOML_TABLES.contains(&key.as_str()) || key == "demo" || key == "playtest"
+        {
             return Err(ProjectError::InvalidField(
-                "demo",
+                section,
                 format!("unknown override table `{key}`"),
             ));
         }
         if !demo[key].is_table() {
             return Err(ProjectError::InvalidField(
-                "demo",
+                section,
                 format!("override `{key}` must be a table"),
             ));
         }
@@ -374,10 +437,10 @@ fn merge_demo_value(target: &mut Value, overlay: Value) -> Result<(), ProjectErr
     }
 }
 
-fn validate_demo_pattern(path: &str) -> Result<(), ProjectError> {
+fn validate_demo_pattern(path: &str, exclude_field: &'static str) -> Result<(), ProjectError> {
     let Some(rel) = path.strip_prefix("res://") else {
         return Err(ProjectError::InvalidField(
-            "demo.exclude",
+            exclude_field,
             format!("path `{path}` must start with `res://`"),
         ));
     };
@@ -388,7 +451,7 @@ fn validate_demo_pattern(path: &str) -> Result<(), ProjectError> {
             .any(|part| part.is_empty() || part == "." || part == "..")
     {
         return Err(ProjectError::InvalidField(
-            "demo.exclude",
+            exclude_field,
             format!("invalid asset glob `{path}`"),
         ));
     }
@@ -657,7 +720,11 @@ pub fn parse_routes_toml(contents: &str) -> Result<ProjectRoutesConfig, ProjectE
     Ok(ProjectRoutesConfig { routes })
 }
 
-fn parse_steam(table: Option<&toml::map::Map<String, Value>>) -> Result<SteamConfig, ProjectError> {
+fn parse_steam(
+    table: Option<&toml::map::Map<String, Value>>,
+    demo: bool,
+    playtest: bool,
+) -> Result<SteamConfig, ProjectError> {
     let Some(table) = table else {
         return Ok(SteamConfig::default());
     };
@@ -667,16 +734,27 @@ fn parse_steam(table: Option<&toml::map::Map<String, Value>>) -> Result<SteamCon
         })?,
         None => false,
     };
-    let app_id = match table.get("app_id") {
-        Some(value) => {
-            let raw = value.as_integer().ok_or_else(|| {
-                ProjectError::InvalidField("steam.app_id", "must be an integer".to_string())
-            })?;
-            Some(u32::try_from(raw).map_err(|_| {
-                ProjectError::InvalidField("steam.app_id", "must fit in u32".to_string())
-            })?)
-        }
-        None => None,
+    let read_id = |key: &str, field: &'static str| -> Result<Option<u32>, ProjectError> {
+        table
+            .get(key)
+            .map(|value| {
+                let raw = value.as_integer().ok_or_else(|| {
+                    ProjectError::InvalidField(field, "must be an integer".to_string())
+                })?;
+                u32::try_from(raw)
+                    .map_err(|_| ProjectError::InvalidField(field, "must fit in u32".to_string()))
+            })
+            .transpose()
+    };
+    let app_id = read_id("app_id", "steam.app_id")?;
+    let demo_id = read_id("demo_id", "steam.demo_id")?;
+    let playtest_id = read_id("playtest_id", "steam.playtest_id")?;
+    let app_id = if playtest {
+        playtest_id.or(app_id)
+    } else if demo {
+        demo_id.or(app_id)
+    } else {
+        app_id
     };
     if enabled && app_id.is_none() {
         return Err(ProjectError::MissingField("steam.app_id"));
@@ -1092,9 +1170,7 @@ fn parse_ssao_with_default(
 /// `msaa = true` maps to `msaa4`; everything else (explicit `msaa = false`
 /// or no key at all) gets the `fxaa` default. When both keys are present,
 /// `anti_alias` wins.
-fn parse_anti_alias(
-    table: &toml::map::Map<String, Value>,
-) -> Result<AntiAlias, ProjectError> {
+fn parse_anti_alias(table: &toml::map::Map<String, Value>) -> Result<AntiAlias, ProjectError> {
     let Some(value) = table.get("anti_alias") else {
         return Ok(match table.get("msaa").and_then(Value::as_bool) {
             Some(true) => AntiAlias::Msaa4,

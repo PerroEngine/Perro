@@ -10,7 +10,7 @@ struct UiUniform {
 @group(2) @binding(0) var scene_depth: texture_depth_2d;
 
 struct VsIn {
-    @location(0) pos: vec2<f32>,
+    @location(0) pos: vec4<f32>,
     @location(1) uv: vec2<f32>,
     @location(2) depth_test: vec2<f32>,
     @location(3) color: vec4<f32>,
@@ -20,7 +20,7 @@ struct VsOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) uv: vec2<f32>,
     @location(1) color: vec4<f32>,
-    @location(2) depth_test: vec2<f32>,
+    @location(2) @interpolate(flat) depth_test: vec2<f32>,
 };
 
 @vertex
@@ -29,6 +29,9 @@ fn vs_main(in: VsIn) -> VsOut {
     let y = 1.0 - (in.pos.y / max(ui.screen_size.y, 1.0)) * 2.0;
     var out: VsOut;
     out.pos = vec4<f32>(x, y, 0.0, 1.0);
+    if in.depth_test.x > 0.5 {
+        out.pos = in.pos;
+    }
     out.uv = in.uv;
     out.color = in.color;
     out.depth_test = in.depth_test;
@@ -49,7 +52,7 @@ fn fs_main_linear_framebuffer(in: VsOut) -> @location(0) vec4<f32> {
         let uv = clamp(in.pos.xy / ui.screen_size, vec2<f32>(0.0), vec2<f32>(0.999999));
         let pixel = vec2<i32>(uv * vec2<f32>(size));
         let surface_depth = textureLoad(scene_depth, pixel, 0);
-        if in.depth_test.x > surface_depth + 0.00001 {
+        if in.pos.z > surface_depth + 0.00001 {
             discard;
         }
     }

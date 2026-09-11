@@ -16,6 +16,7 @@ pub enum ResPathKind {
     Res,
     Dlc,
     User,
+    Demo,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,8 +36,10 @@ impl fmt::Display for ResPathError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let message = match self {
             Self::Empty => "resource path is empty",
-            Self::MissingScheme => "resource path must start with res://, dlc://, or user://",
-            Self::UnknownScheme => "resource path scheme must be res, dlc, or user",
+            Self::MissingScheme => {
+                "resource path must start with res://, dlc://, user://, or demo://"
+            }
+            Self::UnknownScheme => "resource path scheme must be res, dlc, user, or demo",
             Self::EmptyPath => "resource path body is empty",
             Self::EmptyDlcName => "dlc resource path needs a dlc name or self",
             Self::InvalidDlcName => "dlc resource path name has invalid characters",
@@ -116,6 +119,8 @@ impl ResPath {
             ResPathKind::Res
         } else if self.0.starts_with("dlc://") {
             ResPathKind::Dlc
+        } else if self.0.starts_with("demo://") {
+            ResPathKind::Demo
         } else {
             ResPathKind::User
         }
@@ -142,6 +147,7 @@ impl ResPath {
         match self.kind() {
             ResPathKind::Res => &self.0["res://".len()..],
             ResPathKind::User => &self.0["user://".len()..],
+            ResPathKind::Demo => &self.0["demo://".len()..],
             ResPathKind::Dlc => {
                 let rest = &self.0["dlc://".len()..];
                 rest.split_once('/').map_or("", |(_, body)| body)
@@ -376,14 +382,14 @@ pub const fn validate_const(path: &str) {
 
     if starts_with(bytes, b"res://") {
         validate_body_const(bytes, 6);
-    } else if starts_with(bytes, b"user://") {
+    } else if starts_with(bytes, b"user://") || starts_with(bytes, b"demo://") {
         validate_body_const(bytes, 7);
     } else if starts_with(bytes, b"dlc://") {
         validate_dlc_const(bytes);
     } else if contains_scheme(bytes) {
-        panic!("ResPath has unsupported scheme; use res://, dlc://, or user://");
+        panic!("ResPath has unsupported scheme; use res://, dlc://, user://, or demo://");
     } else {
-        panic!("ResPath missing scheme; start path with res://, dlc://, or user://");
+        panic!("ResPath missing scheme; start path with res://, dlc://, user://, or demo://");
     }
 }
 
@@ -499,6 +505,8 @@ fn validate(path: &str) -> Result<(), ResPathError> {
         validate_body(path)
     } else if let Some(path) = path.strip_prefix("user://") {
         validate_body(path)
+    } else if let Some(path) = path.strip_prefix("demo://") {
+        validate_body(path)
     } else if let Some(path) = path.strip_prefix("dlc://") {
         validate_dlc(path)
     } else if path.contains("://") {
@@ -541,6 +549,16 @@ mod tests {
 
     #[test]
     fn accepts_supported_schemes() {
+        const DEMO: &ResPath = ResPath::new("demo://saves/slot1.scn");
+        assert_eq!(DEMO.kind(), ResPathKind::Demo);
+        assert_eq!(DEMO.body(), "saves/slot1.scn");
+        assert_eq!(DEMO.dlc_name(), None);
+        assert_eq!(
+            ResPath::try_new(DEMO.as_str())
+                .expect("valid demo path")
+                .as_str(),
+            DEMO.as_str()
+        );
         assert_eq!(
             ResPath::new("res://textures/player.png").kind(),
             ResPathKind::Res
@@ -561,6 +579,15 @@ mod tests {
 
     #[test]
     fn rejects_invalid_paths() {
+        for path in [
+            "demo://",
+            "demo://../secret",
+            "demo://save/../secret",
+            "demo://save\\slot",
+        ] {
+            assert!(ResPath::try_new(path).is_err());
+            assert!(std::panic::catch_unwind(|| validate_const(path)).is_err());
+        }
         assert_eq!(
             ResPath::try_new("textures/player.png").expect_err("test call must fail"),
             ResPathError::MissingScheme

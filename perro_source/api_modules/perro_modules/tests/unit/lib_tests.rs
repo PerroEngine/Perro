@@ -97,3 +97,50 @@ fn file_dir_helpers_return_sorted_disk_paths() {
 
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn demo_file_and_zip_share_user_subdirectory() {
+    let name = format!("perro_modules_demo_alias_{}", std::process::id());
+    crate::file::set_project_root_disk(".", &name);
+    let root = std::path::PathBuf::from(crate::file::resolve_path_string("user://"));
+    assert_eq!(root.file_name().expect("test setup must succeed"), "data");
+    assert_eq!(
+        root.parent()
+            .expect("test setup must succeed")
+            .file_name()
+            .expect("test setup must succeed"),
+        name.as_str()
+    );
+
+    crate::file::save_string("demo://save.txt", "demo progress").expect("demo save");
+    assert_eq!(
+        crate::file::load_string("user://demo/save.txt").expect("test setup must succeed"),
+        "demo progress"
+    );
+    crate::file::save_string("user://demo/save.txt", "full game import")
+        .expect("test setup must succeed");
+    assert_eq!(
+        crate::file::load_string("demo://save.txt").expect("test setup must succeed"),
+        "full game import"
+    );
+    assert!(crate::file::exists("demo://save.txt"));
+    crate::file::save_string("user://settings.txt", "shared").expect("test setup must succeed");
+    assert!(!crate::file::exists("demo://settings.txt"));
+
+    crate::zip::write_files("demo://backup.zip", &[("demo://save.txt", "save.txt")])
+        .expect("test setup must succeed");
+    assert_eq!(
+        crate::zip::list("user://demo/backup.zip").expect("test setup must succeed"),
+        vec!["save.txt"]
+    );
+    crate::zip::extract_all("demo://backup.zip", "demo://restore")
+        .expect("test setup must succeed");
+    assert_eq!(
+        crate::file::load_string("user://demo/restore/save.txt").expect("test setup must succeed"),
+        "full game import"
+    );
+    assert!(crate::file::save_string("demo://../escape.txt", "bad").is_err());
+    assert!(crate::zip::write_files("demo://../escape.zip", &[]).is_err());
+    std::fs::remove_dir_all(root.parent().expect("test setup must succeed"))
+        .expect("test setup must succeed");
+}

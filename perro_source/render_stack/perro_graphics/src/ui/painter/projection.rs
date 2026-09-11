@@ -16,74 +16,39 @@ pub(super) fn rotate_primitives(
     }
 }
 
+// Map local glyph vertices directly to homogeneous world clip coordinates.
+// GPU clipping and perspective interpolation require the original z and w;
+// dividing on the CPU and submitting a UI vertex (w = 1) loses both.
 pub(super) fn project_label_primitives(
-    primitives: &mut [ClippedPrimitive],
+    primitives: &[Arc<ClippedPrimitive>],
     source: UiRectState,
     quad: [[f32; 4]; 4],
-    viewport: [f32; 2],
-) -> Vec<Vec<f32>> {
-    let (min, max) = source.screen_min_max(viewport);
+    depth_test: bool,
+) -> Vec<UiWorldProjection> {
+    let (min, max) = source.screen_min_max([0.0; 2]);
     let width = (max[0] - min[0]).max(0.001);
     let height = (max[1] - min[1]).max(0.001);
-    let mut primitive_depths = Vec::with_capacity(primitives.len());
-    let fully_inside_near = quad
+    primitives
         .iter()
-        .all(|clip| clip[2] + clip[3] >= 1.0e-5 && clip[3].abs() > 1.0e-6);
-    for primitive in primitives {
-        primitive.clip_rect = Rect::EVERYTHING;
-        let mut depths = Vec::new();
-        if let Primitive::Mesh(mesh) = &mut primitive.primitive {
-            if fully_inside_near {
-                depths.reserve(mesh.vertices.len());
-                for vertex in &mut mesh.vertices {
-                    let u = ((vertex.pos.x - min[0]) / width).clamp(0.0, 1.0);
-                    let v = ((vertex.pos.y - min[1]) / height).clamp(0.0, 1.0);
-                    let clip = bilerp_clip_quad(quad, u, v);
-                    let ndc_x = clip[0] / clip[3];
-                    let ndc_y = clip[1] / clip[3];
-                    vertex.pos = pos2(
-                        (ndc_x * 0.5 + 0.5) * viewport[0],
-                        (0.5 - ndc_y * 0.5) * viewport[1],
-                    );
-                    depths.push((clip[2] / clip[3]).clamp(0.0, 1.0));
-                }
-                primitive_depths.push(depths);
-                continue;
+        .map(|primitive| {
+            let clip_positions = match &primitive.primitive {
+                Primitive::Mesh(mesh) => mesh
+                    .vertices
+                    .iter()
+                    .map(|vertex| {
+                        let u = ((vertex.pos.x - min[0]) / width).clamp(0.0, 1.0);
+                        let v = ((vertex.pos.y - min[1]) / height).clamp(0.0, 1.0);
+                        bilerp_clip_quad(quad, u, v)
+                    })
+                    .collect(),
+                _ => Arc::from([]),
+            };
+            UiWorldProjection {
+                clip_positions,
+                depth_test,
             }
-            let old = std::mem::replace(mesh, Mesh::with_texture(mesh.texture_id));
-            for triangle in old.indices.chunks_exact(3) {
-                let mut polygon = Vec::with_capacity(4);
-                for &index in triangle {
-                    let vertex = old.vertices[index as usize];
-                    let u = ((vertex.pos.x - min[0]) / width).clamp(0.0, 1.0);
-                    let v = ((vertex.pos.y - min[1]) / height).clamp(0.0, 1.0);
-                    polygon.push(ProjectedLabelVertex {
-                        clip: bilerp_clip_quad(quad, u, v),
-                        uv: vertex.uv,
-                        color: vertex.color,
-                    });
-                }
-                clip_label_polygon_near(&mut polygon);
-                for index in 1..polygon.len().saturating_sub(1) {
-                    push_projected_label_triangle(
-                        mesh,
-                        [polygon[0], polygon[index], polygon[index + 1]],
-                        viewport,
-                        &mut depths,
-                    );
-                }
-            }
-        }
-        primitive_depths.push(depths);
-    }
-    primitive_depths
-}
-
-#[derive(Clone, Copy)]
-pub(super) struct ProjectedLabelVertex {
-    clip: [f32; 4],
-    uv: epaint::Pos2,
-    color: Color32,
+        })
+        .collect()
 }
 
 pub(super) fn bilerp_clip_quad(quad: [[f32; 4]; 4], u: f32, v: f32) -> [f32; 4] {
@@ -92,68 +57,4 @@ pub(super) fn bilerp_clip_quad(quad: [[f32; 4]; 4], u: f32, v: f32) -> [f32; 4] 
         let bottom = quad[3][axis] + (quad[2][axis] - quad[3][axis]) * u;
         top + (bottom - top) * v
     })
-}
-
-pub(super) fn clip_label_polygon_near(polygon: &mut Vec<ProjectedLabelVertex>) {
-    let input = std::mem::take(polygon);
-    if input.is_empty() {
-        return;
-    }
-    let Some(mut previous) = input.last().copied() else {
-        return;
-    };
-    let mut previous_distance = previous.clip[2] + previous.clip[3];
-    for current in input {
-        let current_distance = current.clip[2] + current.clip[3];
-        let previous_inside = previous_distance >= 1.0e-5;
-        let current_inside = current_distance >= 1.0e-5;
-        if previous_inside != current_inside {
-            let t = ((1.0e-5 - previous_distance) / (current_distance - previous_distance))
-                .clamp(0.0, 1.0);
-            polygon.push(lerp_projected_label_vertex(previous, current, t));
-        }
-        if current_inside {
-            polygon.push(current);
-        }
-        previous = current;
-        previous_distance = current_distance;
-    }
-}
-
-pub(super) fn lerp_projected_label_vertex(
-    a: ProjectedLabelVertex,
-    b: ProjectedLabelVertex,
-    t: f32,
-) -> ProjectedLabelVertex {
-    ProjectedLabelVertex {
-        clip: std::array::from_fn(|i| a.clip[i] + (b.clip[i] - a.clip[i]) * t),
-        uv: a.uv + (b.uv - a.uv) * t,
-        color: a.color,
-    }
-}
-
-pub(super) fn push_projected_label_triangle(
-    mesh: &mut Mesh,
-    triangle: [ProjectedLabelVertex; 3],
-    viewport: [f32; 2],
-    depths: &mut Vec<f32>,
-) {
-    if triangle.iter().any(|vertex| vertex.clip[3].abs() <= 1.0e-6) {
-        return;
-    }
-    let base = mesh.vertices.len() as u32;
-    for vertex in triangle {
-        let ndc_x = vertex.clip[0] / vertex.clip[3];
-        let ndc_y = vertex.clip[1] / vertex.clip[3];
-        depths.push((vertex.clip[2] / vertex.clip[3]).clamp(0.0, 1.0));
-        mesh.vertices.push(Vertex {
-            pos: pos2(
-                (ndc_x * 0.5 + 0.5) * viewport[0],
-                (0.5 - ndc_y * 0.5) * viewport[1],
-            ),
-            uv: vertex.uv,
-            color: vertex.color,
-        });
-    }
-    mesh.indices.extend_from_slice(&[base, base + 1, base + 2]);
 }

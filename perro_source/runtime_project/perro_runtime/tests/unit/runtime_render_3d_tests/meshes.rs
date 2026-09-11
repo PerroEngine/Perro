@@ -2,6 +2,32 @@ mod meshes {
     use super::*;
 
     #[test]
+    fn reparent_mesh_between_main_world_and_subview_removes_stale_draw() {
+        let mut runtime = Runtime::new();
+        let world = runtime.nodes.insert(SceneNode::new(Node3D::new().into()));
+        let view = runtime.nodes.insert(SceneNode::new(perro_nodes::UiSubView::default().into()));
+        let group = runtime.nodes.insert(SceneNode::new(Node3D::new().into()));
+        let mut mesh = MeshInstance3D::new();
+        mesh.mesh = MeshID::from_parts(7, 0);
+        set_primary_material(&mut mesh, MaterialID::from_parts(9, 0));
+        let node = runtime.nodes.insert(SceneNode::new(mesh.into()));
+        assert!(NodeAPI::reparent(&mut runtime, group, node));
+        for _ in 0..3 {
+            assert!(NodeAPI::reparent(&mut runtime, world, group));
+            runtime.extract_render_3d_commands();
+            assert!(runtime.render_3d.retained_mesh_draws.contains_key(&node));
+            collect_commands(&mut runtime);
+            runtime.clear_dirty_flags();
+            assert!(NodeAPI::reparent(&mut runtime, view, group));
+            runtime.extract_render_3d_commands();
+            assert!(!runtime.render_3d.retained_mesh_draws.contains_key(&node));
+            assert!(!runtime.render_3d.prev_visible.contains(&node));
+            collect_commands(&mut runtime);
+            runtime.clear_dirty_flags();
+        }
+    }
+
+    #[test]
     fn mesh_blend_options_reach_draw_command() {
         let mut runtime = Runtime::new();
         let mut mesh = MeshInstance3D::new();

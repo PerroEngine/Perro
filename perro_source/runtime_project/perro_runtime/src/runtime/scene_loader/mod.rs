@@ -785,7 +785,7 @@ impl Runtime {
             }
             (
                 project.root.clone(),
-                project.config.name.clone(),
+                project.config.base_name.clone(),
                 scene_path.clone(),
                 parse_hashed_source_uri(&scene_path).unwrap_or_else(|| {
                     if scene_path == project.config.main_scene {
@@ -805,9 +805,10 @@ impl Runtime {
         };
 
         if let Some(project) = self.project() {
-            perro_io::set_demo_asset_filter(
+            perro_io::set_build_asset_filter(
                 project.config.demo.active,
-                project.config.demo.relative_patterns(),
+                project.config.playtest.active,
+                project.config.build_exclusion_patterns(),
             );
         }
         if self.provider_mode == ProviderMode::Static {

@@ -4,11 +4,13 @@ pub(super) fn export_project_android_bundle(
     project_root: &Path,
     built_apk: &Path,
     demo: bool,
+    playtest: bool,
 ) -> Result<(), CompilerError> {
     let output_name = read_project_output_binary_name(
         project_root,
         &read_project_package_name(project_root)?,
         demo,
+        playtest,
     )?;
     if !built_apk.is_file() {
         return Err(CompilerError::SceneParse(format!(
@@ -99,8 +101,9 @@ pub(super) fn read_project_output_binary_name(
     project_root: &Path,
     fallback_name: &str,
     demo: bool,
+    playtest: bool,
 ) -> Result<String, CompilerError> {
-    let config = perro_project::load_project_toml_with_demo(project_root, demo)
+    let config = perro_project::load_project_toml_with_variants(project_root, demo, playtest)
         .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
     let sanitized = sanitize_output_binary_name(&config.name);
     if sanitized.is_empty() {
@@ -204,8 +207,12 @@ pub(super) fn generate_embedded_entry_files_with_options(
     project_root: &Path,
     options: ProjectBuildOptions,
 ) -> Result<(), CompilerError> {
-    let cfg = perro_project::load_project_toml_with_demo(project_root, options.demo)
-        .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
+    let cfg = perro_project::load_project_toml_with_variants(
+        project_root,
+        options.demo,
+        options.playtest,
+    )
+    .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
     let routes = perro_project::load_routes_toml(project_root, &cfg)
         .map_err(|e| CompilerError::SceneParse(format!("failed to load routes.toml: {e}")))?;
     let project_src = project_root.join(".perro").join("project").join("src");
@@ -239,9 +246,11 @@ perro_app::entry::{native_entry}(perro_app::entry::StaticEmbeddedProject {{\n\
   project: perro_app::entry::StaticEmbeddedProjectInfo {{\n\
         project_root: &root,\n\
         project_name: \"{name}\",\n\
+        base_name: \"{base_name}\",\n\
         main_scene_hash: {main_scene_hash}u64,\n\
         icon_hash: {icon_hash}u64,\n\
         startup_splash_hash: {startup_splash_hash}u64,\n\
+        startup_splash_size: {startup_splash_size:?}f32,\n\
         virtual_width: {w},\n\
         virtual_height: {h},\n\
   }},\n\
@@ -295,9 +304,11 @@ perro_app::entry::{native_entry}(perro_app::entry::StaticEmbeddedProject {{\n\
 }})\n\
 .expect(\"failed to run embedded static project\");",
         name = escape_str(&cfg.name),
+        base_name = escape_str(&cfg.base_name),
         main_scene_hash = perro_ids::string_to_u64(&cfg.main_scene),
         icon_hash = perro_ids::string_to_u64(&cfg.icon),
         startup_splash_hash = perro_ids::string_to_u64(&cfg.startup_splash),
+        startup_splash_size = cfg.startup_splash_size,
         w = cfg.virtual_width,
         h = cfg.virtual_height,
         routes_block = emit_static_routes_block(&routes),
@@ -354,9 +365,11 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
   project: perro_app::entry::StaticEmbeddedProjectInfo {{\n\
         project_root: &root,\n\
         project_name: \"{name}\",\n\
+        base_name: \"{base_name}\",\n\
         main_scene_hash: {main_scene_hash}u64,\n\
         icon_hash: {icon_hash}u64,\n\
         startup_splash_hash: {startup_splash_hash}u64,\n\
+        startup_splash_size: {startup_splash_size:?}f32,\n\
         virtual_width: {w},\n\
         virtual_height: {h},\n\
   }},\n\
@@ -409,9 +422,11 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
 {assets_block}\
 }})",
         name = escape_str(&cfg.name),
+        base_name = escape_str(&cfg.base_name),
         main_scene_hash = perro_ids::string_to_u64(&cfg.main_scene),
         icon_hash = perro_ids::string_to_u64(&cfg.icon),
         startup_splash_hash = perro_ids::string_to_u64(&cfg.startup_splash),
+        startup_splash_size = cfg.startup_splash_size,
         w = cfg.virtual_width,
         h = cfg.virtual_height,
         routes_block = emit_static_routes_block(&routes),
@@ -459,9 +474,11 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
   project: perro_app::entry::StaticEmbeddedProjectInfo {{\n\
         project_root: &root,\n\
         project_name: \"{name}\",\n\
+        base_name: \"{base_name}\",\n\
         main_scene_hash: {main_scene_hash}u64,\n\
         icon_hash: {icon_hash}u64,\n\
         startup_splash_hash: {startup_splash_hash}u64,\n\
+        startup_splash_size: {startup_splash_size:?}f32,\n\
         virtual_width: {w},\n\
         virtual_height: {h},\n\
   }},\n\
@@ -515,9 +532,11 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
 }})\n\
 .expect(\"failed to run embedded static project on android\");",
         name = escape_str(&cfg.name),
+        base_name = escape_str(&cfg.base_name),
         main_scene_hash = perro_ids::string_to_u64(&cfg.main_scene),
         icon_hash = perro_ids::string_to_u64(&cfg.icon),
         startup_splash_hash = perro_ids::string_to_u64(&cfg.startup_splash),
+        startup_splash_size = cfg.startup_splash_size,
         w = cfg.virtual_width,
         h = cfg.virtual_height,
         routes_block = emit_static_routes_block(&routes),

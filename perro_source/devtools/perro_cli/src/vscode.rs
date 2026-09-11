@@ -178,6 +178,12 @@ fn workspace_internal_project_vfs_entries(
 }
 
 pub(crate) fn update_project_vscode_linked_projects(project_dir: &Path) -> Result<(), String> {
+    let project_cfg = perro_project::load_project_toml(project_dir).map_err(|err| {
+        format!(
+            "failed to load {}: {err}",
+            project_dir.join("project.toml").display()
+        )
+    })?;
     let settings_dir = project_dir.join(".vscode");
     fs::create_dir_all(&settings_dir)
         .map_err(|err| format!("failed to create {}: {err}", settings_dir.display()))?;
@@ -200,6 +206,25 @@ pub(crate) fn update_project_vscode_linked_projects(project_dir: &Path) -> Resul
     };
 
     let vfs_entry = "${workspaceFolder}/res/".to_string();
+
+    sync_steamworks_feature(
+        root,
+        "rust-analyzer.cargo.features",
+        project_cfg.steam.enabled,
+        &settings_path,
+    )?;
+    // Explicit check features override cargo features; keep diagnostics in sync too.
+    if root
+        .get("rust-analyzer.check.features")
+        .is_some_and(|value| !value.is_null())
+    {
+        sync_steamworks_feature(
+            root,
+            "rust-analyzer.check.features",
+            project_cfg.steam.enabled,
+            &settings_path,
+        )?;
+    }
 
     let entry = root
         .entry("rust-analyzer.linkedProjects".to_string())
@@ -255,6 +280,31 @@ pub(crate) fn update_project_vscode_linked_projects(project_dir: &Path) -> Resul
     Ok(())
 }
 
+fn sync_steamworks_feature(
+    root: &mut serde_json::Map<String, Value>,
+    key: &str,
+    enabled: bool,
+    settings_path: &Path,
+) -> Result<(), String> {
+    let features = root
+        .entry(key.to_string())
+        .or_insert_with(|| Value::Array(Vec::new()));
+    if features.as_str() == Some("all") {
+        return Ok(());
+    }
+    let Some(features) = features.as_array_mut() else {
+        return Err(format!(
+            "expected `{key}` to be an array or \"all\" in {}",
+            settings_path.display()
+        ));
+    };
+    features.retain(|feature| feature.as_str() != Some("steamworks"));
+    if enabled {
+        features.push(Value::String("steamworks".to_string()));
+    }
+    Ok(())
+}
+
 fn project_internal_linked_manifests(project_dir: &Path) -> Result<Vec<String>, String> {
     let mut out = Vec::<String>::new();
     out.push(".perro/scripts/Cargo.toml".to_string());
@@ -284,4 +334,92 @@ fn project_internal_linked_manifests(project_dir: &Path) -> Result<Vec<String>, 
     out.sort();
     out.dedup();
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn project_settings_follow_steam_toggle() {
+        let temp_root = std::env::temp_dir()
+            .canonicalize()
+            .expect("test setup must succeed");
+        let project_dir = temp_root.join(format!(
+            "perro-vscode-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("test setup must succeed")
+                .as_nanos()
+        ));
+        fs::create_dir_all(project_dir.join(".vscode")).expect("test setup must succeed");
+        let settings_path = project_dir.join(".vscode/settings.json");
+        fs::write(
+            &settings_path,
+            json!({
+                "editor.tabSize": 4,
+                "rust-analyzer.cargo.features": ["perro-spec"],
+                "rust-analyzer.check.features": ["perro-spec"]
+            })
+            .to_string(),
+        )
+        .expect("test setup must succeed");
+
+        for enabled in [true, true, false, true] {
+            fs::write(project_dir.join("project.toml"), format!(
+                "[project]\nname = \"Test\"\nmain_scene = \"res://main.scn\"\n[steam]\nenabled = {enabled}\napp_id = 480\n"
+            )).expect("test setup must succeed");
+            update_project_vscode_linked_projects(&project_dir).expect("test setup must succeed");
+            let settings: Value = serde_json::from_str(
+                &fs::read_to_string(&settings_path).expect("test setup must succeed"),
+            )
+            .expect("test setup must succeed");
+            let expected = if enabled {
+                json!(["perro-spec", "steamworks"])
+            } else {
+                json!(["perro-spec"])
+            };
+            assert_eq!(settings["rust-analyzer.cargo.features"], expected);
+            assert_eq!(settings["rust-analyzer.check.features"], expected);
+            assert_eq!(settings["editor.tabSize"], 4);
+            assert_eq!(
+                settings["rust-analyzer.linkedProjects"],
+                json!([".perro/scripts/Cargo.toml"])
+            );
+            assert_eq!(
+                settings["rust-analyzer.vfs.extraIncludes"],
+                json!(["${workspaceFolder}/res/"])
+            );
+        }
+        let resolved = project_dir.canonicalize().expect("test setup must succeed");
+        assert!(resolved.starts_with(&temp_root) && resolved != temp_root);
+        fs::remove_dir_all(resolved).expect("test setup must succeed");
+    }
+
+    #[test]
+    fn steam_feature_defaults_and_all_are_supported() {
+        let key = "rust-analyzer.cargo.features";
+        let mut settings = serde_json::Map::new();
+        sync_steamworks_feature(&mut settings, key, true, Path::new("settings.json"))
+            .expect("test setup must succeed");
+        assert_eq!(settings[key], json!(["steamworks"]));
+        settings.insert(key.to_string(), json!("all"));
+        for enabled in [false, true] {
+            sync_steamworks_feature(&mut settings, key, enabled, Path::new("settings.json"))
+                .expect("test setup must succeed");
+            assert_eq!(settings[key], "all");
+        }
+    }
+
+    #[test]
+    fn invalid_feature_setting_reports_path() {
+        let key = "rust-analyzer.cargo.features";
+        let mut settings = serde_json::Map::new();
+        settings.insert(key.to_string(), json!(true));
+        let error = sync_steamworks_feature(&mut settings, key, true, Path::new("settings.json"))
+            .expect_err("invalid test input");
+        assert!(error.contains(key) && error.contains("settings.json"));
+    }
 }

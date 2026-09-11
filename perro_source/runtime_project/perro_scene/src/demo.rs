@@ -4,15 +4,42 @@ use std::{borrow::Cow, collections::HashSet};
 pub const DEMO_EXCLUDE_TAG: &str = "demo_exclude";
 
 pub fn filter_demo_scene(scene: &mut Scene, demo: bool) -> Result<(), String> {
+    filter_build_scene(scene, demo, DEMO_EXCLUDE_TAG, None)
+}
+
+pub const PLAYTEST_EXCLUDE_TAG: &str = "playtest_exclude";
+pub const PLAYTEST_INCLUDE_TAG: &str = "playtest_include";
+
+pub fn filter_playtest_scene(scene: &mut Scene, playtest: bool) -> Result<(), String> {
+    filter_build_scene(
+        scene,
+        playtest,
+        PLAYTEST_EXCLUDE_TAG,
+        Some(PLAYTEST_INCLUDE_TAG),
+    )
+}
+
+fn filter_build_scene(
+    scene: &mut Scene,
+    active: bool,
+    exclude_tag: &str,
+    include_tag: Option<&str>,
+) -> Result<(), String> {
     let mut removed = HashSet::new();
     for node in scene.nodes.to_mut().iter_mut() {
-        let marked = node.tags.iter().any(|tag| tag == DEMO_EXCLUDE_TAG);
-        node.tags.to_mut().retain(|tag| tag != DEMO_EXCLUDE_TAG);
-        if demo && marked {
+        let marked = node.tags.iter().any(|tag| tag == exclude_tag);
+        let included = node
+            .tags
+            .iter()
+            .any(|tag| Some(tag.as_ref()) == include_tag);
+        node.tags
+            .to_mut()
+            .retain(|tag| tag != exclude_tag && Some(tag.as_ref()) != include_tag);
+        if (active && marked) || (!active && included) {
             removed.insert(node.key);
         }
     }
-    if !demo || removed.is_empty() {
+    if removed.is_empty() {
         return Ok(());
     }
 
@@ -31,7 +58,7 @@ pub fn filter_demo_scene(scene: &mut Scene, demo: bool) -> Result<(), String> {
     }
 
     if scene.root.is_some_and(|root| removed.contains(&root)) {
-        return Err("demo filter removes scene root".to_string());
+        return Err("build filter removes scene root".to_string());
     }
     let removed_names = removed
         .iter()
@@ -80,7 +107,7 @@ fn check_data(data: &SceneNodeData, removed: &HashSet<String>) -> Result<(), Str
 fn check_fields(fields: &[SceneObjectField], removed: &HashSet<String>) -> Result<(), String> {
     for (name, value) in fields {
         check_value(value, removed)
-            .map_err(|target| format!("field `{name}` refs demo-excluded node `@{target}`"))?;
+            .map_err(|target| format!("field `{name}` refs build-excluded node `@{target}`"))?;
     }
     Ok(())
 }

@@ -16,7 +16,7 @@ perro_resource_api.workspace = true
 perro_runtime_api.workspace = true
 perro_scene.workspace = true
 perro_scripting.workspace = true
-perro_steamworks = { workspace = true, optional = true }
+perro_steamworks.workspace = true
 perro_nodes.workspace = true
 perro_structs.workspace = true
 perro_ui.workspace = true
@@ -25,5 +25,5 @@ perro_networking.workspace = true
 perro_variant.workspace = true
 perro_csv.workspace = true
 [features]
-steamworks = ["dep:perro_steamworks", "perro_steamworks/steamworks-runtime", "perro_networking/steamworks"]
+steamworks = ["perro_steamworks/steamworks-runtime", "perro_networking/steamworks"]
 spec = ["perro_runtime_api/spec"]

@@ -170,11 +170,44 @@ parent = $root
     .to_string()
 }
 
+fn default_project_agents_md() -> String {
+    r#"# Perro Game Project Guidance
+
+Read the [Script Authoring Guide](https://github.com/PerroEngine/Perro/blob/main/docs/scripting/authoring_guide.md#ai-agents-start-with-perro-state) before choosing a gameplay structure.
+Check the relevant [state](https://github.com/PerroEngine/Perro/blob/main/docs/scripting/state.md), [lifecycle](https://github.com/PerroEngine/Perro/blob/main/docs/scripting/lifecycle.md), and [method examples](https://github.com/PerroEngine/Perro/blob/main/docs/scripting/methods.md#direct-calls) before inventing a pattern or API.
+
+## State And Behavior
+
+- `&self` in a callback does not prevent mutable gameplay state. Perro stores separate `#[State]` data per node and provides access through `ctx.run`.
+- Start with `#[State] struct Name`, `lifecycle!`, and `methods!`. No handwritten `impl Name` is needed for script behavior; the macros provide the script entry points and methods.
+- Use `with_state!` / `with_state_mut!` for known state types on this node or another node. Use `ctx.id` for the current node.
+- Use direct calls such as `self.heal(ctx, 10)` for methods within the same script.
+- Use `get_var!` / `set_var!` for dynamic access to `pub` state fields. Use `call_method!` for dynamic calls to `pub fn` methods in `methods!`. Decode dynamic return values as needed; keep internal-only members private.
+- End state-access closures before another `ctx.run` call. Copy or clone the needed result out first.
+- Do not default to `Mutex`, `RefCell`, or `thread_local!` for gameplay state. These state and method APIs are enough for most games; do not add wrappers merely because callbacks take `&self`.
+- Add extra ownership or synchronization machinery only for a concrete need beyond Perro's APIs, such as a library requirement or actual cross-thread data sharing. Helper-type `impl` blocks and legitimate threading primitives remain valid.
+
+## Project Structure
+
+- Keep each cohesive behavior with its owning node; put scene coordination in a controller script.
+- Keep data that must survive callbacks in `#[State]`; keep temporary values local.
+- Put shared constants, types, and pure helpers in plain Rust modules. See [project modules](https://github.com/PerroEngine/Perro/blob/main/docs/scripting/project_modules.md).
+- Keep game scripts, scenes, and assets under `res/`. Edit project settings in `project.toml` and script dependencies in `deps.toml`.
+- Do not edit generated crates under `.perro/`.
+- Run `perro check` to check scripts and `perro doctor` for project diagnostics.
+
+Use these as first-pass defaults. Read the [Perro docs](https://github.com/PerroEngine/Perro/blob/main/docs/index.md) and examples before adding complexity.
+"#
+    .to_string()
+}
+
 fn default_project_readme_md(project_name: &str) -> String {
     format!(
         r#"# {project_name}
 
 Welcome to your Perro project. This README is a quick map of how things fit together.
+
+AI agents: read [AGENTS.md](AGENTS.md) before choosing a gameplay structure. It explains Perro's per-node mutable state and script model.
 
 Run `perro check` to sync scripts and get rust-analyzer working.
 
@@ -493,6 +526,7 @@ scripts = {{ path = "../scripts" }}
 default = ["app"]
 app = ["dep:perro_app"]
 perro-demo = ["scripts/perro-demo"]
+perro-playtest = ["scripts/perro-playtest"]
 profile = ["perro_app/profile"]
 headless = ["dep:perro_headless"]
 headless_profile = ["perro_headless/profile"]
@@ -590,8 +624,9 @@ fn embed_windows_icon() -> Result<(), String> {
         let mut value: Value = src
             .parse::<Value>()
             .map_err(|e| format!("failed to parse {}: {e}", project_toml.display()))?;
-        if env::var_os("PERRO_DEMO").is_some() {
-            let demo = value.get("demo").and_then(Value::as_table).cloned();
+        let variant = if env::var_os("PERRO_PLAYTEST").is_some() { Some("playtest") } else if env::var_os("PERRO_DEMO").is_some() { Some("demo") } else { None };
+        if let Some(variant) = variant {
+            let demo = value.get(variant).and_then(Value::as_table).cloned();
             if let (Some(root), Some(demo)) = (value.as_table_mut(), demo) {
                 for (table_name, overlay) in demo {
                     if table_name == "exclude" {
@@ -903,6 +938,8 @@ fn embed_windows_icon() -> Result<(), String> {
         env::var("OUT_DIR").map_err(|e| format!("OUT_DIR missing: {e}"))?,
     );
 
+    println!("cargo:rerun-if-env-changed=PERRO_DEMO");
+    println!("cargo:rerun-if-env-changed=PERRO_PLAYTEST");
     println!("cargo:rerun-if-changed={}", project_toml.display());
     println!("cargo:rerun-if-changed={}", icon_source.display());
 
@@ -1016,6 +1053,7 @@ perro_runtime = "0.1.0"
 [features]
 dynamic-scripts = []
 perro-demo = []
+perro-playtest = []
 perro-spec = ["perro_api/spec"]
 steamworks = ["perro_api/steamworks", "perro_runtime/steamworks"]
 
@@ -1188,9 +1226,11 @@ fn project_root() -> std::path::PathBuf {
           project: perro_app::entry::StaticEmbeddedProjectInfo {
               project_root: &root,
               project_name: "__PROJECT_NAME__",
+              base_name: "__PROJECT_NAME__",
               main_scene_hash: 7300106721993353294u64,
               icon_hash: 6859512821849760879u64,
               startup_splash_hash: 6859512821849760879u64,
+              startup_splash_size: 1.0,
               virtual_width: 1920,
               virtual_height: 1080,
           },

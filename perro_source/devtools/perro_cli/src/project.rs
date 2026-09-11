@@ -14,7 +14,7 @@ use perro_compiler::{
     compile_project_bundle, compile_scripts_with_profile, compile_universal_macos_project_bundle,
     sync_scripts,
 };
-use perro_project::{ensure_source_overrides, load_project_toml_with_demo};
+use perro_project::{ensure_source_overrides, load_project_toml_with_variants};
 use perro_scene::Parser;
 use std::env;
 use std::fs;
@@ -218,6 +218,7 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let ui_profile = args.iter().any(|a| a == "--ui-profile");
     let release = args.iter().any(|a| a == "--release");
     let demo = args.iter().any(|a| a == "--demo");
+    let playtest = args.iter().any(|a| a == "--playtest");
     let boot_scene = parse_boot_scene_flag(args)?;
     let sim = parse_sim_flag(args)?;
     let csv_profile_name = parse_optional_flag_value(args, "--csv-profile")
@@ -237,7 +238,7 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     // split between the two fails inside the dylib rather than at build time.
     crate::version::ensure_engine_version_match(&project_dir)?;
     phase.mark("ensure_source_overrides");
-    let project_cfg = load_project_toml_with_demo(&project_dir, demo)
+    let project_cfg = load_project_toml_with_variants(&project_dir, demo, playtest)
         .map_err(|err| format!("failed to load project.toml: {err}"))?;
     let profiling_dir = ensure_profiling_output_dir(&project_dir)?;
     let csv_profile_path = csv_profile_name.as_ref().map(|name| {
@@ -267,12 +268,13 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
 
     // Script codegen must land before cargo reads the crate.
     log_step("Syncing Scripts");
-    perro_compiler::sync_scripts_after_overrides(&project_dir, demo).map_err(|err| {
-        format!(
-            "scripts pipeline failed for {}: {err}",
-            project_dir.display()
-        )
-    })?;
+    perro_compiler::sync_scripts_after_overrides_with_variants(&project_dir, demo, playtest)
+        .map_err(|err| {
+            format!(
+                "scripts pipeline failed for {}: {err}",
+                project_dir.display()
+            )
+        })?;
     phase.mark("sync_scripts (codegen)");
 
     // One invocation for both roots. The runner and the scripts dylib are then
@@ -290,6 +292,12 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
         .arg("scripts")
         .env("CARGO_TARGET_DIR", &target_dir)
         .current_dir(&workspace_dir);
+    build_cmd
+        .env_remove("PERRO_DEMO")
+        .env_remove("PERRO_PLAYTEST");
+    if playtest {
+        build_cmd.env("PERRO_PLAYTEST", "1");
+    }
     if demo {
         build_cmd.env("PERRO_DEMO", "1");
     }
@@ -303,6 +311,9 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let mut features = vec!["scripts/dynamic-scripts".to_string()];
     if demo {
         features.push("scripts/perro-demo".to_string());
+    }
+    if playtest {
+        features.push("scripts/perro-playtest".to_string());
     }
     if headless {
         features.push("perro_dev_runner/headless".to_string());
@@ -392,6 +403,12 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
         .env("PERRO_SCRIPTS_DYLIB_PATH", scripts_path);
     if headless {
         run_cmd.arg("--headless");
+    }
+    run_cmd
+        .env_remove("PERRO_DEMO")
+        .env_remove("PERRO_PLAYTEST");
+    if playtest {
+        run_cmd.env("PERRO_PLAYTEST", "1");
     }
     if demo {
         run_cmd.env("PERRO_DEMO", "1");
@@ -988,6 +1005,7 @@ pub(crate) fn project_command(args: &[String], cwd: &Path) -> Result<(), String>
     let console = args.iter().any(|a| a == "--console");
     let fresh = args.iter().any(|a| a == "--fresh");
     let demo = args.iter().any(|a| a == "--demo");
+    let playtest = args.iter().any(|a| a == "--playtest");
     if let Some(native_target) = native_target.as_deref() {
         validate_cli_native_target(native_target)?;
         ensure_rust_target_installed(native_target)?;
@@ -1010,6 +1028,7 @@ pub(crate) fn project_command(args: &[String], cwd: &Path) -> Result<(), String>
         .with_headless(headless)
         .with_native_target(native_target.map(leak_string))
         .with_demo(demo)
+        .with_playtest(playtest)
         .with_fresh(fresh);
     let result = if universal_macos {
         compile_universal_macos_project_bundle(&project_dir, options)
@@ -1073,6 +1092,7 @@ fn build_web_command(args: &[String], cwd: &Path) -> Result<(), String> {
         ProjectBuildOptions::new(profile, false)
             .with_target(ProjectBuildTarget::Web)
             .with_demo(args.iter().any(|a| a == "--demo"))
+            .with_playtest(args.iter().any(|a| a == "--playtest"))
             .with_web_output_dir(WebOutputDir::Build)
             .with_fresh(args.iter().any(|a| a == "--fresh")),
     )
@@ -1107,6 +1127,7 @@ fn build_android_command(args: &[String], cwd: &Path) -> Result<(), String> {
         ProjectBuildOptions::new(profile, false)
             .with_target(ProjectBuildTarget::Android)
             .with_demo(args.iter().any(|a| a == "--demo"))
+            .with_playtest(args.iter().any(|a| a == "--playtest"))
             .with_fresh(args.iter().any(|a| a == "--fresh"))
             .with_android_sdk_root(Some(leak_string(
                 android.sdk_root.to_string_lossy().to_string(),
@@ -1163,6 +1184,7 @@ fn dev_android_command(args: &[String], cwd: &Path) -> Result<(), String> {
         ProjectBuildOptions::new(profile, false)
             .with_target(ProjectBuildTarget::Android)
             .with_demo(args.iter().any(|a| a == "--demo"))
+            .with_playtest(args.iter().any(|a| a == "--playtest"))
             .with_release(release)
             .with_android_sdk_root(Some(leak_string(
                 android.sdk_root.to_string_lossy().to_string(),
@@ -1401,6 +1423,7 @@ fn dev_web_command(args: &[String], cwd: &Path) -> Result<(), String> {
         ProjectBuildOptions::new(profile, false)
             .with_target(ProjectBuildTarget::Web)
             .with_demo(args.iter().any(|a| a == "--demo"))
+            .with_playtest(args.iter().any(|a| a == "--playtest"))
             .with_release(release)
             .with_web_output_dir(WebOutputDir::Dev),
     )

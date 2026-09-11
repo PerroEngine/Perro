@@ -140,6 +140,7 @@ fn camera_stream_state_matches(prev: &CameraStreamState, next: &CameraStreamStat
         Arc::ptr_eq(a, b) || a == b
     }
     let CameraStreamState {
+        ui_commands,
         source,
         tone_map_output,
         overlay_camera_2d,
@@ -158,7 +159,8 @@ fn camera_stream_state_matches(prev: &CameraStreamState, next: &CameraStreamStat
         point_particles_3d,
         waters_3d,
     } = prev;
-    *tone_map_output == next.tone_map_output
+    lane_eq(ui_commands, &next.ui_commands)
+        && *tone_map_output == next.tone_map_output
         && *transparent_background == next.transparent_background
         && *clear_color == next.clear_color
         && *resolution == next.resolution

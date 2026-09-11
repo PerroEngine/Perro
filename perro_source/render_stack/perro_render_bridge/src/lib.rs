@@ -47,6 +47,7 @@ impl_empty_arc_slice!(
     ShadowCaster2DState,
     Light2DState,
     CameraStreamDraw3DState,
+    UiCommand,
     (NodeID, PointParticles2DState),
     (NodeID, Water2DState),
     (NodeID, PointParticles3DState),

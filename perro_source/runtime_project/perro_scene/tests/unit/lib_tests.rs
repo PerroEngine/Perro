@@ -878,3 +878,58 @@ script_vars = { target = @root, speed = 2.5 }
         Some("root")
     );
 }
+
+#[test]
+fn playtest_filters_include_exclude_trees() {
+    let src = r#"
+$root = @root
+[root]
+[Node]
+[/Node]
+[/root]
+[full]
+tags = ["playtest_exclude", "gameplay"]
+parent = @root
+[Node]
+[/Node]
+[/full]
+[child]
+parent = @full
+[Node]
+[/Node]
+[/child]
+[test]
+tags = ["playtest_include", "gameplay"]
+parent = @root
+[Node]
+[/Node]
+[/test]
+"#;
+    for active in [false, true] {
+        let mut scene = Parser::new(src).parse_scene();
+        filter_playtest_scene(&mut scene, active).expect("valid playtest scene");
+        let names: Vec<_> = scene
+            .nodes
+            .iter()
+            .map(|node| scene.key_name(node.key).expect("node key name"))
+            .collect();
+        assert_eq!(
+            names,
+            if active {
+                vec!["root", "test"]
+            } else {
+                vec!["root", "full", "child"]
+            }
+        );
+        assert!(
+            scene
+                .nodes
+                .iter()
+                .all(|n| n.tags.iter().all(|t| !t.starts_with("playtest_")))
+        );
+    }
+    let mut root = Parser::new("[root]\ntags = [\"playtest_exclude\"]\n[Node]\n[/Node]\n[/root]\n")
+        .parse_scene();
+    root.root = Some(root.nodes[0].key);
+    assert!(filter_playtest_scene(&mut root, true).is_err());
+}

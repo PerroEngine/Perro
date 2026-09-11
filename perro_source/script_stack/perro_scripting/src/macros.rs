@@ -1,4 +1,20 @@
 #[macro_export]
+macro_rules! playtest_exclude {
+    ({ $($body:tt)* }) => {{
+        #[cfg(not(feature = "perro-playtest"))]
+        { $($body)* }
+    }};
+}
+
+#[macro_export]
+macro_rules! playtest_include {
+    ({ $($body:tt)* }) => {{
+        #[cfg(feature = "perro-playtest")]
+        { $($body)* }
+    }};
+}
+
+#[macro_export]
 macro_rules! demo_exclude {
     ({ $($body:tt)* }) => {{
         #[cfg(not(feature = "perro-demo"))]
@@ -118,5 +134,27 @@ mod tests {
         assert_eq!(value, 0);
         #[cfg(not(feature = "perro-demo"))]
         assert_eq!(value, 1);
+    }
+}
+
+#[cfg(test)]
+mod playtest_tests {
+    #[test]
+    fn playtest_macros_select_code() {
+        let mut values = vec!["base"];
+        crate::playtest_include!({
+            values.push("playtest");
+        });
+        crate::playtest_exclude!({
+            values.push("full");
+        });
+        assert_eq!(
+            values,
+            if cfg!(feature = "perro-playtest") {
+                vec!["base", "playtest"]
+            } else {
+                vec!["base", "full"]
+            }
+        );
     }
 }

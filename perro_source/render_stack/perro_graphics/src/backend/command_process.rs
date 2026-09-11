@@ -860,6 +860,17 @@ impl PerroGraphics {
                     self.events.push(RenderEvent::HdrStatusChanged(status));
                     self.redraw_requested = true;
                 }
+                RenderCommand::Display(DisplayCommand::SaveImage { path }) => {
+                    if let Some(gpu) = self.gpu.as_mut() {
+                        if gpu.request_display_image_save(path) {
+                            self.redraw_requested = true;
+                        }
+                    } else {
+                        eprintln!(
+                            "[perro] display image save failed path={path} error=GPU unavailable"
+                        );
+                    }
+                }
             }
         }
         self.flush_async_mesh_loads();

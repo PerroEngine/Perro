@@ -10,6 +10,20 @@ impl ViewportAPI for RuntimeResourceApi {
         Vector2::new(width as f32, height as f32)
     }
 
+    fn save_display_image(&self, path: &str) -> bool {
+        if path.trim().is_empty() {
+            return false;
+        }
+        self.state
+            .lock()
+            .expect("resource api mutex poisoned")
+            .queued_commands
+            .push(RenderCommand::Display(DisplayCommand::SaveImage {
+                path: path.to_string(),
+            }));
+        true
+    }
+
     fn set_hdr_mode(&self, mode: HdrMode) {
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         state.hdr_status.requested = mode;
@@ -62,5 +76,25 @@ mod tests {
         assert!(perro_resource_api::hdr_supported!(res));
         assert_eq!(perro_resource_api::hdr_status!(res), status);
         assert_ne!(status.fallback, Some(HdrFallback::Disabled));
+    }
+
+    #[test]
+    fn display_save_image_queues_nonempty_path() {
+        let api = RuntimeResourceApi::new(None, None, None, None, None, None, None, None);
+        let res = ResourceWindow::new(api.as_ref());
+
+        assert!(perro_resource_api::display_save_image!(
+            res,
+            "user://display.png"
+        ));
+        assert!(!perro_resource_api::display_save_image!(res, "  "));
+
+        let mut commands = Vec::new();
+        api.drain_commands(&mut commands);
+        assert!(matches!(
+            commands.as_slice(),
+            [RenderCommand::Display(DisplayCommand::SaveImage { path })]
+                if path == "user://display.png"
+        ));
     }
 }

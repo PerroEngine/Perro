@@ -58,7 +58,10 @@ pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
     // ignores those in a member, and a stale one is what used to fork the build.
     migrate_member_manifest_to_workspace(&scripts_manifest)?;
     migrate_member_manifest_to_workspace(&dev_runner_manifest)?;
-    ensure_workspace_manifest(&workspace_manifest, &[&dev_runner_manifest, &scripts_manifest])?;
+    ensure_workspace_manifest(
+        &workspace_manifest,
+        &[&dev_runner_manifest, &scripts_manifest],
+    )?;
     ensure_workspace_target_dir_config(&workspace_cargo_config)?;
     remove_stale_member_build_files(&perro_dir)?;
     // `project` is excluded from the workspace (it owns the ship `[profile.release]`),
@@ -81,10 +84,7 @@ fn migrate_member_manifest_to_workspace(path: &Path) -> std::io::Result<()> {
     write_if_changed(path, &out)
 }
 
-fn ensure_workspace_manifest(
-    path: &Path,
-    member_manifests: &[&Path],
-) -> std::io::Result<()> {
+fn ensure_workspace_manifest(path: &Path, member_manifests: &[&Path]) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -129,7 +129,10 @@ fn remove_stale_member_build_files(perro_dir: &Path) -> std::io::Result<()> {
             fs::remove_file(&cargo_config)?;
             let cargo_dir = member_dir.join(".cargo");
             // Only prune the directory when nothing else lives there.
-            let empty = matches!(cargo_dir.read_dir().map(|mut d| d.next().is_none()), Ok(true));
+            let empty = matches!(
+                cargo_dir.read_dir().map(|mut d| d.next().is_none()),
+                Ok(true)
+            );
             if empty {
                 fs::remove_dir(&cargo_dir)?;
             }
@@ -353,6 +356,11 @@ fn ensure_project_manifest_features(path: &Path) -> std::io::Result<()> {
     changed |= ensure_feature_values(features_table, "app", &["dep:perro_app"]);
     changed |= ensure_feature_values(features_table, "headless", &["dep:perro_headless"]);
     changed |= ensure_feature_values(features_table, "perro-demo", &["scripts/perro-demo"]);
+    changed |= ensure_feature_values(
+        features_table,
+        "perro-playtest",
+        &["scripts/perro-playtest"],
+    );
     changed |= ensure_feature_values(
         features_table,
         "headless_profile",
@@ -786,6 +794,9 @@ fn ensure_scripts_manifest_features(path: &Path) -> std::io::Result<()> {
         features_table.insert("dynamic-scripts".to_string(), Value::Array(Vec::new()));
         changed = true;
     }
+    if !features_table.contains_key("perro-playtest") {
+        features_table.insert("perro-playtest".to_string(), Value::Array(Vec::new()));
+    }
     if !features_table.contains_key("perro-demo") {
         features_table.insert("perro-demo".to_string(), Value::Array(Vec::new()));
         changed = true;
@@ -1031,8 +1042,7 @@ fn local_perro_dep_spec(
     spec.insert(
         "version".to_string(),
         Value::String(
-            engine_crate_version(&crate_dir)
-                .unwrap_or_else(|| ENGINE_FALLBACK_VERSION.to_string()),
+            engine_crate_version(&crate_dir).unwrap_or_else(|| ENGINE_FALLBACK_VERSION.to_string()),
         ),
     );
     if crate_dir.join("Cargo.toml").is_file() {
@@ -1159,10 +1169,7 @@ fn strip_toml_sections(src: &str, first_segments: &[&str]) -> String {
 
 /// `[profile.dev.package."*"]` -> `profile`, `[[bin]]` -> `bin`.
 fn toml_header_first_segment(header: &str) -> String {
-    let inner = header
-        .trim_start_matches('[')
-        .trim_end_matches(']')
-        .trim();
+    let inner = header.trim_start_matches('[').trim_end_matches(']').trim();
     let mut out = String::new();
     let mut in_quotes = false;
     let mut quote_char = '"';

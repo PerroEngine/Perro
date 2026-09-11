@@ -103,6 +103,7 @@ fn startup_splash_blocks_input_only_until_first_frame_capture() {
         rgba: None,
         texture_requested: false,
         texture_id: None,
+        texture_is_private: false,
         ready_streak: 0,
         shown_at: Instant::now(),
         fade_started_at: None,

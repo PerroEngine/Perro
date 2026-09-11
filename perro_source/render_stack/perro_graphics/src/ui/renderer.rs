@@ -166,6 +166,10 @@ impl Default for UiRenderer {
 }
 
 impl UiRenderer {
+    pub(crate) fn font_config(&self) -> (Option<crate::StaticFontLookup>, perro_ui::UiFont) {
+        (self.static_font_lookup, self.default_font.clone())
+    }
+
     pub fn new() -> Self {
         Self {
             nodes: AHashMap::new(),
@@ -670,17 +674,22 @@ mod tests {
 
         assert!(!paint.primitives.is_empty());
         assert!(!paint.textures_delta.set.is_empty());
-        assert_eq!(paint.primitives.len(), paint.primitive_depths.len());
-        assert!(paint.primitive_depths.iter().any(Option::is_some));
-        for (primitive, depths) in paint.primitives.iter().zip(paint.primitive_depths) {
+        assert_eq!(paint.primitives.len(), paint.world_projections.len());
+        assert!(paint.world_projections.iter().any(Option::is_some));
+        for (primitive, depths) in paint.primitives.iter().zip(paint.world_projections) {
             if let epaint::Primitive::Mesh(mesh) = &primitive.primitive {
-                let depths = depths.as_deref().expect("projected label depths");
-                assert_eq!(depths.len(), mesh.vertices.len());
-                assert!(depths.iter().all(|depth| (0.0..=1.0).contains(depth)));
-                assert!(mesh.vertices.iter().all(|vertex| {
-                    (320.0..=490.0).contains(&vertex.pos.x)
-                        && (270.0..=325.0).contains(&vertex.pos.y)
-                }));
+                let projection = depths.as_ref().expect("world label projection");
+                assert_eq!(projection.clip_positions.len(), mesh.vertices.len());
+                assert!(projection.depth_test);
+                assert!(
+                    projection
+                        .clip_positions
+                        .iter()
+                        .flatten()
+                        .all(|v| v.is_finite())
+                );
+                // Preserve out-of-frustum vertices for GPU clipping in 0..w.
+                assert!(projection.clip_positions.iter().any(|clip| clip[2] < 0.0));
             }
         }
     }
@@ -724,6 +733,49 @@ mod tests {
         out
     }
 
+    fn collect_world_positions(paint: &super::UiPaintFrame<'_>) -> Vec<[f32; 4]> {
+        paint
+            .world_projections
+            .iter()
+            .flatten()
+            .flat_map(|projection| projection.clip_positions.iter().copied())
+            .collect()
+    }
+
+    #[test]
+    fn world_label_layout_ignores_viewport_size_and_preserves_perspective() {
+        let quad = [
+            [-0.8, 0.4, 0.5, 1.0],
+            [0.8, 0.4, 2.5, 3.0],
+            [0.8, -0.4, 2.5, 3.0],
+            [-0.8, -0.4, 0.5, 1.0],
+        ];
+        let mut renderer = UiRenderer::new();
+        let mut command = projected_label_command(quad);
+        if let UiCommand::UpsertLabel { depth_test, .. } = &mut command {
+            *depth_test = false;
+        }
+        renderer.submit(command);
+        let paint = renderer.prepare_paint([800.0, 600.0]);
+        let local = collect_mesh_vertices(&paint);
+        let world = collect_world_positions(&paint);
+        assert!(!world.is_empty());
+        assert!(world.iter().any(|clip| clip[3] > 1.0));
+        assert!(
+            paint
+                .world_projections
+                .iter()
+                .flatten()
+                .all(|projection| !projection.depth_test)
+        );
+        // Odd dimensions expose viewport-dependent font pixel snapping.
+        for viewport in [[321.0, 901.0], [1921.0, 1081.0], [64.0, 32.0]] {
+            let paint = renderer.prepare_paint(viewport);
+            assert_eq!(collect_mesh_vertices(&paint), local);
+            assert_eq!(collect_world_positions(&paint), world);
+        }
+    }
+
     #[test]
     fn projected_label_camera_move_reprojects_cache_identically_to_fresh() {
         let quad_a = [
@@ -747,15 +799,18 @@ mod tests {
         warm.submit(projected_label_command(quad_b));
         let warm_paint = warm.prepare_paint([800.0, 600.0]);
         let warm_vertices = collect_mesh_vertices(&warm_paint);
+        let warm_world = collect_world_positions(&warm_paint);
 
         // Fresh renderer tessellates quad B from scratch.
         let mut fresh = UiRenderer::new();
         fresh.submit(projected_label_command(quad_b));
         let fresh_paint = fresh.prepare_paint([800.0, 600.0]);
         let fresh_vertices = collect_mesh_vertices(&fresh_paint);
+        let fresh_world = collect_world_positions(&fresh_paint);
 
         assert!(!warm_vertices.is_empty());
         assert_eq!(warm_vertices, fresh_vertices);
+        assert_eq!(warm_world, fresh_world);
     }
 
     #[test]

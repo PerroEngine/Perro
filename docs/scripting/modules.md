@@ -70,8 +70,9 @@ File IO helpers backed by project path resolver.
 
 Write restriction:
 
-- write paths must be `user://...` or absolute paths
-- relative non-`user://` writes return permission error
+- write paths must be `user://...`, `demo://...`, or absolute paths
+- other relative writes return permission error
+- `demo://...` aliases `user://demo/...` in both demo and full builds
 
 Web target note:
 

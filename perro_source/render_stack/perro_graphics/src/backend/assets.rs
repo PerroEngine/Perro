@@ -658,6 +658,7 @@ impl PerroGraphics {
                     .map(|id| RenderEvent::MaterialDropped { id }),
             );
         }
+        let ui_font_config = self.renderer_ui.font_config();
         let ui_paint = self
             .renderer_ui
             .prepare_paint([self.viewport.0 as f32, self.viewport.1 as f32]);
@@ -774,6 +775,7 @@ impl PerroGraphics {
                 Some(warm_budget.saturating_sub(warm_start.elapsed())),
             );
             gpu_timing = gpu.render(RenderFrame {
+                ui_font_config,
                 resources: &self.resources,
                 camera_3d,
                 lighting_3d: &lighting_3d,
@@ -812,7 +814,7 @@ impl PerroGraphics {
                 late_overlay_shadow_casters_2d_revision: self
                     .late_overlay_shadow_casters_cache_revision,
                 ui_primitives: ui_paint.primitives,
-                ui_primitive_depths: ui_paint.primitive_depths,
+                ui_world_projections: ui_paint.world_projections,
                 ui_textures_delta: ui_paint.textures_delta,
                 ui_texture_size: ui_paint.texture_size,
                 ui_revision: ui_paint.revision,

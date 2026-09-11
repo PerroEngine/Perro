@@ -18,7 +18,9 @@ pub(in super::super) fn load_runtime_scene_from_disk(
         .map_err(|err| format!("failed to parse scene `{path}`: {err}"))?;
     perro_scene::filter_demo_scene(&mut scene, perro_io::demo_mode_active())
         .map_err(|err| format!("failed to filter scene `{path}` for demo: {err}"))?;
-    if perro_io::demo_mode_active() {
+    perro_scene::filter_playtest_scene(&mut scene, perro_io::playtest_mode_active())
+        .map_err(|err| format!("failed to filter scene `{path}` for playtest: {err}"))?;
+    if perro_io::demo_mode_active() || perro_io::playtest_mode_active() {
         for node in scene.nodes.iter() {
             for referenced in [node.script.as_deref(), node.root_of.as_deref()]
                 .into_iter()
@@ -29,7 +31,7 @@ pub(in super::super) fn load_runtime_scene_from_disk(
                     perro_io::ResolvedPath::Excluded(_)
                 ) {
                     return Err(format!(
-                        "scene `{path}` refs demo-excluded path `{referenced}`"
+                        "scene `{path}` refs build-excluded path `{referenced}`"
                     ));
                 }
             }
@@ -240,9 +242,7 @@ pub(super) fn prepare_scene_parallel(
         scene
             .nodes
             .iter()
-            .map(|entry| {
-                prepare_entry_no_root(scene, entry, static_ui_style_lookup, &mut scratch)
-            })
+            .map(|entry| prepare_entry_no_root(scene, entry, static_ui_style_lookup, &mut scratch))
             .collect::<Vec<_>>()
     };
 

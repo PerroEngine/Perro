@@ -1,5 +1,15 @@
 use super::*;
 
+fn splash_rgba_source(source: &str) -> String {
+    // The runner allocates outside the script resource cache. Reusing the
+    // asset source makes a later script load resolve to the splash ID while
+    // its already-created UI node still holds the provisional menu ID.
+    format!(
+        "runtime://startup-splash/{}",
+        perro_ids::string_to_u64(source)
+    )
+}
+
 /// Window pixels -> 2D world units for the splash overlay.
 ///
 /// `two_d::renderer::ndc_scale` aspect-fits the virtual canvas into the window
@@ -104,7 +114,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     request: STARTUP_SPLASH_TEXTURE_REQUEST,
                     id: TextureID::nil(),
                     reserved: true,
-                    source: texture_source,
+                    source: splash_rgba_source(&texture_source),
                     width,
                     height,
                     rgba,
@@ -116,6 +126,8 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     reserved: true,
                 },
             };
+            self.startup_splash.texture_is_private =
+                matches!(&resource, ResourceCommand::CreateRuntimeTexture { .. });
             self.app
                 .graphics
                 .submit(RenderCommand::Resource(Box::new(resource)));
@@ -132,9 +144,17 @@ impl<B: GraphicsBackend> RunnerState<B> {
             .unwrap_or((image_w, image_h));
         let max_w = world_width * STARTUP_SPLASH_MAX_WIDTH_FRAC;
         let max_h = world_height * STARTUP_SPLASH_MAX_HEIGHT_FRAC;
+        let splash_size = self
+            .app
+            .runtime
+            .project()
+            .map(|project| project.config.startup_splash_size)
+            .filter(|size| size.is_finite() && *size > 0.0)
+            .unwrap_or(1.0);
         let scale = (max_w / image_w as f32)
             .min(max_h / image_h as f32)
-            .max(0.001);
+            .max(0.001)
+            * splash_size;
         commands.push(RenderCommand::TwoD(Command2D::UpsertSprite {
             node: STARTUP_SPLASH_IMAGE_NODE,
             sprite: Sprite2DCommand {
@@ -156,6 +176,13 @@ impl<B: GraphicsBackend> RunnerState<B> {
         // Back to the steady-state warm budget; visible frames run now.
         self.app.graphics.set_startup_warm_boost(false);
         self.app.graphics.submit_late_overlay_many([
+            RenderCommand::TwoD(Command2D::SetCamera {
+                camera: self
+                    .app
+                    .runtime
+                    .active_render_camera_2d()
+                    .unwrap_or_default(),
+            }),
             RenderCommand::TwoD(Command2D::RemoveNode {
                 node: STARTUP_SPLASH_BG_NODE,
             }),
@@ -163,6 +190,13 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 node: STARTUP_SPLASH_IMAGE_NODE,
             }),
         ]);
+        if self.startup_splash.texture_is_private
+            && let Some(id) = self.startup_splash.texture_id.take()
+        {
+            self.app.graphics.submit(RenderCommand::Resource(Box::new(
+                ResourceCommand::DropTexture { id },
+            )));
+        }
         self.startup_splash.active = false;
         self.timing_warmup_frames_left = TIMING_WARMUP_FRAMES;
         self.batch_start = Instant::now();
@@ -617,6 +651,20 @@ impl<B: GraphicsBackend> RunnerState<B> {
 #[cfg(test)]
 mod tests {
     use super::splash_world_size;
+
+    #[test]
+    fn splash_preload_preserves_menu_texture_id() {
+        for source in ["res://DiceminoesLogo.svg", "123456789"] {
+            let mut resources = perro_graphics::ResourceStore::new();
+            let splash = resources.create_texture(&super::splash_rgba_source(source), true);
+            let menu = perro_ids::TextureID::from_parts(splash.index() + 1, 0);
+            assert_eq!(resources.create_texture_with_id(menu, source, false), menu);
+            assert!(resources.has_texture(splash));
+            assert!(resources.has_texture(menu));
+            assert!(resources.drop_texture(splash));
+            assert!(resources.has_texture(menu));
+        }
+    }
 
     /// The bug: quads sized in window pixels only covered the window when the
     /// aspect-fit scale was exactly 1. A 1280x720 window on the default 16:9

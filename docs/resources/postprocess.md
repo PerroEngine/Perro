@@ -74,8 +74,13 @@ Post-processing can be configured as:
 - **Per camera** using `post_processing` on `Camera2D`/`Camera3D`.
 - **Global** using `ResourceWindow` post-processing methods/macros.
 
-Each chain is ordered: effects are applied in sequence (stacked) and run after 3D + particles + 2D.
+Each chain is ordered: effects run over the complete frame, after 3D + particles + 2D + UI + camera subviews + late overlays.
+The main camera chain runs first, followed by the global chain and visual accessibility filters.
+Subview-local effects still run inside each subview before it joins the final frame.
+The final composite uses output resolution even when the scene render scale is lower; UI stays at output resolution.
 Scene effects and bloom stay in scene-referred linear light until the dedicated final tonemap.
+UI and overlays also participate in final exposure and tonemapping. TAA resolves scene history before UI and final effects; UI never enters temporal history.
+Depth-based effects sample scene depth at normalized screen coordinates; frames without scene depth use far depth (`1.0`).
 
 If multiple cameras are active, the post chain used is the active 3D camera if present, otherwise
 the active 2D camera.

@@ -23,7 +23,9 @@ use perro_structs::Color;
 use perro_ui::{UiFont, UiSystemFont};
 use std::sync::Arc;
 
-const UI_RASTER_SCALE: f32 = 3.0;
+// Keep the glyph resolve at 2:1: the dynamic atlas has one mip, so 3:1
+// minification undersamples its coverage with the linear UI sampler.
+const UI_RASTER_SCALE: f32 = 2.0;
 const UI_FONT_ATLAS_SIZE: usize = 4096;
 const UI_HARFBUZZ_ATLAS_SIZE: usize = 4096;
 /// Harfbuzz atlases start one row tall and double as glyphs land, like
@@ -36,7 +38,7 @@ const UI_SYSTEM_FONT_PREFIX: &str = "perro-system";
 fn ui_tessellation_options() -> TessellationOptions {
     // Font layout stays at 3 px/point, but the retained UI target is 1x.
     // epaint converts this physical-pixel width back to points by dividing by
-    // `UI_RASTER_SCALE`, so 3 here yields one logical/output-pixel AA ramp.
+    // `UI_RASTER_SCALE`, so this yields one logical/output-pixel AA ramp.
     TessellationOptions {
         feathering_size_in_pixels: UI_RASTER_SCALE,
         ..Default::default()
@@ -152,9 +154,16 @@ const UI_KOREAN_FONT_FAMILIES: &[&str] = &[
     "NanumGothic",
 ];
 
+/// World glyph geometry keeps homogeneous coordinates through rasterization.
+#[derive(Clone, Debug)]
+pub struct UiWorldProjection {
+    pub clip_positions: Arc<[[f32; 4]]>,
+    pub depth_test: bool,
+}
+
 pub struct UiPaintFrame<'a> {
     pub primitives: &'a [Arc<ClippedPrimitive>],
-    pub primitive_depths: &'a [Option<Arc<[f32]>>],
+    pub world_projections: &'a [Option<UiWorldProjection>],
     pub textures_delta: &'a TexturesDelta,
     pub texture_size: [u32; 2],
     pub revision: u64,
@@ -261,16 +270,6 @@ fn cached_matches_unprojected_label(cached: &UiDraw, label: &UiLabelDraw) -> boo
         && cached.fit_content == *fit_content
 }
 
-fn deep_clone_primitives(primitives: &[Arc<ClippedPrimitive>]) -> Vec<ClippedPrimitive> {
-    primitives
-        .iter()
-        .map(|primitive| ClippedPrimitive {
-            clip_rect: primitive.clip_rect,
-            primitive: primitive.primitive.clone(),
-        })
-        .collect()
-}
-
 fn retain_nonempty_meshes(primitives: &mut Vec<ClippedPrimitive>) {
     primitives.retain(|primitive| match &primitive.primitive {
         Primitive::Mesh(mesh) => !mesh.vertices.is_empty() && !mesh.indices.is_empty(),
@@ -285,7 +284,7 @@ pub(crate) struct EpaintUiPainter {
     shapes: Vec<ClippedShape>,
     shape_rotations: Vec<(f32, epaint::Pos2)>,
     primitives: Vec<Arc<ClippedPrimitive>>,
-    primitive_depths: Vec<Option<Arc<[f32]>>>,
+    world_projections: Vec<Option<UiWorldProjection>>,
     // Previous generation of `primitives`, kept alive for one rebuild so fresh
     // tessellations cannot reuse a freed Arc address while the GPU's
     // pointer-identity mesh signature still references it (ABA guard).
@@ -328,7 +327,7 @@ impl EpaintUiPainter {
             shapes: Vec::new(),
             shape_rotations: Vec::new(),
             primitives: Vec::new(),
-            primitive_depths: Vec::new(),
+            world_projections: Vec::new(),
             prev_primitives: Vec::new(),
             node_cache: AHashMap::new(),
             ordered_nodes: Vec::new(),
@@ -398,6 +397,8 @@ impl EpaintUiPainter {
     /// Push a single node's shapes plus their per-shape rotation entries.
     fn push_node_shapes(&mut self, draw: &UiDraw, viewport: [f32; 2]) {
         let shape_start = self.shapes.len();
+        let world_label = matches!(draw, UiDraw::Label(label) if label.projected_quad.is_some());
+        let viewport = if world_label { [0.0; 2] } else { viewport };
         match draw {
             UiDraw::Panel(panel) => push_panel_shape(panel, viewport, &mut self.shapes),
             UiDraw::ProgressBar(progress) => {
@@ -422,6 +423,11 @@ impl EpaintUiPainter {
             UiDraw::TextEdit(edit) => {
                 push_panel_shape(&edit.panel, viewport, &mut self.shapes);
                 push_text_edit_shapes(edit, viewport, &mut self.fonts, &mut self.shapes);
+            }
+        }
+        if world_label {
+            for shape in &mut self.shapes[shape_start..] {
+                shape.clip_rect = Rect::EVERYTHING;
             }
         }
         let rect = ui_rect(draw);
@@ -461,7 +467,7 @@ impl EpaintUiPainter {
         // while the prior signature is still the comparison baseline.
         std::mem::swap(&mut self.prev_primitives, &mut self.primitives);
         self.primitives.clear();
-        self.primitive_depths.clear();
+        self.world_projections.clear();
 
         // Only re-sort when the structure (id set / z-order) changed. A pure
         // content edit (e.g. color, text) leaves the order signature intact.
@@ -565,7 +571,7 @@ impl EpaintUiPainter {
                 NodeTess::Cached => {
                     if let Some(cached) = self.node_cache.get(&node) {
                         self.primitives.extend(cached.primitives.iter().cloned());
-                        self.primitive_depths
+                        self.world_projections
                             .extend((0..cached.primitives.len()).map(|_| None));
                     }
                 }
@@ -576,16 +582,15 @@ impl EpaintUiPainter {
                     let Some(UiDraw::Label(label)) = nodes.get(&node) else {
                         continue;
                     };
-                    // Projection mutates vertices, so the frame gets a deep
-                    // copy; the cached unprojected meshes stay pristine.
-                    let mut frame = deep_clone_primitives(&cached.primitives);
-                    retain_nonempty_meshes(&mut frame);
-                    let depths = project_label_primitives(&mut frame, label.rect, quad, viewport);
-                    for (primitive, depths) in frame.into_iter().zip(depths) {
-                        self.primitives.push(Arc::new(primitive));
-                        self.primitive_depths
-                            .push(label.depth_test.then(|| Arc::<[f32]>::from(depths)));
-                    }
+                    let projections = project_label_primitives(
+                        &cached.primitives,
+                        label.rect,
+                        quad,
+                        label.depth_test,
+                    );
+                    self.primitives.extend(cached.primitives.iter().cloned());
+                    self.world_projections
+                        .extend(projections.into_iter().map(Some));
                 }
                 NodeTess::Staged { shapes, rotations } => {
                     let mut tessellated = tessellator.tessellate_shapes(shapes);
@@ -603,18 +608,15 @@ impl EpaintUiPainter {
                         // of re-tessellating.
                         let unprojected: Vec<Arc<ClippedPrimitive>> =
                             tessellated.into_iter().map(Arc::new).collect();
-                        let mut frame = deep_clone_primitives(&unprojected);
-                        retain_nonempty_meshes(&mut frame);
-                        let depths = project_label_primitives(&mut frame, rect, quad, viewport);
                         let depth_test = matches!(
                             nodes.get(&node),
                             Some(UiDraw::Label(label)) if label.depth_test
                         );
-                        for (primitive, depths) in frame.into_iter().zip(depths) {
-                            self.primitives.push(Arc::new(primitive));
-                            self.primitive_depths
-                                .push(depth_test.then(|| Arc::<[f32]>::from(depths)));
-                        }
+                        let projections =
+                            project_label_primitives(&unprojected, rect, quad, depth_test);
+                        self.primitives.extend(unprojected.iter().cloned());
+                        self.world_projections
+                            .extend(projections.into_iter().map(Some));
                         if let Some(draw) = nodes.get(&node)
                             && let Some(stripped) = strip_projected_quad(draw)
                         {
@@ -636,7 +638,7 @@ impl EpaintUiPainter {
                     let node_primitives: Vec<Arc<ClippedPrimitive>> =
                         tessellated.into_iter().map(Arc::new).collect();
                     self.primitives.extend(node_primitives.iter().cloned());
-                    self.primitive_depths
+                    self.world_projections
                         .extend((0..node_primitives.len()).map(|_| None));
                     if let Some(draw) = nodes.get(&node) {
                         self.node_cache.insert(
@@ -694,7 +696,7 @@ impl UiPainter for EpaintUiPainter {
         }
         UiPaintFrame {
             primitives: &self.primitives,
-            primitive_depths: &self.primitive_depths,
+            world_projections: &self.world_projections,
             textures_delta: &self.textures_delta,
             texture_size: font_texture_size(&self.fonts),
             revision: self.paint_revision,
@@ -913,8 +915,9 @@ mod tests {
     }
 
     #[test]
-    fn one_x_tessellation_keeps_one_pixel_feather() {
+    fn two_x_font_raster_keeps_one_output_pixel_feather() {
         let options = ui_tessellation_options();
+        assert_eq!(UI_RASTER_SCALE, 2.0);
         assert!(options.feathering);
         assert_eq!(options.feathering_size_in_pixels / UI_RASTER_SCALE, 1.0);
     }
@@ -1289,7 +1292,7 @@ mod tests {
         assert!(atlas.size()[1] < UI_HARFBUZZ_ATLAS_SIZE);
     }
 
-    // A CJK burst at 3x raster scale doubles the atlas up to 4096x2048 (32 MiB
+    // A CJK burst at 2x raster scale can double the atlas to 4096x2048 (32 MiB
     // of pixels, plus the same again on the GPU) and growth is one-way, so
     // without an idle shrink that peak is retained for the rest of the process
     // even once the text is gone.

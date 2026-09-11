@@ -1,5 +1,13 @@
 use super::*;
 
+fn display_capture_surface_usage(supported: wgpu::TextureUsages) -> wgpu::TextureUsages {
+    let mut usage = wgpu::TextureUsages::RENDER_ATTACHMENT;
+    if supported.contains(wgpu::TextureUsages::COPY_SRC) {
+        usage |= wgpu::TextureUsages::COPY_SRC;
+    }
+    usage
+}
+
 impl Gpu {
     fn note_surface_acquire_success(&mut self) {
         if let Some(status) = self.surface_acquire_failure.take() {
@@ -195,13 +203,7 @@ impl Gpu {
             .set_smaa_active(self.smaa_requested && self.sample_count == 1);
         self.present
             .set_taa_active(self.taa_requested && self.sample_count == 1);
-        self.present_scene_bind_group = self
-            .present
-            .create_bind_group(&self.device, self.post.scene_view());
-        self.present_intermediate_bind_group = self.accessibility.as_ref().map(|accessibility| {
-            self.present
-                .create_bind_group(&self.device, accessibility.intermediate_view())
-        });
+        self.composite.rebind_present(&self.device, &self.present);
         self.ui = None;
         self.late_overlay_2d = None;
         self.hdr_status
@@ -439,7 +441,7 @@ impl Gpu {
         }
 
         let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: display_capture_surface_usage(caps.usages),
             format: surface_format,
             width,
             height,
@@ -499,7 +501,8 @@ impl Gpu {
         present.set_smaa_active(cfg.smaa && sample_count == 1);
         present.set_taa_active(cfg.taa && sample_count == 1);
         let camera_stream_tonemap = CameraStreamTonemap::new(&device, render_format);
-        let present_scene_bind_group = present.create_bind_group(&device, post.scene_view());
+        let composite =
+            FrameComposite::new(&device, &queue, render_format, [width, height], &present);
         let gpu_timer = timestamp_query_enabled.then(|| GpuTimestampTimer::new(&device, &queue));
         // Built once here (the builtin mesh prefix is uploaded exactly once for
         // the whole process); every Gpu3D mirrors its handles.
@@ -535,10 +538,8 @@ impl Gpu {
             msaa_color,
             post,
             post_view_generation: 1,
-            accessibility: None,
+            composite,
             present,
-            present_scene_bind_group,
-            present_intermediate_bind_group: None,
             shared_textures: SharedTextureStore::default(),
             mesh_arena,
             shared_texture_frame_counter: 0,
@@ -560,9 +561,11 @@ impl Gpu {
             camera_stream_particles_3d: AHashMap::new(),
             camera_stream_water: AHashMap::new(),
             camera_stream_post: AHashMap::new(),
+            camera_stream_ui: AHashMap::new(),
             camera_stream_tonemap,
             camera_stream_draws_scratch: Vec::new(),
             camera_image_save_requests: Vec::new(),
+            display_image_save_requests: Vec::new(),
             camera_image_save_pending: Vec::new(),
             last_prepare_particles_revision: u64::MAX,
             last_prepare_water_2d_revision: u64::MAX,
@@ -658,6 +661,8 @@ impl Gpu {
         // while the capped render size stays put, and the TAA merged-resolve
         // gate compares the two.
         self.present.set_output_size(width, height);
+        self.composite
+            .resize(&self.device, [width, height], &self.present);
         self.render_width = render_width;
         self.render_height = render_height;
         if !render_size_changed {
@@ -676,16 +681,6 @@ impl Gpu {
         }
         self.post.resize(&self.device, render_width, render_height);
         self.post_view_generation = next_nonzero_generation(self.post_view_generation);
-        if let Some(accessibility) = self.accessibility.as_mut() {
-            accessibility.resize(&self.device, render_width, render_height);
-        }
-        self.present_scene_bind_group = self
-            .present
-            .create_bind_group(&self.device, self.post.scene_view());
-        self.present_intermediate_bind_group = self.accessibility.as_ref().map(|accessibility| {
-            self.present
-                .create_bind_group(&self.device, accessibility.intermediate_view())
-        });
         self.msaa_color = create_msaa_color_target(
             &self.device,
             self.render_format,
@@ -792,7 +787,17 @@ fn gpu_timestamp_query_policy(explicit: Option<&str>, debug: bool, profiling: bo
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod timestamp_query_tests {
-    use super::gpu_timestamp_query_policy;
+    use super::{display_capture_surface_usage, gpu_timestamp_query_policy};
+
+    #[test]
+    fn display_capture_adds_copy_src_only_when_supported() {
+        let base = wgpu::TextureUsages::RENDER_ATTACHMENT;
+        assert_eq!(display_capture_surface_usage(base), base);
+        assert_eq!(
+            display_capture_surface_usage(base | wgpu::TextureUsages::COPY_SRC),
+            base | wgpu::TextureUsages::COPY_SRC
+        );
+    }
 
     #[test]
     fn release_default_skips_timestamp_readback() {

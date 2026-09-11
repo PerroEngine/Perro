@@ -10,6 +10,7 @@ pub struct ProjectBuildOptions {
     pub headless: bool,
     pub native_target: Option<&'static str>,
     pub demo: bool,
+    pub playtest: bool,
     /// Discard every incremental pipeline cache (embedded blobs, manifests,
     /// archive stat sidecar) and re-encode all assets from source.
     pub fresh: bool,
@@ -28,6 +29,7 @@ impl ProjectBuildOptions {
             headless: false,
             native_target: None,
             demo: false,
+            playtest: false,
             fresh: false,
         }
     }
@@ -54,6 +56,11 @@ impl ProjectBuildOptions {
 
     pub fn with_native_target(mut self, target: Option<&'static str>) -> Self {
         self.native_target = target;
+        self
+    }
+
+    pub fn with_playtest(mut self, playtest: bool) -> Self {
+        self.playtest = playtest;
         self
     }
 
@@ -95,8 +102,12 @@ pub fn compile_project_bundle(
     project_root: &Path,
     options: ProjectBuildOptions,
 ) -> Result<(), CompilerError> {
-    let cfg = perro_project::load_project_toml_with_demo(project_root, options.demo)
-        .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
+    let cfg = perro_project::load_project_toml_with_variants(
+        project_root,
+        options.demo,
+        options.playtest,
+    )
+    .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
     validate_demo_entry_paths(&cfg)?;
     perro_project::ensure_build_crates_scaffold(project_root, &cfg.name)?;
     ensure_source_overrides(project_root)?;
@@ -105,8 +116,9 @@ pub fn compile_project_bundle(
         reset_embedded_dir(project_root)?;
     }
     sweep_unknown_embedded_entries(project_root)?;
-    let _path_filter = perro_io::walkdir::push_path_exclusions(cfg.demo.relative_patterns());
+    let _path_filter = perro_io::walkdir::push_path_exclusions(cfg.build_exclusion_patterns());
     let _demo_mode = perro_static_pipeline::push_demo_mode(options.demo);
+    let _playtest_mode = perro_static_pipeline::push_playtest_mode(options.playtest);
     let _ = sync_scripts(project_root)?;
     generate_project_static_modules(project_root, &cfg)?;
     perro_static_pipeline::write_static_mod_rs(project_root)
@@ -129,9 +141,9 @@ fn validate_demo_entry_paths(cfg: &perro_project::ProjectConfig) -> Result<(), C
         ("project.icon", cfg.icon.as_str()),
         ("project.startup_splash", cfg.startup_splash.as_str()),
     ] {
-        if cfg.demo.excludes(path) {
+        if cfg.build_excludes(path) {
             return Err(CompilerError::SceneParse(format!(
-                "`{field}` refs demo-excluded path `{path}`"
+                "`{field}` refs build-excluded path `{path}`"
             )));
         }
     }
@@ -157,7 +169,12 @@ pub fn compile_universal_macos_project_bundle(
     const INTEL_TARGET: &str = "x86_64-apple-darwin";
     compile_project_bundle(project_root, options.with_native_target(Some(ARM_TARGET)))?;
     compile_project_bundle(project_root, options.with_native_target(Some(INTEL_TARGET)))?;
-    export_universal_macos_binary(project_root, options.release, options.demo)?;
+    export_universal_macos_binary(
+        project_root,
+        options.release,
+        options.demo,
+        options.playtest,
+    )?;
     Ok(())
 }
 
@@ -280,6 +297,10 @@ fn build_project_crate(
             .env("ANDROID_NDK_HOME", ndk_root)
             .env("NDK_HOME", ndk_root);
     }
+    cmd.env_remove("PERRO_DEMO").env_remove("PERRO_PLAYTEST");
+    if options.playtest {
+        cmd.env("PERRO_PLAYTEST", "1");
+    }
     if options.demo {
         cmd.env("PERRO_DEMO", "1");
     }
@@ -304,6 +325,9 @@ fn build_project_crate(
     }
     if options.demo {
         features.push("perro-demo");
+    }
+    if options.playtest {
+        features.push("perro-playtest");
     }
     if !features.is_empty() {
         cmd.arg("--features").arg(features.join(","));
@@ -338,6 +362,7 @@ fn build_project_crate(
                 .as_deref()
                 .expect("android build must resolve one apk path"),
             options.demo,
+            options.playtest,
         )?,
     }
     Ok(())
@@ -435,9 +460,7 @@ fn append_rust_source_remaps(flags: &mut Vec<String>, rustup_home: &Path, logica
         return;
     };
     for toolchain in toolchains.flatten().filter(|entry| entry.path().is_dir()) {
-        let library = toolchain
-            .path()
-            .join("lib/rustlib/src/rust/library");
+        let library = toolchain.path().join("lib/rustlib/src/rust/library");
         if library.is_dir() {
             push_path_remap(flags, &library, logical);
         }
@@ -506,8 +529,12 @@ fn export_project_binary(
 ) -> Result<(), CompilerError> {
     let native_target = options.native_target;
     let package_bin_name = read_project_package_name(project_root)?;
-    let output_bin_name =
-        read_project_output_binary_name(project_root, &package_bin_name, options.demo)?;
+    let output_bin_name = read_project_output_binary_name(
+        project_root,
+        &package_bin_name,
+        options.demo,
+        options.playtest,
+    )?;
     let profile_dir = if options.release { "release" } else { "debug" };
     let artifact_dir = native_artifact_dir(target_dir, profile_dir, native_target);
     let built_bin = artifact_dir.join(target_binary_name(&package_bin_name, native_target));
@@ -658,11 +685,13 @@ fn export_universal_macos_binary(
     project_root: &Path,
     release: bool,
     demo: bool,
+    playtest: bool,
 ) -> Result<(), CompilerError> {
-    let cfg = perro_project::load_project_toml_with_demo(project_root, demo)
+    let cfg = perro_project::load_project_toml_with_variants(project_root, demo, playtest)
         .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
     let package_bin_name = read_project_package_name(project_root)?;
-    let output_bin_name = read_project_output_binary_name(project_root, &package_bin_name, demo)?;
+    let output_bin_name =
+        read_project_output_binary_name(project_root, &package_bin_name, demo, playtest)?;
     let artifact_name = format!(
         "{}-macos-universal-v{}",
         package_name_slug(&output_bin_name),
@@ -992,9 +1021,7 @@ mod project_bundle_tests {
     #[test]
     fn private_path_remaps_cover_all_generated_script_dirs() {
         let project_root = std::env::temp_dir().join("perro-private-remap-test-missing");
-        let project_root = project_root
-            .canonicalize()
-            .unwrap_or(project_root);
+        let project_root = project_root.canonicalize().unwrap_or(project_root);
         let generated_scripts_root = project_root.join(".perro/scripts/src");
         let mut flags = Vec::new();
 

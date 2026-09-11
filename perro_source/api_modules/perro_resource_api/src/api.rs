@@ -65,6 +65,14 @@ pub trait ViewportAPI {
     /// Return the active viewport size in pixels.
     fn viewport_size(&self) -> Vector2;
 
+    /// Queue the fully composited display frame for image save.
+    ///
+    /// `true` means the request was queued. GPU readback and disk I/O finish
+    /// asynchronously.
+    fn save_display_image(&self, _path: &str) -> bool {
+        false
+    }
+
     fn set_hdr_mode(&self, _mode: HdrMode) {}
 
     fn hdr_status(&self) -> HdrStatus {

@@ -13,7 +13,7 @@ pub use perro_resource_api::{ResPath, ResPathBuf, ResPathError, ResPathKind, Res
 pub use perro_runtime_api as runtime_api;
 pub use perro_scene as scene;
 pub use perro_scripting as scripting;
-#[cfg(feature = "steamworks")]
+mod steam_cfg;
 pub mod steam {
     pub use perro_steamworks::account;
     pub use perro_steamworks::achievements;
@@ -22,6 +22,7 @@ pub mod steam {
     pub use perro_steamworks::cloud;
     pub use perro_steamworks::events;
     pub use perro_steamworks::friends;
+    #[cfg(feature = "steamworks")]
     pub use perro_steamworks::game_server;
     pub use perro_steamworks::input;
     pub use perro_steamworks::leaderboards;
@@ -58,8 +59,7 @@ pub use perro_variant as variant;
 
 #[allow(unused_imports)]
 pub mod prelude {
-    #[cfg(feature = "steamworks")]
-    pub use crate::steam;
+    pub use crate::{is_not_steam, is_steam, steam};
     pub use perro_csv::{
         CSVQuery, CSVQueryResult, CSVQueryRow, Csv, CsvBuf, CsvCell, CsvCompare, CsvLogic,
         CsvOrder, CsvRow, CsvRowIndex,
@@ -85,7 +85,6 @@ pub mod prelude {
     };
     pub use perro_scene;
     pub use perro_scripting::prelude::*;
-    #[cfg(feature = "steamworks")]
     pub use perro_steamworks::{
         steam_account_name, steam_account_self_id, steam_account_self_name, steam_ach_clear,
         steam_ach_unlock, steam_app_dlc_installed, steam_app_subscribed, steam_cloud_read,

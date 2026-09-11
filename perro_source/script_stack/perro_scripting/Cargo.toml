@@ -22,6 +22,7 @@ perro_scripting_macros.workspace = true
 
 [features]
 perro-demo = []
+perro-playtest = []
 
 [dev-dependencies]
 trybuild = "1.0"
