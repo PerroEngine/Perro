@@ -33,12 +33,7 @@ impl Runtime {
             auto_layout_computed,
         );
         let rect = if scene_node.parent.is_nil() {
-            // Layout root: anchors/positions resolve against the real root
-            // rect, but percent SIZES resolve against the aspect-fit virtual
-            // canvas so authored proportions survive non-16:9 windows.
-            let size_basis = self.ui_root_size_basis(parent_rect.size);
-            let size =
-                self.resolve_ui_size_with_basis(node, parent_rect.size, None, Some(size_basis));
+            let size = self.resolve_ui_size(node, parent_rect.size, None);
             let rect = ui_root
                 .layout
                 .compute_rect_with_size(&ui_root.transform, parent_rect, size);
@@ -75,16 +70,6 @@ impl Runtime {
                     return Some(rect);
                 }
             }
-            // A UI tree rooted against a sub-view target (the owner rect
-            // seeded by `nested_ui_sub_view_rect`) treats the owner like the
-            // window: its first-level UI descendants are layout roots, so
-            // their percent sizes aspect-fit the target rect too. In the main
-            // window pass every processed node's world is nil, so this never
-            // fires there.
-            let sub_view_root_basis = ui_parent.and_then(|parent| {
-                (!parent.is_nil() && self.node_world(node) == Some(parent))
-                    .then(|| self.ui_root_size_basis(parent_layout_rect.size))
-            });
             let child_layout_rect = self
                 .compute_ui_child_rect(
                     ui_parent.unwrap_or(scene_node.parent),
@@ -92,7 +77,6 @@ impl Runtime {
                     parent_layout_rect,
                     &ui_root.layout,
                     &ui_root.transform,
-                    sub_view_root_basis,
                 )
                 .unwrap_or_else(|| {
                     let parent_content = ui_parent
@@ -107,20 +91,7 @@ impl Runtime {
                         ui_root.layout.margin,
                         self.ui_content_scale(),
                     ));
-                    // No resolved UI parent means this node roots a UI tree
-                    // under a non-UI scene parent: same size-basis rule as
-                    // the nil-parent branch.
-                    let size_basis = if ui_parent.is_none() {
-                        Some(self.ui_root_size_basis(parent_content.size))
-                    } else {
-                        None
-                    };
-                    let size = self.resolve_ui_size_with_basis(
-                        node,
-                        parent_content.size,
-                        None,
-                        size_basis,
-                    );
+                    let size = self.resolve_ui_size(node, parent_content.size, None);
                     ui_root
                         .layout
                         .compute_rect_with_size(&ui_root.transform, parent_content, size)
@@ -161,32 +132,6 @@ impl Runtime {
     /// `ui_virtual_font_scale` for the current window viewport.
     pub(crate) fn ui_content_scale(&self) -> f32 {
         self.ui_virtual_font_scale(self.input.viewport_size())
-    }
-
-    /// SIZE basis for layout roots: the project virtual canvas aspect-fit
-    /// into `root_size`. Percent sizes on root nodes resolve against this
-    /// basis so a ratio-authored node keeps its designed shape on any window
-    /// aspect, while anchors/positions keep resolving against the real
-    /// `root_size` (corner HUD stays in real corners; extra width becomes
-    /// breathing room, not stretch). Returns `root_size` unchanged when the
-    /// aspect matches the canvas (bit-identical layout at the design aspect)
-    /// or when no project config is loaded.
-    pub(crate) fn ui_root_size_basis(&self, root_size: Vector2) -> Vector2 {
-        let Some((vw, vh)) = self.project().map(|project| {
-            (
-                project.config.virtual_width.max(1) as f32,
-                project.config.virtual_height.max(1) as f32,
-            )
-        }) else {
-            return root_size;
-        };
-        let sx = root_size.x.max(1.0) / vw;
-        let sy = root_size.y.max(1.0) / vh;
-        if sx == sy {
-            return root_size;
-        }
-        let s = sx.min(sy).max(0.0001);
-        Vector2::new(vw * s, vh * s)
     }
 
     pub(super) fn resolve_ui_parent_rect(

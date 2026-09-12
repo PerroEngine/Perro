@@ -1164,12 +1164,12 @@ mod layout {
     }
 
     #[test]
-    fn root_percent_size_keeps_design_shape_on_ultrawide() {
+    fn root_percent_size_tracks_real_window_on_resize() {
         let mut runtime = Runtime::new();
         runtime.project = Some(std::rc::Rc::new(
             crate::runtime_project::RuntimeProject::new("Test", "."),
         ));
-        runtime.set_viewport_size(3440, 1440);
+        runtime.set_viewport_size(1920, 1080);
 
         let mut panel = UiPanel::new();
         panel.layout.anchor = perro_ui::UiAnchor::TopRight;
@@ -1177,17 +1177,15 @@ mod layout {
         let panel_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(panel)));
 
         runtime.extract_render_ui_commands();
+        runtime.set_viewport_size(3440, 1440);
+        runtime.extract_render_ui_commands();
         let rect = runtime
             .render_ui
             .computed_rects
             .get(&panel_id)
             .copied()
             .expect("panel rect");
-        // Size aspect-fits the 1920x1080 canvas: s = 1440/1080, so a 0.1
-        // ratio node is (192*s, 108*s) = (256, 144) -- not 0.1 * 3440 wide.
-        assert_eq!(rect.size, Vector2::new(256.0, 144.0));
-        // The anchor still resolves against the real window: the rect hugs
-        // the real top-right corner of the 3440x1440 viewport.
+        assert_eq!(rect.size, Vector2::new(344.0, 144.0));
         assert_eq!(rect.max(), Vector2::new(1720.0, 720.0));
     }
 
@@ -1219,7 +1217,32 @@ mod layout {
     }
 
     #[test]
-    fn nested_sub_view_percent_size_aspect_fits_owner_target() {
+    fn root_full_ratio_spans_real_window_at_every_aspect() {
+        let mut runtime = Runtime::new();
+        runtime.project = Some(std::rc::Rc::new(
+            crate::runtime_project::RuntimeProject::new("Test", "."),
+        ));
+
+        let mut panel = UiPanel::new();
+        panel.layout.size = UiVector2::ratio(1.0, 1.0);
+        let panel_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(panel)));
+
+        for (width, height) in [(1920, 1080), (3440, 1440), (1080, 1920), (1280, 800)] {
+            runtime.set_viewport_size(width, height);
+            runtime.extract_render_ui_commands();
+            let rect = runtime
+                .render_ui
+                .computed_rects
+                .get(&panel_id)
+                .copied()
+                .expect("panel rect");
+            assert_eq!(rect.size, Vector2::new(width as f32, height as f32));
+            assert_eq!(rect.center, Vector2::ZERO);
+        }
+    }
+
+    #[test]
+    fn nested_sub_view_percent_size_tracks_owner_target() {
         let mut runtime = Runtime::new();
         runtime.project = Some(std::rc::Rc::new(
             crate::runtime_project::RuntimeProject::new("Test", "."),
@@ -1231,8 +1254,6 @@ mod layout {
             && let SceneNodeData::UiSubView(data) = &mut node.data
         {
             data.layout.size = UiVector2::pixels(320.0, 180.0);
-            // Portrait target: virtual canvas (1920x1080) aspect-fits it to
-            // a 960x540 size basis.
             data.resolution = perro_structs::UVector2 { x: 960, y: 1080 };
         }
         let nested = NodeAPI::create::<UiSubView>(&mut runtime);
@@ -1257,11 +1278,8 @@ mod layout {
                 _ => None,
             })
             .expect("nested sub view stream state");
-        // Rect is (480, 270) -- half the 960x540 basis, not half the raw
-        // 960x1080 target. That rect is already in OWNER TARGET px, so auto
-        // resolution uses it directly at 1x. No filter or ancestor multiplier
-        // enters nested sizing.
-        // 480x270 then takes the usual long-axis bucket round-up to 512x288.
-        assert_eq!(resolution, [512, 288]);
+        // Rect is half the raw 960x1080 owner target. Auto resolution rounds
+        // its 540px long axis up to the next 64px bucket.
+        assert_eq!(resolution, [512, 576]);
     }
 }

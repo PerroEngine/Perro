@@ -29,11 +29,6 @@ impl Runtime {
         (z_sum.clamp(min_z, max_z) * DEPTH_STRIDE + depth) as i32
     }
 
-    /// `size_basis`: Some only when `parent` is a sub-view world owner whose
-    /// rect was seeded from the sub-view target resolution -- the child is a
-    /// layout root there and its percent size aspect-fits the target (see
-    /// `resolve_ui_size_with_basis`). Auto-layout branches ignore it: only
-    /// `UiLayout` carries auto layout and a `UiLayout` never owns a world.
     pub(super) fn compute_ui_child_rect(
         &self,
         parent: NodeID,
@@ -41,7 +36,6 @@ impl Runtime {
         parent_rect: ComputedUiRect,
         child_layout: &UiLayoutData,
         child_transform: &UiTransform,
-        size_basis: Option<Vector2>,
     ) -> Option<ComputedUiRect> {
         let parent_node = self.nodes.get(parent)?;
         let parent_ui = ui_root_from_data(&parent_node.data)?;
@@ -96,12 +90,7 @@ impl Runtime {
                     0.0
                 },
             );
-            let size = self.resolve_ui_size_with_basis(
-                child,
-                child_content.size,
-                Some(fill_size),
-                size_basis,
-            );
+            let size = self.resolve_ui_size(child, child_content.size, Some(fill_size));
             if let SceneNodeData::UiScrollContainer(scroller) = &parent_node.data {
                 return Some(ui_scroll_child_rect(
                     scroller.scroll_dir,

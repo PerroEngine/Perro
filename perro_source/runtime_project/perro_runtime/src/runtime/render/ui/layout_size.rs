@@ -45,25 +45,6 @@ impl Runtime {
         available: Vector2,
         fill_size: Option<Vector2>,
     ) -> Vector2 {
-        self.resolve_ui_size_with_basis(node, available, fill_size, None)
-    }
-
-    /// `size_basis` is the percent-size basis override for layout roots
-    /// (nodes whose parent rect is the window or a sub-view target instead of
-    /// another UI node). `Some(basis)` makes percent sizes resolve against
-    /// `basis` -- the aspect-fit virtual canvas from `ui_root_size_basis` --
-    /// so ratio-authored nodes keep their designed shape on non-16:9 targets.
-    /// Fill-mode axes still resolve against `available` (a Fill root spans
-    /// the real target), and FitChildren, min/max clamps, and fill sizes are
-    /// unaffected. `None` keeps nested-child behavior: percent of the
-    /// parent's actual rect.
-    pub(super) fn resolve_ui_size_with_basis(
-        &self,
-        node: NodeID,
-        available: Vector2,
-        fill_size: Option<Vector2>,
-        size_basis: Option<Vector2>,
-    ) -> Vector2 {
         let Some(scene_node) = self.nodes.get(node) else {
             return Vector2::ZERO;
         };
@@ -75,21 +56,7 @@ impl Runtime {
         }
         let layout = ui.layout;
         let transform = ui.transform;
-        let mut size = match size_basis {
-            Some(basis) => Vector2::new(
-                if layout.h_size == UiSizeMode::Fill {
-                    layout.size.x.resolve(available.x)
-                } else {
-                    layout.size.x.resolve(basis.x)
-                },
-                if layout.v_size == UiSizeMode::Fill {
-                    layout.size.y.resolve(available.y)
-                } else {
-                    layout.size.y.resolve(basis.y)
-                },
-            ),
-            None => layout.size.resolve(available),
-        };
+        let mut size = layout.size.resolve(available);
         if ui.layout.h_size == UiSizeMode::FitChildren
             || ui.layout.v_size == UiSizeMode::FitChildren
         {
