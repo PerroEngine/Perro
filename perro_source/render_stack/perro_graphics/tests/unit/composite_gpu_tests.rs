@@ -762,8 +762,8 @@ fn camera_effects_stop_before_ui_and_global_effects_cover_final_composite() {
             "camera tint must affect the scene: {scene:?}"
         );
         assert_eq!(
-            pixel(&tint_only, glyph.0, glyph.1),
-            pixel(&baseline, glyph.0, glyph.1),
+            pixel(&tint_only, 40, 8),
+            pixel(&baseline, 40, 8),
             "camera tint must leave UI unchanged"
         );
         // Pure scene / no UI / no 3D depth also uses the final effects path.
