@@ -58,6 +58,11 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         self.rt.get_node_name(node_id)
     }
 
+    /// Last completed layout bounds in viewport-centered pixels (+Y up).
+    pub fn get_ui_rect_pixels(&mut self, node_id: NodeID) -> Option<perro_ui::ComputedUiRect> {
+        self.rt.get_ui_rect_pixels(node_id)
+    }
+
     pub fn name(&mut self, node_id: NodeID) -> Option<Cow<'static, str>> {
         self.get_node_name(node_id)
     }

@@ -7,6 +7,24 @@ static STREAM_LOG_ENABLED: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var_os("PERRO_STREAM_LOG").is_some());
 
 impl Runtime {
+    pub(crate) fn completed_ui_rect_pixels(&self, node: NodeID) -> Option<ComputedUiRect> {
+        if !self.is_effectively_visible_for_ui(node) {
+            return None;
+        }
+        self.render_ui
+            .computed_rects
+            .get(&node)
+            .copied()
+            .or_else(|| {
+                self.render_ui.retained_rects.get(&node).map(|rect| {
+                    ComputedUiRect::new(
+                        Vector2::new(rect.center[0], rect.center[1]),
+                        Vector2::new(rect.size[0], rect.size[1]),
+                    )
+                })
+            })
+    }
+
     pub(super) fn rebuild_visible_interactive_ui_cache(
         &mut self,
         computed: &AHashMap<NodeID, ComputedUiRect>,

@@ -420,36 +420,184 @@ pub fn viewport_pointer<API: ScriptAPI + ?Sized>(
         return None;
     }
 
-    let x = mouse.x;
-    let y = mouse.y;
+    // Input mouse coordinates use normalized bottom-left space. UI layout
+    // reports pixels around the viewport center. Keep both paths in that
+    // space so panel resizing and split changes do not shift the hit region.
     let window_aspect = viewport.x / viewport.y.max(0.0001);
-    let layout = with_state!(ctx.run, EditorState, ctx.id, editor_layout).unwrap_or_default();
-    let rect = viewport_stream_rect_ratio(window_aspect, layout);
-    let center_x = rect.0;
-    let center_y = rect.1;
-    let size_x = rect.2;
-    let size_y = rect.3;
-    let min_x = center_x - size_x * 0.5;
-    let max_x = center_x + size_x * 0.5;
-    let min_y = center_y - size_y * 0.5;
-    let max_y = center_y + size_y * 0.5;
-    if x < min_x || x > max_x || y < min_y || y > max_y {
+    let panel = find_named(ctx, "viewport_panel")
+        .and_then(|id| ctx.run.Nodes().get_ui_rect_pixels(id))
+        .or_else(|| {
+            let layout =
+                with_state!(ctx.run, EditorState, ctx.id, editor_layout).unwrap_or_default();
+            let rect = viewport_stream_rect_ratio(window_aspect, layout);
+            Some(ComputedUiRect::new(
+                Vector2::new((rect.0 - 0.5) * viewport.x, (0.5 - rect.1) * viewport.y),
+                Vector2::new(rect.2 * viewport.x, rect.3 * viewport.y),
+            ))
+        })?;
+    let mouse_px = Vector2::new((mouse.x - 0.5) * viewport.x, (mouse.y - 0.5) * viewport.y);
+    let stream_name = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        if state.viewport_mode == "3D" {
+            "viewport_stream_3d"
+        } else {
+            "viewport_stream_2d"
+        }
+    })
+    .unwrap_or("viewport_stream_2d");
+    let stream_aspect = viewport_stream_aspect(ctx, stream_name);
+    let image_size = fit_stream_size(panel.size, stream_aspect);
+    let image_min = panel.center - image_size * 0.5;
+    let image_max = panel.center + image_size * 0.5;
+    if mouse_px.x < image_min.x
+        || mouse_px.x > image_max.x
+        || mouse_px.y < image_min.y
+        || mouse_px.y > image_max.y
+    {
         return None;
     }
-    let uv = Vector2::new((x - min_x) / size_x, (y - min_y) / size_y);
-    let mut ndc = Vector2::new(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
-
-    let (half_w, half_h) = stream_half_ndc(window_aspect);
-    if half_w <= 0.0 || half_h <= 0.0 {
-        return None;
-    }
-    if ndc.x.abs() > half_w || ndc.y.abs() > half_h {
-        return None;
-    }
-    ndc.x /= half_w;
-    ndc.y /= half_h;
+    // Preserve top-left UV for UI drag code; derive NDC from bottom-left
+    // pixels so +Y matches both 2D world and Camera3D screen-ray APIs.
+    let uv = Vector2::new(
+        (mouse_px.x - image_min.x) / image_size.x,
+        1.0 - (mouse_px.y - image_min.y) / image_size.y,
+    );
+    let ndc = Vector2::new(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
 
     Some(ViewportPointer { uv, ndc })
+}
+
+pub fn viewport_stream_aspect<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+) -> f32 {
+    let (width, height) = viewport_stream_resolution(ctx, name);
+    (width / height.max(1.0)).max(0.001)
+}
+
+pub fn viewport_stream_resolution<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+) -> (f32, f32) {
+    find_named(ctx, name)
+        .and_then(|id| {
+            with_node!(ctx.run, UiCameraStream, id, |node| {
+                (
+                    node.stream.resolution.x as f32,
+                    node.stream.resolution.y as f32,
+                )
+            })
+        })
+        .filter(|(width, height)| {
+            width.is_finite() && height.is_finite() && *width > 0.0 && *height > 0.0
+        })
+        .unwrap_or((16.0, 9.0))
+}
+
+const VIEWPORT_STREAM_MIN_DIM: f32 = 64.0;
+const VIEWPORT_STREAM_MAX_DIM: f32 = 2048.0;
+
+/// Match editor stream targets to live pane, so fit mode has no bars.
+/// Keep target bounded + skip writes when layout stays same.
+pub fn sync_viewport_streams<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let Some(panel) =
+        find_named(ctx, "viewport_panel").and_then(|id| ctx.run.Nodes().get_ui_rect_pixels(id))
+    else {
+        return;
+    };
+    if panel.size.x <= 0.0 || panel.size.y <= 0.0 {
+        return;
+    }
+    let scale = (VIEWPORT_STREAM_MAX_DIM / panel.size.x.max(panel.size.y)).min(1.0);
+    let target = perro_api::structs::UVector2::new(
+        (panel.size.x * scale)
+            .round()
+            .clamp(VIEWPORT_STREAM_MIN_DIM, VIEWPORT_STREAM_MAX_DIM) as u32,
+        (panel.size.y * scale)
+            .round()
+            .clamp(VIEWPORT_STREAM_MIN_DIM, VIEWPORT_STREAM_MAX_DIM) as u32,
+    );
+    let mut changed = false;
+    for stream_name in ["viewport_stream_2d", "viewport_stream_3d"] {
+        let Some(id) = find_named(ctx, stream_name) else {
+            continue;
+        };
+        let same = with_node!(ctx.run, UiCameraStream, id, |node| {
+            node.stream.resolution == target && node.stream.aspect_ratio == 0.0
+        })
+        .unwrap_or(false);
+        if same {
+            continue;
+        }
+        let _ = with_node_mut!(ctx.run, UiCameraStream, id, |node| {
+            node.stream.resolution = target;
+            node.stream.aspect_ratio = 0.0;
+        });
+        changed = true;
+    }
+    if changed {
+        invalidate_viewport_canvas(ctx);
+    }
+}
+
+pub fn fit_stream_size(panel_size: Vector2, stream_aspect: f32) -> Vector2 {
+    let panel_size = Vector2::new(panel_size.x.max(0.0), panel_size.y.max(0.0));
+    let stream_aspect = if stream_aspect.is_finite() && stream_aspect > 0.0 {
+        stream_aspect
+    } else {
+        1.0
+    };
+    let panel_aspect = panel_size.x / panel_size.y.max(0.001);
+    if panel_aspect >= stream_aspect {
+        Vector2::new(panel_size.y * stream_aspect, panel_size.y)
+    } else {
+        Vector2::new(panel_size.x, panel_size.x / stream_aspect)
+    }
+}
+
+pub fn viewport_stream_fit_ratio<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    stream_name: &str,
+) -> (f32, f32) {
+    let Some(panel) =
+        find_named(ctx, "viewport_panel").and_then(|id| ctx.run.Nodes().get_ui_rect_pixels(id))
+    else {
+        return (1.0, 1.0);
+    };
+    if panel.size.x <= 0.0 || panel.size.y <= 0.0 {
+        return (1.0, 1.0);
+    }
+    let image = fit_stream_size(panel.size, viewport_stream_aspect(ctx, stream_name));
+    (
+        (image.x / panel.size.x).clamp(0.0, 1.0),
+        (image.y / panel.size.y).clamp(0.0, 1.0),
+    )
+}
+
+/// Return the fitted camera image rect in top-left normalized viewport space.
+/// The UI layout API supplies the live panel pixels after layout extraction;
+/// the ratio path only covers the first frame before that cache exists.
+pub fn viewport_stream_rect_ratio_live<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    stream_name: &str,
+) -> (f32, f32, f32, f32) {
+    let viewport = ctx.res.viewport_size();
+    if viewport.x <= 0.0 || viewport.y <= 0.0 {
+        return (0.5, 0.5, 0.0, 0.0);
+    }
+    if let Some(panel) =
+        find_named(ctx, "viewport_panel").and_then(|id| ctx.run.Nodes().get_ui_rect_pixels(id))
+    {
+        let image = fit_stream_size(panel.size, viewport_stream_aspect(ctx, stream_name));
+        return (
+            0.5 + panel.center.x / viewport.x,
+            0.5 - panel.center.y / viewport.y,
+            image.x / viewport.x,
+            image.y / viewport.y,
+        );
+    }
+    let window_aspect = viewport.x / viewport.y.max(0.0001);
+    let layout = with_state!(ctx.run, EditorState, ctx.id, editor_layout).unwrap_or_default();
+    viewport_stream_rect_ratio(window_aspect, layout)
 }
 
 pub fn viewport_stream_rect_ratio(
@@ -509,7 +657,11 @@ pub fn stream_pointer_world_2d<API: ScriptAPI + ?Sized>(
     let zoom = with_node!(ctx.run, Camera2D, camera, |node| node.zoom)
         .unwrap_or_default()
         .max(0.0001);
-    let local = Vector2::new(pointer.ndc.x * 480.0 / zoom, pointer.ndc.y * 270.0 / zoom);
+    let (stream_width, stream_height) = viewport_stream_resolution(ctx, "viewport_stream_2d");
+    let local = Vector2::new(
+        pointer.ndc.x * stream_width / zoom,
+        pointer.ndc.y * stream_height / zoom,
+    );
     let sin = global.rotation.sin();
     let cos = global.rotation.cos();
     Some(Vector2::new(
@@ -527,41 +679,18 @@ pub fn stream_pointer_ray_3d<API: ScriptAPI + ?Sized>(
     })
     .unwrap_or_default()
     .or_else(|| find_named(ctx, "editor_camera_3d"))?;
-    let global = ctx.run.Nodes().get_global_transform_3d(camera)?;
-    let projection =
-        with_node!(ctx.run, Camera3D, camera, |node| node.projection.clone()).unwrap_or_default();
-    let aspect = 16.0 / 9.0;
-    let local_dir = match projection {
-        CameraProjection::Perspective { fov_y_degrees, .. } => {
-            let tan_y = (fov_y_degrees.to_radians() * 0.5).tan();
-            Vector3::new(pointer.ndc.x * aspect * tan_y, pointer.ndc.y * tan_y, -1.0).normalized()
-        }
-        CameraProjection::Orthographic { .. } => Vector3::new(0.0, 0.0, -1.0),
-        CameraProjection::Frustum {
-            left,
-            right,
-            bottom,
-            top,
-            near,
-            ..
-        } => {
-            let x = left + (pointer.uv.x * (right - left));
-            let y = bottom + ((1.0 - pointer.uv.y) * (top - bottom));
-            Vector3::new(x, y, -near.max(0.001)).normalized()
-        }
-    };
-    let local_origin = match projection {
-        CameraProjection::Orthographic { size, .. } => Vector3::new(
-            pointer.ndc.x * size * aspect * 0.5,
-            pointer.ndc.y * size * 0.5,
-            0.0,
-        ),
-        _ => Vector3::ZERO,
-    };
-    let origin_offset = global.rotation.rotate_vector3(local_origin);
+    // Reuse engine ray math so FOV clamps, orthographic near offsets, frustum
+    // bounds, camera scale, and stream aspect stay in lockstep with render.
+    let width = viewport_stream_resolution(ctx, "viewport_stream_3d").0;
+    let height = viewport_stream_resolution(ctx, "viewport_stream_3d").1;
+    let ray = ctx.run.Nodes().camera_screen_ray_3d(
+        camera,
+        Vector2::new(pointer.uv.x * width, pointer.uv.y * height),
+        Vector2::new(width, height),
+    )?;
     Some(ViewportRay3D {
-        origin: global.position + origin_offset,
-        direction: global.rotation.rotate_vector3(local_dir).normalized(),
+        origin: ray.origin,
+        direction: ray.direction.normalized(),
     })
 }
 
@@ -1862,6 +1991,15 @@ pub fn load_preview_scene<API: ScriptAPI + ?Sized>(
     });
     apply_freecam(ctx);
     apply_freecam_2d(ctx);
+    // Rebuild clears streams b4 loading. Reapply selected mode so direct
+    // rebuild paths keep 3D output visible w/o a full chrome refresh.
+    let mode = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.viewport_mode.clone()
+    })
+    .unwrap_or_default();
+    if !mode.is_empty() {
+        apply_viewport_mode(ctx, &mode);
+    }
 }
 
 pub fn add_preview_env<API: ScriptAPI + ?Sized>(

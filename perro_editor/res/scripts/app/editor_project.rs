@@ -10,6 +10,12 @@ pub fn create_project(parent_dir: &str, project_name: &str) -> Result<String, St
     if project_name.is_empty() {
         return Err("project name empty".to_string());
     }
+    if project_name
+        .chars()
+        .any(|ch| ch.is_control() || matches!(ch, '"' | '\\'))
+    {
+        return Err("project name contains invalid characters".to_string());
+    }
 
     let parent = parent
         .canonicalize()
@@ -41,5 +47,25 @@ fn sanitize_project_dir_name(name: &str) -> String {
         "perro_project".to_string()
     } else {
         collapsed.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitize_dir_name_stays_nonempty() {
+        assert_eq!(sanitize_project_dir_name("..."), "perro_project");
+        assert_eq!(sanitize_project_dir_name("My/Game"), "My_Game");
+    }
+
+    #[test]
+    fn create_rejects_toml_breakout_chars() {
+        let root = std::env::temp_dir();
+        assert_eq!(
+            create_project(root.to_string_lossy().as_ref(), "bad\"name"),
+            Err("project name contains invalid characters".to_string())
+        );
     }
 }

@@ -30,6 +30,7 @@ use perro_api::scene::{
 };
 use std::borrow::Cow;
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -176,7 +177,7 @@ pub struct EditorCommand {
 }
 
 pub fn editor_commands(query: &str) -> Vec<EditorCommand> {
-    const COMMANDS: [EditorCommand; 17] = [
+    const COMMANDS: [EditorCommand; 46] = [
         EditorCommand {
             id: "move_asset",
             label: "Move Selected Asset / Folder",
@@ -261,6 +262,151 @@ pub fn editor_commands(query: &str) -> Vec<EditorCommand> {
             id: "frame",
             label: "Frame Selected",
             hint: "F",
+        },
+        EditorCommand {
+            id: "new_scene",
+            label: "New Scene File",
+            hint: "",
+        },
+        EditorCommand {
+            id: "new_script",
+            label: "New Script File",
+            hint: "",
+        },
+        EditorCommand {
+            id: "new_animation",
+            label: "New Animation File",
+            hint: "",
+        },
+        EditorCommand {
+            id: "new_material",
+            label: "New Material File",
+            hint: "",
+        },
+        EditorCommand {
+            id: "new_folder",
+            label: "New Folder",
+            hint: "",
+        },
+        EditorCommand {
+            id: "expand_scene",
+            label: "Expand Scene Tree",
+            hint: "",
+        },
+        EditorCommand {
+            id: "collapse_scene",
+            label: "Collapse Scene Tree",
+            hint: "",
+        },
+        EditorCommand {
+            id: "duplicate_node",
+            label: "Duplicate Selected Node",
+            hint: "",
+        },
+        EditorCommand {
+            id: "delete_node",
+            label: "Delete Selected Node",
+            hint: "",
+        },
+        EditorCommand {
+            id: "copy_node_path",
+            label: "Copy Selected Node Path",
+            hint: "",
+        },
+        EditorCommand {
+            id: "add_sibling",
+            label: "Add Sibling Node",
+            hint: "",
+        },
+        EditorCommand {
+            id: "copy_node",
+            label: "Copy Selected Node",
+            hint: "",
+        },
+        EditorCommand {
+            id: "paste_node",
+            label: "Paste Node",
+            hint: "",
+        },
+        EditorCommand {
+            id: "move_node_up",
+            label: "Move Node Up",
+            hint: "",
+        },
+        EditorCommand {
+            id: "move_node_down",
+            label: "Move Node Down",
+            hint: "",
+        },
+        EditorCommand {
+            id: "reparent_node_out",
+            label: "Reparent Node Out",
+            hint: "",
+        },
+        EditorCommand {
+            id: "reparent_node_in",
+            label: "Reparent Node In",
+            hint: "",
+        },
+        EditorCommand {
+            id: "clear_scene_filter",
+            label: "Clear Scene Filter",
+            hint: "",
+        },
+        EditorCommand {
+            id: "select_parent",
+            label: "Select Parent Node",
+            hint: "",
+        },
+        EditorCommand {
+            id: "select_child",
+            label: "Select Child Node",
+            hint: "",
+        },
+        EditorCommand {
+            id: "select_prev",
+            label: "Select Previous Node",
+            hint: "",
+        },
+        EditorCommand {
+            id: "select_next",
+            label: "Select Next Node",
+            hint: "",
+        },
+        EditorCommand {
+            id: "file_up",
+            label: "Open Parent Folder",
+            hint: "",
+        },
+        EditorCommand {
+            id: "expand_files",
+            label: "Expand File Tree",
+            hint: "",
+        },
+        EditorCommand {
+            id: "collapse_files",
+            label: "Collapse File Tree",
+            hint: "",
+        },
+        EditorCommand {
+            id: "duplicate_asset",
+            label: "Duplicate Selected Asset",
+            hint: "",
+        },
+        EditorCommand {
+            id: "delete_asset",
+            label: "Delete Selected Asset",
+            hint: "",
+        },
+        EditorCommand {
+            id: "copy_asset_path",
+            label: "Copy Selected Asset Path",
+            hint: "",
+        },
+        EditorCommand {
+            id: "clear_file_filter",
+            label: "Clear File Filter",
+            hint: "",
         },
     ];
     let tokens = query
@@ -349,6 +495,35 @@ pub fn execute_command_palette_row<API: ScriptAPI + ?Sized>(
         Some("frame") => {
             frame_selected_node(ctx);
         }
+        Some("new_scene") => create_quick_asset(ctx, "scene"),
+        Some("new_script") => create_quick_asset(ctx, "script"),
+        Some("new_animation") => create_quick_asset(ctx, "anim"),
+        Some("new_material") => create_quick_asset(ctx, "mat"),
+        Some("new_folder") => create_quick_folder(ctx),
+        Some("expand_scene") => expand_scene_tree_all(ctx),
+        Some("collapse_scene") => collapse_scene_tree_all(ctx),
+        Some("duplicate_node") => duplicate_selected_node(ctx),
+        Some("delete_node") => delete_selected_node(ctx),
+        Some("copy_node_path") => copy_selected_node_path(ctx),
+        Some("add_sibling") => open_add_node_sibling_popup(ctx),
+        Some("copy_node") => copy_selected_node(ctx),
+        Some("paste_node") => paste_copied_node(ctx),
+        Some("move_node_up") => move_selected_node_order(ctx, -1),
+        Some("move_node_down") => move_selected_node_order(ctx, 1),
+        Some("reparent_node_out") => reparent_selected_node(ctx, -1),
+        Some("reparent_node_in") => reparent_selected_node(ctx, 1),
+        Some("clear_scene_filter") => clear_scene_filter(ctx),
+        Some("select_parent") => select_related_node(ctx, "parent"),
+        Some("select_child") => select_related_node(ctx, "child"),
+        Some("select_prev") => select_related_node(ctx, "prev"),
+        Some("select_next") => select_related_node(ctx, "next"),
+        Some("expand_files") => expand_file_tree_all(ctx),
+        Some("collapse_files") => collapse_file_tree_all(ctx),
+        Some("duplicate_asset") => duplicate_active_asset(ctx),
+        Some("delete_asset") => delete_active_asset(ctx),
+        Some("copy_asset_path") => copy_active_asset_path(ctx),
+        Some("clear_file_filter") => clear_file_filter_and_scope(ctx),
+        Some("file_up") => nav_file_scope_parent(ctx),
         _ => {}
     }
 }
@@ -439,7 +614,11 @@ fn refresh_chrome_view<API: ScriptAPI + ?Sized>(
     set_label(
         ctx,
         "project_status",
-        &format!("{}  {}", view.project_name, view.project_root),
+        &format!(
+            "{}  {}",
+            view.project_name,
+            editor_view::short_path(&view.project_root, 48)
+        ),
     );
     set_label(ctx, "status_bar", &view.status);
     set_label(ctx, "log_text", &view.log);
@@ -688,32 +867,46 @@ fn refresh_chrome_view<API: ScriptAPI + ?Sized>(
     set_label(ctx, "glb_viewer_summary", &view.glb_summary);
     set_ui_display(ctx, "scene_tree_title", !glb_mode);
     set_ui_display(ctx, "scene_action_row", !glb_mode);
-    set_ui_display(ctx, "scene_order_row", !glb_mode);
-    set_ui_display(ctx, "scene_tools_row", !glb_mode);
+    // Keep scene dock focused: add child stays local; structural edits live
+    // in the command palette so the tree keeps its full height.
+    set_ui_display(ctx, "scene_order_row", false);
+    set_ui_display(ctx, "scene_tools_row", false);
+    set_ui_display(ctx, "scene_add_child_button", !glb_mode);
+    set_ui_display(ctx, "add_node_sibling_button", false);
+    set_ui_display(ctx, "scene_duplicate_button", false);
+    set_ui_display(ctx, "scene_copy_button", false);
+    set_ui_display(ctx, "scene_paste_button", false);
+    set_ui_display(ctx, "scene_delete_button", false);
     set_ui_display(ctx, "scene_filter_box", !glb_mode);
     set_text_box(ctx, "scene_filter_box", &view.scene_filter);
     set_ui_display(ctx, "scene_scroll", !glb_mode);
     set_ui_display(ctx, "file_title", true);
     set_label(ctx, "file_title", &view.file_title);
     set_ui_display(ctx, "file_action_row", true);
-    set_ui_display(ctx, "file_tools_row", true);
-    set_ui_display(ctx, "file_ops_row", true);
+    set_ui_display(ctx, "file_tools_row", false);
+    set_ui_display(ctx, "file_ops_row", false);
+    set_ui_display(ctx, "file_new_scene_button", true);
+    set_ui_display(ctx, "file_new_script_button", false);
+    set_ui_display(ctx, "file_new_anim_button", false);
+    set_ui_display(ctx, "file_new_mat_button", false);
+    set_ui_display(ctx, "file_new_folder_button", false);
     set_ui_display(ctx, "file_filter_box", true);
     set_text_box(ctx, "file_filter_box", &view.file_filter);
     set_ui_display(ctx, "file_scroll", true);
-    set_ui_node_size(ctx, "scene_tools_row", (1.0, 0.032));
+    set_ui_node_size(ctx, "scene_order_row", (1.0, 0.0));
+    set_ui_node_size(ctx, "scene_tools_row", (1.0, 0.0));
     set_ui_node_size(
         ctx,
         "scene_scroll",
-        (1.0, if glb_mode { 0.0 } else { 0.312 }),
+        (1.0, if glb_mode { 0.0 } else { 0.36 }),
     );
-    set_ui_node_size(ctx, "file_action_row", (1.0, 0.034));
-    set_ui_node_size(ctx, "file_tools_row", (1.0, 0.032));
-    set_ui_node_size(ctx, "file_ops_row", (1.0, 0.032));
+    set_ui_node_size(ctx, "file_action_row", (1.0, 0.040));
+    set_ui_node_size(ctx, "file_tools_row", (1.0, 0.0));
+    set_ui_node_size(ctx, "file_ops_row", (1.0, 0.0));
     set_ui_node_size(
         ctx,
         "file_scroll",
-        (1.0, if glb_mode { 0.776 } else { 0.296 }),
+        (1.0, if glb_mode { 0.776 } else { 0.36 }),
     );
 }
 
@@ -858,9 +1051,33 @@ fn refresh_inspector_view<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     view: &EditorView,
 ) {
+    if find_named(ctx, "inspector_content").is_none() {
+        return;
+    }
     if take_inspector_layout_pass(ctx) {
         apply_inspector_static_layout(ctx);
         remove_legacy_transform_rows(ctx);
+    }
+    let state_key = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        state.inspector_bone_names.hash(&mut hasher);
+        state.inspector_bone_depths.hash(&mut hasher);
+        state.anim_selected_bone.hash(&mut hasher);
+        state.inspector_bone_is_2d.hash(&mut hasher);
+        state.inspector_bone_pos.hash(&mut hasher);
+        state.inspector_bone_rot.hash(&mut hasher);
+        state.inspector_bone_scale.hash(&mut hasher);
+        state.script_schema_reload_frames.hash(&mut hasher);
+        hasher.finish()
+    })
+    .unwrap_or_default();
+    let refresh_key = inspector_refresh_key(view, state_key);
+    let unchanged = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        inspector_refresh_state_unchanged(state, refresh_key)
+    })
+    .unwrap_or(false);
+    if unchanged {
+        return;
     }
     apply_inspector_dynamic_layout(ctx, &view.inspector);
     set_text_box(ctx, "inspector_filter_box", &view.inspector_filter);
@@ -1010,7 +1227,7 @@ fn refresh_inspector_view<API: ScriptAPI + ?Sized>(
     let row_parents = inspector_row_parent_indices(&view.inspector.script_vars);
     let row_base_heights = inspector_row_base_heights(&view.inspector.script_vars);
     let row_subtree_heights =
-        inspector_row_subtree_heights(&view.inspector.script_vars, &row_base_heights);
+        inspector_row_subtree_heights(&view.inspector.script_vars, &row_base_heights, &row_parents);
     let override_view = inspector_override_view(ctx);
     for idx in 0..view.inspector.script_vars.len() {
         let row = view.inspector.script_vars.get(idx);
@@ -1332,6 +1549,75 @@ fn refresh_inspector_view<API: ScriptAPI + ?Sized>(
     }
 }
 
+fn inspector_refresh_state_unchanged(state: &mut EditorState, key: u64) -> bool {
+    if state.inspector_refresh_key == key {
+        true
+    } else {
+        state.inspector_refresh_key = key;
+        false
+    }
+}
+
+fn inspector_refresh_key(view: &EditorView, bone_key: u64) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    let inspector = &view.inspector;
+    for value in [
+        &inspector.title,
+        &inspector.name,
+        &inspector.name_edit,
+        &inspector.kind,
+        &inspector.parent,
+        &inspector.script,
+        &inspector.vars_text,
+        &view.inspector_filter,
+        &view.inspector_picker_title,
+        &view.inspector_picker_page,
+        &view.inspector_picker_filter,
+    ] {
+        value.hash(&mut hasher);
+    }
+    for values in [
+        &inspector.node_chain,
+        &inspector.pos,
+        &inspector.rotation,
+        &inspector.scale,
+        &inspector.collapsed_sections,
+        &view.inspector_picker_rows,
+    ] {
+        values.hash(&mut hasher);
+    }
+    inspector.transform_fields.hash(&mut hasher);
+    inspector.rotation_components.hash(&mut hasher);
+    inspector.rotation_mode.hash(&mut hasher);
+    inspector.script_vars.len().hash(&mut hasher);
+    for row in inspector.script_vars.iter() {
+        row.source.hash(&mut hasher);
+        row.depth.hash(&mut hasher);
+        row.path_key.hash(&mut hasher);
+        row.name.hash(&mut hasher);
+        row.kind.hash(&mut hasher);
+        row.value.hash(&mut hasher);
+        row.components.hash(&mut hasher);
+        row.color_preview.hash(&mut hasher);
+        row.enum_options.hash(&mut hasher);
+        row.editable.hash(&mut hasher);
+        row.expandable.hash(&mut hasher);
+        row.addable.hash(&mut hasher);
+        row.removable.hash(&mut hasher);
+    }
+    inspector.node_actions.hash(&mut hasher);
+    inspector.asset_selected.hash(&mut hasher);
+    inspector.asset_actions.hash(&mut hasher);
+    inspector.asset_use_action.hash(&mut hasher);
+    inspector.glb_asset_actions.hash(&mut hasher);
+    inspector.glb_isolate_active.hash(&mut hasher);
+    inspector.rotation_mode_buttons.hash(&mut hasher);
+    view.inspector_picker_open.hash(&mut hasher);
+    view.inspector_modified_only.hash(&mut hasher);
+    bone_key.hash(&mut hasher);
+    hasher.finish()
+}
+
 fn refresh_status_view<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     view: &EditorView,
@@ -1610,13 +1896,66 @@ fn inspector_chain_chip_colors(
     }
 }
 
+fn set_inspector_label_font<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    size: f32,
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiLabel, id, |node| {
+            node.font_size = size;
+            node.text_size_ratio = 0.0;
+            node.font_sizing.relative_to_virtual = false;
+            node.font_sizing.min_scale = 1.0;
+            node.font_sizing.max_scale = 1.0;
+        });
+    }
+}
+
+fn set_inspector_text_box_font<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    size: f32,
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiTextBox, id, |node| {
+            node.font_size = size;
+            node.text_size_ratio = 0.0;
+            node.font_sizing.relative_to_virtual = false;
+            node.font_sizing.min_scale = 1.0;
+            node.font_sizing.max_scale = 1.0;
+        });
+    }
+}
+
+fn set_inspector_min_height<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    pixels: f32,
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_base_node_mut!(ctx.run, UiNode, id, |node| {
+            node.layout.min_size.y = pixels;
+        });
+    }
+}
+
 fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     for name in ["add_node_popup", "inspector_pick_popup"] {
         set_ui_node_z_index(ctx, name, 200);
     }
 
-    set_ui_node_size(ctx, "center_stack", (0.565, 1.0));
-    set_ui_node_size(ctx, "inspector_panel", (0.222, 1.0));
+    // Keep inspector chrome to filter + modified.
+    // Expand/collapse actions stay in command palette; hidden nodes skip row geometry.
+    for name in [
+        "inspector_expand_all_button",
+        "inspector_expand_all_label",
+        "inspector_collapse_all_button",
+        "inspector_collapse_all_label",
+    ] {
+        set_ui_display(ctx, name, false);
+    }
+
     set_ui_node_size(ctx, "inspector_content", (1.0, 1.0));
     set_vlayout_h_align(ctx, "inspector_content", UiHorizontalAlign::Center);
     set_vlayout_spacing_padding(ctx, "inspector_content", 0.004, 0.0, 0.0, 0.0);
@@ -1625,16 +1964,20 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
     set_ui_node_size(ctx, "inspector_name_box", (0.95, 0.027));
     set_ui_node_size(ctx, "inspector_name", (0.95, 0.034));
     set_ui_node_size(ctx, "inspector_script_top", (0.95, 0.0));
-    set_label_text_ratio(ctx, "inspector_title", 0.30);
-    set_label_text_ratio(ctx, "inspector_name", 0.31);
-    set_label_text_ratio(ctx, "inspector_type", 0.25);
-    set_label_text_ratio(ctx, "inspector_parent", 0.24);
-    set_label_text_ratio(ctx, "inspector_script_top", 0.24);
-    set_label_text_ratio(ctx, "inspector_pos_label", 0.28);
-    set_label_text_ratio(ctx, "inspector_position_header_label", 0.27);
-    set_label_text_ratio(ctx, "inspector_rotation_header_label", 0.28);
-    set_label_text_ratio(ctx, "inspector_scale_header_label", 0.28);
-    set_label_text_ratio(ctx, "inspector_vars_label", 0.28);
+    for name in [
+        "inspector_title",
+        "inspector_name",
+        "inspector_type",
+        "inspector_parent",
+        "inspector_script_top",
+        "inspector_pos_label",
+        "inspector_position_header_label",
+        "inspector_rotation_header_label",
+        "inspector_scale_header_label",
+        "inspector_vars_label",
+    ] {
+        set_inspector_label_font(ctx, name, 12.0);
+    }
 
     for name in [
         "asset_action_row",
@@ -1668,7 +2011,7 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
         "inspector_scale_box",
     ] {
         set_ui_node_size(ctx, name, (1.0, 0.021));
-        set_text_box_text_ratio(ctx, name, 0.54);
+        set_inspector_text_box_font(ctx, name, 13.0);
         set_text_box_padding(ctx, name, 4.0, 1.0);
     }
 
@@ -1679,17 +2022,18 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
     ] {
         for idx in 0..4 {
             let name = format!("{prefix}_{idx}_box");
-            set_text_box_text_ratio(ctx, &name, 0.54);
+            set_inspector_text_box_font(ctx, &name, 13.0);
             set_text_box_padding(ctx, &name, 4.0, 1.0);
             set_text_box_h_align(ctx, &name, UiTextAlign::Center);
             set_label_size_ratio(ctx, &format!("{prefix}_{idx}_label"), (0.28, 1.0));
-            set_label_text_ratio(ctx, &format!("{prefix}_{idx}_label"), 0.46);
+            set_inspector_label_font(ctx, &format!("{prefix}_{idx}_label"), 12.0);
         }
     }
 
     let mut idx = 0;
     while find_named(ctx, &format!("inspector_var_row_{idx}")).is_some() {
         set_ui_node_size(ctx, &format!("inspector_var_row_{idx}"), (0.95, 0.026));
+        set_inspector_min_height(ctx, &format!("inspector_var_row_{idx}"), 24.0);
         set_ui_node_h_align(
             ctx,
             &format!("inspector_var_row_{idx}"),
@@ -1704,7 +2048,7 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
             (1.0, 0.0),
         );
         set_ui_node_size(ctx, &format!("inspector_var_{idx}_value"), (0.50, 0.62));
-        set_text_box_text_ratio(ctx, &format!("inspector_var_{idx}_value"), 0.54);
+        set_inspector_text_box_font(ctx, &format!("inspector_var_{idx}_value"), 13.0);
         set_text_box_padding(ctx, &format!("inspector_var_{idx}_value"), 5.0, 1.0);
         set_text_box_h_align(
             ctx,
@@ -1728,8 +2072,8 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
             &format!("inspector_var_{idx}_euler_button"),
             (0.070, 0.56),
         );
-        set_label_text_ratio(ctx, &format!("inspector_var_{idx}_name"), 0.31);
-        set_label_text_ratio(ctx, &format!("inspector_var_{idx}_type"), 0.25);
+        set_inspector_label_font(ctx, &format!("inspector_var_{idx}_name"), 12.0);
+        set_inspector_label_font(ctx, &format!("inspector_var_{idx}_type"), 12.0);
         idx += 1;
     }
 }
@@ -2694,29 +3038,36 @@ fn apply_inspector_value_row_text_layout<API: ScriptAPI + ?Sized>(
     row: &InspectorValueRow,
     changed: bool,
 ) {
-    let (name_ratio, name_text_ratio) = if row.source == "section" {
-        if row.depth == 0 {
-            (0.96, 0.38)
-        } else {
-            (0.96, 0.36)
-        }
+    let name_ratio = if row.source == "section" {
+        0.96
     } else if row.kind == "EmptyArrayAdd" || row.kind == "EmptyObject" {
-        (0.62, 0.62)
+        0.62
     } else if row.kind == "BitMask" {
-        (0.13, 0.13)
+        0.13
     } else if row.kind.starts_with("Matrix(") {
-        (0.23, 0.23)
+        0.23
     } else if row.kind == "Quat" || !row.components.is_empty() || row.kind == "Color" {
-        (0.27, 0.32)
+        0.27
     } else {
-        (0.42, 0.31)
+        0.42
     };
     let name_label = format!("inspector_var_{idx}_name");
-    set_label_text_ratio(ctx, &name_label, name_text_ratio);
+    set_inspector_label_font(ctx, &name_label, 12.0);
+    for label in [
+        format!("inspector_var_{idx}_pick_label"),
+        format!("inspector_var_{idx}_add_button_label"),
+        format!("inspector_var_{idx}_remove_button_label"),
+        format!("inspector_var_{idx}_quat_label"),
+        format!("inspector_var_{idx}_euler_label"),
+    ] {
+        set_inspector_label_font(ctx, &label, 12.0);
+    }
     set_label_size_ratio(ctx, &name_label, (name_ratio, 1.0));
     if row.kind == "Quat" {
-        set_ui_node_size(ctx, &format!("inspector_var_{idx}_components"), (0.68, 1.0));
-        set_ui_node_size(ctx, &format!("inspector_var_{idx}_quat_mode"), (0.30, 0.32));
+        // Keep name + components + mode inside row width. The prior 0.27 +
+        // 0.68 + 0.30 ratios exceeded the HLayout content and overlapped.
+        set_ui_node_size(ctx, &format!("inspector_var_{idx}_components"), (0.52, 1.0));
+        set_ui_node_size(ctx, &format!("inspector_var_{idx}_quat_mode"), (0.16, 0.62));
     }
     if row.source == "section" {
         // Categories stay centered like Godot; nested section headers hug
@@ -2768,34 +3119,38 @@ fn apply_inspector_value_row_text_layout<API: ScriptAPI + ?Sized>(
         let box_name = format!("inspector_var_{idx}_{component}_box");
         let label_name = format!("inspector_var_{idx}_{component}_label");
         set_ui_node_size(&mut *ctx, &box_name, (box_w, 0.72));
-        set_text_box_text_ratio(&mut *ctx, &box_name, 0.50);
+        set_inspector_text_box_font(&mut *ctx, &box_name, 13.0);
         set_text_box_padding(&mut *ctx, &box_name, 4.0, 1.0);
         set_text_box_h_align(&mut *ctx, &box_name, UiTextAlign::Center);
         set_label_size_ratio(&mut *ctx, &label_name, (0.28, 1.0));
-        set_label_text_ratio(&mut *ctx, &label_name, 0.46);
+        set_inspector_label_font(&mut *ctx, &label_name, 12.0);
         set_axis_label_overlay(&mut *ctx, &label_name);
     }
 }
 
-fn inspector_row_subtree_heights(rows: &[InspectorValueRow], base_heights: &[f32]) -> Vec<f32> {
+fn inspector_row_subtree_heights(
+    rows: &[InspectorValueRow],
+    base_heights: &[f32],
+    parents: &[Option<usize>],
+) -> Vec<f32> {
     let mut out = base_heights.to_vec();
-    for idx in (0..rows.len()).rev() {
-        let depth = rows[idx].depth;
-        let mut next = idx + 1;
-        let mut child_count = 0;
-        while next < rows.len() && rows[next].depth > depth {
-            if rows[next].depth == depth + 1 {
-                out[idx] += out[next];
-                child_count += 1;
-            }
-            next += 1;
+    let mut direct_child_counts = vec![0_usize; rows.len()];
+    for (idx, parent) in parents.iter().enumerate() {
+        if let Some(parent) = parent {
+            direct_child_counts[*parent] += 1;
         }
-        if child_count > 0 {
+    }
+    for idx in (0..rows.len()).rev() {
+        let count = direct_child_counts[idx];
+        if count > 0 {
             out[idx] += if rows[idx].source == "section" {
-                0.014
+                0.014 * count as f32
             } else {
-                0.008
+                0.008 * count as f32
             };
+        }
+        if let Some(parent) = parents.get(idx).copied().flatten() {
+            out[parent] += out[idx];
         }
     }
     out
@@ -2826,7 +3181,9 @@ fn apply_inspector_row_tree_layout<API: ScriptAPI + ?Sized>(
         total
     };
     let row_w = 0.95;
-    set_ui_node_size(ctx, &format!("inspector_var_row_{idx}"), (row_w, root_h));
+    let row_name = format!("inspector_var_row_{idx}");
+    set_ui_node_size(ctx, &row_name, (row_w, root_h));
+    set_inspector_min_height(ctx, &row_name, 24.0);
     set_ui_node_h_align(
         ctx,
         &format!("inspector_var_row_{idx}"),
@@ -3623,6 +3980,89 @@ mod editor_index_audit {
             weak.upgrade().is_none(),
             "index cache must not pin source docs"
         );
+    }
+
+    #[test]
+    fn inspector_subtree_heights_match_nested_rows() {
+        fn row(source: &str, depth: usize) -> InspectorValueRow {
+            InspectorValueRow {
+                source: source.to_string(),
+                depth,
+                path: Vec::new(),
+                path_key: String::new(),
+                name: String::new(),
+                kind: String::new(),
+                value: String::new(),
+                components: Vec::new(),
+                color_preview: None,
+                enum_options: Vec::new(),
+                enum_values: Vec::new(),
+                default_child: None,
+                editable: false,
+                expandable: false,
+                addable: false,
+                removable: false,
+            }
+        }
+
+        let rows = vec![
+            row("section", 0),
+            row("scene", 1),
+            row("scene", 1),
+            row("scene", 2),
+            row("scene", 2),
+        ];
+        let parents = inspector_row_parent_indices(&rows);
+        let base = inspector_row_base_heights(&rows);
+        let heights = inspector_row_subtree_heights(&rows, &base, &parents);
+        let expected_root = base[0] + heights[1] + heights[2] + 0.014 * 2.0;
+        assert!((heights[0] - expected_root).abs() < 1e-6);
+        assert!((heights[2] - (base[2] + heights[3] + heights[4] + 0.008 * 2.0)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn inspector_refresh_key_scope_and_changes() {
+        let mut first = EditorState::default();
+        let mut second = EditorState::default();
+        assert!(!inspector_refresh_state_unchanged(&mut first, 11));
+        assert!(inspector_refresh_state_unchanged(&mut first, 11));
+        assert!(!inspector_refresh_state_unchanged(&mut second, 11));
+        // Schema reload changes the render key, so row templates refresh.
+        assert!(!inspector_refresh_state_unchanged(&mut first, 12));
+        assert!(inspector_refresh_state_unchanged(&mut first, 12));
+    }
+
+    #[test]
+    fn inspector_subtree_heights_scale_to_many_siblings() {
+        let mut rows = Vec::with_capacity(1_025);
+        rows.push(row_for_test("section", 0));
+        rows.extend((0..1_024).map(|_| row_for_test("scene", 1)));
+        let parents = inspector_row_parent_indices(&rows);
+        let base = inspector_row_base_heights(&rows);
+        let heights = inspector_row_subtree_heights(&rows, &base, &parents);
+        assert_eq!(heights.len(), rows.len());
+        assert!(heights[0] > base[0] + 8.0);
+    }
+
+    fn row_for_test(source: &str, depth: usize) -> InspectorValueRow {
+        InspectorValueRow {
+            source: source.to_string(),
+            depth,
+            path: Vec::new(),
+            path_key: String::new(),
+            name: String::new(),
+            kind: String::new(),
+            value: String::new(),
+            components: Vec::new(),
+            color_preview: None,
+            enum_options: Vec::new(),
+            enum_values: Vec::new(),
+            default_child: None,
+            editable: false,
+            expandable: false,
+            addable: false,
+            removable: false,
+        }
     }
 
     #[test]
@@ -4671,6 +5111,7 @@ pub fn set_log<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, text: 
         state.log = text.to_string();
     });
     set_label(ctx, "log_text", text);
+    set_label(ctx, "manager_status_label", text);
 }
 
 pub fn tick_script_schema_reload<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
@@ -5416,7 +5857,7 @@ pub fn set_panel_size<API: ScriptAPI + ?Sized>(
     }
 }
 
-const CANVAS_V_LINES: [&str; 9] = [
+const CANVAS_V_LINES: [&str; 33] = [
     "canvas_v_0",
     "canvas_v_1",
     "canvas_v_2",
@@ -5426,8 +5867,32 @@ const CANVAS_V_LINES: [&str; 9] = [
     "canvas_v_6",
     "canvas_v_7",
     "canvas_v_8",
+    "canvas_v_9",
+    "canvas_v_10",
+    "canvas_v_11",
+    "canvas_v_12",
+    "canvas_v_13",
+    "canvas_v_14",
+    "canvas_v_15",
+    "canvas_v_16",
+    "canvas_v_17",
+    "canvas_v_18",
+    "canvas_v_19",
+    "canvas_v_20",
+    "canvas_v_21",
+    "canvas_v_22",
+    "canvas_v_23",
+    "canvas_v_24",
+    "canvas_v_25",
+    "canvas_v_26",
+    "canvas_v_27",
+    "canvas_v_28",
+    "canvas_v_29",
+    "canvas_v_30",
+    "canvas_v_31",
+    "canvas_v_32",
 ];
-const CANVAS_H_LINES: [&str; 9] = [
+const CANVAS_H_LINES: [&str; 33] = [
     "canvas_h_0",
     "canvas_h_1",
     "canvas_h_2",
@@ -5437,7 +5902,52 @@ const CANVAS_H_LINES: [&str; 9] = [
     "canvas_h_6",
     "canvas_h_7",
     "canvas_h_8",
+    "canvas_h_9",
+    "canvas_h_10",
+    "canvas_h_11",
+    "canvas_h_12",
+    "canvas_h_13",
+    "canvas_h_14",
+    "canvas_h_15",
+    "canvas_h_16",
+    "canvas_h_17",
+    "canvas_h_18",
+    "canvas_h_19",
+    "canvas_h_20",
+    "canvas_h_21",
+    "canvas_h_22",
+    "canvas_h_23",
+    "canvas_h_24",
+    "canvas_h_25",
+    "canvas_h_26",
+    "canvas_h_27",
+    "canvas_h_28",
+    "canvas_h_29",
+    "canvas_h_30",
+    "canvas_h_31",
+    "canvas_h_32",
 ];
+const CANVAS_GRID_HALF: f32 = 16.0;
+
+fn ensure_canvas_grid_lines<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let Some(parent) = find_named(ctx, "viewport_canvas_overlay") else {
+        return;
+    };
+    for names in [&CANVAS_V_LINES, &CANVAS_H_LINES] {
+        let Some(template) = find_named(ctx, names[0])
+            .and_then(|id| with_node!(ctx.run, UiPanel, id, |node| node.clone()))
+        else {
+            continue;
+        };
+        for name in names.iter().skip(9) {
+            if find_named(ctx, name).is_some() {
+                continue;
+            }
+            let id = create_node!(ctx.run, UiPanel, *name, tags![], parent);
+            with_node_mut!(ctx.run, UiPanel, id, |node| *node = template.clone());
+        }
+    }
+}
 
 /// Drops the [`apply_viewport_canvas`] memo. Call after the editor ui shell or
 /// the viewport panels get rebuilt: the fresh nodes carry no canvas state.
@@ -5454,7 +5964,9 @@ pub fn reapply_viewport_canvas<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
 }
 
 pub fn apply_viewport_canvas<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    sync_viewport_streams(ctx);
     let window_aspect = viewport_window_aspect(ctx);
+    let (stream_width, stream_height) = viewport_stream_resolution(ctx, "viewport_stream_2d");
     // Runs every frame in UI + 2D mode. Compare the inputs first so an idle
     // frame skips ~20 node lookups and the per-line name formatting.
     let (mode, pan_x, pan_y, zoom, layout, unchanged) =
@@ -5462,8 +5974,8 @@ pub fn apply_viewport_canvas<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
             let (pan_x, pan_y, zoom) = if state.viewport_mode == "2D" {
                 let zoom = state.cam2_zoom.max(0.05);
                 (
-                    -state.cam2_x * zoom / 960.0,
-                    state.cam2_y * zoom / 540.0,
+                    -state.cam2_x * zoom / (stream_width * 2.0),
+                    state.cam2_y * zoom / (stream_height * 2.0),
                     zoom,
                 )
             } else {
@@ -5506,35 +6018,33 @@ pub fn apply_viewport_canvas<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
     if !show {
         return;
     }
-
+    ensure_canvas_grid_lines(ctx);
     let (canvas_w, canvas_h) = if mode == "UI" {
         ui_canvas_size_ratio(window_aspect, zoom, layout)
     } else {
-        (1.0, 1.0)
+        viewport_stream_fit_ratio(ctx, "viewport_stream_2d")
     };
     set_ui_center_size(ctx, "viewport_canvas_overlay", (canvas_w, canvas_h));
     apply_canvas_overlay_style(ctx, &mode);
     apply_ui_preview_canvas_transform(ctx, &mode, zoom);
 
-    let spacing = if mode == "UI" {
-        0.25
-    } else {
-        (0.125 * zoom).clamp(0.03, 0.4)
-    };
-    for i in 0..9 {
-        let offset = (i as f32 - 4.0) * spacing;
+    let (spacing_x, spacing_y) =
+        viewport_grid_spacing_axes(&mode, zoom, (stream_width, stream_height));
+    for i in 0..CANVAS_V_LINES.len() {
+        let offset_x = (i as f32 - CANVAS_GRID_HALF) * spacing_x;
+        let offset_y = (i as f32 - CANVAS_GRID_HALF) * spacing_y;
         set_canvas_line(
             ctx,
             CANVAS_V_LINES[i],
             true,
-            wrap_grid_offset(offset + pan_x, spacing),
+            wrap_grid_offset(offset_x + pan_x, spacing_x),
             false,
         );
         set_canvas_line(
             ctx,
             CANVAS_H_LINES[i],
             false,
-            wrap_grid_offset(offset + pan_y, spacing),
+            wrap_grid_offset(offset_y + pan_y, spacing_y),
             false,
         );
     }
@@ -5560,7 +6070,7 @@ pub fn apply_canvas_overlay_style<API: ScriptAPI + ?Sized>(
             };
             node.style.stroke_width = if mode == "UI" { 2.0 } else { 1.0 };
             node.style.set_corner_radius(0.0);
-            node.clip_children = false;
+            node.clip_children = true;
         });
     }
     if let Some(id) = find_named(ctx, "viewport_click_layer") {
@@ -5626,6 +6136,7 @@ fn reset_inspector_for_selection<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
         }
         state.inspector_selected_key = state.selected_key;
         state.inspector_selected_path = selected_path;
+        state.inspector_refresh_key = 0;
         state.focused_inspector_box.clear();
         state.inspector_picker_open = false;
         state.inspector_expanded_paths.clear();
@@ -5704,17 +6215,17 @@ pub fn editor_layout_metrics_full(
         }
     } else {
         EditorLayoutMetrics {
-            activity_w: 0.03,
-            left_w: 0.16,
-            center_w: 0.565,
-            inspector_w: 0.222,
+            activity_w: 0.035,
+            left_w: 0.175,
+            center_w: 0.55,
+            inspector_w: 0.22,
             // The animation dock needs real height for its timeline.
             viewport_h: if bottom_dock_open && anim_drawer_open {
-                0.61
+                0.60
             } else if bottom_dock_open {
-                0.85
+                0.84
             } else {
-                0.92
+                0.915
             },
         }
     }
@@ -5754,9 +6265,109 @@ pub fn wrap_grid_offset(offset: f32, spacing: f32) -> f32 {
     if spacing <= 0.0 {
         return offset;
     }
-    let half = spacing * 4.0;
-    let width = spacing * 9.0;
+    let half = spacing * CANVAS_GRID_HALF;
+    let width = spacing * (CANVAS_GRID_HALF * 2.0 + 1.0);
     (offset + half).rem_euclid(width) - half
+}
+
+const VIEWPORT_GRID_WORLD_STEP: f32 = 240.0;
+
+/// Pick power-of-two world step, so pan stays aligned when zoom changes.
+pub fn viewport_grid_spacing(mode: &str, zoom: f32) -> f32 {
+    if mode == "UI" {
+        0.25
+    } else {
+        let zoom = zoom.max(0.001);
+        let exponent = (1.0 / zoom).log2().round().clamp(-12.0, 12.0);
+        (VIEWPORT_GRID_WORLD_STEP * 2.0_f32.powf(exponent)).max(0.001)
+    }
+}
+
+/// Map one world grid step into fitted image ratios. Separate axes preserve
+/// square world cells when stream resolution/aspect differ.
+pub fn viewport_grid_spacing_axes(
+    mode: &str,
+    zoom: f32,
+    stream_resolution: (f32, f32),
+) -> (f32, f32) {
+    if mode == "UI" {
+        let spacing = viewport_grid_spacing(mode, zoom);
+        return (spacing, spacing);
+    }
+    let zoom = zoom.max(0.001);
+    // 85..170 target pixels per cell; 33 pooled lines cover the capped
+    // 2048px stream in both axes, including a full phase shift at each edge.
+    let world_step = viewport_grid_spacing(mode, zoom);
+    (
+        world_step * zoom / (stream_resolution.0.max(0.001) * 2.0),
+        world_step * zoom / (stream_resolution.1.max(0.001) * 2.0),
+    )
+}
+
+#[cfg(test)]
+mod viewport_canvas_math_tests {
+    use super::*;
+
+    #[test]
+    fn grid_pool_covers_zoomed_out_canvas() {
+        for zoom in [0.05, 0.1, 0.5, 1.0, 2.0, 40.0] {
+            for resolution in [
+                (960.0, 540.0),
+                (704.0, 625.0),
+                (64.0, 2048.0),
+                (2048.0, 64.0),
+                (2048.0, 2048.0),
+            ] {
+                let (spacing_x, spacing_y) = viewport_grid_spacing_axes("2D", zoom, resolution);
+                for spacing in [spacing_x, spacing_y] {
+                    for pan in [0.0_f32, 0.37, 17.3, -83.1] {
+                        let mut actual: Vec<f32> = (-16..=16)
+                            .map(|i| wrap_grid_offset(i as f32 * spacing + pan, spacing))
+                            .filter(|offset| offset.abs() <= 0.5001)
+                            .collect();
+                        actual.sort_by(f32::total_cmp);
+                        let phase = pan.rem_euclid(spacing);
+                        let expected: Vec<f32> = (-100..=100)
+                            .map(|i| phase + i as f32 * spacing)
+                            .filter(|offset| offset.abs() <= 0.5001)
+                            .collect();
+                        assert_eq!(
+                            actual.len(),
+                            expected.len(),
+                            "missing grid line: zoom={zoom} res={resolution:?} pan={pan}"
+                        );
+                        for (actual, expected) in actual.iter().zip(expected) {
+                            assert!(
+                                (actual - expected).abs() < 0.0003,
+                                "grid drifts from world lattice"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn grid_axes_keep_world_cells_square() {
+        let (x, y) = viewport_grid_spacing_axes("2D", 1.0, (960.0, 540.0));
+        assert!((y / x - 16.0 / 9.0).abs() < 1.0e-5);
+    }
+
+    #[test]
+    fn grid_axes_keep_screen_step_after_stream_resize() {
+        let (x0, y0) = viewport_grid_spacing_axes("2D", 1.0, (960.0, 540.0));
+        let (x1, y1) = viewport_grid_spacing_axes("2D", 1.0, (704.0, 625.0));
+        assert!((x0 * 960.0 - x1 * 704.0).abs() < 1.0e-5);
+        assert!((y0 * 540.0 - y1 * 625.0).abs() < 1.0e-5);
+    }
+
+    #[test]
+    fn fitted_stream_size_preserves_camera_aspect() {
+        let size = fit_stream_size(Vector2::new(640.0, 640.0), 16.0 / 9.0);
+        assert!((size.x - 640.0).abs() < 1.0e-5);
+        assert!((size.y - 360.0).abs() < 1.0e-5);
+    }
 }
 
 pub fn set_canvas_line<API: ScriptAPI + ?Sized>(
@@ -5768,12 +6379,14 @@ pub fn set_canvas_line<API: ScriptAPI + ?Sized>(
 ) {
     if let Some(id) = find_named(ctx, name) {
         let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
-            node.visible = offset.abs() <= 0.55 || origin;
+            let in_bounds = offset.abs() <= 0.55;
+            node.visible = in_bounds;
             node.input_enabled = false;
+            let thickness = UiUnit::Pixels(if origin { 2.0 } else { 1.0 });
             node.layout.size = if vertical {
-                UiVector2::ratio(if origin { 0.003 } else { 0.0015 }, 1.0)
+                UiVector2::new(thickness, UiUnit::ratio(1.0))
             } else {
-                UiVector2::ratio(1.0, if origin { 0.003 } else { 0.0015 })
+                UiVector2::new(UiUnit::ratio(1.0), thickness)
             };
             node.transform.translation = if vertical {
                 Vector2::new(offset, 0.0)

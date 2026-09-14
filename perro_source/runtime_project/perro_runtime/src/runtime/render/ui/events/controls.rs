@@ -18,12 +18,20 @@ impl Runtime {
             );
         }
         let hovered = self.hovered_button(computed, UiInputSource::Kbm, pointer_point);
+        let mouse_pressed = self.input.is_mouse_pressed(MouseButton::Left);
         let mouse_down = self.input.is_mouse_down(MouseButton::Left);
-        if self.input.is_mouse_pressed(MouseButton::Left) {
+        let mouse_released = self.input.is_mouse_released(MouseButton::Left);
+        if mouse_pressed {
             self.render_ui.pressed_ui_button = hovered;
-        } else if !mouse_down {
+        } else if !mouse_down && !mouse_released {
             self.render_ui.pressed_ui_button = None;
         }
+        // A fast click may enqueue press + release b4 event loop yields a
+        // frame. Keep target through this pass so click still emit.
+        let same_frame_click = mouse_pressed
+            && mouse_released
+            && self.render_ui.pressed_ui_button == hovered
+            && hovered.is_some();
         let mut next_states = std::mem::take(&mut self.render_ui.button_states);
         next_states.retain(|node, _| self.nodes.get(*node).is_some());
         let mut motions = std::mem::take(&mut self.render_ui.button_motions);
@@ -81,6 +89,20 @@ impl Runtime {
             let prev = next_states.insert(node, next).unwrap_or_default();
             if !inactive {
                 collect_button_events(node, prev, next, &mut events);
+                // Focus keeps button hover visual aft pointer leave. Mouse
+                // release outside still cancel click.
+                if mouse_released
+                    && hovered != Some(node)
+                    && prev == UiButtonVisualState::Pressed
+                    && next == UiButtonVisualState::Hover
+                    && events.last() == Some(&(node, "click"))
+                {
+                    events.pop();
+                }
+                if same_frame_click && hovered == Some(node) && prev != UiButtonVisualState::Pressed
+                {
+                    events.extend([(node, "pressed"), (node, "released"), (node, "click")]);
+                }
             }
             let state_changed = prev != next;
             let hover_target = if next == UiButtonVisualState::Neutral {
@@ -166,6 +188,9 @@ impl Runtime {
 
         self.render_ui.button_states = next_states;
         self.render_ui.button_motions = motions;
+        if !mouse_down {
+            self.render_ui.pressed_ui_button = None;
+        }
         let scrollbar_hovered = self.render_ui.active_scrollbar.is_some()
             || self.hit_scrollbar(pointer_point, computed).is_some();
         let cursor_icon = text_hovered

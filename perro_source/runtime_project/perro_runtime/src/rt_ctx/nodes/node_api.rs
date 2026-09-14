@@ -2,6 +2,10 @@ use super::*;
 use perro_render_bridge::{CameraStreamCommand, RenderCommand, ResourceCommand};
 
 impl NodeAPI for Runtime {
+    fn get_ui_rect_pixels(&mut self, node_id: NodeID) -> Option<perro_ui::ComputedUiRect> {
+        self.completed_ui_rect_pixels(node_id)
+    }
+
     fn create<T>(&mut self) -> perro_ids::NodeID
     where
         T: Default + Into<SceneNodeData>,

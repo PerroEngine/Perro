@@ -45,6 +45,13 @@ pub trait NodeAPI {
     /// Returns node display name if node exists.
     fn get_node_name(&mut self, node_id: NodeID) -> Option<Cow<'static, str>>;
 
+    /// Last completed UI layout rectangle, in viewport-centered pixels (+Y up).
+    /// Returns `None` before layout, for hidden nodes, and for non-UI nodes.
+    /// Reading this value does not trigger layout or allocate.
+    fn get_ui_rect_pixels(&mut self, _node_id: NodeID) -> Option<perro_ui::ComputedUiRect> {
+        None
+    }
+
     /// Sets node display name; returns `true` on success.
     fn set_node_name<S>(&mut self, node_id: NodeID, name: S) -> bool
     where

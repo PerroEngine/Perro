@@ -18,7 +18,7 @@ script = "res://scripts/editor/main.rs"
 parent = @editor_root
     [UiVLayout]
         anchor = "center"
-        size_ratio = (0.62, 0.76)
+        size_ratio = (0.62, 0.94)
         h_align = "fill"
         v_align = "start"
         spacing = 0.008
@@ -216,6 +216,78 @@ parent = @manager_recent_4
     [/UiLabel]
 [/manager_recent_4_label]
 
+[project_manager_open_title]
+parent = @project_manager
+    [UiLabel]
+        size_ratio = (1.0, 0.04)
+        text = "Open Project Path"
+        text_size_ratio = 0.431
+        color = "#B0B8C3"
+        h_align = "start"
+    [/UiLabel]
+[/project_manager_open_title]
+
+[project_manager_open_row]
+parent = @project_manager
+    [UiHLayout]
+        size_ratio = (1.0, 0.062)
+        h_align = "fill"
+        v_align = "center"
+        spacing = 0.012
+    [/UiHLayout]
+[/project_manager_open_row]
+
+[manager_open_path_box]
+parent = @project_manager_open_row
+    [UiTextBox]
+        size_ratio = (0.78, 0.82)
+        placeholder = "Project folder path"
+        text_size_ratio = 0.374
+        color = "#D7DBE0"
+        placeholder_color = "#8993A0"
+        style = {
+            fill = "#1B1E24",
+            stroke = "#3B4450",
+            stroke_width = 1.0,
+            radius = 0.012
+        }
+        focused_style = {
+            fill = "#1B1E24",
+            stroke = "#6BA0EA",
+            stroke_width = 1.0,
+            radius = 0.012
+        }
+    [/UiTextBox]
+[/manager_open_path_box]
+
+[manager_open_path_button]
+parent = @project_manager_open_row
+    [UiButton]
+        size_ratio = (0.20, 0.82)
+        click_signals = ["editor_manager_open_path"]
+        style = {
+            fill = "#4D84D1",
+            stroke = "#6BA0EA",
+            stroke_width = 1.0,
+            radius = 0.006
+        }
+        hover = { style = { fill = "#5B92E0", stroke = "#7EAEF0", stroke_width = 1.0, radius = 0.006 } }
+        pressed = { style = { fill = "#6BA0EA", stroke = "#9CC5FF", stroke_width = 1.0, radius = 0.006 } }
+    [/UiButton]
+[/manager_open_path_button]
+
+[manager_open_path_label]
+parent = @manager_open_path_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Open"
+        text_size_ratio = 0.402
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/manager_open_path_label]
+
 [project_manager_create_title]
 parent = @project_manager
     [UiLabel]
@@ -399,4 +471,15 @@ parent = @manager_close_button
         mouse_filter = "pass"
     [/UiLabel]
 [/manager_close_label]
+
+[manager_status_label]
+parent = @project_manager
+    [UiLabel]
+        size_ratio = (1.0, 0.04)
+        text = "Ready"
+        text_size_ratio = 0.30
+        color = "#8993A0"
+        h_align = "start"
+    [/UiLabel]
+[/manager_status_label]
 

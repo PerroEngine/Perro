@@ -458,6 +458,14 @@ fn generate_call_method_body(methods: &[ScriptMethod]) -> String {
             out.push_str(&format!(
                 "            {const_name} => {{\n{prelude}                Variant::from({call})\n            }}\n"
             ));
+        } else if method
+            .return_ty
+            .as_deref()
+            .is_none_or(|ty| normalize_type(ty) == "()")
+        {
+            out.push_str(&format!(
+                "            {const_name} => {{\n{prelude}                {call};\n                Variant::Null\n            }}\n"
+            ));
         } else {
             out.push_str(&format!(
                 "            {const_name} => {{\n{prelude}                let _ = {call};\n                Variant::Null\n            }}\n"

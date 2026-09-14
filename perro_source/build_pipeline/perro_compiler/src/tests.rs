@@ -36,6 +36,22 @@ mod tests {
     }
 
     #[test]
+    fn unit_method_dispatch_avoids_unit_binding() {
+        for return_ty in [None, Some("()".to_string())] {
+            let body = generate_call_method_body(&[ScriptMethod {
+                name: "clicked".to_string(),
+                takes_raw_params: false,
+                params: Vec::new(),
+                return_ty,
+                returns_variant: false,
+                is_pub: true,
+            }]);
+            assert!(body.contains("self.clicked(ctx);"), "{body}");
+            assert!(!body.contains("let _ = self.clicked"), "{body}");
+        }
+    }
+
+    #[test]
     fn unsupported_method_return_skips_variant_conversion() {
         assert!(!method_returns_variant_convertible(Some(
             "std::time::Duration"

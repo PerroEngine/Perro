@@ -616,6 +616,7 @@ pub struct EditorState {
     pub inspector_filter: String,
     pub inspector_modified_only: bool,
     pub inspector_layout_applied: bool,
+    pub inspector_refresh_key: u64,
     pub inspector_selected_key: Option<u32>,
     pub inspector_selected_path: String,
     pub script_schema_reload_frames: u32,
@@ -694,7 +695,7 @@ lifecycle!({
 });
 
 methods!({
-    fn on_editor_signal(&self, ctx: &mut ScriptContext<'_, API>, sender: NodeID) {
+    pub fn on_editor_signal(&self, ctx: &mut ScriptContext<'_, API>, sender: NodeID) {
         let Some(name) = get_node_name!(ctx.run, sender).map(|v| v.to_string()) else {
             return;
         };
@@ -730,6 +731,9 @@ methods!({
             }
             "manager_browse_button" => {
                 open_project_dialog(ctx);
+            }
+            "manager_open_path_button" => {
+                open_project_from_path(ctx);
             }
             "manager_choose_location_button" => {
                 choose_create_location(ctx);
@@ -989,7 +993,7 @@ methods!({
         }
     }
 
-    fn on_editor_inspector_focus(&self, ctx: &mut ScriptContext<'_, API>, sender: NodeID) {
+    pub fn on_editor_inspector_focus(&self, ctx: &mut ScriptContext<'_, API>, sender: NodeID) {
         let Some(name) = get_node_name!(ctx.run, sender).map(|v| v.to_string()) else {
             return;
         };
@@ -998,7 +1002,7 @@ methods!({
         });
     }
 
-    fn on_editor_scene_tree_selected(
+    pub fn on_editor_scene_tree_selected(
         &self,
         ctx: &mut ScriptContext<'_, API>,
         _tree: NodeID,
@@ -1013,7 +1017,7 @@ methods!({
         }
     }
 
-    fn on_editor_scene_tree_toggled(
+    pub fn on_editor_scene_tree_toggled(
         &self,
         ctx: &mut ScriptContext<'_, API>,
         _tree: NodeID,
@@ -1026,7 +1030,7 @@ methods!({
         }
     }
 
-    fn on_editor_bone_tree_selected(
+    pub fn on_editor_bone_tree_selected(
         &self,
         ctx: &mut ScriptContext<'_, API>,
         _tree: NodeID,
@@ -1042,7 +1046,7 @@ methods!({
         }
     }
 
-    fn on_editor_file_tree_selected(
+    pub fn on_editor_file_tree_selected(
         &self,
         ctx: &mut ScriptContext<'_, API>,
         _tree: NodeID,
@@ -1057,7 +1061,7 @@ methods!({
         }
     }
 
-    fn on_editor_file_tree_toggled(
+    pub fn on_editor_file_tree_toggled(
         &self,
         ctx: &mut ScriptContext<'_, API>,
         _tree: NodeID,
@@ -1258,6 +1262,7 @@ fn connect_editor_signals<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
         [
             signal!("editor_open_project"),
             signal!("editor_manager_browse"),
+            signal!("editor_manager_open_path"),
             signal!("editor_manager_choose_location"),
             signal!("editor_manager_create"),
             signal!("editor_manager_close"),

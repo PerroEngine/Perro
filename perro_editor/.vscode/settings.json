@@ -1,4 +1,5 @@
 {
+  "rust-analyzer.cargo.features": [],
   "rust-analyzer.linkedProjects": [
     ".perro/scripts/Cargo.toml"
   ],

@@ -2,6 +2,32 @@ mod controls {
     use super::*;
 
     #[test]
+    fn ui_rect_api_tracks_completed_layout_and_visibility() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+        let panel = insert_panel(&mut runtime, [200.0, 100.0], Color::WHITE);
+        assert!(runtime.get_ui_rect_pixels(panel).is_none());
+        runtime.extract_render_ui_commands();
+        let rect = runtime.get_ui_rect_pixels(panel).unwrap();
+        assert_eq!(rect.size, Vector2::new(200.0, 100.0));
+        runtime.clear_dirty_flags();
+        runtime.extract_render_ui_commands();
+        assert_eq!(runtime.get_ui_rect_pixels(panel).unwrap().size, rect.size);
+        runtime.with_node_mut::<UiPanel, _, _>(panel, |node| {
+            node.layout.size = UiVector2::pixels(320.0, 150.0);
+        });
+        runtime.extract_render_ui_commands();
+        assert_eq!(
+            runtime.get_ui_rect_pixels(panel).unwrap().size,
+            Vector2::new(320.0, 150.0)
+        );
+        runtime.with_node_mut::<UiPanel, _, _>(panel, |node| node.visible = false);
+        assert!(runtime.get_ui_rect_pixels(panel).is_none());
+        let non_ui = runtime.create::<Node3D>();
+        assert!(runtime.get_ui_rect_pixels(non_ui).is_none());
+    }
+
+    #[test]
     fn ui_auto_layout_includes_ui_descendants_through_non_ui_wrappers() {
         let mut runtime = Runtime::new();
         runtime.set_viewport_size(800, 600);
@@ -290,7 +316,11 @@ mod controls {
         assert_eq!(timing.command_emitted, 0);
         let mut commands = Vec::new();
         runtime.drain_render_commands(&mut commands);
-        assert!(!commands.iter().any(|command| matches!(command, RenderCommand::Ui(_))));
+        assert!(
+            !commands
+                .iter()
+                .any(|command| matches!(command, RenderCommand::Ui(_)))
+        );
     }
 
     #[test]
@@ -339,6 +369,88 @@ mod controls {
     }
 
     #[test]
+    fn same_frame_mouse_tap_emits_button_click() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+        let node = insert_button(&mut runtime, [120.0, 40.0]);
+        runtime.nodes.get_mut(node).expect("button").name = Cow::Borrowed("play");
+
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        runtime.signal_runtime.queued_ui_signals.clear();
+        // Normal press + release -> one event each.
+        runtime.begin_input_frame();
+        runtime.set_mouse_position(400.0, 300.0);
+        runtime.set_mouse_button_state(MouseButton::Left, true);
+        runtime.extract_render_ui_commands();
+        runtime.begin_input_frame();
+        runtime.set_mouse_button_state(MouseButton::Left, false);
+        runtime.extract_render_ui_commands();
+        for (name, count) in [
+            ("play_pressed", 1),
+            ("play_released", 1),
+            ("play_clicked", 1),
+        ] {
+            assert_eq!(
+                runtime
+                    .signal_runtime
+                    .queued_ui_signals
+                    .iter()
+                    .filter(|(signal, _)| *signal == SignalID::from_string(name))
+                    .count(),
+                count,
+                "normal {name} count"
+            );
+        }
+
+        runtime.signal_runtime.queued_ui_signals.clear();
+        runtime.begin_input_frame();
+        runtime.set_mouse_position(400.0, 300.0);
+        runtime.set_mouse_button_state(MouseButton::Left, true);
+        runtime.set_mouse_button_state(MouseButton::Left, false);
+        runtime.extract_render_ui_commands();
+
+        for (name, count) in [
+            ("play_pressed", 1),
+            ("play_released", 1),
+            ("play_clicked", 1),
+        ] {
+            assert_eq!(
+                runtime
+                    .signal_runtime
+                    .queued_ui_signals
+                    .iter()
+                    .filter(|(signal, _)| *signal == SignalID::from_string(name))
+                    .count(),
+                count,
+                "{name} count"
+            );
+        }
+
+        runtime.signal_runtime.queued_ui_signals.clear();
+        runtime.begin_input_frame();
+        runtime.set_mouse_position(400.0, 300.0);
+        runtime.set_mouse_button_state(MouseButton::Left, true);
+        runtime.extract_render_ui_commands();
+        runtime.begin_input_frame();
+        runtime.set_mouse_position(20.0, 20.0);
+        runtime.set_mouse_button_state(MouseButton::Left, false);
+        runtime.extract_render_ui_commands();
+        assert_eq!(
+            runtime
+                .signal_runtime
+                .queued_ui_signals
+                .iter()
+                .filter(|(signal, _)| *signal == SignalID::from_string("play_clicked"))
+                .count(),
+            0,
+            "release outside emits no click"
+        );
+    }
+
+    #[test]
     fn disabled_button_ignores_hover_and_pressed_mouse_state() {
         let mut runtime = Runtime::new();
         runtime.set_viewport_size(800, 600);
@@ -363,8 +475,13 @@ mod controls {
         assert_eq!(runtime.take_cursor_icon_request(), None);
 
         runtime.clear_dirty_flags();
+        runtime.signal_runtime.queued_ui_signals.clear();
+        runtime.begin_input_frame();
+        runtime.set_mouse_position(400.0, 300.0);
         runtime.set_mouse_button_state(MouseButton::Left, true);
+        runtime.set_mouse_button_state(MouseButton::Left, false);
         runtime.extract_render_ui_commands();
+        assert!(runtime.signal_runtime.queued_ui_signals.is_empty());
         commands.clear();
         runtime.drain_render_commands(&mut commands);
         assert!(!commands.iter().any(|cmd| matches!(
@@ -943,6 +1060,7 @@ mod controls {
         attach_child(&mut runtime, scroller, list);
 
         let button = insert_button(&mut runtime, [140.0, 44.0]);
+        runtime.nodes.get_mut(button).expect("button").name = Cow::Borrowed("blocked");
         attach_child(&mut runtime, list, button);
 
         let mut panel = UiPanel::new();
@@ -954,12 +1072,24 @@ mod controls {
         runtime.drain_render_commands(&mut Vec::new());
         runtime.clear_dirty_flags();
 
-        click_mouse_and_extract(&mut runtime, 400.0, 300.0);
+        runtime.signal_runtime.queued_ui_signals.clear();
+        runtime.begin_input_frame();
+        runtime.set_mouse_position(400.0, 300.0);
+        runtime.set_mouse_button_state(MouseButton::Left, true);
+        runtime.set_mouse_button_state(MouseButton::Left, false);
+        runtime.extract_render_ui_commands();
 
         assert_eq!(runtime.render_ui.focused_ui_node, None);
         assert_ne!(
             runtime.render_ui.button_states.get(&button).copied(),
             Some(UiButtonVisualState::Pressed)
+        );
+        assert!(
+            !runtime
+                .signal_runtime
+                .queued_ui_signals
+                .iter()
+                .any(|(signal, _)| *signal == SignalID::from_string("blocked_clicked"))
         );
         assert!(runtime.render_ui.computed_rects[&panel].contains(Vector2::ZERO));
     }

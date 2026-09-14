@@ -60,18 +60,30 @@ cargo run -p perro_cli -- dev --path perro_editor
 
 The project manager can open a folder with `project.toml` or create a project. Recent projects are stored under `user://` and shown on the next launch.
 
+Use **Browse** for a native folder picker, or paste a folder into **Open Project
+Path** and press **Open**. A source project does not need generated `.perro/`
+files. The manager shows errors below its actions. Save dirty scenes before
+opening another project or reloading the current one.
+
+After updating editor source, launch through the command above to rebuild its
+scripts and runtime. An older `.output/Perro Editor.exe` retains the code from its
+last release build.
+
 ## Shell
 
 | Area | Use |
 | --- | --- |
 | Activity rail | Switch scene and GLB workspaces. |
-| Left panel | Browse scene nodes or project files. |
+| Left panel | Browse scene nodes above project files. |
 | Center | Edit and preview UI, 2D, or 3D scenes. |
 | Inspector | Edit selected node fields, refs, and script vars. |
 | Bottom dock | Inspect output and animation state. |
 | Scene tabs | Keep independent scene docs, selections, undo stacks, and dirty state. |
 
 Use the command palette with `Ctrl+Shift+P`. Search terms can match any words in a command label.
+The compact shell keeps common actions visible. Find create, duplicate, delete,
+reparent, tree navigation, and expand/collapse actions in the palette. Output
+stays collapsed until requested, leaving more room for the scene viewport.
 
 ## Workflow
 
@@ -147,6 +159,9 @@ Open Animation Tools from the command palette. Set input, output, clip, FPS, ske
 Save/Load applies only to these conversion options. Store versioned TOML under `editor_tools/`; paths resolve from the project root. Convert uses current fields and does not silently save them. The CLI path stays in `user://editor_cli.txt`, outside the portable options file. See [CLI animation options](perro_cli.md#import_anim).
 
 See [editor workflow measurements](../project/editor_workflow_parity_2026-09-06.md) for scoped-view timings and verification limits.
+
+See [editor input and project recovery](../project/editor_recovery_2026-09-14.md)
+for callback regressions, file-browser fixes, and CPU probe measurements.
 
 ## Release Gate
 

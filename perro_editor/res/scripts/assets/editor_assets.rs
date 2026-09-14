@@ -33,16 +33,25 @@ pub fn open_project<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     root: String,
 ) -> Result<(), String> {
-    clear_preview(ctx);
-    clear_scene_doc_cache();
-    clear_editor_tree_icon_cache();
-    let root_path = PathBuf::from(&root);
-    validate_project_root(&root_path)?;
+    // Validate + scan b4 touching active project; bad folder pick keep current work live.
+    let root_path = editor_manager::canonical_project_root(Path::new(&root))?;
+    let root_text = root_path.to_string_lossy().to_string();
+    let dirty = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.dirty || !state.dirty_scene_paths.is_empty()
+    })
+    .unwrap_or(false);
+    let current_root = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.project_root.clone()
+    })
+    .unwrap_or_default();
+    if editor_manager::project_switch_blocked(&current_root, dirty) {
+        return Err("unsaved scene changes; save before switching projects".to_string());
+    }
     editor_file_watch::retain_project_scan_job(&root_path);
     let project_text =
         FileMod::load_string(root_path.join("project.toml").to_string_lossy().as_ref())
             .map_err(|err| err.to_string())?;
-    let project_name = parse_project_name(&project_text).unwrap_or_else(|| {
+    let project_name = editor_manager::project_name(&project_text).unwrap_or_else(|| {
         root_path
             .file_name()
             .and_then(|v| v.to_str())
@@ -64,11 +73,15 @@ pub fn open_project<API: ScriptAPI + ?Sized>(
         scene_paths.len()
     );
 
+    clear_preview(ctx);
+    clear_scene_doc_cache();
+    clear_editor_tree_icon_cache();
     crate::scripts::ui::editor_inspector_values::clear_script_schema_cache();
+    // Keep shell assets on editor root; game assets use absolute paths.
     load_editor_shell(ctx)?;
 
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        state.project_root = root_path.to_string_lossy().to_string();
+        state.project_root = root_text.clone();
         state.project_name = project_name;
         state.file_paths = file_paths;
         state.file_scope.clear();
@@ -185,6 +198,23 @@ pub fn open_project_dialog<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
     }
 }
 
+pub fn open_project_from_path<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let Some(path) = read_text_box(ctx, "manager_open_path_box") else {
+        set_log(ctx, "open project fail\nmissing project path box");
+        return;
+    };
+    let path = path.trim().to_string();
+    if path.is_empty() {
+        set_log(ctx, "open project fail\nenter project folder path");
+        return;
+    }
+    if let Err(err) = open_project(ctx, path.clone()) {
+        set_log(ctx, &format!("open project fail\n{path}\n{err}"));
+        refresh_all(ctx);
+        set_project_manager(ctx, true);
+    }
+}
+
 pub fn choose_create_location<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     if let Some(path) = FileMod::pick_folder("Choose Project Location") {
         let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
@@ -268,13 +298,7 @@ pub fn add_recent_project<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
 }
 
 pub fn validate_project_root(root: &Path) -> Result<(), String> {
-    if !root.join(".perro").is_dir() {
-        return Err("missing .perro dir".to_string());
-    }
-    if !root.join("project.toml").is_file() {
-        return Err("missing project.toml".to_string());
-    }
-    Ok(())
+    editor_manager::validate_project_root(root)
 }
 
 pub fn scan_res_paths(root: &Path) -> Result<Vec<String>, String> {
@@ -697,7 +721,12 @@ pub fn open_animation_path<API: ScriptAPI + ?Sized>(
 }
 
 pub fn open_gltf_path<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, gltf_path: &str) {
-    let Some(info) = ctx.res.Glbs().inspect(gltf_path) else {
+    let root = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.project_root.clone()
+    })
+    .unwrap_or_default();
+    let abs_path = res_to_abs(&root, gltf_path);
+    let Some(info) = ctx.res.Glbs().inspect(&abs_path) else {
         set_log(ctx, &format!("open glb fail\n{gltf_path}"));
         return;
     };
@@ -756,7 +785,12 @@ pub fn cycle_active_glb_ref<API: ScriptAPI + ?Sized>(
     let Some(path) = path else {
         return;
     };
-    let Some(info) = ctx.res.Glbs().inspect(&path) else {
+    let root = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.project_root.clone()
+    })
+    .unwrap_or_default();
+    let abs_path = res_to_abs(&root, &path);
+    let Some(info) = ctx.res.Glbs().inspect(&abs_path) else {
         set_log(ctx, &format!("glb ref fail\n{path}"));
         return;
     };
@@ -1887,7 +1921,7 @@ pub fn export_selected_glb_animation<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCo
     match ctx
         .res
         .Glbs()
-        .animation_to_panim(&glb_path, 60.0, anim_index, "Rig")
+        .animation_to_panim(res_to_abs(&root, &glb_path), 60.0, anim_index, "Rig")
     {
         Ok(text) => {
             if let Some(parent) = Path::new(&out_abs).parent() {
@@ -1946,7 +1980,11 @@ pub fn export_selected_glb_material<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCon
     );
     let out_path = unique_res_path(&root, "materials", &stem, "pmat");
     let out_abs = res_to_abs(&root, &out_path);
-    match ctx.res.Glbs().material_to_pmat(&glb_path, mat_index) {
+    match ctx
+        .res
+        .Glbs()
+        .material_to_pmat(res_to_abs(&root, &glb_path), mat_index)
+    {
         Ok(text) => {
             if let Some(parent) = Path::new(&out_abs).parent() {
                 let _ = fs::create_dir_all(parent);

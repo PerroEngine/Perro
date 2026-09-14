@@ -27,14 +27,14 @@ parent = @editor_root
 [top_bar]
 parent = @root_stack
     [UiHLayout]
-        size_ratio = (1.0, 0.034)
+        size_ratio = (1.0, 0.052)
         h_align = "fill"
         v_align = "center"
-        spacing = 0.003
-        padding = (0.006, 0.006)
+        spacing = 0.004
+        padding = (0.008, 0.006)
         style = {
-            fill = "#20252C",
-            stroke = "#3B4450",
+            fill = "#1D2229",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.006
         }
@@ -44,7 +44,7 @@ parent = @root_stack
 [open_project_button]
 parent = @top_bar
     [UiButton]
-        size_ratio = (0.058, 0.9)
+        size_ratio = (0.070, 0.82)
         click_signals = ["editor_open_project"]
         style = {
             fill = "#2A2F36",
@@ -72,7 +72,7 @@ parent = @open_project_button
 [save_scene_button]
 parent = @top_bar
     [UiButton]
-        size_ratio = (0.046, 0.9)
+        size_ratio = (0.055, 0.82)
         click_signals = ["editor_save_scene"]
         style = {
             fill = "#2A2F36",
@@ -100,7 +100,7 @@ parent = @save_scene_button
 [add_node_button]
 parent = @top_bar
     [UiButton]
-        size_ratio = (0.056, 0.9)
+        size_ratio = (0.070, 0.82)
         click_signals = ["editor_add_node"]
         style = {
             fill = "#2A2F36",
@@ -128,7 +128,7 @@ parent = @add_node_button
 [mode_ui_button]
 parent = @top_bar
     [UiButton]
-        size_ratio = (0.035, 0.9)
+        size_ratio = (0.040, 0.82)
         click_signals = ["editor_mode_ui"]
         style = {
             fill = "#2A2F36",
@@ -156,7 +156,7 @@ parent = @mode_ui_button
 [mode_2d_button]
 parent = @top_bar
     [UiButton]
-        size_ratio = (0.035, 0.9)
+        size_ratio = (0.040, 0.82)
         click_signals = ["editor_mode_2d"]
         style = {
             fill = "#2A2F36",
@@ -184,7 +184,7 @@ parent = @mode_2d_button
 [mode_3d_button]
 parent = @top_bar
     [UiButton]
-        size_ratio = (0.035, 0.9)
+        size_ratio = (0.040, 0.82)
         click_signals = ["editor_mode_3d"]
         style = {
             fill = "#2A2F36",
@@ -212,7 +212,7 @@ parent = @mode_3d_button
 [project_status]
 parent = @top_bar
     [UiLabel]
-        size_ratio = (0.59, 0.9)
+        size_ratio = (0.44, 0.82)
         text = "No project"
         text_size_ratio = 0.316
         color = "#B0B8C3"
@@ -224,7 +224,7 @@ parent = @top_bar
 [distraction_free_button]
 parent = @top_bar
     [UiButton]
-        size_ratio = (0.052, 0.9)
+        size_ratio = (0.055, 0.82)
         click_signals = ["editor_distraction_free"]
         style = { fill = "#2A2F36", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 }
         hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 } }
@@ -247,7 +247,7 @@ parent = @distraction_free_button
 [command_palette_button]
 parent = @top_bar
     [UiButton]
-        size_ratio = (0.058, 0.9)
+        size_ratio = (0.080, 0.82)
         click_signals = ["editor_command_palette"]
         style = { fill = "#2A2F36", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 }
         hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 } }
@@ -270,7 +270,7 @@ parent = @command_palette_button
 [main_split]
 parent = @root_stack
     [UiHLayout]
-        size_ratio = (1.0, 0.944)
+        size_ratio = (1.0, 0.948)
         h_align = "fill"
         v_align = "fill"
         spacing = 0.0025
@@ -281,9 +281,9 @@ parent = @root_stack
 [activity_bar]
 parent = @main_split
     [UiVLayout]
-        size_ratio = (0.03, 1.0)
-        min_size_ratio = (0.9, 0.8)
-        max_size_ratio = (1.25, 1.2)
+        size_ratio = (0.035, 1.0)
+        min_size_ratio = (0.78, 0.8)
+        max_size_ratio = (1.15, 1.2)
         h_align = "fill"
         v_align = "start"
         spacing = 0.008
@@ -356,9 +356,9 @@ parent = @activity_glb_button
 [left_panel]
 parent = @main_split
     [UiVLayout]
-        size_ratio = (0.16, 1.0)
-        min_size_ratio = (0.82, 0.8)
-        max_size_ratio = (1.2, 1.2)
+        size_ratio = (0.175, 1.0)
+        min_size_ratio = (0.80, 0.8)
+        max_size_ratio = (1.15, 1.2)
         h_align = "fill"
         v_align = "fill"
         spacing = 0.003
@@ -391,7 +391,7 @@ parent = @left_panel
 [scene_action_row]
 parent = @left_panel
     [UiHLayout]
-        size_ratio = (1.0, 0.038)
+        size_ratio = (1.0, 0.040)
         h_align = "fill"
         v_align = "center"
         spacing = 0.004
@@ -570,7 +570,8 @@ parent = @scene_delete_button
 [scene_order_row]
 parent = @left_panel
     [UiHLayout]
-        size_ratio = (1.0, 0.036)
+        visible = false
+        size_ratio = (1.0, 0.0)
         h_align = "fill"
         v_align = "center"
         spacing = 0.004
@@ -693,7 +694,8 @@ parent = @scene_reparent_in_button
 [scene_tools_row]
 parent = @left_panel
     [UiHLayout]
-        size_ratio = (1.0, 0.036)
+        visible = false
+        size_ratio = (1.0, 0.0)
         h_align = "fill"
         v_align = "center"
         spacing = 0.004
@@ -930,7 +932,7 @@ parent = @left_panel
     [UiTextBox]
         size_ratio = (1.0, 0.04)
         text = ""
-        placeholder = "Find node  @2d @3d @ui @script @res @hidden"
+        placeholder = "Filter nodes  @2d @3d @ui"
         placeholder_color = "#A7AFB9"
         text_size_ratio = 0.316
         text_changed_signals = ["editor_scene_filter"]
@@ -952,7 +954,7 @@ parent = @left_panel
 [scene_scroll]
 parent = @left_panel
     [UiScrollContainer]
-        size_ratio = (1.0, 0.287)
+        size_ratio = (1.0, 0.36)
     [/UiScrollContainer]
 [/scene_scroll]
 
@@ -966,6 +968,11 @@ parent = @scene_scroll
         v_spacing = 0.001
         row_height = 23.0
         indent = 12.0
+        icon_size = 15.0
+        toggle_size = 12.0
+        line_color = "#4A5564"
+        triangle_color = "#AAB6C5"
+        text_color = "#E2E7ED"
         padding = (0.01, 0.004)
         selected_signals = ["editor_scene_tree_selected"]
         toggled_signals = ["editor_scene_tree_toggled"]
@@ -975,7 +982,7 @@ parent = @scene_scroll
 [file_title]
 parent = @left_panel
     [UiLabel]
-        size_ratio = (1.0, 0.042)
+        size_ratio = (1.0, 0.045)
         text = "Project Files"
         text_size_ratio = 0.345
         color = "#D7DBE0"
@@ -992,7 +999,7 @@ parent = @left_panel
 [file_action_row]
 parent = @left_panel
     [UiHLayout]
-        size_ratio = (1.0, 0.038)
+        size_ratio = (1.0, 0.040)
         h_align = "fill"
         v_align = "center"
         spacing = 0.004
@@ -1143,7 +1150,8 @@ parent = @file_new_folder_button
 [file_tools_row]
 parent = @left_panel
     [UiHLayout]
-        size_ratio = (1.0, 0.036)
+        visible = false
+        size_ratio = (1.0, 0.0)
         h_align = "fill"
         v_align = "center"
         spacing = 0.004
@@ -1266,7 +1274,8 @@ parent = @file_collapse_all_button
 [file_ops_row]
 parent = @left_panel
     [UiHLayout]
-        size_ratio = (1.0, 0.036)
+        visible = false
+        size_ratio = (1.0, 0.0)
         h_align = "fill"
         v_align = "center"
         spacing = 0.004
@@ -1391,7 +1400,7 @@ parent = @left_panel
     [UiTextBox]
         size_ratio = (1.0, 0.04)
         text = ""
-        placeholder = "Find asset  @scene @script @glb @anim @mat @img"
+        placeholder = "Filter files  @scene @script @glb"
         placeholder_color = "#A7AFB9"
         text_size_ratio = 0.316
         text_changed_signals = ["editor_file_filter"]
@@ -1413,7 +1422,7 @@ parent = @left_panel
 [file_scroll]
 parent = @left_panel
     [UiScrollContainer]
-        size_ratio = (1.0, 0.303)
+        size_ratio = (1.0, 0.36)
     [/UiScrollContainer]
 [/file_scroll]
 
@@ -1427,6 +1436,11 @@ parent = @file_scroll
         v_spacing = 0.001
         row_height = 22.0
         indent = 11.0
+        icon_size = 15.0
+        toggle_size = 12.0
+        line_color = "#4A5564"
+        triangle_color = "#AAB6C5"
+        text_color = "#E2E7ED"
         padding = (0.01, 0.004)
         selected_signals = ["editor_file_tree_selected"]
         toggled_signals = ["editor_file_tree_toggled"]
@@ -1436,9 +1450,9 @@ parent = @file_scroll
 [center_stack]
 parent = @main_split
     [UiVLayout]
-        size_ratio = (0.565, 1.0)
-        min_size_ratio = (0.88, 0.8)
-        max_size_ratio = (1.18, 1.2)
+        size_ratio = (0.55, 1.0)
+        min_size_ratio = (0.84, 0.8)
+        max_size_ratio = (1.14, 1.2)
         h_align = "fill"
         v_align = "fill"
         spacing = 0.003
@@ -1756,7 +1770,7 @@ parent = @scene_tab_next_button
 [viewport_panel]
 parent = @center_stack
     [UiPanel]
-        size_ratio = (1.0, 0.92)
+        size_ratio = (1.0, 0.915)
         style = {
             fill = "#1B1E22",
             stroke = "#343A43",
@@ -1770,7 +1784,7 @@ parent = @center_stack
 parent = @viewport_panel
     [UiHLayout]
         anchor = "tl"
-        size_ratio = (0.72, 0.05)
+        size_ratio = (0.98, 0.055)
         z_index = 50.0
         h_align = "start"
         v_align = "center"
@@ -3758,9 +3772,9 @@ parent = @editor_root
 [inspector_panel]
 parent = @main_split
     [UiVLayout]
-        size_ratio = (0.222, 1.0)
-        min_size_ratio = (0.84, 0.8)
-        max_size_ratio = (1.18, 1.2)
+        size_ratio = (0.22, 1.0)
+        min_size_ratio = (0.82, 0.8)
+        max_size_ratio = (1.14, 1.2)
         h_align = "fill"
         v_align = "start"
         spacing = 0.003

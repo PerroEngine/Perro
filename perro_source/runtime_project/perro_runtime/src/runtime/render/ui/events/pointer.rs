@@ -18,6 +18,8 @@ impl Runtime {
             self.input.is_mouse_down(MouseButton::Left),
         );
         self.render_ui.last_ui_pointer != Some(pointer)
+            || self.input.is_mouse_pressed(MouseButton::Left)
+            || self.input.is_mouse_released(MouseButton::Left)
     }
 
     pub(in super::super) fn ui_nav_input_changed(&self) -> bool {

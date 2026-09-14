@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
@@ -106,14 +106,11 @@ pub fn scan_project(root: &Path) -> Vec<FileSig> {
 }
 
 pub fn changed_paths(before: &[FileSig], after: &[FileSig]) -> Vec<String> {
-    let before = before
-        .iter()
-        .filter_map(|sig| sig_path(sig).map(|path| (path, sig.as_str())))
-        .collect::<BTreeMap<_, _>>();
-    let after = after
-        .iter()
-        .filter_map(|sig| sig_path(sig).map(|path| (path, sig.as_str())))
-        .collect::<BTreeMap<_, _>>();
+    if before == after {
+        return Vec::new();
+    }
+    let before = signature_index(before);
+    let after = signature_index(after);
 
     let mut out = Vec::new();
     for (path, sig) in after.iter() {
@@ -129,6 +126,16 @@ pub fn changed_paths(before: &[FileSig], after: &[FileSig]) -> Vec<String> {
     out.sort();
     out.dedup();
     out
+}
+
+fn signature_index(sigs: &[FileSig]) -> HashMap<&str, &str> {
+    let mut index = HashMap::with_capacity(sigs.len());
+    for sig in sigs {
+        if let Some(path) = sig_path(sig) {
+            index.insert(path, sig.as_str());
+        }
+    }
+    index
 }
 
 pub fn is_under_res(root: &Path, abs_or_rel: &str) -> bool {
@@ -252,6 +259,15 @@ mod tests {
         let before = vec!["res/live.rs|12|1000000001|0".to_string()];
         let after = vec!["res/live.rs|12|1000000002|0".to_string()];
         assert_eq!(changed_paths(&before, &after), vec!["res/live.rs"]);
+    }
+
+    #[test]
+    fn changed_paths_accepts_same_snapshot_without_index_build() {
+        let snapshot = vec![
+            "project.toml|20|1|0".to_string(),
+            "res/main.scn|30|1|0".to_string(),
+        ];
+        assert!(changed_paths(&snapshot, &snapshot).is_empty());
     }
 
     #[test]

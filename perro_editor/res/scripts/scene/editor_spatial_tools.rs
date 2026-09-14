@@ -2,7 +2,7 @@ use crate::scripts::editor::main::{EditorState, cached_scene_doc_shared};
 use crate::scripts::scene::editor_viewport::*;
 use crate::scripts::scene::{editor_batch, editor_selection as selection};
 use crate::scripts::ui::editor_ui::{
-    editor_layout, find_named, refresh_selection_panels, set_log, set_panel_display,
+    find_named, refresh_selection_panels, set_log, set_panel_display,
 };
 use perro_api::prelude::*;
 use perro_api::scene::{SceneDoc, SceneValue};
@@ -38,14 +38,13 @@ fn project<API: ScriptAPI + ?Sized>(
     point: Vector3,
     mode: &str,
 ) -> Option<Vector2> {
-    let (raw, layout) = with_state!(ctx.run, EditorState, ctx.id, |s| (
+    let raw = with_state!(ctx.run, EditorState, ctx.id, |s| {
         if mode == "2D" {
             s.preview_camera_2d
         } else {
             s.preview_camera_3d
-        },
-        editor_layout(s)
-    ))?;
+        }
+    })?;
     let camera = if raw != 0 {
         NodeID::from_u64(raw)
     } else {
@@ -63,24 +62,29 @@ fn project<API: ScriptAPI + ?Sized>(
         let zoom = with_node!(ctx.run, Camera2D, camera, |n| n.zoom)?;
         let (s, c) = t.rotation.sin_cos();
         let p = point - Vector3::new(t.position.x, t.position.y, 0.0);
+        let (stream_width, stream_height) = viewport_stream_resolution(ctx, "viewport_stream_2d");
         Vector2::new(
-            (p.x * c + p.y * s) * zoom / 480.0,
-            (-p.x * s + p.y * c) * zoom / 270.0,
+            (p.x * c + p.y * s) * zoom / stream_width,
+            (-p.x * s + p.y * c) * zoom / stream_height,
         )
     } else {
         let t = ctx.run.Nodes().get_global_transform_3d(camera)?;
         let p = t.rotation.inverse().rotate_vector3(point - t.position);
         let projection = with_node!(ctx.run, Camera3D, camera, |n| n.projection.clone())?;
+        let aspect = viewport_stream_aspect(ctx, "viewport_stream_3d");
         match projection {
             CameraProjection::Perspective { fov_y_degrees, .. } => {
                 if p.z >= -0.001 {
                     return None;
                 }
-                let tan = (fov_y_degrees.to_radians() * 0.5).tan();
-                Vector2::new(p.x / (-p.z * tan * 16.0 / 9.0), p.y / (-p.z * tan))
+                let fov = fov_y_degrees
+                    .to_radians()
+                    .clamp(10.0_f32.to_radians(), 120.0_f32.to_radians());
+                let tan = (fov * 0.5).tan();
+                Vector2::new(p.x / (-p.z * tan * aspect), p.y / (-p.z * tan))
             }
             CameraProjection::Orthographic { size, .. } => {
-                Vector2::new(p.x / (size * 16.0 / 9.0 * 0.5), p.y / (size * 0.5))
+                Vector2::new(p.x / (size * aspect * 0.5), p.y / (size * 0.5))
             }
             CameraProjection::Frustum {
                 left,
@@ -100,10 +104,17 @@ fn project<API: ScriptAPI + ?Sized>(
             }
         }
     };
-    let viewport = ctx.res.viewport_size();
-    let aspect = viewport.x / viewport.y.max(1.0);
-    let rect = viewport_stream_rect_ratio(aspect, layout);
-    let half = stream_half_ndc(aspect);
+    let rect = viewport_stream_rect_ratio_live(
+        ctx,
+        if mode == "2D" {
+            "viewport_stream_2d"
+        } else {
+            "viewport_stream_3d"
+        },
+    );
+    // `rect` already describes the fitted camera image, so its coordinates
+    // are camera NDC directly; no second letterbox scale belongs here.
+    let half = (1.0, 1.0);
     if ndc.x.abs() > 1.2 || ndc.y.abs() > 1.2 {
         return None;
     }

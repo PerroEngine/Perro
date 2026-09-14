@@ -38,6 +38,8 @@ pub fn update_freecam<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>)
     if mode != "3D" {
         return;
     }
+    // Keep 3D target size tied to pane even when camera input stays idle.
+    sync_viewport_streams(ctx);
 
     let dt = delta_time!(ctx.run).clamp(0.0, 1.0 / 30.0);
     let mut dx = 0.0;

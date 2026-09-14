@@ -21,6 +21,9 @@ const MAX_INSPECTOR_DEPTH: usize = 32;
 static SCRIPT_SCHEMA_CACHE: OnceLock<Mutex<BTreeMap<String, CachedScriptSchema>>> = OnceLock::new();
 static SCRIPT_FILE_SCHEMA_CACHE: OnceLock<Mutex<BTreeMap<String, CachedScriptFileSchema>>> =
     OnceLock::new();
+type ScriptDefaultFields = Arc<[(SceneFieldName, SceneValue)]>;
+static SCRIPT_DEFAULT_FIELDS_CACHE: OnceLock<Mutex<BTreeMap<String, ScriptDefaultFields>>> =
+    OnceLock::new();
 static INSPECTOR_ROW_CACHE: OnceLock<Mutex<Option<CachedInspectorRows>>> = OnceLock::new();
 
 #[derive(Clone)]
@@ -491,10 +494,20 @@ fn sectioned_group_rows(
     owner: &str,
     rows: Vec<(Option<String>, InspectorValueRow)>,
 ) -> Vec<InspectorValueRow> {
+    // One field section does not need a second disclosure bar. Keeping the
+    // owner header as the only group trims inspector height and removes a
+    // needless row from the common Node/Node2D path.
+    let mut sections = Vec::new();
+    for section in rows.iter().filter_map(|(section, _)| section.as_deref()) {
+        if !sections.iter().any(|known| known == &section) {
+            sections.push(section);
+        }
+    }
+    let show_subsections = sections.len() > 1;
     let mut out = Vec::new();
     let mut active_section: Option<String> = None;
     for (section, mut row) in rows {
-        if section != active_section {
+        if show_subsections && section != active_section {
             if let Some(section) = section.as_ref() {
                 out.push(inspector_subsection_row(
                     &format!("section:{owner}:{section}"),
@@ -503,7 +516,7 @@ fn sectioned_group_rows(
             }
             active_section = section.clone();
         }
-        if section.is_some() {
+        if show_subsections && section.is_some() {
             row = indent_inspector_row(row);
         }
         out.push(row);
@@ -974,7 +987,27 @@ pub fn inspector_script_var_default_fields_for_node(
     let Some((schema, struct_name)) = script_schema_for_node(state, node) else {
         return Vec::new();
     };
-    script_struct_default_fields_with_expose(&schema, &struct_name, 0, true)
+    let Some(script_path) = node.script.as_ref() else {
+        return Vec::new();
+    };
+    let cache_key = format!(
+        "{}|{}|{}",
+        state.project_root,
+        script_path.as_ref(),
+        struct_name
+    );
+    let cache = SCRIPT_DEFAULT_FIELDS_CACHE.get_or_init(|| Mutex::new(BTreeMap::new()));
+    if let Ok(cache) = cache.lock()
+        && let Some(fields) = cache.get(&cache_key)
+    {
+        return fields.as_ref().to_vec();
+    }
+    let fields: Arc<[(SceneFieldName, SceneValue)]> =
+        script_struct_default_fields_with_expose(&schema, &struct_name, 0, true).into();
+    if let Ok(mut cache) = cache.lock() {
+        cache.insert(cache_key, fields.clone());
+    }
+    fields.as_ref().to_vec()
 }
 
 fn merge_script_var_overrides(
@@ -1033,6 +1066,7 @@ fn script_schema_for_node(
 
 pub fn clear_script_schema_cache() {
     clear_inspector_row_cache();
+    clear_script_default_fields_cache();
     let Some(cache) = SCRIPT_SCHEMA_CACHE.get() else {
         clear_script_file_schema_cache();
         return;
@@ -1046,6 +1080,7 @@ pub fn clear_script_schema_cache() {
 pub fn invalidate_script_schema_cache_paths(project_root: &str, changed_paths: &[String]) {
     clear_inspector_row_cache();
     clear_merged_script_schema_cache();
+    clear_script_default_fields_cache();
     let Some(cache) = SCRIPT_FILE_SCHEMA_CACHE.get() else {
         return;
     };
@@ -1071,6 +1106,15 @@ fn clear_inspector_row_cache() {
 
 fn clear_merged_script_schema_cache() {
     let Some(cache) = SCRIPT_SCHEMA_CACHE.get() else {
+        return;
+    };
+    if let Ok(mut cache) = cache.lock() {
+        cache.clear();
+    }
+}
+
+fn clear_script_default_fields_cache() {
+    let Some(cache) = SCRIPT_DEFAULT_FIELDS_CACHE.get() else {
         return;
     };
     if let Ok(mut cache) = cache.lock() {
