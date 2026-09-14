@@ -73,7 +73,6 @@ fn show_native_crash_message(_project_name: &str, _log_path: &Path) {}
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn install_native_crash_reporter(project_name: &'static str) {
-    let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let log_path = native_crash_log_path();
         let report = format!(
@@ -84,7 +83,6 @@ pub fn install_native_crash_reporter(project_name: &'static str) {
         );
         let _ = std::fs::write(&log_path, report);
         show_native_crash_message(project_name, &log_path);
-        default_hook(info);
     }));
 }
 
@@ -470,12 +468,12 @@ fn run_headless_runtime(mut runtime: Runtime) {
     let running = Arc::new(AtomicBool::new(true));
     let signal = Arc::clone(&running);
     let _ = ctrlc::set_handler(move || signal.store(false, Ordering::SeqCst));
-    let fixed_step = runtime
-        .project()
-        .and_then(|project| project.config.target_fixed_update)
-        .filter(|fps| *fps > 0.0)
-        .map(|fps| 1.0 / fps)
-        .unwrap_or(1.0 / 60.0);
+    let fixed_step = perro_runtime::normalize_fixed_timestep_seconds(
+        runtime
+            .project()
+            .and_then(|project| project.config.target_fixed_update),
+    )
+    .unwrap_or(1.0 / 60.0);
     let step = Duration::from_secs_f32(fixed_step);
     let mut last = Instant::now();
     let mut accumulator = Duration::ZERO;

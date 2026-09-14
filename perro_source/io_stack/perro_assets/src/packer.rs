@@ -57,6 +57,12 @@ struct ProcessedFile<'a> {
 /// Stat sidecar version; bump alongside any change to what a cached entry
 /// means (compression codec, entry layout) so stale sidecars self-invalidate.
 const ASSETS_STAT_VERSION: u32 = 1;
+const MAX_REUSE_ENTRIES: usize = 1_000_000;
+const MAX_REUSE_STAT_BYTES: u64 = 128 * 1024 * 1024;
+
+fn reuse_stats_row_allowed(row: usize) -> bool {
+    row < MAX_REUSE_ENTRIES
+}
 
 fn stat_manifest_header() -> String {
     format!(
@@ -94,6 +100,15 @@ struct ReusedArchive {
     bytes: Vec<u8>,
 }
 
+fn reuse_index_count_fits_archive(bytes_len: usize, index_offset: u64, file_count: u32) -> bool {
+    const MIN_INDEX_ENTRY_BYTES: u64 = 2 + 8 + 8 + 8 + 4;
+    let Some(index_bytes) = (bytes_len as u64).checked_sub(index_offset) else {
+        return false;
+    };
+    file_count as usize <= MAX_REUSE_ENTRIES
+        && u64::from(file_count) <= index_bytes / MIN_INDEX_ENTRY_BYTES
+}
+
 impl ReusedArchive {
     fn entry_slice(&self, meta: &PerroAssetsEntryMeta) -> Option<&[u8]> {
         let start = usize::try_from(meta.offset).ok()?;
@@ -103,13 +118,19 @@ impl ReusedArchive {
 }
 
 fn load_reuse_archive(output: &Path, stat_path: &Path) -> Option<ReusedArchive> {
+    if fs::metadata(stat_path).ok()?.len() > MAX_REUSE_STAT_BYTES {
+        return None;
+    }
     let text = fs::read_to_string(stat_path).ok()?;
     let mut lines = text.lines();
     if lines.next()? != stat_manifest_header() {
         return None;
     }
     let mut stats = HashMap::new();
-    for line in lines {
+    for (row, line) in lines.enumerate() {
+        if !reuse_stats_row_allowed(row) {
+            return None;
+        }
         let mut parts = line.splitn(3, '\t');
         let len = parts.next()?.parse().ok()?;
         let mtime = parts.next()?.parse().ok()?;
@@ -118,6 +139,9 @@ fn load_reuse_archive(output: &Path, stat_path: &Path) -> Option<ReusedArchive> 
     let bytes = fs::read(output).ok()?;
     let mut cursor = Cursor::new(bytes.as_slice());
     let header = read_header(&mut cursor).ok()?;
+    if !reuse_index_count_fits_archive(bytes.len(), header.index_offset, header.file_count) {
+        return None;
+    }
     cursor.seek(SeekFrom::Start(header.index_offset)).ok()?;
     let mut index = HashMap::with_capacity(header.file_count as usize);
     for _ in 0..header.file_count {

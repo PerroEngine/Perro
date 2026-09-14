@@ -853,23 +853,31 @@ pub fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
     let index_start = vertex_bytes;
     for i in 0..index_count {
         let off = index_start + i * 4;
-        indices.push(u32::from_le_bytes(raw[off..off + 4].try_into().ok()?));
+        let index = u32::from_le_bytes(raw[off..off + 4].try_into().ok()?);
+        if index as usize >= vertex_count {
+            return None;
+        }
+        indices.push(index);
     }
     let mut surface_ranges = Vec::with_capacity(surface_count);
     let surface_start = vertex_bytes + index_bytes;
     for i in 0..surface_count {
         let off = surface_start + i * 8;
-        surface_ranges.push(MeshRange {
+        let range = MeshRange {
             index_start: u32::from_le_bytes(raw[off..off + 4].try_into().ok()?),
             index_count: u32::from_le_bytes(raw[off + 4..off + 8].try_into().ok()?),
             base_vertex: 0,
-        });
+        };
+        if range.index_start.checked_add(range.index_count)? as usize > index_count {
+            return None;
+        }
+        surface_ranges.push(range);
     }
     let mut meshlets = Vec::with_capacity(meshlet_count);
     let meshlet_start = vertex_bytes + index_bytes + surface_bytes;
     for i in 0..meshlet_count {
         let off = meshlet_start + i * 24;
-        meshlets.push(DecodedMeshlet {
+        let meshlet = DecodedMeshlet {
             index_start: u32::from_le_bytes(raw[off..off + 4].try_into().ok()?),
             index_count: u32::from_le_bytes(raw[off + 4..off + 8].try_into().ok()?),
             center: [
@@ -878,7 +886,11 @@ pub fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
                 f32::from_le_bytes(raw[off + 16..off + 20].try_into().ok()?),
             ],
             radius: f32::from_le_bytes(raw[off + 20..off + 24].try_into().ok()?),
-        });
+        };
+        if meshlet.index_start.checked_add(meshlet.index_count)? as usize > index_count {
+            return None;
+        }
+        meshlets.push(meshlet);
     }
     let lod_start = vertex_bytes + index_bytes + surface_bytes + meshlet_bytes;
     let mut lods = Vec::with_capacity(lod_count);
@@ -1035,7 +1047,9 @@ pub fn decode_gltf_mesh(bytes: &[u8], mesh_index: usize) -> Option<DecodedMesh> 
             vertices.len(),
             primitive_vertex_count,
         );
-        let base_vertex = vertices.len() as u32;
+        let base_vertex = u32::try_from(vertices.len()).ok()?;
+        let primitive_vertex_count_u32 = u32::try_from(primitive_vertex_count).ok()?;
+        base_vertex.checked_add(primitive_vertex_count_u32)?;
         for (i, position) in positions.iter().copied().enumerate() {
             let joint = joints.get(i).copied().unwrap_or([0, 0, 0, 0]);
             let weight = weights.get(i).copied().unwrap_or([1.0, 0.0, 0.0, 0.0]);
@@ -1051,13 +1065,21 @@ pub fn decode_gltf_mesh(bytes: &[u8], mesh_index: usize) -> Option<DecodedMesh> 
                 weights: quantize_skin_weights(weight),
             });
         }
-        let surface_start = indices.len() as u32;
+        let surface_start = u32::try_from(indices.len()).ok()?;
         if let Some(read_indices) = reader.read_indices() {
-            indices.extend(read_indices.into_u32().map(|idx| idx + base_vertex));
+            for idx in read_indices.into_u32() {
+                if idx >= primitive_vertex_count_u32 {
+                    return None;
+                }
+                indices.push(idx.checked_add(base_vertex)?);
+            }
         } else {
-            indices.extend((0..positions.len() as u32).map(|idx| idx + base_vertex));
+            for idx in 0..primitive_vertex_count_u32 {
+                indices.push(idx.checked_add(base_vertex)?);
+            }
         }
-        let surface_count = (indices.len() as u32).saturating_sub(surface_start);
+        let surface_end = u32::try_from(indices.len()).ok()?;
+        let surface_count = surface_end.checked_sub(surface_start)?;
         if surface_count > 0 {
             surface_ranges.push(MeshRange {
                 index_start: surface_start,
@@ -1168,7 +1190,9 @@ fn quantize_skin_weights(weights: [f32; 4]) -> UnitVector4 {
 
 #[cfg(test)]
 mod tests {
-    use super::{borrow_runtime_mesh, decode_pmesh};
+    use super::{
+        PMESH_FLAG_PAYLOAD_RAW, PMESH_VERSION, borrow_runtime_mesh, decode_gltf_mesh, decode_pmesh,
+    };
     use perro_render_bridge::{
         Mesh3D, MeshSurfaceRange, RuntimeMeshBlendShape, RuntimeMeshBlendShapeVertex,
         RuntimeMeshVertex,
@@ -1204,6 +1228,31 @@ mod tests {
                 has_normal_deltas: true,
             }],
         }
+    }
+
+    fn two_primitive_glb() -> (Vec<u8>, usize) {
+        let json = br#"{"asset":{"version":"2.0"},"buffers":[{"byteLength":96}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36},{"buffer":0,"byteOffset":36,"byteLength":12},{"buffer":0,"byteOffset":48,"byteLength":36},{"buffer":0,"byteOffset":84,"byteLength":12}],"accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3","min":[0,0,0],"max":[0,0,0]},{"bufferView":1,"componentType":5125,"count":3,"type":"SCALAR"},{"bufferView":2,"componentType":5126,"count":3,"type":"VEC3","min":[0,0,0],"max":[0,0,0]},{"bufferView":3,"componentType":5125,"count":3,"type":"SCALAR"}],"meshes":[{"primitives":[{"attributes":{"POSITION":0},"indices":1},{"attributes":{"POSITION":2},"indices":3}]}]}"#;
+        let json_len = json.len().next_multiple_of(4);
+        let mut bin = vec![0u8; 96];
+        for offset in [36usize, 84] {
+            bin[offset..offset + 4].copy_from_slice(&0u32.to_le_bytes());
+            bin[offset + 4..offset + 8].copy_from_slice(&1u32.to_le_bytes());
+            bin[offset + 8..offset + 12].copy_from_slice(&2u32.to_le_bytes());
+        }
+        let total_len = 12 + 8 + json_len + 8 + bin.len();
+        let mut glb = Vec::with_capacity(total_len);
+        glb.extend_from_slice(b"glTF");
+        glb.extend_from_slice(&2u32.to_le_bytes());
+        glb.extend_from_slice(&(total_len as u32).to_le_bytes());
+        glb.extend_from_slice(&(json_len as u32).to_le_bytes());
+        glb.extend_from_slice(&0x4e4f_534au32.to_le_bytes());
+        glb.extend_from_slice(json);
+        glb.resize(20 + json_len, b' ');
+        glb.extend_from_slice(&(bin.len() as u32).to_le_bytes());
+        glb.extend_from_slice(&0x004e_4942u32.to_le_bytes());
+        let bin_start = glb.len();
+        glb.extend_from_slice(&bin);
+        (glb, bin_start + 84)
     }
 
     /// The zero-copy cast is only sound while the two vertex structs agree
@@ -1287,5 +1336,40 @@ mod tests {
         pmesh.extend_from_slice(&0u32.to_le_bytes());
 
         assert!(decode_pmesh(&pmesh).is_none());
+    }
+
+    #[test]
+    fn pmesh_rejects_surface_range_past_index_block() {
+        let mut raw = vec![0u8; 12];
+        raw.extend_from_slice(&0u32.to_le_bytes());
+        raw.extend_from_slice(&0u32.to_le_bytes());
+        raw.extend_from_slice(&1u32.to_le_bytes());
+
+        let mut pmesh = Vec::new();
+        pmesh.extend_from_slice(b"PMESH");
+        pmesh.extend_from_slice(&PMESH_VERSION.to_le_bytes());
+        pmesh.extend_from_slice(&PMESH_FLAG_PAYLOAD_RAW.to_le_bytes());
+        pmesh.extend_from_slice(&1u32.to_le_bytes());
+        pmesh.extend_from_slice(&1u32.to_le_bytes());
+        pmesh.extend_from_slice(&1u32.to_le_bytes());
+        pmesh.extend_from_slice(&0u32.to_le_bytes());
+        pmesh.extend_from_slice(&0u32.to_le_bytes());
+        pmesh.extend_from_slice(&(raw.len() as u32).to_le_bytes());
+        pmesh.extend_from_slice(&0u32.to_le_bytes());
+        pmesh.extend_from_slice(&raw);
+
+        assert!(decode_pmesh(&pmesh).is_some());
+        pmesh[57..61].copy_from_slice(&1u32.to_le_bytes());
+        assert!(decode_pmesh(&pmesh).is_none());
+    }
+
+    #[test]
+    fn gltf_rejects_large_index_with_nonzero_primitive_base() {
+        let (mut glb, second_index) = two_primitive_glb();
+        let decoded = decode_gltf_mesh(&glb, 0).expect("valid two-primitive glb");
+        assert_eq!(decoded.indices, vec![0, 1, 2, 3, 4, 5]);
+
+        glb[second_index..second_index + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(decode_gltf_mesh(&glb, 0).is_none());
     }
 }

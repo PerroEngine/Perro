@@ -58,7 +58,7 @@ impl BarkPlayer {
     // plays skip the decoder; longer clips stream-decode per play.
     const PCM_CACHE_MAX_SECONDS: usize = 12;
     const CACHE_EVICT_SWEEP_INTERVAL: Duration = Duration::from_millis(100);
-    const UNRESERVED_TTL_FACTOR: f32 = 2.0;
+    const UNRESERVED_TTL_FACTOR: u32 = 2;
     const UNRESERVED_TTL_FALLBACK: Duration = Duration::from_secs(1);
     const UNRESERVED_TTL_MIN: Duration = Duration::from_millis(250);
 

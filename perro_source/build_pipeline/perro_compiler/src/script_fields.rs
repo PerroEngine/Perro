@@ -460,7 +460,7 @@ fn generate_call_method_body(methods: &[ScriptMethod]) -> String {
             ));
         } else {
             out.push_str(&format!(
-                "            {const_name} => {{\n{prelude}                {call};\n                Variant::Null\n            }}\n"
+                "            {const_name} => {{\n{prelude}                let _ = {call};\n                Variant::Null\n            }}\n"
             ));
         }
     }
@@ -474,5 +474,67 @@ fn method_returns_variant_convertible(return_ty: Option<&str>) -> bool {
         return false;
     };
     let return_ty = normalize_type(return_ty);
-    return_ty != "()"
+    let short = return_ty.rsplit("::").next().unwrap_or(&return_ty);
+    matches!(
+        short,
+        "Variant"
+            | "Number"
+            | "bool"
+            | "i8"
+            | "i16"
+            | "i32"
+            | "i64"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "u128"
+            | "i128"
+            | "f32"
+            | "f64"
+            | "String"
+            | "&str"
+            | "Arc<str>"
+            | "&[u8]"
+            | "Vec<u8>"
+            | "Arc<[u8]>"
+            | "NodeID"
+            | "TextureID"
+            | "MaterialID"
+            | "MeshID"
+            | "AnimationID"
+            | "AnimationTreeID"
+            | "NavMeshID"
+            | "SoundFontID"
+            | "LightID"
+            | "SignalID"
+            | "AudioBusID"
+            | "TagID"
+            | "PreloadedSceneID"
+            | "Vector2"
+            | "Vector3"
+            | "Vector4"
+            | "IVector2"
+            | "IVector3"
+            | "IVector4"
+            | "UVector2"
+            | "UVector3"
+            | "UVector4"
+            | "UnitVector2"
+            | "UnitVector3"
+            | "UnitVector4"
+            | "Color"
+            | "Matrix2"
+            | "Matrix3"
+            | "Matrix4"
+            | "Matrix<2,2,f32>"
+            | "Matrix<3,3,f32>"
+            | "Matrix<4,4,f32>"
+            | "Transform2D"
+            | "Transform3D"
+            | "Quaternion"
+            | "PostProcessSet"
+            | "VisualAccessibilitySettings"
+            | "Vec<Variant>"
+    ) || return_ty.ends_with("BTreeMap<Arc<str>,Variant>")
 }

@@ -18,6 +18,43 @@ fn temp_project() -> PathBuf {
     dir
 }
 
+#[cfg(windows)]
+#[test]
+fn reference_scan_skips_directory_symlink() {
+    let project = temp_project();
+    let res = project.join("res");
+    fs::create_dir_all(&res).expect("create res");
+    let link = res.join("loop");
+    if std::os::windows::fs::symlink_dir(&res, &link).is_err() {
+        let _ = fs::remove_dir_all(&project);
+        return;
+    }
+    let mut files = Vec::new();
+    collect_reference_text_files(&project, &mut files).expect("scan must terminate");
+    assert!(files.is_empty());
+    collect_scene_files_recursive(&res, &mut files).expect("scene scan must terminate");
+    collect_files_with_extension(&res, "wgsl", &mut files).expect("shader scan must terminate");
+    assert!(files.is_empty());
+    fs::remove_dir(&link).expect("remove symlink");
+    fs::remove_dir_all(&project).expect("remove project");
+}
+
+#[test]
+fn doctor_walks_reject_excessive_directory_depth() {
+    let project = temp_project();
+    let res = project.join("res");
+    let mut deepest = res.clone();
+    for _ in 0..130 {
+        deepest.push("d");
+    }
+    fs::create_dir_all(&deepest).expect("create deep tree");
+    let mut files = Vec::new();
+    assert!(collect_reference_text_files(&project, &mut files).is_err());
+    assert!(collect_scene_files_recursive(&res, &mut files).is_err());
+    assert!(collect_files_with_extension(&res, "wgsl", &mut files).is_err());
+    fs::remove_dir_all(project).expect("remove deep tree");
+}
+
 #[test]
 fn removed_water_fidelity_field_is_hard_error_with_replacement() {
     let project = temp_project();

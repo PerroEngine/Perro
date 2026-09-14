@@ -25,8 +25,9 @@ use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{
-    LazyLock, Mutex,
+    Arc, LazyLock, Mutex,
     atomic::{AtomicBool, Ordering},
+    mpsc,
 };
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -357,25 +358,21 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     phase.mark("cargo build");
 
     // DLC script crates live outside the `.perro` workspace.
-    perro_compiler::compile_dlc_scripts(
-        &project_dir,
-        ScriptsBuildProfile::Debug,
-        project_cfg.steam.enabled,
-    )
-    .map_err(|err| {
+    let (scripts_profile, profile_dir) = dev_build_profile(release);
+    perro_compiler::compile_dlc_scripts(&project_dir, scripts_profile, project_cfg.steam.enabled)
+        .map_err(|err| {
         format!(
             "dlc scripts pipeline failed for {}: {err}",
             project_dir.display()
         )
     })?;
 
-    let launch_dir = prepare_dev_runner_launch_dir(&project_dir, "debug")
+    let launch_dir = prepare_dev_runner_launch_dir(&project_dir, profile_dir)
         .map_err(|err| format!("failed to prepare dev runner launch directory: {err}"))?;
-    let scripts_path = stage_dev_runner_scripts(&project_dir, &launch_dir, "debug")
+    let scripts_path = stage_dev_runner_scripts(&project_dir, &launch_dir, profile_dir)
         .map_err(|err| format!("failed to stage scripts dylib for dev runner: {err}"))?;
     phase.mark("stage launch dir");
 
-    let profile_dir = if release { "release" } else { "debug" };
     let runner_path = if cfg!(target_os = "windows") {
         target_dir.join(profile_dir).join("perro_dev_runner.exe")
     } else {
@@ -518,6 +515,14 @@ fn prepare_dev_runner_launch_dir(project_dir: &Path, profile_dir: &str) -> io::R
     // as are any dirs a concurrent `perro dev` just made.
     spawn_dev_runner_runs_prune(&runs_dir, DEV_RUNNER_RUNS_KEPT);
     Ok(launch_dir)
+}
+
+fn dev_build_profile(release: bool) -> (ScriptsBuildProfile, &'static str) {
+    if release {
+        (ScriptsBuildProfile::Release, "release")
+    } else {
+        (ScriptsBuildProfile::Debug, "debug")
+    }
 }
 
 /// Runs the prune on a detached thread so deleting gigabytes never delays the
@@ -1494,13 +1499,30 @@ fn bind_web_dev_listener(host: &str, start_port: u16) -> Result<(TcpListener, u1
 }
 
 fn run_static_server(root: &Path, listener: TcpListener) -> Result<(), String> {
+    const HTTP_WORKERS: usize = 4;
+    const HTTP_QUEUE: usize = 32;
     listener
         .set_nonblocking(true)
         .map_err(|err| format!("failed to set nonblocking listener: {err}"))?;
+    let (tx, rx) = mpsc::sync_channel::<TcpStream>(HTTP_QUEUE);
+    let rx = Arc::new(Mutex::new(rx));
+    for _ in 0..HTTP_WORKERS {
+        let rx = Arc::clone(&rx);
+        let root = root.to_path_buf();
+        thread::spawn(move || {
+            loop {
+                let stream = match rx.lock().expect("http worker queue poisoned").recv() {
+                    Ok(stream) => stream,
+                    Err(_) => return,
+                };
+                let _ = handle_http_connection(stream, &root);
+            }
+        });
+    }
     loop {
         match listener.accept() {
             Ok((stream, _)) => {
-                let _ = handle_http_connection(stream, root);
+                let _ = tx.try_send(stream);
             }
             Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
                 thread::sleep(Duration::from_millis(100));
@@ -1512,6 +1534,12 @@ fn run_static_server(root: &Path, listener: TcpListener) -> Result<(), String> {
 }
 
 fn handle_http_connection(mut stream: TcpStream, root: &Path) -> Result<(), String> {
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .map_err(|err| format!("failed to set http read timeout: {err}"))?;
+    stream
+        .set_write_timeout(Some(Duration::from_secs(2)))
+        .map_err(|err| format!("failed to set http write timeout: {err}"))?;
     let mut buffer = [0u8; 4096];
     let read_len = stream
         .read(&mut buffer)
@@ -1557,6 +1585,16 @@ fn handle_http_connection(mut stream: TcpStream, root: &Path) -> Result<(), Stri
             b"not found",
         );
     }
+    let canonical_root = root.canonicalize().map_err(|err| err.to_string())?;
+    let path = path.canonicalize().map_err(|err| err.to_string())?;
+    if !path.starts_with(canonical_root) {
+        return write_http_response(
+            &mut stream,
+            "403 Forbidden",
+            "text/plain; charset=utf-8",
+            b"forbidden",
+        );
+    }
     let body =
         fs::read(&path).map_err(|err| format!("failed to read {}: {err}", path.display()))?;
     write_http_response(&mut stream, "200 OK", content_type_for_path(&path), &body)
@@ -1568,7 +1606,7 @@ fn rel_to_path(rel: &str) -> Option<PathBuf> {
         if part.is_empty() || part == "." {
             continue;
         }
-        if part == ".." || part.contains('\\') {
+        if part == ".." || part.contains(['\\', ':']) {
             return None;
         }
         path.push(part);
@@ -1615,8 +1653,26 @@ fn content_type_for_path(path: &Path) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{bind_web_dev_listener, format_key_value_resource, rel_to_path};
-    use std::net::TcpListener;
+    use super::{
+        bind_web_dev_listener, dev_build_profile, format_key_value_resource, rel_to_path,
+        run_static_server,
+    };
+    use perro_compiler::ScriptsBuildProfile;
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::time::Duration;
+
+    #[test]
+    fn release_dev_uses_release_scripts_and_stage_dir() {
+        assert_eq!(
+            dev_build_profile(true),
+            (ScriptsBuildProfile::Release, "release")
+        );
+        assert_eq!(
+            dev_build_profile(false),
+            (ScriptsBuildProfile::Debug, "debug")
+        );
+    }
 
     #[test]
     fn bind_web_dev_listener_bumps_busy_port() {
@@ -1626,8 +1682,40 @@ mod tests {
         let (free, free_port) =
             bind_web_dev_listener("127.0.0.1", busy_port).expect("bind free listener");
 
-        assert_eq!(free_port, busy_port + 1);
+        assert!(free_port > busy_port);
+        assert_eq!(free.local_addr().expect("free addr").port(), free_port);
         drop(free);
+    }
+
+    #[test]
+    fn stalled_http_client_does_not_block_next_client() {
+        let root = std::env::temp_dir().join(format!(
+            "perro_http_stall_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).expect("create web root");
+        std::fs::write(root.join("index.html"), "ok").expect("write index");
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind server");
+        let addr = listener.local_addr().expect("server addr");
+        let server_root = root.clone();
+        std::thread::spawn(move || run_static_server(&server_root, listener));
+
+        let _stalled = TcpStream::connect(addr).expect("connect stalled client");
+        let mut active = TcpStream::connect(addr).expect("connect active client");
+        active
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .expect("set client timeout");
+        active
+            .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .expect("write request");
+        let mut response = String::new();
+        active.read_to_string(&mut response).expect("read response");
+        assert!(response.starts_with("HTTP/1.1 200 OK"), "{response}");
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -1663,6 +1751,49 @@ tint = (1.0, 0.2, 0.4, 1.0)
     fn rel_to_path_rejects_traversal_parts() {
         assert_eq!(rel_to_path("../project.toml"), None);
         assert_eq!(rel_to_path("assets\\secret.txt"), None);
+        assert_eq!(rel_to_path("C:/Windows/win.ini"), None);
+        assert_eq!(rel_to_path("assets/file.txt:stream"), None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn http_server_rejects_symlink_outside_root() {
+        let temp = std::env::temp_dir().join(format!(
+            "perro_http_link_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        let root = temp.join("web");
+        std::fs::create_dir_all(&root).expect("root");
+        std::fs::write(temp.join("secret.txt"), "private").expect("secret");
+        if std::os::windows::fs::symlink_file(temp.join("secret.txt"), root.join("link.txt"))
+            .is_err()
+        {
+            std::fs::remove_dir_all(temp).expect("cleanup");
+            return;
+        }
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+        let mut client = TcpStream::connect(listener.local_addr().expect("addr")).expect("client");
+        client
+            .set_read_timeout(Some(std::time::Duration::from_secs(3)))
+            .expect("timeout");
+        let worker = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("accept");
+            super::handle_http_connection(stream, &root).expect("response");
+        });
+        client
+            .write_all(b"GET /link.txt HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .expect("request");
+        let mut response = String::new();
+        client.read_to_string(&mut response).expect("read");
+        worker.join().expect("worker");
+        assert!(response.starts_with("HTTP/1.1 403"), "{response}");
+        assert!(!response.contains("private"));
+        std::fs::remove_file(temp.join("web/link.txt")).expect("unlink");
+        std::fs::remove_dir_all(temp).expect("cleanup");
     }
 
     #[test]

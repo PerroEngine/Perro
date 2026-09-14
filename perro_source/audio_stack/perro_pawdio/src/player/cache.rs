@@ -490,8 +490,9 @@ impl BarkPlayer {
 
     pub(super) fn unreserved_ttl(entry: &CachedAudioAsset) -> Duration {
         if let Some(duration) = entry.duration {
-            let scaled =
-                Duration::from_secs_f32(duration.as_secs_f32() * Self::UNRESERVED_TTL_FACTOR);
+            let scaled = duration
+                .checked_mul(Self::UNRESERVED_TTL_FACTOR)
+                .unwrap_or(Duration::MAX);
             return scaled.max(Self::UNRESERVED_TTL_MIN);
         }
         Self::UNRESERVED_TTL_FALLBACK

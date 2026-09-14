@@ -132,8 +132,8 @@ impl BarkPlayer {
 
         #[cfg(feature = "profile")]
         let append_begin = Instant::now();
-        let trim_start = Duration::from_secs_f32(from_start.max(0.0));
-        let trim_end = Duration::from_secs_f32(from_end.max(0.0));
+        let trim_start = trim_duration(from_start, "from_start")?;
+        let trim_end = trim_duration(from_end, "from_end")?;
         let play_duration = if let Some(total_duration) = total_duration {
             let after_start = total_duration.saturating_sub(trim_start);
             let play_duration = after_start.saturating_sub(trim_end);
@@ -944,5 +944,26 @@ impl BarkPlayer {
         }
         Self::evict_unreserved_unused_locked(&mut state, Instant::now());
         removed_any
+    }
+}
+
+fn trim_duration(seconds: f32, name: &str) -> Result<Duration, String> {
+    if !seconds.is_finite() {
+        return Err(format!("invalid {name}: seconds must be finite"));
+    }
+    Duration::try_from_secs_f32(seconds.max(0.0))
+        .map_err(|_| format!("invalid {name}: seconds are too large"))
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    #[test]
+    fn trim_duration_rejects_nonfinite_values() {
+        for value in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, f32::MAX] {
+            assert!(trim_duration(value, "trim").is_err());
+        }
+        assert_eq!(trim_duration(-1.0, "trim"), Ok(Duration::ZERO));
     }
 }

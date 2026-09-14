@@ -73,6 +73,9 @@ impl<'ipt, IP: InputAPI + ?Sized> InputWindow<'ipt, IP> {
     /// Queue a player binding change.
     #[inline]
     pub fn bind_player(&self, index: usize, binding: PlayerBinding) {
+        if index >= MAX_INPUT_SLOTS {
+            return;
+        }
         if let Some(buffer) = self.ipt.command_buffer() {
             buffer
                 .borrow_mut()
@@ -83,6 +86,9 @@ impl<'ipt, IP: InputAPI + ?Sized> InputWindow<'ipt, IP> {
     /// Queue a Joy-Con calibration request.
     #[inline]
     pub fn request_joycon_calibration(&self, index: usize) {
+        if index >= MAX_INPUT_SLOTS {
+            return;
+        }
         if let Some(buffer) = self.ipt.command_buffer() {
             buffer
                 .borrow_mut()
@@ -123,6 +129,9 @@ impl<'ipt, IP: InputAPI + ?Sized> InputWindow<'ipt, IP> {
     /// Queue gamepad rumble for a device slot.
     #[inline]
     pub fn set_gamepad_rumble(&self, index: usize, low_frequency: f32, high_frequency: f32) {
+        if index >= MAX_INPUT_SLOTS {
+            return;
+        }
         if let Some(buffer) = self.ipt.command_buffer() {
             buffer.borrow_mut().push(InputCommand::SetGamepadRumble {
                 index,
@@ -134,6 +143,9 @@ impl<'ipt, IP: InputAPI + ?Sized> InputWindow<'ipt, IP> {
     /// Queue Joy-Con rumble for a device slot.
     #[inline]
     pub fn set_joycon_rumble(&self, index: usize, low_frequency: f32, high_frequency: f32) {
+        if index >= MAX_INPUT_SLOTS {
+            return;
+        }
         if let Some(buffer) = self.ipt.command_buffer() {
             buffer.borrow_mut().push(InputCommand::SetJoyConRumble {
                 index,
@@ -145,6 +157,9 @@ impl<'ipt, IP: InputAPI + ?Sized> InputWindow<'ipt, IP> {
     /// Queue Joy-Con indicator by slot or lamp bit pattern.
     #[inline]
     pub fn set_joycon_indicator(&self, index: usize, indicator: u8) {
+        if index >= MAX_INPUT_SLOTS {
+            return;
+        }
         let Some(indicator) = PlayerIndicatorSlot::from_slot_or_lamp_pattern(indicator) else {
             return;
         };

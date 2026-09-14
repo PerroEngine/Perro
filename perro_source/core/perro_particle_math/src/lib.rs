@@ -337,6 +337,7 @@ pub enum CompileError {
     UnknownIdentifier,
     InvalidFunctionArity,
     InvalidProgram,
+    NestingLimit,
 }
 
 pub fn compile_expression(expr: &str) -> Result<Program, CompileError> {
@@ -344,6 +345,7 @@ pub fn compile_expression(expr: &str) -> Result<Program, CompileError> {
         s: expr.as_bytes(),
         i: 0,
         ops: Vec::new(),
+        depth: 0,
     };
     c.parse_expr()?;
     c.skip_ws();
@@ -358,6 +360,7 @@ struct Compiler<'a> {
     s: &'a [u8],
     i: usize,
     ops: Vec<Op>,
+    depth: usize,
 }
 
 impl Compiler<'_> {
@@ -413,6 +416,16 @@ impl Compiler<'_> {
     }
 
     fn parse_unary(&mut self) -> Result<(), CompileError> {
+        if self.depth >= 64 {
+            return Err(CompileError::NestingLimit);
+        }
+        self.depth += 1;
+        let result = self.parse_unary_inner();
+        self.depth -= 1;
+        result
+    }
+
+    fn parse_unary_inner(&mut self) -> Result<(), CompileError> {
         self.skip_ws();
         if self.eat(b'+') {
             return self.parse_unary();
@@ -575,3 +588,24 @@ impl Compiler<'_> {
 #[cfg(test)]
 #[path = "../tests/unit/lib_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod depth_tests {
+    use super::*;
+
+    #[test]
+    fn deep_expressions_fail_without_stack_overflow() {
+        for expr in [
+            format!("{}1", "-".repeat(10_000)),
+            format!("{}1{}", "(".repeat(10_000), ")".repeat(10_000)),
+            format!("{}1{}", "sin(".repeat(10_000), ")".repeat(10_000)),
+            format!("{}1{}", "params[".repeat(10_000), "]".repeat(10_000)),
+        ] {
+            assert!(matches!(
+                compile_expression(&expr),
+                Err(CompileError::NestingLimit)
+            ));
+        }
+        assert!(compile_expression("sin(1)+".repeat(1000).trim_end_matches('+')).is_ok());
+    }
+}

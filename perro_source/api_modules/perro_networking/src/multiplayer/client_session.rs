@@ -51,6 +51,7 @@ impl ClientSession {
                 }
                 TransportEvent::PeerDisconnected(peer) => {
                     if self.host_peer.as_ref() == Some(&peer) {
+                        transport.forget_peer(&peer);
                         self.host_peer = None;
                         out.push(NetEvent::Disconnected);
                     }
@@ -61,7 +62,7 @@ impl ClientSession {
                 }
                 TransportEvent::PacketReceived(peer, mut bytes) => {
                     if self.host_peer.is_none() {
-                        self.host_peer = Some(peer);
+                        self.host_peer = Some(peer.clone());
                     }
                     // Any frame from the host proves it's alive.
                     self.last_seen = Some(Instant::now());
@@ -79,6 +80,7 @@ impl ClientSession {
                         }
                         // Heartbeats only bump last_seen (done above).
                         Some(Frame::HostDisconnect) => {
+                            transport.forget_peer(&peer);
                             self.host_peer = None;
                             out.push(NetEvent::Disconnected);
                         }
@@ -149,6 +151,7 @@ impl ClientSession {
             && now.saturating_duration_since(seen) > config.timeout
         {
             perro_modules::log_info!("[net] client host timed out");
+            transport.forget_peer(&peer);
             self.host_peer = None;
             self.last_seen = None;
             out.push(NetEvent::Disconnected);

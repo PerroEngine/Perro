@@ -30,6 +30,7 @@ pub enum ResPathError {
     InvalidSeparator,
     Traversal,
     ControlCharacter,
+    InternLimit,
 }
 
 impl fmt::Display for ResPathError {
@@ -46,6 +47,7 @@ impl fmt::Display for ResPathError {
             Self::InvalidSeparator => "resource path must use / separators",
             Self::Traversal => "resource path cannot contain . or .. path segments",
             Self::ControlCharacter => "resource path cannot contain control characters",
+            Self::InternLimit => "resource path interner limit exceeded; use ResPathBuf",
         };
         f.write_str(message)
     }
@@ -70,16 +72,16 @@ impl ResPath {
     }
 
     pub fn intern(path: &str) -> Result<&'static Self, ResPathError> {
-        use std::collections::HashSet;
         use std::sync::{OnceLock, RwLock};
         validate(path)?;
         // Pool dedupes so repeated interns of the same path (e.g. a script
         // converting the same Variant every frame) leak once, not per call.
-        static POOL: OnceLock<RwLock<HashSet<&'static str>>> = OnceLock::new();
+        static POOL: OnceLock<RwLock<PathPool>> = OnceLock::new();
         let pool = POOL.get_or_init(Default::default);
         if let Some(existing) = pool
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .paths
             .get(path)
         {
             // SAFETY: pool only holds validated paths; entries are static.
@@ -88,12 +90,7 @@ impl ResPath {
         let mut pool = pool
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if let Some(existing) = pool.get(path) {
-            // SAFETY: pool only holds validated paths; entries are static.
-            return Ok(unsafe { Self::new_unchecked(existing) });
-        }
-        let leaked: &'static str = Box::leak(path.to_owned().into_boxed_str());
-        pool.insert(leaked);
+        let leaked = pool.intern(path)?;
         // SAFETY: validate rejects paths outside ResPath grammar and leaked str is static.
         Ok(unsafe { Self::new_unchecked(leaked) })
     }
@@ -153,6 +150,31 @@ impl ResPath {
                 rest.split_once('/').map_or("", |(_, body)| body)
             }
         }
+    }
+}
+
+// Static references cannot be reclaimed. Bound both bytes and table overhead.
+#[derive(Default)]
+struct PathPool {
+    paths: std::collections::HashSet<&'static str>,
+    bytes: usize,
+}
+
+impl PathPool {
+    const MAX_PATHS: usize = 65_536;
+    const MAX_BYTES: usize = 8 * 1024 * 1024;
+
+    fn intern(&mut self, path: &str) -> Result<&'static str, ResPathError> {
+        if let Some(existing) = self.paths.get(path) {
+            return Ok(existing);
+        }
+        if self.paths.len() >= Self::MAX_PATHS || path.len() > Self::MAX_BYTES - self.bytes {
+            return Err(ResPathError::InternLimit);
+        }
+        let leaked = Box::leak(path.to_owned().into_boxed_str());
+        self.bytes += path.len();
+        self.paths.insert(leaked);
+        Ok(leaked)
     }
 }
 
@@ -546,6 +568,23 @@ fn validate_body(body: &str) -> Result<(), ResPathError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn interner_bounds_bytes_and_entries_without_breaking_existing_paths() {
+        let mut pool = PathPool::default();
+        let existing = pool.intern("res://known").expect("path");
+        pool.bytes = PathPool::MAX_BYTES;
+        assert_eq!(pool.intern("res://new"), Err(ResPathError::InternLimit));
+        assert_eq!(pool.intern("res://known"), Ok(existing));
+        pool.bytes = 0;
+        for _ in 0..PathPool::MAX_PATHS {
+            let key = format!("res://{}", pool.paths.len());
+            if pool.paths.len() < PathPool::MAX_PATHS {
+                pool.intern(&key).expect("within cap");
+            }
+        }
+        assert_eq!(pool.intern("res://new"), Err(ResPathError::InternLimit));
+    }
 
     #[test]
     fn accepts_supported_schemes() {

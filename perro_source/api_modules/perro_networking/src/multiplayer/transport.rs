@@ -21,6 +21,7 @@ pub trait NetTransport {
     fn broadcast(&mut self, bytes: &[u8], reliable: bool);
     fn drain_events(&mut self) -> Vec<TransportEvent>;
     fn shutdown(&mut self);
+    fn forget_peer(&mut self, _peer: &PeerId) {}
 }
 
 pub enum ActiveTransport {
@@ -68,6 +69,13 @@ impl NetTransport for ActiveTransport {
         match self {
             ActiveTransport::Lan(transport) => transport.shutdown(),
             ActiveTransport::Steam(transport) => transport.shutdown(),
+        }
+    }
+
+    fn forget_peer(&mut self, peer: &PeerId) {
+        match self {
+            ActiveTransport::Lan(transport) => transport.forget_peer(peer),
+            ActiveTransport::Steam(transport) => transport.forget_peer(peer),
         }
     }
 }

@@ -28,6 +28,18 @@ pub use runtime::{
     bench_prepare_and_merge_scene, bench_prepare_merge_extract_scene, bench_prepare_scene,
 };
 pub use runtime::{Runtime, RuntimeFixedUpdateTiming, RuntimeScriptApi, RuntimeUpdateTiming};
+
+/// Normalize fixed update settings for both windowed and headless runners.
+/// Values at least one mean Hz; positive subsecond values retain legacy
+/// seconds-per-step semantics. Cap at 1000 Hz to bound catch-up work.
+pub fn normalize_fixed_timestep_seconds(value: Option<f32>) -> Option<f32> {
+    let raw = value.filter(|value| value.is_finite() && *value > 0.0)?;
+    Some(if raw < 1.0 {
+        raw.max(0.001)
+    } else {
+        1.0 / raw.min(1000.0)
+    })
+}
 pub use runtime_project::{
     AntiAlias, AudioConfig, AudioPropagationConfig, FrameRateCap, LocalizationConfig,
     OcclusionCulling, ParticleSimDefault, PowerPreference, ProjectLoadError, ProjectMetadata,

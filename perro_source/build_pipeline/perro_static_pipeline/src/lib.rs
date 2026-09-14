@@ -46,14 +46,13 @@ pub use tilesets::generate_static_tilesets;
 pub use uistyles::generate_static_ui_styles;
 
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     collections::HashMap,
     fmt::Write as _,
     fs,
     marker::PhantomData,
     path::{Path, PathBuf},
     rc::Rc,
-    sync::atomic::{AtomicBool, Ordering},
 };
 
 use perro_asset_formats::dlc::{DlcAssetAccess, DlcAssetFlags, DlcAssetKind};
@@ -64,42 +63,38 @@ const SRC_DIR: &str = "src";
 const STATIC_DIR: &str = "static";
 const EMBEDDED_DIR: &str = "embedded";
 const RES_DIR: &str = "res";
-static DEMO_MODE: AtomicBool = AtomicBool::new(false);
-
 #[must_use = "dropping guard restores prior demo mode"]
-pub struct StaticDemoModeGuard(bool);
+pub struct StaticDemoModeGuard(bool, PhantomData<Rc<()>>);
 
 pub fn push_demo_mode(active: bool) -> StaticDemoModeGuard {
-    StaticDemoModeGuard(DEMO_MODE.swap(active, Ordering::SeqCst))
+    StaticDemoModeGuard(DEMO_MODE.with(|mode| mode.replace(active)), PhantomData)
 }
 
 impl Drop for StaticDemoModeGuard {
     fn drop(&mut self) {
-        DEMO_MODE.store(self.0, Ordering::SeqCst);
+        DEMO_MODE.with(|mode| mode.set(self.0));
     }
 }
 
 pub(crate) fn demo_mode_active() -> bool {
-    DEMO_MODE.load(Ordering::SeqCst)
+    DEMO_MODE.with(Cell::get)
 }
 
-static PLAYTEST_MODE: AtomicBool = AtomicBool::new(false);
-
 #[must_use = "dropping guard restores prior playtest mode"]
-pub struct StaticPlaytestModeGuard(bool);
+pub struct StaticPlaytestModeGuard(bool, PhantomData<Rc<()>>);
 
 pub fn push_playtest_mode(active: bool) -> StaticPlaytestModeGuard {
-    StaticPlaytestModeGuard(PLAYTEST_MODE.swap(active, Ordering::SeqCst))
+    StaticPlaytestModeGuard(PLAYTEST_MODE.with(|mode| mode.replace(active)), PhantomData)
 }
 
 impl Drop for StaticPlaytestModeGuard {
     fn drop(&mut self) {
-        PLAYTEST_MODE.store(self.0, Ordering::SeqCst);
+        PLAYTEST_MODE.with(|mode| mode.set(self.0));
     }
 }
 
 pub(crate) fn playtest_mode_active() -> bool {
-    PLAYTEST_MODE.load(Ordering::SeqCst)
+    PLAYTEST_MODE.with(Cell::get)
 }
 
 #[derive(Clone, Debug)]
@@ -111,6 +106,8 @@ pub struct StaticPipelineOverrides {
 }
 
 thread_local! {
+    static DEMO_MODE: Cell<bool> = const { Cell::new(false) };
+    static PLAYTEST_MODE: Cell<bool> = const { Cell::new(false) };
     static STATIC_PIPELINE_OVERRIDES: RefCell<Option<StaticPipelineOverrides>> = const { RefCell::new(None) };
     static STATIC_ASSET_INVENTORY: RefCell<Option<Vec<StaticAssetInventoryRecord>>> = const { RefCell::new(None) };
 }
@@ -418,9 +415,10 @@ pub fn write_static_mod_rs(project_root: &Path) -> Result<(), StaticPipelineErro
 #[cfg(test)]
 mod tests {
     use super::{
-        StaticPipelineOverrides, begin_static_asset_inventory, current_overrides,
-        push_static_pipeline_overrides, record_static_assets, set_static_pipeline_overrides,
-        take_static_asset_inventory, write_static_lookup_fn,
+        StaticPipelineOverrides, begin_static_asset_inventory, current_overrides, demo_mode_active,
+        playtest_mode_active, push_demo_mode, push_playtest_mode, push_static_pipeline_overrides,
+        record_static_assets, set_static_pipeline_overrides, take_static_asset_inventory,
+        write_static_lookup_fn,
     };
     use perro_animation::{AnimationClip, AnimationTreeAsset};
     use perro_nodes::NodeType;
@@ -437,6 +435,23 @@ mod tests {
         sync::OnceLock,
         time::{Duration, Instant},
     };
+
+    #[test]
+    fn build_modes_stay_local_to_calling_thread() {
+        let demo = push_demo_mode(true);
+        let playtest = push_playtest_mode(true);
+        assert!(demo_mode_active());
+        assert!(playtest_mode_active());
+        std::thread::spawn(|| {
+            assert!(!demo_mode_active());
+            assert!(!playtest_mode_active());
+        })
+        .join()
+        .expect("mode check thread");
+        drop((demo, playtest));
+        assert!(!demo_mode_active());
+        assert!(!playtest_mode_active());
+    }
 
     #[test]
     fn static_lookup_emits_sorted_parallel_arrays() {

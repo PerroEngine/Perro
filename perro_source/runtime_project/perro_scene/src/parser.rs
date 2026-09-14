@@ -419,7 +419,10 @@ impl<'a> Parser<'a> {
         Ok(SceneValue::Key(SceneValueKey::from(out)))
     }
 
-    fn parse_type_block_after_lbracket(&mut self) -> ParseResult<SceneNodeData> {
+    fn parse_type_block_after_lbracket(&mut self, depth: usize) -> ParseResult<SceneNodeData> {
+        if depth >= MAX_SCENE_VALUE_DEPTH {
+            return Err("Scene type nesting limit exceeded".to_string());
+        }
         let ty = self.expect_ident()?.to_string();
         if self.current == Token::Slash {
             self.advance();
@@ -444,7 +447,7 @@ impl<'a> Parser<'a> {
                         }
                         break;
                     } else {
-                        let nested = self.parse_type_block_after_lbracket()?;
+                        let nested = self.parse_type_block_after_lbracket(depth + 1)?;
                         base = Some(SceneNodeDataBase::Owned(Box::new(nested)));
                     }
                 }
@@ -700,7 +703,7 @@ impl<'a> Parser<'a> {
                             false,
                         )
                     } else {
-                        (self.parse_type_block_after_lbracket()?, true)
+                        (self.parse_type_block_after_lbracket(0)?, true)
                     };
 
                     if has_data_override {
@@ -965,6 +968,19 @@ fn euler_xyz_radians_to_quat_value(x: f32, y: f32, z: f32) -> SceneValue {
 mod tests {
     use super::{MAX_SCENE_VALUE_DEPTH, Parser};
     use crate::SceneValue;
+
+    #[test]
+    fn typed_blocks_reject_excessive_depth() {
+        let src = format!(
+            "$root = @main\n[main]\n{}{}[/main]",
+            "[Node]\n".repeat(1024),
+            "[/Node]\n".repeat(1024)
+        );
+        let err = Parser::new(&src)
+            .try_parse_scene()
+            .expect_err("deep types must fail");
+        assert!(err.contains("nesting limit"), "{err}");
+    }
 
     #[test]
     fn parser_keeps_script_path_string() {

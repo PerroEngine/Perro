@@ -24,4 +24,5 @@ perro_scene.workspace = true
 perro_static_pipeline.workspace = true
 toml.workspace = true
 sha2 = "0.10"
+syn = { version = "2.0", features = ["full", "parsing"] }
 wasm-bindgen-cli-support = "=0.2.126"

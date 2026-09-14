@@ -144,13 +144,44 @@ fn resolve_res_subdir(
     };
 
     let rel_path = PathBuf::from(rel);
-    if rel_path
-        .components()
-        .any(|c| matches!(c, std::path::Component::ParentDir))
+    let has_windows_prefix = rel.as_bytes().get(1) == Some(&b':')
+        && rel.as_bytes().first().is_some_and(u8::is_ascii_alphabetic);
+    if rel_path.is_absolute()
+        || has_windows_prefix
+        || rel_path.components().any(|c| {
+            matches!(
+                c,
+                std::path::Component::ParentDir
+                    | std::path::Component::RootDir
+                    | std::path::Component::Prefix(_)
+            )
+        })
     {
-        return Err("res subdir cannot contain `..` segments".to_string());
+        return Err("res subdir must stay inside project resource root".to_string());
     }
-    Ok(res_root.join(rel_path))
+    let target = res_root.join(&rel_path);
+    let canonical_root = res_root.canonicalize().map_err(|err| {
+        format!(
+            "failed to resolve resource root {}: {err}",
+            res_root.display()
+        )
+    })?;
+    let mut current = res_root.to_path_buf();
+    for part in rel_path.components() {
+        current.push(part);
+        if current.exists() {
+            let canonical = current.canonicalize().map_err(|err| {
+                format!(
+                    "failed to resolve resource path {}: {err}",
+                    current.display()
+                )
+            })?;
+            if !canonical.starts_with(&canonical_root) {
+                return Err("res subdir must stay inside project resource root".to_string());
+            }
+        }
+    }
+    Ok(target)
 }
 
 pub(crate) fn validate_dlc_name(raw: &str) -> Result<String, String> {
@@ -618,4 +649,53 @@ pub(crate) fn new_panimtree_command(args: &[String], cwd: &Path) -> Result<(), S
     );
     maybe_open_file_in_editor(args, &target_path)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_res_subdir;
+    use std::path::PathBuf;
+
+    fn temp_root(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "perro_scaffold_{label}_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ))
+    }
+
+    #[test]
+    fn res_subdir_rejects_windows_prefix_and_parent_escape() {
+        let tmp = temp_root("path");
+        let root = tmp.join("res");
+        std::fs::create_dir_all(&root).expect("create root");
+        assert!(resolve_res_subdir(r"C:\outside", &root, "res://").is_err());
+        assert!(resolve_res_subdir("res://../outside", &root, "res://").is_err());
+        assert_eq!(
+            resolve_res_subdir("res://scenes/ui", &root, "res://").expect("safe path"),
+            root.join("scenes/ui")
+        );
+        std::fs::remove_dir_all(tmp).expect("remove temp");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn res_subdir_rejects_symlink_escape() {
+        let tmp = temp_root("link");
+        let root = tmp.join("res");
+        let outside = tmp.join("outside");
+        std::fs::create_dir_all(&root).expect("create root");
+        std::fs::create_dir_all(&outside).expect("create outside");
+        let link = root.join("link");
+        if std::os::windows::fs::symlink_dir(&outside, &link).is_err() {
+            let _ = std::fs::remove_dir_all(tmp);
+            return;
+        }
+        assert!(resolve_res_subdir("res://link/new", &root, "res://").is_err());
+        std::fs::remove_dir(&link).expect("remove link");
+        std::fs::remove_dir_all(tmp).expect("remove temp");
+    }
 }

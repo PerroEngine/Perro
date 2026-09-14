@@ -31,11 +31,18 @@ impl HeartbeatConfig {
     }
 
     /// Convenience for game code that thinks in float seconds.
-    pub fn from_secs_f32(interval: f32, timeout: f32) -> Self {
-        Self::new(
-            Duration::from_secs_f32(interval),
-            Duration::from_secs_f32(timeout),
-        )
+    pub fn from_secs_f32(interval: f32, timeout: f32) -> Result<Self, String> {
+        if !interval.is_finite() || interval < 0.0 {
+            return Err("heartbeat interval must be finite and nonnegative".into());
+        }
+        if !timeout.is_finite() || timeout < 0.0 {
+            return Err("heartbeat timeout must be finite and nonnegative".into());
+        }
+        let interval = Duration::try_from_secs_f32(interval)
+            .map_err(|_| "heartbeat interval is too large".to_string())?;
+        let timeout = Duration::try_from_secs_f32(timeout)
+            .map_err(|_| "heartbeat timeout is too large".to_string())?;
+        Ok(Self::new(interval, timeout))
     }
 }
 
@@ -44,5 +51,24 @@ impl Default for HeartbeatConfig {
     /// beats of tolerance, so a stutter or brief stall won't false-trip).
     fn default() -> Self {
         Self::new(Duration::from_secs(1), Duration::from_secs(5))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn float_constructor_rejects_invalid_durations() {
+        for value in [-1.0, f32::NAN, f32::INFINITY, f32::MAX] {
+            assert!(HeartbeatConfig::from_secs_f32(value, 1.0).is_err());
+            assert!(HeartbeatConfig::from_secs_f32(1.0, value).is_err());
+        }
+        assert_eq!(
+            HeartbeatConfig::from_secs_f32(1.0, 5.0)
+                .expect("valid heartbeat")
+                .timeout,
+            Duration::from_secs(5)
+        );
     }
 }

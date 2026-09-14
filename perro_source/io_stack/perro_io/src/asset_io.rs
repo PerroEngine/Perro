@@ -328,6 +328,7 @@ impl Drop for DlcSelfContextGuard {
 
 #[derive(Debug, Clone)]
 pub enum ResolvedPath {
+    Uninitialized(&'static str),
     Excluded(String),
     Disk(PathBuf),
     WebUserStorage(String),
@@ -341,15 +342,12 @@ fn normalize_user_app_name(name: &str) -> String {
     name.replace(' ', "_")
 }
 
-fn user_app_name(project_root_opt: &Option<Arc<ProjectRoot>>) -> String {
-    let app_name = project_root_opt
-        .as_deref()
-        .map(|root| match root {
-            ProjectRoot::Disk { name, .. } => name.as_str(),
-            ProjectRoot::PerroAssets { name, .. } => name.as_str(),
-        })
-        .expect("Project root not set");
-    normalize_user_app_name(app_name)
+fn user_app_name(project_root_opt: &Option<Arc<ProjectRoot>>) -> Option<String> {
+    let app_name = project_root_opt.as_deref().map(|root| match root {
+        ProjectRoot::Disk { name, .. } => name.as_str(),
+        ProjectRoot::PerroAssets { name, .. } => name.as_str(),
+    })?;
+    Some(normalize_user_app_name(app_name))
 }
 
 #[cfg(any(test, target_arch = "wasm32"))]
@@ -460,7 +458,9 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
 
     // Both builds share user data; demo:// aliases the demo subdirectory.
     if let Some(stripped) = user_relative_path(path) {
-        let app_name = user_app_name(&project_root_opt);
+        let Some(app_name) = user_app_name(&project_root_opt) else {
+            return ResolvedPath::Uninitialized("project root not set for user path");
+        };
 
         #[cfg(target_arch = "wasm32")]
         {
@@ -598,6 +598,7 @@ fn try_static_binary_slice(path: &str) -> Option<io::Result<Cow<'static, [u8]>>>
 
 fn load_resolved(resolved: ResolvedPath) -> io::Result<Vec<u8>> {
     match resolved {
+        ResolvedPath::Uninitialized(message) => Err(io::Error::other(message)),
         ResolvedPath::Excluded(path) => Err(io::Error::new(
             io::ErrorKind::NotFound,
             format!("asset `{path}` excluded from build"),
@@ -640,6 +641,7 @@ fn load_resolved(resolved: ResolvedPath) -> io::Result<Vec<u8>> {
 pub fn stream_asset(path: &str) -> io::Result<Box<dyn ReadSeek>> {
     validate_virtual_asset_path(path)?;
     match resolve_path(path) {
+        ResolvedPath::Uninitialized(message) => Err(io::Error::other(message)),
         ResolvedPath::Excluded(path) => Err(io::Error::new(
             io::ErrorKind::NotFound,
             format!("asset `{path}` excluded from build"),
@@ -692,6 +694,7 @@ pub fn stream_asset(path: &str) -> io::Result<Box<dyn ReadSeek>> {
 pub fn save_asset(path: &str, data: &[u8]) -> io::Result<()> {
     validate_virtual_asset_path(path)?;
     match resolve_path(path) {
+        ResolvedPath::Uninitialized(message) => Err(io::Error::other(message)),
         ResolvedPath::Excluded(path) => Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
             format!("asset `{path}` excluded from build"),
@@ -1051,6 +1054,18 @@ mod tests {
         let as_text = disk_path.to_string_lossy();
         assert!(as_text.contains("My_Cool_Game"));
         assert!(!as_text.contains("My Cool Game"));
+    }
+
+    #[test]
+    fn resolve_user_path_before_project_setup_does_not_panic() {
+        let _guard = TEST_LOCK.lock().expect("test lock");
+        let old_root = PROJECT_ASSET_STATE.write().expect("state").root.take();
+        assert!(matches!(
+            resolve_path("user://save.dat"),
+            ResolvedPath::Uninitialized(_)
+        ));
+        assert!(load_asset("user://save.dat").is_err());
+        PROJECT_ASSET_STATE.write().expect("state").root = old_root;
     }
 
     #[test]

@@ -372,14 +372,27 @@ fn post_param_value(value: &SceneValue) -> Option<CustomPostParamValue> {
 }
 
 fn parse_param_key_index(key: &str) -> Option<usize> {
+    const MAX_CUSTOM_PARAMS: usize = 1024;
     let key = key.trim();
     if let Ok(i) = key.parse::<usize>() {
-        return Some(i);
+        return (i < MAX_CUSTOM_PARAMS).then_some(i);
     }
     if let Some(rest) = key.strip_prefix('p')
         && let Ok(i) = rest.parse::<usize>()
     {
-        return Some(i);
+        return (i < MAX_CUSTOM_PARAMS).then_some(i);
     }
     None
+}
+
+#[cfg(test)]
+mod param_index_limits_tests {
+    use super::parse_param_key_index;
+
+    #[test]
+    fn custom_params_reject_huge_index() {
+        assert_eq!(parse_param_key_index(&format!("p{}", usize::MAX)), None);
+        assert_eq!(parse_param_key_index("p1023"), Some(1023));
+        assert_eq!(parse_param_key_index("p1024"), None);
+    }
 }

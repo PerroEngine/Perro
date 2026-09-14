@@ -1,4 +1,7 @@
-use super::{build_compressed_perro_archive_from_entries, build_perro_assets_archive, should_skip};
+use super::{
+    build_compressed_perro_archive_from_entries, build_perro_assets_archive,
+    reuse_index_count_fits_archive, reuse_stats_row_allowed, should_skip,
+};
 use crate::archive::PerroAssetsArchive;
 use crate::common::PERRO_ASSETS_COMPRESSED_MAGIC;
 use std::collections::HashSet;
@@ -25,6 +28,20 @@ fn pmat_is_skipped_as_compiled_resource() {
     assert!(should_skip("music/theme.midi", &extra));
     assert!(should_skip("soundfonts/game.sf2", &extra));
     assert!(should_skip("shaders/custom.wgsl", &extra));
+}
+
+#[test]
+fn reused_archive_rejects_impossible_file_count_before_alloc() {
+    assert!(!reuse_index_count_fits_archive(20, 20, u32::MAX));
+    assert!(!reuse_index_count_fits_archive(20, 21, 1));
+    assert!(reuse_index_count_fits_archive(50, 20, 1));
+    assert!(!reuse_index_count_fits_archive(usize::MAX, 0, 1_000_001));
+}
+
+#[test]
+fn reused_archive_caps_stat_rows() {
+    assert!(reuse_stats_row_allowed(999_999));
+    assert!(!reuse_stats_row_allowed(1_000_000));
 }
 
 #[test]

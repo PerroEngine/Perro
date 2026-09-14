@@ -117,6 +117,7 @@ fn as_particle_render_mode(value: &SceneValue) -> Option<ParticleType> {
 }
 
 fn as_particle_params(value: &SceneValue) -> Option<Vec<f32>> {
+    const MAX_PARTICLE_PARAMS: usize = 1024;
     if let Some(v) = value.as_const_param() {
         return match v {
             perro_structs::ConstParamValue::F32(n) => Some(vec![n]),
@@ -132,6 +133,9 @@ fn as_particle_params(value: &SceneValue) -> Option<Vec<f32>> {
             let mut indexed = Vec::<(usize, f32)>::new();
             for (k, v) in entries.as_ref() {
                 let idx = parse_param_key_index(k)?;
+                if idx >= MAX_PARTICLE_PARAMS {
+                    return None;
+                }
                 let val = match v.as_const_param() {
                     Some(perro_structs::ConstParamValue::F32(n)) => n,
                     Some(perro_structs::ConstParamValue::I32(n)) => n as f32,
@@ -144,12 +148,25 @@ fn as_particle_params(value: &SceneValue) -> Option<Vec<f32>> {
             }
             indexed.sort_unstable_by_key(|(i, _)| *i);
             let max = indexed.last().map(|(i, _)| *i).unwrap_or(0);
-            let mut out = vec![0.0; max + 1];
+            let mut out = vec![0.0; max.checked_add(1)?];
             for (i, v) in indexed {
                 out[i] = v;
             }
             Some(out)
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod particle_param_limits_tests {
+    use super::*;
+
+    #[test]
+    fn particle_params_reject_huge_sparse_index() {
+        let value = SceneValue::Object(
+            vec![(format!("p{}", usize::MAX).into(), SceneValue::F32(1.0))].into(),
+        );
+        assert!(as_particle_params(&value).is_none());
     }
 }

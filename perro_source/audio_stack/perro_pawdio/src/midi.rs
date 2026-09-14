@@ -1034,7 +1034,7 @@ impl RustyNoteMixerSource {
         self.notes.insert(note.id, (note.channel, note.note));
         if !note.held {
             self.auto_releases
-                .push((self.sample + duration_samples(note.sustain), note.id));
+                .push((auto_release_deadline(self.sample, note.sustain), note.id));
         }
     }
 
@@ -1359,6 +1359,11 @@ fn duration_samples(duration: Duration) -> u64 {
     (duration.as_secs_f64() * SAMPLE_RATE as f64).max(0.0) as u64
 }
 
+#[cfg(feature = "playback")]
+fn auto_release_deadline(sample: u64, sustain: Duration) -> u64 {
+    sample.saturating_add(duration_samples(sustain))
+}
+
 #[doc(hidden)]
 #[cfg(feature = "playback")]
 pub fn parse_built_in_midi_file(bytes: &[u8]) -> Result<Arc<BuiltInMidiFileData>, String> {
@@ -1425,6 +1430,15 @@ pub fn parse_built_in_midi_file(bytes: &[u8]) -> Result<Arc<BuiltInMidiFileData>
 #[cfg(all(test, feature = "playback"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn auto_release_deadline_saturates() {
+        assert_eq!(auto_release_deadline(1, Duration::MAX), u64::MAX);
+        assert_eq!(
+            auto_release_deadline(u64::MAX, Duration::from_secs(1)),
+            u64::MAX
+        );
+    }
 
     #[test]
     fn note_frequency_maps_a4() {

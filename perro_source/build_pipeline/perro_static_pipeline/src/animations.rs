@@ -704,7 +704,7 @@ fn sanitize_ident(path: &str) -> String {
             out.push('_');
         }
     }
-    out
+    format!("{out}_{:016X}", perro_ids::string_to_u64(path))
 }
 
 fn escape_str(input: &str) -> String {
@@ -748,6 +748,14 @@ fps = 24
 }
 [/Frame0]
 "#;
+
+    #[test]
+    fn generated_animation_ids_do_not_alias_sanitized_paths() {
+        assert_ne!(
+            sanitize_ident("res://foo-bar.panim"),
+            sanitize_ident("res://foo_bar.panim")
+        );
+    }
 
     fn unique_temp_dir(label: &str) -> PathBuf {
         let ts = SystemTime::now()

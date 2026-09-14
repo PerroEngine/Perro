@@ -91,11 +91,11 @@ fn transpile_frontend_script_with_scene_vars(
         format!("<{state_ty} as Default>::default()")
     };
 
-    let has_init = has_nonempty_lifecycle_method(&source, "on_init");
-    let has_start = has_nonempty_lifecycle_method(&source, "on_all_init");
-    let has_update = has_nonempty_lifecycle_method(&source, "on_update");
-    let has_fixed = has_nonempty_lifecycle_method(&source, "on_fixed_update");
-    let has_removal = has_nonempty_lifecycle_method(&source, "on_removal");
+    let has_init = has_nonempty_lifecycle_method(&source, &script_ty, "on_init");
+    let has_start = has_nonempty_lifecycle_method(&source, &script_ty, "on_all_init");
+    let has_update = has_nonempty_lifecycle_method(&source, &script_ty, "on_update");
+    let has_fixed = has_nonempty_lifecycle_method(&source, &script_ty, "on_fixed_update");
+    let has_removal = has_nonempty_lifecycle_method(&source, &script_ty, "on_removal");
     let user_methods = parse_inherent_methods(&source, &script_ty);
     if debug_methods {
         let method_names = user_methods
@@ -326,93 +326,78 @@ fn parse_marked_struct_name(source: &str, marker: &str) -> Option<String> {
     None
 }
 
-fn has_nonempty_lifecycle_method(source: &str, method_name: &str) -> bool {
-    let needle = format!("fn {method_name}(");
-    let mut search_from = 0usize;
-
-    while search_from < source.len() {
-        let Some(rel) = source[search_from..].find(&needle) else {
-            break;
-        };
-        let fn_start = search_from + rel;
-        let Some(body) = extract_method_body_from_fn_start(source, fn_start) else {
-            search_from = fn_start + needle.len();
-            continue;
-        };
-
-        if method_signature_looks_like_lifecycle(source, fn_start, body.start)
-            && block_has_non_comment_tokens(&source[body.start + 1..body.end])
+fn has_nonempty_lifecycle_method(source: &str, script_ty: &str, method_name: &str) -> bool {
+    let Ok(file) = syn::parse_file(source) else {
+        return false;
+    };
+    file.items.iter().any(|item| match item {
+        syn::Item::Impl(item_impl)
+            if item_impl.trait_.is_none() && impl_targets_type(item_impl, script_ty) =>
         {
-            return true;
+            item_impl
+                .items
+                .iter()
+                .any(|item| impl_item_has_lifecycle_body(item, method_name))
         }
+        syn::Item::Macro(item_macro) if item_macro.mac.path.is_ident("lifecycle") => {
+            syn::parse2::<LifecycleBody>(item_macro.mac.tokens.clone()).is_ok_and(|body| {
+                body.0
+                    .iter()
+                    .any(|item| impl_item_has_lifecycle_body(item, method_name))
+            })
+        }
+        _ => false,
+    })
+}
 
-        search_from = body.end + 1;
+struct LifecycleBody(Vec<syn::ImplItem>);
+
+impl syn::parse::Parse for LifecycleBody {
+    fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
+        let content;
+        syn::braced!(content in input);
+        let mut items = Vec::new();
+        while !content.is_empty() {
+            items.push(content.parse()?);
+        }
+        Ok(Self(items))
     }
-
-    false
 }
 
-fn extract_method_body_from_fn_start(
-    source: &str,
-    fn_start: usize,
-) -> Option<std::ops::Range<usize>> {
-    let after_fn = &source[fn_start..];
-    let sig_open_rel = after_fn.find('(')?;
-    let sig_open = fn_start + sig_open_rel;
-    let sig_close = find_matching_delim(source, sig_open, '(', ')')?;
-    let body_start_rel = source[sig_close + 1..].find('{')?;
-    let body_start = sig_close + 1 + body_start_rel;
-    let body_end = find_matching_delim(source, body_start, '{', '}')?;
-    Some(body_start..body_end)
+fn impl_targets_type(item_impl: &syn::ItemImpl, script_ty: &str) -> bool {
+    let syn::Type::Path(path) = item_impl.self_ty.as_ref() else {
+        return false;
+    };
+    path.path
+        .segments
+        .last()
+        .is_some_and(|segment| segment.ident == script_ty)
 }
 
-fn method_signature_looks_like_lifecycle(source: &str, fn_start: usize, body_start: usize) -> bool {
-    let sig = &source[fn_start..body_start];
-    sig.contains("&self") && sig.contains("ScriptContext")
+fn impl_item_has_lifecycle_body(item: &syn::ImplItem, method_name: &str) -> bool {
+    let syn::ImplItem::Fn(method) = item else {
+        return false;
+    };
+    method.sig.ident == method_name
+        && method
+            .sig
+            .receiver()
+            .is_some_and(|receiver| receiver.reference.is_some())
+        && method.sig.inputs.iter().any(|arg| match arg {
+            syn::FnArg::Typed(arg) => type_mentions_ident(&arg.ty, "ScriptContext"),
+            syn::FnArg::Receiver(_) => false,
+        })
+        && !method.block.stmts.is_empty()
 }
 
-fn block_has_non_comment_tokens(block: &str) -> bool {
-    let bytes = block.as_bytes();
-    let mut i = 0usize;
-
-    while i < bytes.len() {
-        let b = bytes[i];
-        if b.is_ascii_whitespace() {
-            i += 1;
-            continue;
-        }
-
-        if b == b'/' && i + 1 < bytes.len() {
-            let next = bytes[i + 1];
-            if next == b'/' {
-                i += 2;
-                while i < bytes.len() && bytes[i] != b'\n' {
-                    i += 1;
-                }
-                continue;
-            }
-            if next == b'*' {
-                i += 2;
-                let mut depth = 1_i32;
-                while i + 1 < bytes.len() && depth > 0 {
-                    if bytes[i] == b'/' && bytes[i + 1] == b'*' {
-                        depth += 1;
-                        i += 2;
-                    } else if bytes[i] == b'*' && bytes[i + 1] == b'/' {
-                        depth -= 1;
-                        i += 2;
-                    } else {
-                        i += 1;
-                    }
-                }
-                continue;
-            }
-        }
-
-        return true;
+fn type_mentions_ident(ty: &syn::Type, expected: &str) -> bool {
+    match ty {
+        syn::Type::Path(path) => path.path.segments.iter().any(|part| part.ident == expected),
+        syn::Type::Reference(reference) => type_mentions_ident(&reference.elem, expected),
+        syn::Type::Group(group) => type_mentions_ident(&group.elem, expected),
+        syn::Type::Paren(paren) => type_mentions_ident(&paren.elem, expected),
+        _ => false,
     }
-
-    false
 }
 
 fn parse_named_struct(source: &str, expected: &str) -> Option<String> {

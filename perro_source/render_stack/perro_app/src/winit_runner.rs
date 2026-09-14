@@ -137,17 +137,7 @@ pub(crate) fn map_cursor_icon(icon: perro_ui::CursorIcon) -> WinitCursorIcon {
 
 #[inline]
 fn normalize_fixed_timestep_seconds(value: Option<f32>) -> Option<f32> {
-    let raw = value?;
-    if !raw.is_finite() || raw <= 0.0 {
-        return None;
-    }
-    // New semantics: values >= 1.0 are treated as Hz.
-    // Backward compatibility: sub-second values remain seconds-per-step.
-    if raw < 1.0 {
-        Some(raw)
-    } else {
-        Some(1.0 / raw)
-    }
+    perro_runtime::normalize_fixed_timestep_seconds(value)
 }
 
 #[inline]

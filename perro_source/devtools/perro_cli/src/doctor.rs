@@ -196,25 +196,10 @@ fn collect_files_with_extension(
     extension: &str,
     out: &mut Vec<PathBuf>,
 ) -> Result<(), String> {
-    if !dir.exists() {
-        return Ok(());
-    }
-    let entries = fs::read_dir(dir)
-        .map_err(|err| format!("failed to read directory {}: {err}", dir.display()))?;
-    for entry in entries {
-        let entry = entry
-            .map_err(|err| format!("failed to read directory entry in {}: {err}", dir.display()))?;
-        let path = entry.path();
-        if path.is_dir() {
-            collect_files_with_extension(&path, extension, out)?;
-        } else if path
-            .extension()
+    collect_files_recursive_guarded(dir, out, &mut HashSet::new(), 0, |path| {
+        path.extension()
             .is_some_and(|ext| ext.eq_ignore_ascii_case(extension))
-        {
-            out.push(path);
-        }
-    }
-    Ok(())
+    })
 }
 
 fn validate_project_config_refs(
@@ -500,7 +485,39 @@ fn collect_reference_text_files_recursive(
     dir: &Path,
     out: &mut Vec<PathBuf>,
 ) -> Result<(), String> {
+    collect_files_recursive_guarded(dir, out, &mut HashSet::new(), 0, |path| {
+        path.extension().is_some_and(is_reference_text_extension)
+    })
+}
+
+fn collect_files_recursive_guarded(
+    dir: &Path,
+    out: &mut Vec<PathBuf>,
+    visited: &mut HashSet<PathBuf>,
+    depth: usize,
+    include: impl Fn(&Path) -> bool + Copy,
+) -> Result<(), String> {
+    const MAX_SCAN_DEPTH: usize = 128;
     if !dir.exists() {
+        return Ok(());
+    }
+    if depth > MAX_SCAN_DEPTH {
+        return Err(format!(
+            "directory scan depth exceeds {MAX_SCAN_DEPTH} at {}",
+            dir.display()
+        ));
+    }
+    if fs::symlink_metadata(dir)
+        .map_err(|err| format!("failed to inspect {}: {err}", dir.display()))?
+        .file_type()
+        .is_symlink()
+    {
+        return Ok(());
+    }
+    let canonical = dir
+        .canonicalize()
+        .map_err(|err| format!("failed to resolve directory {}: {err}", dir.display()))?;
+    if !visited.insert(canonical) {
         return Ok(());
     }
     let entries = fs::read_dir(dir)
@@ -509,9 +526,15 @@ fn collect_reference_text_files_recursive(
         let entry = entry
             .map_err(|err| format!("failed to read directory entry in {}: {err}", dir.display()))?;
         let path = entry.path();
-        if path.is_dir() {
-            collect_reference_text_files_recursive(&path, out)?;
-        } else if path.extension().is_some_and(is_reference_text_extension) {
+        let file_type = entry
+            .file_type()
+            .map_err(|err| format!("failed to inspect {}: {err}", path.display()))?;
+        if file_type.is_symlink() {
+            continue;
+        }
+        if file_type.is_dir() {
+            collect_files_recursive_guarded(&path, out, visited, depth + 1, include)?;
+        } else if include(&path) {
             out.push(path);
         }
     }
@@ -778,22 +801,9 @@ fn validate_node_ref_type_warnings(
 }
 
 fn collect_scene_files_recursive(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
-    if !dir.exists() {
-        return Ok(());
-    }
-    let entries = fs::read_dir(dir)
-        .map_err(|err| format!("failed to read directory {}: {err}", dir.display()))?;
-    for entry in entries {
-        let entry = entry
-            .map_err(|err| format!("failed to read directory entry in {}: {err}", dir.display()))?;
-        let path = entry.path();
-        if path.is_dir() {
-            collect_scene_files_recursive(&path, out)?;
-        } else if path.extension().is_some_and(|ext| ext == "scn") {
-            out.push(path);
-        }
-    }
-    Ok(())
+    collect_files_recursive_guarded(dir, out, &mut HashSet::new(), 0, |path| {
+        path.extension().is_some_and(|ext| ext == "scn")
+    })
 }
 
 fn validate_scene_doc_node_refs(

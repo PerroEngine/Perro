@@ -145,6 +145,9 @@ fn uploaded_surface_ranges(
     index_start: u32,
     index_count: u32,
 ) -> Vec<MeshRange> {
+    if index_start.checked_add(index_count).is_none() {
+        return Vec::new();
+    }
     if decoded.is_empty() {
         return vec![MeshRange {
             index_start,
@@ -154,10 +157,16 @@ fn uploaded_surface_ranges(
     }
     decoded
         .iter()
-        .map(|range| MeshRange {
-            index_start: index_start + range.index_start,
-            index_count: range.index_count,
-            base_vertex: 0,
+        .filter_map(|range| {
+            let range_end = range.index_start.checked_add(range.index_count)?;
+            if range_end > index_count {
+                return None;
+            }
+            Some(MeshRange {
+                index_start: index_start.checked_add(range.index_start)?,
+                index_count: range.index_count,
+                base_vertex: 0,
+            })
         })
         .collect()
 }
@@ -171,7 +180,7 @@ fn uploaded_meshlets(decoded: &[DecodedMeshlet], index_start: u32) -> Vec<Meshle
                 return None;
             }
             Some(MeshletRange {
-                index_start: index_start + meshlet.index_start,
+                index_start: index_start.checked_add(meshlet.index_start)?,
                 index_count: meshlet.index_count,
                 center: meshlet.center,
                 radius: meshlet.radius.max(0.0),
@@ -687,22 +696,36 @@ impl SharedMeshArena {
         let decoded_meshlets = mesh.meshlets;
         let decoded_lods = mesh.lods;
         let base_vertex = if skinned {
-            self.mesh_vertex_len as u32
+            u32::try_from(self.mesh_vertex_len).ok()?
         } else {
-            self.rigid_vertex_len as u32
+            u32::try_from(self.rigid_vertex_len).ok()?
         };
-        let index_start = self.mesh_index_len as u32;
-        let index_count = mesh.indices.len() as u32;
+        let index_start = u32::try_from(self.mesh_index_len).ok()?;
+        let index_count = u32::try_from(mesh.indices.len()).ok()?;
+        index_start.checked_add(index_count)?;
 
         let (bounds_center, bounds_radius) = mesh_bounds_from_vertices(decoded_vertices)?;
         let surface_ranges =
             uploaded_surface_ranges(decoded_surface_ranges, index_start, index_count);
         let vertex_count = decoded_vertices.len();
-        let added_indices: Vec<u32> = mesh.indices.iter().map(|idx| idx + base_vertex).collect();
+        let added_indices: Vec<u32> = mesh
+            .indices
+            .iter()
+            .map(|idx| {
+                if *idx as usize >= vertex_count {
+                    return None;
+                }
+                idx.checked_add(base_vertex)
+            })
+            .collect::<Option<_>>()?;
 
-        let new_index_len = self.mesh_index_len + added_indices.len();
-        let new_skinned_len = self.mesh_vertex_len + if skinned { vertex_count } else { 0 };
-        let new_rigid_len = self.rigid_vertex_len + if skinned { 0 } else { vertex_count };
+        let new_index_len = self.mesh_index_len.checked_add(added_indices.len())?;
+        let new_skinned_len =
+            self.mesh_vertex_len
+                .checked_add(if skinned { vertex_count } else { 0 })?;
+        let new_rigid_len =
+            self.rigid_vertex_len
+                .checked_add(if skinned { 0 } else { vertex_count })?;
         self.ensure_mesh_buffer_capacity(
             device,
             queue,
@@ -850,7 +873,16 @@ impl SharedMeshArena {
         // the rewrite folds in the base vertex the mesh already sits at -- the
         // arena tail is irrelevant here.
         let base_vertex = slot.vertex_start;
-        let indices: Vec<u32> = mesh.indices.iter().map(|idx| idx + base_vertex).collect();
+        let indices: Vec<u32> = mesh
+            .indices
+            .iter()
+            .map(|idx| {
+                if *idx >= slot.vertex_count {
+                    return None;
+                }
+                idx.checked_add(base_vertex)
+            })
+            .collect::<Option<_>>()?;
 
         if skinned {
             let vertices: Vec<SkinnedMeshVertex> =
@@ -1620,6 +1652,25 @@ mod in_place_tests {
     use super::*;
     use perro_render_bridge::{Mesh3D, RuntimeMeshVertex};
     use perro_structs::UnitVector4;
+
+    #[test]
+    fn uploaded_ranges_drop_oob_and_overflow() {
+        let ranges = [
+            MeshRange {
+                index_start: 2,
+                index_count: 2,
+                base_vertex: 0,
+            },
+            MeshRange {
+                index_start: u32::MAX,
+                index_count: 2,
+                base_vertex: 0,
+            },
+        ];
+        let uploaded = uploaded_surface_ranges(&ranges, 10, 4);
+        assert_eq!(uploaded.len(), 1);
+        assert_eq!(uploaded[0].index_start, 12);
+    }
 
     async fn request_device() -> Option<(wgpu::Device, wgpu::Queue)> {
         let instance = wgpu::Instance::default();

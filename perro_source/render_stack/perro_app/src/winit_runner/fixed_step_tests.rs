@@ -3,6 +3,18 @@ use super::{
     plan_fixed_steps,
 };
 use std::time::Instant;
+
+#[test]
+fn extreme_fixed_rates_keep_safe_step_duration() {
+    for raw in [f32::MAX, f32::MIN_POSITIVE, 100_000.0, 0.000_001] {
+        let step = super::normalize_fixed_timestep_seconds(Some(raw)).expect("positive step");
+        assert!(step >= 0.001);
+        assert!(!std::time::Duration::from_secs_f32(step).is_zero());
+    }
+    for raw in [f32::NAN, f32::INFINITY, -1.0, 0.0] {
+        assert!(super::normalize_fixed_timestep_seconds(Some(raw)).is_none());
+    }
+}
 #[cfg(not(target_arch = "wasm32"))]
 use winit::dpi::PhysicalSize;
 

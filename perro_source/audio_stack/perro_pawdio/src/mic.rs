@@ -1003,17 +1003,22 @@ impl MicRing {
     /// Capacity when the caller asked for an unbounded capture (`max_samples`
     /// of 0, tests only in practice): 64Ki samples (~1.4s mono @ 48kHz).
     const UNBOUNDED_FALLBACK_CAPACITY: usize = 1 << 16;
+    /// Keep capture storage below 32 MiB (`AtomicI16` is two bytes).
+    const MAX_CAPACITY: usize = 1 << 24;
 
     fn new(max_samples: usize) -> Self {
         let retained = if max_samples == 0 {
             Self::UNBOUNDED_FALLBACK_CAPACITY
         } else {
-            max_samples
+            max_samples.min(Self::MAX_CAPACITY)
         };
         // Power-of-two capacity turns the per-sample `total % capacity` into a
         // mask. Readers still only see the newest `retained` samples, so the
         // caller's `max_seconds` window is unchanged.
-        let capacity = retained.next_power_of_two();
+        let capacity = retained
+            .checked_next_power_of_two()
+            .unwrap_or(Self::MAX_CAPACITY)
+            .min(Self::MAX_CAPACITY);
         Self {
             data: (0..capacity).map(|_| AtomicI16::new(0)).collect(),
             retained,
@@ -1454,8 +1459,7 @@ fn open_stream_on(
     let sample_rate = config.sample_rate().0;
     let src_channels = config.channels().max(1);
     let out_channels = settings.channels.output_channels(src_channels);
-    let max_samples = ((settings.max_seconds.max(0.1) * sample_rate as f32) as usize)
-        .saturating_mul(out_channels as usize);
+    let max_samples = mic_max_samples(settings.max_seconds, sample_rate, out_channels);
     let sink = MicSink::new(
         shared,
         max_samples,
@@ -1520,6 +1524,16 @@ fn open_stream_on(
             channels: out_channels,
         },
     ))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn mic_max_samples(max_seconds: f32, sample_rate: u32, channels: u16) -> usize {
+    if !max_seconds.is_finite() {
+        return MicRing::MAX_CAPACITY;
+    }
+    let seconds = max_seconds.max(0.1) as f64;
+    let samples = seconds * sample_rate.max(1) as f64 * channels.max(1) as f64;
+    samples.min(MicRing::MAX_CAPACITY as f64) as usize
 }
 
 /// Open the named device, or the OS default when no name is set. Names come
@@ -1792,11 +1806,21 @@ impl MicSink {
 #[cfg(test)]
 mod tests {
     use super::{
-        MicChannels, MicClip, MicDenoiseSettings, MicDevice, MicSettings, PMIC_CODEC_DELTA,
-        PMIC_CODEC_PCM, PMIC_CODEC_ZLIB_DELTA, PMIC_CODEC_ZLIB_PCM, PMIC_COMPRESSED_HEADER_LEN,
-        PMIC_MAGIC, PMIC_MAX_SAMPLES, PMIC_VERSION, PMIC_VERSION_COMPRESSED, match_device_index,
-        resolve_mic_device,
+        MicChannels, MicClip, MicDenoiseSettings, MicDevice, MicRing, MicSettings,
+        PMIC_CODEC_DELTA, PMIC_CODEC_PCM, PMIC_CODEC_ZLIB_DELTA, PMIC_CODEC_ZLIB_PCM,
+        PMIC_COMPRESSED_HEADER_LEN, PMIC_MAGIC, PMIC_MAX_SAMPLES, PMIC_VERSION,
+        PMIC_VERSION_COMPRESSED, match_device_index, mic_max_samples, resolve_mic_device,
     };
+
+    #[test]
+    fn max_seconds_never_exceeds_ring_cap() {
+        for seconds in [f32::NAN, f32::INFINITY, f32::MAX] {
+            assert_eq!(
+                mic_max_samples(seconds, u32::MAX, u16::MAX),
+                MicRing::MAX_CAPACITY
+            );
+        }
+    }
 
     fn device(name: &str, is_default: bool) -> MicDevice {
         MicDevice {

@@ -9,6 +9,47 @@ use super::{
 };
 
 #[test]
+fn oversized_input_indices_do_not_allocate_or_alias_slots() {
+    let mut input = InputSnapshot::new();
+    input.set_gamepad_connected(0, true);
+    for index in [crate::MAX_INPUT_SLOTS, usize::MAX] {
+        assert!(input.gamepad_mut(index).is_none());
+        assert!(input.joycon_mut(index).is_none());
+        assert!(input.player_mut(index).is_none());
+        input.set_gamepad_button_state(index, GamepadButton::Bottom, true);
+        input.set_joycon_connected(index, true);
+        input.bind_player(index, crate::PlayerBinding::Kbm);
+        let window = InputWindow::new(&input);
+        window.bind_player(index, crate::PlayerBinding::Kbm);
+        window.request_joycon_calibration(index);
+    }
+    input.apply_queued_commands();
+    assert_eq!(input.gamepads().len(), 1);
+    assert!(input.joycons().is_empty());
+    assert!(input.players().is_empty());
+}
+
+#[test]
+fn invalid_queued_index_does_not_drop_later_commands() {
+    use crate::{InputAPI, InputCommand};
+    let mut input = InputSnapshot::new();
+    input.command_buffer().expect("queue").borrow_mut().extend([
+        InputCommand::RequestJoyConCalibration { index: usize::MAX },
+        InputCommand::BindPlayer {
+            index: usize::MAX,
+            binding: crate::PlayerBinding::Kbm,
+        },
+        InputCommand::SetMouseMode {
+            mode: MouseMode::Hidden,
+        },
+    ]);
+    input.apply_queued_commands();
+    assert!(input.joycons().is_empty());
+    assert!(input.players().is_empty());
+    assert_eq!(input.mouse_mode(), MouseMode::Hidden);
+}
+
+#[test]
 fn mouse_mode_defaults_visible() {
     let input = InputSnapshot::new();
 

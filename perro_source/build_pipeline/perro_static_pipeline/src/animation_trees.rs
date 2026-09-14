@@ -213,7 +213,8 @@ fn mask_ref(
 }
 
 fn sanitize_ident(path: &str) -> String {
-    path.chars()
+    let base: String = path
+        .chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() {
                 c.to_ascii_uppercase()
@@ -221,9 +222,40 @@ fn sanitize_ident(path: &str) -> String {
                 '_'
             }
         })
-        .collect()
+        .collect();
+    format!("{base}_{:016X}", perro_ids::string_to_u64(path))
 }
 
 fn esc(input: &str) -> String {
-    input.replace('\\', "\\\\").replace('"', "\\\"")
+    let mut out = String::with_capacity(input.len());
+    for ch in input.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            ch if ch.is_control() => out.extend(ch.escape_default()),
+            ch => out.push(ch),
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{esc, sanitize_ident};
+
+    #[test]
+    fn tree_strings_escape_rust_controls() {
+        assert_eq!(esc("bone\nnext\r\t\0"), "bone\\nnext\\r\\t\\u{0}");
+    }
+
+    #[test]
+    fn generated_tree_ids_do_not_alias_sanitized_paths() {
+        assert_ne!(
+            sanitize_ident("res://foo-bar.panimtree"),
+            sanitize_ident("res://foo_bar.panimtree")
+        );
+    }
 }

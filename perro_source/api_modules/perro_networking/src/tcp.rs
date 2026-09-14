@@ -165,12 +165,20 @@ impl TcpConnection {
 
     pub fn poll_event(&mut self, max_bytes: usize) -> NetResult<Option<NetEvent>> {
         self.flush_pending()?;
+        if self.read_eof {
+            return Ok(None);
+        }
         let Some(bytes) = self.read_available(max_bytes)? else {
             return Ok(None);
         };
         let peer = self.peer_string();
         if bytes.is_empty() {
-            return Ok(Some(NetEvent::TcpDisconnected { peer }));
+            self.read_eof = true;
+            if !self.disconnect_emitted {
+                self.disconnect_emitted = true;
+                return Ok(Some(NetEvent::TcpDisconnected { peer }));
+            }
+            return Ok(None);
         }
         Ok(Some(NetEvent::TcpData { peer, bytes }))
     }
@@ -454,3 +462,32 @@ fn frame_queue_limit(max_frame_bytes: usize) -> usize {
 #[cfg(test)]
 #[path = "tcp_audit_perf.rs"]
 mod audit_perf;
+
+#[cfg(test)]
+mod regression_tests {
+    use super::*;
+
+    #[test]
+    fn eof_disconnect_emits_once() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let client = TcpStream::connect(listener.local_addr().expect("addr")).expect("connect");
+        let (server, _) = listener.accept().expect("accept");
+        let mut connection = TcpConnection::from_stream(server).expect("connection");
+        drop(client);
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        loop {
+            if matches!(
+                connection.poll_event(64).expect("poll"),
+                Some(NetEvent::TcpDisconnected { .. })
+            ) {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "disconnect deadline");
+            std::thread::yield_now();
+        }
+        for _ in 0..8 {
+            assert_eq!(connection.poll_event(64).expect("poll"), None);
+        }
+    }
+}

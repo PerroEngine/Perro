@@ -108,17 +108,23 @@ fn init_steam_server(project: &mut RuntimeProject) {
     let _ = project;
 }
 
+fn fixed_step(fps: Option<f32>) -> Duration {
+    // Limit catch-up work to 250 ticks per frame and avoid float-duration panics.
+    Duration::from_secs_f32(
+        perro_runtime::normalize_fixed_timestep_seconds(fps).unwrap_or(1.0 / 60.0),
+    )
+}
+
 fn run_runtime(mut runtime: Runtime) {
     let running = Arc::new(AtomicBool::new(true));
     let signal = Arc::clone(&running);
     let _ = ctrlc::set_handler(move || signal.store(false, Ordering::SeqCst));
-    let fixed_delta = runtime
-        .project()
-        .and_then(|project| project.config.target_fixed_update)
-        .filter(|fps| *fps > 0.0)
-        .map(|fps| 1.0 / fps)
-        .unwrap_or(1.0 / 60.0);
-    let step = Duration::from_secs_f32(fixed_delta);
+    let step = fixed_step(
+        runtime
+            .project()
+            .and_then(|project| project.config.target_fixed_update),
+    );
+    let fixed_delta = step.as_secs_f32();
     let mut last = Instant::now();
     let mut accumulator = Duration::ZERO;
     let mut requests = Vec::new();
@@ -313,4 +319,28 @@ pub struct StaticEmbeddedAssetsConfig {
     pub shader_lookup: perro_runtime::StaticShaderLookup,
     pub audio_lookup: perro_runtime::StaticAudioLookup,
     pub static_script_registry: Option<StaticScriptRegistry>,
+}
+
+#[cfg(test)]
+mod step_tests {
+    use super::*;
+
+    #[test]
+    fn extreme_rates_produce_bounded_nonzero_steps() {
+        assert_eq!(fixed_step(Some(0.5)), Duration::from_millis(500));
+        for fps in [
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::MAX,
+            f32::MIN_POSITIVE,
+            -1.0,
+            0.0,
+            60.0,
+        ] {
+            let step = fixed_step(Some(fps));
+            assert!(step >= Duration::from_millis(1));
+            assert!(step <= Duration::from_secs(1));
+        }
+    }
 }

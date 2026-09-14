@@ -4,6 +4,10 @@ use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+const MAX_DSP_CHANNELS: usize = 256;
+const MAX_DSP_SAMPLE_RATE: usize = 768_000;
+const MAX_DELAY_SAMPLES: usize = 1 << 22;
+
 #[derive(Debug)]
 pub(crate) struct DspControl {
     low_pass: AtomicU32,
@@ -51,6 +55,8 @@ impl DspControl {
     // Publish the attached source's frame layout (worker thread, in
     // `DspSource::new`).
     fn publish_layout(&self, sample_rate: usize, channels: usize) {
+        let sample_rate = sample_rate.clamp(1, MAX_DSP_SAMPLE_RATE);
+        let channels = channels.clamp(1, MAX_DSP_CHANNELS);
         let packed = ((sample_rate as u64) << 16) | (channels as u64 & 0xffff);
         self.layout.store(packed, Ordering::Relaxed);
     }
@@ -236,8 +242,9 @@ where
     S: Source<Item = f32>,
 {
     pub(crate) fn new(input: S, control: Arc<DspControl>) -> Self {
-        let channels = input.channels().max(1) as usize;
-        let sample_rate = input.sample_rate().max(1) as usize;
+        let source_channels = input.channels().max(1) as usize;
+        let channels = source_channels.min(MAX_DSP_CHANNELS);
+        let sample_rate = (input.sample_rate().max(1) as usize).min(MAX_DSP_SAMPLE_RATE);
         control.publish_layout(sample_rate, channels);
         let wet = control
             .snapshot()
@@ -421,6 +428,7 @@ fn delay_len(sample_rate: usize, channels: usize, seconds: f32) -> usize {
     ((sample_rate as f32 * seconds).round() as usize)
         .max(1)
         .saturating_mul(channels.max(1))
+        .min(MAX_DELAY_SAMPLES)
 }
 
 // The three delay lines a wet mix needs, allocated as one unit so dry
@@ -483,6 +491,15 @@ impl DelayLine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn delay_metadata_cannot_request_unbounded_storage() {
+        assert_eq!(
+            delay_len(usize::MAX, usize::MAX, f32::MAX),
+            MAX_DELAY_SAMPLES
+        );
+        assert_eq!(delay_len(48_000, 2, 0.18), 17_280);
+    }
 
     struct TestSource {
         samples: std::vec::IntoIter<f32>,

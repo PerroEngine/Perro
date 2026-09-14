@@ -776,3 +776,31 @@ fn indent(out: &mut String, depth: usize) {
         out.push_str("    ");
     }
 }
+
+#[cfg(test)]
+mod escape_tests {
+    use super::*;
+
+    #[test]
+    fn saved_strings_round_trip_through_lexer() {
+        for value in [
+            "line\nnext\r\ntab\t",
+            "slash\\",
+            "quote\"",
+            "\\n\\t\\r",
+            "日本語\\\"\n",
+        ] {
+            let mut out = String::new();
+            write_str(value, &mut out);
+            let mut lexer = crate::Lexer::new(&out);
+            assert_eq!(lexer.next_token(), crate::Token::String(value.to_owned()));
+            assert_eq!(lexer.next_token(), crate::Token::Eof);
+        }
+    }
+
+    #[test]
+    fn unknown_escape_is_an_error() {
+        let mut lexer = crate::Lexer::new(r#""bad\q""#);
+        assert!(matches!(lexer.next_token(), crate::Token::Error(_)));
+    }
+}

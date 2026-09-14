@@ -213,7 +213,41 @@ pub(crate) fn collect_shader_bake_jobs(
                 custom.shader_path
             ))
         })?;
-        let shader_source = fs::read_to_string(root.join(shader_rel)).map_err(|err| {
+        let shader_rel = Path::new(&shader_rel);
+        if shader_rel.is_absolute()
+            || shader_rel.components().any(|part| {
+                matches!(
+                    part,
+                    std::path::Component::ParentDir
+                        | std::path::Component::RootDir
+                        | std::path::Component::Prefix(_)
+                )
+            })
+        {
+            return Err(StaticPipelineError::ShaderBake(format!(
+                "material `{material_uri}` bake shader escapes project resource root: `{}`",
+                custom.shader_path
+            )));
+        }
+        let shader_path = root.join(shader_rel);
+        let canonical_root = root.canonicalize().map_err(|err| {
+            StaticPipelineError::ShaderBake(format!(
+                "material `{material_uri}` cannot resolve resource root: {err}"
+            ))
+        })?;
+        let canonical_shader = shader_path.canonicalize().map_err(|err| {
+            StaticPipelineError::ShaderBake(format!(
+                "material `{material_uri}` cannot resolve bake shader `{}`: {err}",
+                custom.shader_path
+            ))
+        })?;
+        if !canonical_shader.starts_with(&canonical_root) {
+            return Err(StaticPipelineError::ShaderBake(format!(
+                "material `{material_uri}` bake shader escapes project resource root: `{}`",
+                custom.shader_path
+            )));
+        }
+        let shader_source = fs::read_to_string(canonical_shader).map_err(|err| {
             StaticPipelineError::ShaderBake(format!(
                 "material `{material_uri}` cannot read bake shader `{}`: {err}",
                 custom.shader_path
@@ -263,8 +297,8 @@ use gltf_import::*;
 mod tests {
     use super::{
         CustomImageLiteral, CustomMaterialLiteral, CustomParamLiteral, MaterialLiteral,
-        generate_static_materials, load_pmat_literal, material_literal_to_code,
-        materials_from_gltf_file,
+        collect_shader_bake_jobs, generate_static_materials, load_pmat_literal,
+        material_literal_to_code, materials_from_gltf_file,
     };
     use perro_render_bridge::{
         CustomMaterial3D, CustomMaterialImage3D, CustomMaterialLighting3D, CustomMaterialParam3D,
@@ -295,6 +329,74 @@ mod tests {
             "emissiveFactor": [0.2, 0.3, 0.4]
         }]
     }"#;
+
+    #[test]
+    fn shader_bake_rejects_parent_path_escape() {
+        let root = std::env::temp_dir().join(format!(
+            "perro_shader_escape_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(root.join("res/materials")).expect("create res");
+        std::fs::create_dir_all(root.join("res/shaders")).expect("create shaders");
+        std::fs::write(root.join("res/shaders/ok.wgsl"), "shader source").expect("write shader");
+        std::fs::write(
+            root.join("res/materials/escape.pmat"),
+            "type = \"custom\"\nshader_path = \"res://shaders/ok.wgsl\"\nrelease_bake = true\nbake_resolution = (1, 1)\n",
+        )
+        .expect("write valid material");
+        let tree = crate::ResFileTree::scan(&root).expect("scan valid");
+        assert_eq!(
+            collect_shader_bake_jobs(&root, &tree)
+                .expect("contained shader")
+                .len(),
+            1
+        );
+        std::fs::write(
+            root.join("res/materials/escape.pmat"),
+            "type = \"custom\"\nshader_path = \"res://../outside.wgsl\"\nrelease_bake = true\nbake_resolution = (1, 1)\n",
+        )
+        .expect("write material");
+        let tree = crate::ResFileTree::scan(&root).expect("scan escape");
+        let err = collect_shader_bake_jobs(&root, &tree).expect_err("escape must fail");
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(err.to_string().contains("escapes project resource root"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn shader_bake_rejects_symlink_escape() {
+        let root = std::env::temp_dir().join(format!(
+            "perro_shader_link_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        let outside = root.join("outside");
+        std::fs::create_dir_all(root.join("res/materials")).expect("create materials");
+        std::fs::create_dir_all(&outside).expect("create outside");
+        std::fs::write(outside.join("escape.wgsl"), "shader source").expect("write shader");
+        let link = root.join("res/link");
+        if std::os::windows::fs::symlink_dir(&outside, &link).is_err() {
+            let _ = std::fs::remove_dir_all(root);
+            return;
+        }
+        std::fs::write(
+            root.join("res/materials/escape.pmat"),
+            "type = \"custom\"\nshader_path = \"res://link/escape.wgsl\"\nrelease_bake = true\nbake_resolution = (1, 1)\n",
+        )
+        .expect("write material");
+        let tree = crate::ResFileTree::scan(&root).expect("scan");
+        let err = collect_shader_bake_jobs(&root, &tree).expect_err("link escape must fail");
+        assert!(err.to_string().contains("escapes project resource root"));
+        std::fs::remove_dir(&link).expect("remove link");
+        std::fs::remove_dir_all(root).expect("remove temp");
+    }
 
     #[test]
     fn static_material_lookup_emits_explicit_miss() {

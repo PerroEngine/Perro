@@ -4,6 +4,7 @@ pub struct WebSocketConnectOptions {
     pub headers: Vec<(String, String)>,
     pub subprotocols: Vec<String>,
     pub max_message_bytes: usize,
+    pub handshake_timeout_ms: u64,
 }
 
 impl WebSocketConnectOptions {
@@ -29,6 +30,11 @@ impl WebSocketConnectOptions {
         self.max_message_bytes = max_message_bytes.max(1);
         self
     }
+
+    pub fn handshake_timeout_ms(mut self, handshake_timeout_ms: u64) -> Self {
+        self.handshake_timeout_ms = handshake_timeout_ms.max(1);
+        self
+    }
 }
 
 impl Default for WebSocketConnectOptions {
@@ -37,6 +43,7 @@ impl Default for WebSocketConnectOptions {
             headers: Vec::new(),
             subprotocols: Vec::new(),
             max_message_bytes: 1024 * 1024,
+            handshake_timeout_ms: 3_000,
         }
     }
 }
@@ -147,8 +154,8 @@ pub enum WebSocketMessage {
 }
 
 enum WebSocketStream {
-    Client(WebSocket<MaybeTlsStream<TcpStream>>),
-    Server(WebSocket<TcpStream>),
+    Client(Box<WebSocket<MaybeTlsStream<TcpStream>>>),
+    Server(Box<WebSocket<TcpStream>>),
 }
 
 impl WebSocketStream {
@@ -175,8 +182,11 @@ impl WebSocketStream {
 
     fn set_nonblocking(&mut self, nonblocking: bool) -> NetResult<()> {
         match self {
-            Self::Client(socket) => set_maybe_tls_nonblocking(socket.get_mut(), nonblocking),
+            Self::Client(socket) => {
+                set_maybe_tls_nonblocking(socket.as_mut().get_mut(), nonblocking)
+            }
             Self::Server(socket) => socket
+                .as_mut()
                 .get_mut()
                 .set_nonblocking(nonblocking)
                 .map_err(|err| NetError::from_io(NetErrorKind::SetNonBlocking, err)),
@@ -200,12 +210,7 @@ impl WebSocketConnection {
         url: impl AsRef<str>,
         options: WebSocketConnectOptions,
     ) -> NetResult<Self> {
-        let (socket, response) = tungstenite::client::connect_with_config(
-            build_websocket_request(url.as_ref(), &options)?,
-            Some(websocket_config(options.max_message_bytes)),
-            3,
-        )
-        .map_err(|err| NetError::new(NetErrorKind::Connect, err.to_string()))?;
+        let (socket, response) = connect_websocket_bounded(url.as_ref(), &options)?;
         let peer = maybe_tls_peer_string(socket.get_ref()).unwrap_or_else(|| url.as_ref().into());
         let selected_subprotocol = response
             .headers()
@@ -213,7 +218,7 @@ impl WebSocketConnection {
             .and_then(|v| v.to_str().ok())
             .map(str::to_string);
         let mut out = Self {
-            socket: WebSocketStream::Client(socket),
+            socket: WebSocketStream::Client(Box::new(socket)),
             peer,
             selected_subprotocol,
             max_message_bytes: options.max_message_bytes,
@@ -247,7 +252,7 @@ impl WebSocketConnection {
         let mut selected_subprotocol = None;
         let socket = accept_websocket_with_options(stream, &options, &mut selected_subprotocol)?;
         let mut out = Self {
-            socket: WebSocketStream::Server(socket),
+            socket: WebSocketStream::Server(Box::new(socket)),
             peer,
             selected_subprotocol,
             max_message_bytes: options.max_message_bytes,
@@ -584,6 +589,83 @@ fn websocket_config(max_message_bytes: usize) -> WebSocketConfig {
     WebSocketConfig::default().max_message_size(Some(max_message_bytes.max(1)))
 }
 
+fn connect_websocket_bounded(
+    url: &str,
+    options: &WebSocketConnectOptions,
+) -> NetResult<(
+    WebSocket<MaybeTlsStream<TcpStream>>,
+    tungstenite::handshake::client::Response,
+)> {
+    let timeout = Duration::from_millis(options.handshake_timeout_ms.max(1));
+    let mut current_url = url.to_string();
+    for redirect in 0..=3 {
+        let request = tungstenite::client::IntoClientRequest::into_client_request(
+            build_websocket_request(&current_url, options)?,
+        )
+        .map_err(|err| NetError::new(NetErrorKind::Connect, err.to_string()))?;
+        let uri = request.uri();
+        let host = uri
+            .host()
+            .ok_or_else(|| NetError::new(NetErrorKind::Connect, "websocket URL has no host"))?;
+        let host = host
+            .strip_prefix('[')
+            .and_then(|v| v.strip_suffix(']'))
+            .unwrap_or(host);
+        let port = uri
+            .port_u16()
+            .unwrap_or(if uri.scheme_str() == Some("wss") {
+                443
+            } else {
+                80
+            });
+        let mut stream = None;
+        for addr in (host, port)
+            .to_socket_addrs()
+            .map_err(|err| NetError::from_io(NetErrorKind::Connect, err))?
+        {
+            if let Ok(connected) = TcpStream::connect_timeout(&addr, timeout) {
+                stream = Some(connected);
+                break;
+            }
+        }
+        let stream = stream.ok_or_else(|| {
+            NetError::new(
+                NetErrorKind::Connect,
+                "websocket connect timed out or failed",
+            )
+        })?;
+        stream
+            .set_read_timeout(Some(timeout))
+            .and_then(|_| stream.set_write_timeout(Some(timeout)))
+            .map_err(|err| NetError::from_io(NetErrorKind::Handshake, err))?;
+        match tungstenite::client_tls_with_config(
+            request,
+            stream,
+            Some(websocket_config(options.max_message_bytes)),
+            None,
+        ) {
+            Ok(connected) => return Ok(connected),
+            Err(tungstenite::handshake::HandshakeError::Failure(tungstenite::Error::Http(
+                response,
+            ))) if response.status().is_redirection() && redirect < 3 => {
+                current_url = response
+                    .headers()
+                    .get("Location")
+                    .and_then(|value| value.to_str().ok())
+                    .ok_or_else(|| {
+                        NetError::new(NetErrorKind::Connect, "websocket redirect has no Location")
+                    })?
+                    .to_string();
+            }
+            Err(err) => return Err(NetError::new(NetErrorKind::Connect, err.to_string())),
+        }
+    }
+    Err(NetError::new(
+        NetErrorKind::Connect,
+        "too many websocket redirects",
+    ))
+}
+
 fn build_websocket_request(
     url: &str,
     options: &WebSocketConnectOptions,
@@ -727,6 +809,11 @@ fn map_websocket_binary(bytes: &[u8], max_bytes: usize) -> NetResult<WebSocketMe
 fn maybe_tls_peer_string(stream: &MaybeTlsStream<TcpStream>) -> Option<String> {
     match stream {
         MaybeTlsStream::Plain(stream) => stream.peer_addr().ok().map(|addr| addr.to_string()),
+        MaybeTlsStream::NativeTls(stream) => stream
+            .get_ref()
+            .peer_addr()
+            .ok()
+            .map(|addr| addr.to_string()),
         _ => None,
     }
 }
@@ -739,7 +826,14 @@ fn set_maybe_tls_nonblocking(
         MaybeTlsStream::Plain(stream) => stream
             .set_nonblocking(nonblocking)
             .map_err(|err| NetError::from_io(NetErrorKind::SetNonBlocking, err)),
-        _ => Ok(()),
+        MaybeTlsStream::NativeTls(stream) => stream
+            .get_mut()
+            .set_nonblocking(nonblocking)
+            .map_err(|err| NetError::from_io(NetErrorKind::SetNonBlocking, err)),
+        _ => Err(NetError::new(
+            NetErrorKind::SetNonBlocking,
+            "unsupported TLS socket backend",
+        )),
     }
 }
 
@@ -758,4 +852,59 @@ fn lock_websocket(
     inner
         .lock()
         .map_err(|_| NetError::new(NetErrorKind::WebSocket, "websocket lock poisoned"))
+}
+
+#[cfg(test)]
+mod timeout_tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires local socket access"]
+    fn client_handshake_has_deadline() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let server = std::thread::spawn(move || {
+            let (_stream, _) = listener.accept().expect("accept");
+            std::thread::sleep(Duration::from_millis(250));
+        });
+        let start = std::time::Instant::now();
+        let result = WebSocketConnection::connect_with_options(
+            format!("ws://{addr}"),
+            WebSocketConnectOptions::new().handshake_timeout_ms(50),
+        );
+        assert!(result.is_err());
+        assert!(start.elapsed() < Duration::from_millis(200));
+        server.join().expect("server");
+    }
+
+    #[test]
+    #[ignore = "requires local socket access"]
+    fn bounded_connect_follows_redirect() {
+        let target = TcpListener::bind("127.0.0.1:0").expect("target bind");
+        let target_addr = target.local_addr().expect("target addr");
+        let redirect = TcpListener::bind("127.0.0.1:0").expect("redirect bind");
+        let redirect_addr = redirect.local_addr().expect("redirect addr");
+        let server = std::thread::spawn(move || {
+            let (mut first, _) = redirect.accept().expect("redirect accept");
+            let mut request = [0_u8; 1024];
+            let _ = first.read(&mut request).expect("redirect read");
+            first
+                .write_all(
+                    format!(
+                        "HTTP/1.1 302 Found\r\nLocation: ws://{target_addr}\r\nContent-Length: 0\r\n\r\n"
+                    )
+                    .as_bytes(),
+                )
+                .expect("redirect write");
+            let (stream, _) = target.accept().expect("target accept");
+            tungstenite::accept(stream).expect("target websocket")
+        });
+        let connection = WebSocketConnection::connect_with_options(
+            format!("ws://{redirect_addr}"),
+            WebSocketConnectOptions::new().handshake_timeout_ms(500),
+        );
+        assert!(connection.is_ok());
+        drop(connection);
+        drop(server.join().expect("server"));
+    }
 }

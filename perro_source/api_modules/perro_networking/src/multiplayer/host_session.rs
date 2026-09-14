@@ -4,6 +4,8 @@ use crate::multiplayer::transport::{NetTransport, PeerId, TransportEvent};
 use crate::multiplayer::wire::{self, Frame};
 use std::time::Instant;
 
+const MAX_SESSION_PEERS: usize = 256;
+
 struct Peer {
     id: PeerId,
     slot: i64,
@@ -59,7 +61,9 @@ impl HostSession {
         for event in events {
             match event {
                 TransportEvent::PeerConnected(peer) => {
-                    let slot = self.slot_for_peer(&peer);
+                    let Some((slot, is_new)) = self.connect_peer(&peer) else {
+                        continue;
+                    };
                     let steam_id = peer_steam_id(&peer);
                     wire::encode_slot_assigned_into(&mut self.scratch, slot);
                     transport.send(&peer, &self.scratch, true);
@@ -68,10 +72,13 @@ impl HostSession {
                         "[net] host assigned client slot={} wait_client_ready",
                         slot
                     );
-                    out.push(NetEvent::PeerJoined { slot, steam_id });
+                    if is_new {
+                        out.push(NetEvent::PeerJoined { slot, steam_id });
+                    }
                 }
                 TransportEvent::PeerDisconnected(peer) => {
                     if let Some(slot) = self.remove_peer(&peer) {
+                        transport.forget_peer(&peer);
                         perro_modules::log_info!("[net] host peer left slot={}", slot);
                         out.push(NetEvent::PeerLeft { slot });
                     }
@@ -80,7 +87,9 @@ impl HostSession {
                     out.push(NetEvent::Disconnected);
                 }
                 TransportEvent::PacketReceived(peer, mut bytes) => {
-                    let slot = self.slot_for_peer(&peer);
+                    let Some(slot) = self.touch_peer(&peer) else {
+                        continue;
+                    };
                     if wire::strip_payload_in_place(&mut bytes) {
                         out.push(NetEvent::Payload {
                             from_slot: slot,
@@ -102,6 +111,7 @@ impl HostSession {
                         }
                         Some(Frame::ClientDisconnect) => {
                             if let Some(slot) = self.remove_peer(&peer) {
+                                transport.forget_peer(&peer);
                                 perro_modules::log_info!("[net] host peer quit slot={}", slot);
                                 out.push(NetEvent::PeerLeft { slot });
                             }
@@ -172,7 +182,9 @@ impl HostSession {
         let mut index = 0;
         while index < self.peers.len() {
             if now.saturating_duration_since(self.peers[index].last_seen) > config.timeout {
-                let slot = self.peers.remove(index).slot;
+                let peer = self.peers.remove(index);
+                transport.forget_peer(&peer.id);
+                let slot = peer.slot;
                 self.free_slots.push(slot);
                 perro_modules::log_info!("[net] host peer timed out slot={}", slot);
                 out.push(NetEvent::PeerLeft { slot });
@@ -194,11 +206,14 @@ impl HostSession {
         }
     }
 
-    fn slot_for_peer(&mut self, peer: &PeerId) -> i64 {
+    fn connect_peer(&mut self, peer: &PeerId) -> Option<(i64, bool)> {
         let now = Instant::now();
         if let Some(existing) = self.peers.iter_mut().find(|entry| entry.id == *peer) {
             existing.last_seen = now;
-            return existing.slot;
+            return Some((existing.slot, false));
+        }
+        if self.peers.len() >= MAX_SESSION_PEERS {
+            return None;
         }
         // Slots are seats, not counters: reuse the lowest freed slot so ids stay
         // bounded no matter how often clients rejoin.
@@ -220,7 +235,13 @@ impl HostSession {
             slot,
             last_seen: now,
         });
-        slot
+        Some((slot, true))
+    }
+
+    fn touch_peer(&mut self, peer: &PeerId) -> Option<i64> {
+        let entry = self.peers.iter_mut().find(|entry| entry.id == *peer)?;
+        entry.last_seen = Instant::now();
+        Some(entry.slot)
     }
 
     fn remove_peer(&mut self, peer: &PeerId) -> Option<i64> {
@@ -311,13 +332,13 @@ mod tests {
 
         let events = session.handle_transport_events(
             &mut transport,
-            vec![TransportEvent::PacketReceived(
-                peer,
-                wire::wrap_payload(&game_bytes),
-            )],
+            vec![
+                TransportEvent::PeerConnected(peer.clone()),
+                TransportEvent::PacketReceived(peer, wire::wrap_payload(&game_bytes)),
+            ],
         );
 
-        match &events[0] {
+        match &events[1] {
             NetEvent::Payload { from_slot, bytes } => {
                 assert_eq!(*from_slot, 2);
                 assert_eq!(*bytes, game_bytes);
@@ -407,6 +428,38 @@ mod tests {
         );
 
         assert!(events.is_empty());
+    }
+
+    #[test]
+    fn unknown_packets_do_not_allocate_peers_or_slots() {
+        let mut session = HostSession::new();
+        let mut transport = MockTransport::default();
+        for id in 0..(MAX_SESSION_PEERS as i64 * 2) {
+            let events = session.handle_transport_events(
+                &mut transport,
+                vec![TransportEvent::PacketReceived(
+                    PeerId::Steam(id),
+                    wire::wrap_payload(b"spoof"),
+                )],
+            );
+            assert!(events.is_empty());
+        }
+        assert!(session.peers.is_empty());
+        assert_eq!(session.next_slot, 2);
+    }
+
+    #[test]
+    fn connected_peer_state_has_hard_cap() {
+        let mut session = HostSession::new();
+        let mut transport = MockTransport::default();
+        let events = session.handle_transport_events(
+            &mut transport,
+            (0..MAX_SESSION_PEERS as i64 + 20)
+                .map(|id| TransportEvent::PeerConnected(PeerId::Steam(id)))
+                .collect(),
+        );
+        assert_eq!(session.peers.len(), MAX_SESSION_PEERS);
+        assert_eq!(events.len(), MAX_SESSION_PEERS);
     }
 
     #[test]

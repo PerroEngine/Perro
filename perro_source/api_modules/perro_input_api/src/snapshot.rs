@@ -1,5 +1,8 @@
 use super::*;
 
+/// Maximum device or player slots accepted by one snapshot.
+pub const MAX_INPUT_SLOTS: usize = 256;
+
 /// Complete input state visible to scripts for one frame.
 ///
 /// `InputSnapshot` stores raw device state, derived action bits, player
@@ -234,18 +237,24 @@ impl InputSnapshot {
         self.joycons.iter_mut().find(|jc| jc.side() == side)
     }
 
-    /// Return a mutable gamepad slot, creating empty slots as needed.
+    /// Return a mutable gamepad slot; reject indices at or above `MAX_INPUT_SLOTS`.
     #[inline]
-    pub fn gamepad_mut(&mut self, index: usize) -> &mut GamepadState {
+    pub fn gamepad_mut(&mut self, index: usize) -> Option<&mut GamepadState> {
+        if index >= MAX_INPUT_SLOTS {
+            return None;
+        }
         if self.gamepads.len() <= index {
             self.gamepads.resize_with(index + 1, GamepadState::new);
         }
-        &mut self.gamepads[index]
+        Some(&mut self.gamepads[index])
     }
 
-    /// Return a mutable Joy-Con slot, creating empty slots as needed.
+    /// Return a mutable Joy-Con slot; reject indices at or above `MAX_INPUT_SLOTS`.
     #[inline]
-    pub fn joycon_mut(&mut self, index: usize) -> &mut JoyConState {
+    pub fn joycon_mut(&mut self, index: usize) -> Option<&mut JoyConState> {
+        if index >= MAX_INPUT_SLOTS {
+            return None;
+        }
         if self.joycons.len() <= index {
             self.joycons.resize_with(index + 1, || {
                 if index.is_multiple_of(2) {
@@ -255,22 +264,28 @@ impl InputSnapshot {
                 }
             });
         }
-        &mut self.joycons[index]
+        Some(&mut self.joycons[index])
     }
 
-    /// Return a mutable player slot, creating empty slots as needed.
+    /// Return a mutable player slot; reject indices at or above `MAX_INPUT_SLOTS`.
     #[inline]
-    pub fn player_mut(&mut self, index: usize) -> &mut PlayerState {
+    pub fn player_mut(&mut self, index: usize) -> Option<&mut PlayerState> {
+        if index >= MAX_INPUT_SLOTS {
+            return None;
+        }
         if self.players.len() <= index {
             self.players.resize_with(index + 1, PlayerState::new);
         }
-        &mut self.players[index]
+        Some(&mut self.players[index])
     }
 
     /// Bind a player slot to a device source.
     #[inline]
     pub fn bind_player(&mut self, index: usize, binding: PlayerBinding) {
-        self.player_mut(index).set_binding(binding);
+        let Some(state) = self.player_mut(index) else {
+            return;
+        };
+        state.set_binding(binding);
     }
 
     // ---- Queued script commands ----
@@ -301,7 +316,9 @@ impl InputSnapshot {
                     self.rebind_action = None;
                 }
                 InputCommand::RequestJoyConCalibration { index } => {
-                    let state = self.joycon_mut(index);
+                    let Some(state) = self.joycon_mut(index) else {
+                        continue;
+                    };
                     state.set_calibration_requested(true);
                 }
                 InputCommand::SetMouseMode { mode } => {
@@ -309,14 +326,23 @@ impl InputSnapshot {
                     self.pending_mouse_mode = Some(mode);
                 }
                 InputCommand::SetGamepadRumble { index, rumble } => {
+                    if index >= MAX_INPUT_SLOTS {
+                        continue;
+                    }
                     self.pending_gamepad_rumble
                         .push(GamepadRumbleRequest { index, rumble });
                 }
                 InputCommand::SetJoyConRumble { index, rumble } => {
+                    if index >= MAX_INPUT_SLOTS {
+                        continue;
+                    }
                     self.pending_joycon_rumble
                         .push(JoyConRumbleRequest { index, rumble });
                 }
                 InputCommand::SetJoyConIndicator { index, indicator } => {
+                    if index >= MAX_INPUT_SLOTS {
+                        continue;
+                    }
                     self.pending_joycon_indicator
                         .push(JoyConIndicatorRequest { index, indicator });
                 }
@@ -329,13 +355,19 @@ impl InputSnapshot {
     /// Set whether a gamepad slot is live.
     #[inline]
     pub fn set_gamepad_connected(&mut self, index: usize, connected: bool) {
-        self.gamepad_mut(index).set_connected(connected);
+        let Some(state) = self.gamepad_mut(index) else {
+            return;
+        };
+        state.set_connected(connected);
     }
 
     /// Apply a gamepad button transition and refresh affected actions.
     #[inline]
     pub fn set_gamepad_button_state(&mut self, index: usize, button: GamepadButton, is_down: bool) {
-        self.gamepad_mut(index).set_button_state(button, is_down);
+        let Some(state) = self.gamepad_mut(index) else {
+            return;
+        };
+        state.set_button_state(button, is_down);
         if self.gamepads[index].is_button_pressed(button) {
             self.capture_rebind(InputBinding::Gamepad(button));
         }
@@ -345,19 +377,28 @@ impl InputSnapshot {
     /// Set a gamepad axis value.
     #[inline]
     pub fn set_gamepad_axis(&mut self, index: usize, axis: GamepadAxis, value: f32) {
-        self.gamepad_mut(index).set_axis(axis, value);
+        let Some(state) = self.gamepad_mut(index) else {
+            return;
+        };
+        state.set_axis(axis, value);
     }
 
     /// Set gamepad gyro data.
     #[inline]
     pub fn set_gamepad_gyro(&mut self, index: usize, x: f32, y: f32, z: f32) {
-        self.gamepad_mut(index).set_gyro(x, y, z);
+        let Some(state) = self.gamepad_mut(index) else {
+            return;
+        };
+        state.set_gyro(x, y, z);
     }
 
     /// Set gamepad accelerometer data.
     #[inline]
     pub fn set_gamepad_accel(&mut self, index: usize, x: f32, y: f32, z: f32) {
-        self.gamepad_mut(index).set_accel(x, y, z);
+        let Some(state) = self.gamepad_mut(index) else {
+            return;
+        };
+        state.set_accel(x, y, z);
     }
 
     // ---- Joy-Con input ----
@@ -365,7 +406,9 @@ impl InputSnapshot {
     /// Apply a Joy-Con button transition and refresh affected actions.
     #[inline]
     pub fn set_joycon_button_state(&mut self, index: usize, button: JoyConButton, is_down: bool) {
-        let state = self.joycon_mut(index);
+        let Some(state) = self.joycon_mut(index) else {
+            return;
+        };
         state.set_button_state(button, is_down);
         if self.joycons[index].is_button_pressed(button) {
             self.capture_rebind(InputBinding::JoyCon(button));
@@ -376,7 +419,9 @@ impl InputSnapshot {
     /// Set Joy-Con side and refresh all action state.
     #[inline]
     pub fn set_joycon_side(&mut self, index: usize, side: JoyConSide) {
-        let state = self.joycon_mut(index);
+        let Some(state) = self.joycon_mut(index) else {
+            return;
+        };
         state.set_side(side);
         self.refresh_all_action_states();
     }
@@ -384,34 +429,45 @@ impl InputSnapshot {
     /// Set the Joy-Con hardware generation.
     #[inline]
     pub fn set_joycon_generation(&mut self, index: usize, generation: JoyConGeneration) {
-        self.joycon_mut(index).set_generation(generation);
+        let Some(state) = self.joycon_mut(index) else {
+            return;
+        };
+        state.set_generation(generation);
     }
 
     /// Set Joy-Con connection state.
     #[inline]
     pub fn set_joycon_connected(&mut self, index: usize, connected: bool) {
-        let state = self.joycon_mut(index);
+        let Some(state) = self.joycon_mut(index) else {
+            return;
+        };
         state.set_connected(connected);
     }
 
     /// Set whether Joy-Con calibration is complete.
     #[inline]
     pub fn set_joycon_calibrated(&mut self, index: usize, calibrated: bool) {
-        let state = self.joycon_mut(index);
+        let Some(state) = self.joycon_mut(index) else {
+            return;
+        };
         state.set_calibrated(calibrated);
     }
 
     /// Set whether Joy-Con calibration is currently active.
     #[inline]
     pub fn set_joycon_calibration_in_progress(&mut self, index: usize, in_progress: bool) {
-        let state = self.joycon_mut(index);
+        let Some(state) = self.joycon_mut(index) else {
+            return;
+        };
         state.set_calibration_in_progress(in_progress);
     }
 
     /// Set Joy-Con calibration bias vector.
     #[inline]
     pub fn set_joycon_calibration_bias(&mut self, index: usize, x: f32, y: f32, z: f32) {
-        let state = self.joycon_mut(index);
+        let Some(state) = self.joycon_mut(index) else {
+            return;
+        };
         state.set_calibration_bias(x, y, z);
     }
 
@@ -425,35 +481,45 @@ impl InputSnapshot {
         extra: f32,
         distance: f32,
     ) {
-        let state = self.joycon_mut(index);
+        let Some(state) = self.joycon_mut(index) else {
+            return;
+        };
         state.set_mouse_sensor(x, y, extra, distance);
     }
 
     /// Set Joy-Con stick vector.
     #[inline]
     pub fn set_joycon_stick(&mut self, index: usize, x: f32, y: f32) {
-        let state = self.joycon_mut(index);
+        let Some(state) = self.joycon_mut(index) else {
+            return;
+        };
         state.set_stick(x, y);
     }
 
     /// Set Joy-Con stick vector as packed signed unorm8 axes.
     #[inline]
     pub fn set_joycon_stick_unit(&mut self, index: usize, stick: perro_structs::SignedUnitVector2) {
-        let state = self.joycon_mut(index);
+        let Some(state) = self.joycon_mut(index) else {
+            return;
+        };
         state.set_stick_unit(stick);
     }
 
     /// Set Joy-Con gyro data.
     #[inline]
     pub fn set_joycon_gyro(&mut self, index: usize, x: f32, y: f32, z: f32) {
-        let state = self.joycon_mut(index);
+        let Some(state) = self.joycon_mut(index) else {
+            return;
+        };
         state.set_gyro(x, y, z);
     }
 
     /// Set Joy-Con accelerometer data.
     #[inline]
     pub fn set_joycon_accel(&mut self, index: usize, x: f32, y: f32, z: f32) {
-        let state = self.joycon_mut(index);
+        let Some(state) = self.joycon_mut(index) else {
+            return;
+        };
         state.set_accel(x, y, z);
     }
 

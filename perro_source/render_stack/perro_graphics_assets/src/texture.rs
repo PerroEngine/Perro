@@ -1,3 +1,4 @@
+use image::ImageDecoder;
 use perro_asset_formats::ptex::{
     FLAG_FORMAT_MASK as PTEX_FLAG_FORMAT_MASK, FLAG_FORMAT_R8 as PTEX_FLAG_FORMAT_R8,
     FLAG_FORMAT_RGB8 as PTEX_FLAG_FORMAT_RGB8, FLAG_FORMAT_RGBA8 as PTEX_FLAG_FORMAT_RGBA8,
@@ -20,6 +21,38 @@ pub const SVG_RASTER_SCALE: u32 = 2;
 const SVG_MAX_RASTER_DIM: u32 = 8192;
 const SVG_CACHE_LIMIT: usize = 32;
 const SVG_RGBA_CACHE_MAX_BYTES: usize = 64 * 1024 * 1024;
+const RASTER_MAX_DIM: u32 = 16_384;
+const RASTER_MAX_ALLOC_BYTES: u64 = 256 * 1024 * 1024;
+const RASTER_MAX_SOURCE_BYTES: usize = 128 * 1024 * 1024;
+
+fn decode_raster_limited(
+    bytes: &[u8],
+    format: Option<image::ImageFormat>,
+) -> Option<image::DynamicImage> {
+    if bytes.len() > RASTER_MAX_SOURCE_BYTES {
+        return None;
+    }
+    let mut reader = image::ImageReader::new(Cursor::new(bytes));
+    if let Some(format) = format {
+        reader.set_format(format);
+    } else {
+        reader = reader.with_guessed_format().ok()?;
+    }
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(RASTER_MAX_DIM);
+    limits.max_image_height = Some(RASTER_MAX_DIM);
+    limits.max_alloc = Some(RASTER_MAX_ALLOC_BYTES);
+    reader.limits(limits);
+    let decoder = reader.into_decoder().ok()?;
+    let (width, height) = decoder.dimensions();
+    let rgba_bytes = u64::from(width)
+        .checked_mul(u64::from(height))?
+        .checked_mul(4)?;
+    if rgba_bytes > RASTER_MAX_ALLOC_BYTES {
+        return None;
+    }
+    image::DynamicImage::from_decoder(decoder).ok()
+}
 
 /// Logical display size for a decoded texture source.
 ///
@@ -154,7 +187,7 @@ pub fn decode_image_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
     if bytes.starts_with(PTEX_MAGIC) {
         return decode_ptex(bytes);
     }
-    let image = image::load_from_memory(bytes).ok()?;
+    let image = decode_raster_limited(bytes, None)?;
     // into_rgba8 consumes the DynamicImage: no source + RGBA copy alive at once.
     let rgba = image.into_rgba8();
     let (w, h) = rgba.dimensions();
@@ -180,7 +213,7 @@ pub fn decode_image_rgba_max_size(bytes: &[u8], max_dim: u32) -> Option<(Vec<u8>
         let (rgba, width, height) = decode_ptex(bytes)?;
         return resize_rgba_to_max(rgba, width, height, max_dim);
     }
-    let image = image::load_from_memory(bytes).ok()?;
+    let image = decode_raster_limited(bytes, None)?;
     let (width, height) = (image.width().max(1), image.height().max(1));
     let target = fit_size((width, height), max_dim.max(1));
     let rgba = if target == (width, height) {
@@ -198,7 +231,7 @@ pub fn decode_image_size(bytes: &[u8]) -> Option<(u32, u32)> {
     if looks_like_svg(bytes) {
         return svg_target_size(bytes);
     }
-    let image = image::load_from_memory(bytes).ok()?;
+    let image = decode_raster_limited(bytes, None)?;
     Some((image.width().max(1), image.height().max(1)))
 }
 
@@ -612,8 +645,8 @@ fn decode_gltf_image_rgba(bytes: &[u8], mime_type: Option<&str>) -> Option<(Vec<
         _ => None,
     };
     let decoded = match format {
-        Some(format) => image::load_from_memory_with_format(bytes, format).ok()?,
-        None => image::load_from_memory(bytes).ok()?,
+        Some(format) => decode_raster_limited(bytes, Some(format))?,
+        None => decode_raster_limited(bytes, None)?,
     };
     let (width, height) = (decoded.width().max(1), decoded.height().max(1));
     let rgba = match decoded {
@@ -857,6 +890,15 @@ mod tests {
         assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
         assert!(encode_rgba_image(&[0; 3], 1, 1, "user://bad.png").is_err());
         assert!(encode_rgba_image(&[0; 4], 1, 1, "user://bad.nope").is_err());
+    }
+
+    #[test]
+    fn raster_decode_rejects_dimensions_over_hard_cap() {
+        let rgba = vec![0u8; (super::RASTER_MAX_DIM as usize + 1) * 4];
+        let png = encode_rgba_image(&rgba, super::RASTER_MAX_DIM + 1, 1, "user://wide.png")
+            .expect("encode png");
+        assert!(decode_image_rgba(&png).is_none());
+        assert!(decode_image_size(&png).is_none());
     }
 
     #[test]

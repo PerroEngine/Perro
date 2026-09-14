@@ -64,6 +64,8 @@ pub fn generate_static_scenes(
         .map(|job| job.material_uri)
         .collect::<HashSet<_>>();
 
+    let demo_mode = crate::demo_mode_active();
+    let playtest_mode = crate::playtest_mode_active();
     let mut emitted_scenes = scene_paths
         .par_iter()
         .map(|res_path| -> io::Result<(String, EmittedScene)> {
@@ -74,9 +76,9 @@ pub fn generate_static_scenes(
             let src = fs::read_to_string(&full_path)?;
             let mut parsed = std::panic::catch_unwind(|| Parser::new(&src).parse_scene())
                 .map_err(|_| io::Error::other(format!("failed to parse scene: {res_path}")))?;
-            perro_scene::filter_demo_scene(&mut parsed, crate::demo_mode_active())
+            perro_scene::filter_demo_scene(&mut parsed, demo_mode)
                 .map_err(|err| io::Error::other(format!("{res_path}: {err}")))?;
-            perro_scene::filter_playtest_scene(&mut parsed, crate::playtest_mode_active())
+            perro_scene::filter_playtest_scene(&mut parsed, playtest_mode)
                 .map_err(|err| io::Error::other(format!("{res_path}: {err}")))?;
             validate_demo_scene_paths(&parsed)
                 .map_err(|err| io::Error::other(format!("{res_path}: {err}")))?;

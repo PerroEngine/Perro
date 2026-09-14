@@ -1099,6 +1099,7 @@ fn parse_instance_posrot(items: &[SceneValue]) -> Vec<perro_nodes::MultiMeshInst
 }
 
 fn parse_instance_grid(value: &SceneValue) -> Option<Vec<perro_nodes::MultiMeshInstancePose>> {
+    const MAX_GRID_INSTANCES: usize = 100_000;
     let SceneValue::Object(entries) = value else {
         return None;
     };
@@ -1162,7 +1163,7 @@ fn parse_instance_grid(value: &SceneValue) -> Option<Vec<perro_nodes::MultiMeshI
         .0
         .saturating_mul(counts.1)
         .saturating_mul(counts.2)
-        .min(100_000);
+        .min(MAX_GRID_INSTANCES as u32);
     let mut out = Vec::with_capacity(total as usize);
 
     for y in 0..counts.1 {
@@ -1194,6 +1195,9 @@ fn parse_instance_grid(value: &SceneValue) -> Option<Vec<perro_nodes::MultiMeshI
                     transform: perro_structs::Transform3D::new(pos, rot, scale * scale_amount),
                     blend_shape_weights: None,
                 });
+                if out.len() == MAX_GRID_INSTANCES {
+                    return Some(out);
+                }
             }
         }
     }
@@ -1329,5 +1333,26 @@ fn as_node_ref_source(value: &SceneValue, field: &str) -> Result<Option<String>,
         SceneValue::Key(v) => Ok(Some(v.to_string())),
         SceneValue::Str(_) => Err(format!("{field} must be a node ref like @SkeletonNode")),
         _ => Ok(None),
+    }
+}
+
+#[cfg(test)]
+mod instance_grid_limits_tests {
+    use super::*;
+
+    #[test]
+    fn instance_grid_stops_at_hard_cap() {
+        let value = SceneValue::Object(
+            vec![(
+                "counts".into(),
+                SceneValue::Vec3 {
+                    x: u32::MAX as f32,
+                    y: 2.0,
+                    z: 2.0,
+                },
+            )]
+            .into(),
+        );
+        assert_eq!(parse_instance_grid(&value).expect("grid").len(), 100_000);
     }
 }

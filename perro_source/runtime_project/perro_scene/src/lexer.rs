@@ -41,6 +41,7 @@ pub enum LexErrorKind {
     MalformedNumber,
     UnknownCharacter(char),
     UnterminatedString,
+    InvalidEscape,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,6 +56,7 @@ impl fmt::Display for LexError {
             LexErrorKind::MalformedNumber => "malformed number".to_string(),
             LexErrorKind::UnknownCharacter(c) => format!("unknown character `{c}`"),
             LexErrorKind::UnterminatedString => "unterminated string".to_string(),
+            LexErrorKind::InvalidEscape => "invalid string escape".to_string(),
         };
         write!(
             f,
@@ -152,9 +154,21 @@ impl<'a> Lexer<'a> {
                 let mut s = String::new();
                 let mut terminated = false;
                 while let Some(c) = self.bump() {
-                    if c == '\\' && self.peek() == Some('"') {
-                        self.bump();
-                        s.push('"');
+                    if c == '\\' {
+                        match self.bump() {
+                            Some('"') => s.push('"'),
+                            Some('\\') => s.push('\\'),
+                            Some('n') => s.push('\n'),
+                            Some('r') => s.push('\r'),
+                            Some('t') => s.push('\t'),
+                            _ => {
+                                return Token::Error(LexError::new(
+                                    LexErrorKind::InvalidEscape,
+                                    start,
+                                    self.pos,
+                                ));
+                            }
+                        }
                         continue;
                     }
                     if c == '"' {
