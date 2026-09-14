@@ -14,6 +14,7 @@ struct VsIn {
     @location(1) uv: vec2<f32>,
     @location(2) depth_test: vec2<f32>,
     @location(3) color: vec4<f32>,
+    @location(4) texture_has_straight_alpha: f32,
 };
 
 struct VsOut {
@@ -21,6 +22,7 @@ struct VsOut {
     @location(0) uv: vec2<f32>,
     @location(1) color: vec4<f32>,
     @location(2) @interpolate(flat) depth_test: vec2<f32>,
+    @location(3) @interpolate(flat) texture_has_straight_alpha: f32,
 };
 
 @vertex
@@ -33,8 +35,11 @@ fn vs_main(in: VsIn) -> VsOut {
         out.pos = in.pos;
     }
     out.uv = in.uv;
-    out.color = in.color;
+    // Decode each vertex before raster interpolation. Color32 is gamma-space
+    // premultiplied RGBA, so fragment-stage decode would bend gradients.
+    out.color = linear_from_srgba_premultiplied(in.color);
     out.depth_test = in.depth_test;
+    out.texture_has_straight_alpha = in.texture_has_straight_alpha;
     return out;
 }
 
@@ -43,6 +48,17 @@ fn linear_from_gamma_rgb(srgb: vec3<f32>) -> vec3<f32> {
     let lower = srgb / vec3<f32>(12.92);
     let higher = pow((srgb + vec3<f32>(0.055)) / vec3<f32>(1.055), vec3<f32>(2.4));
     return select(higher, lower, cutoff);
+}
+
+// Color32 stores gamma-space RGB premultiplied by linear alpha. Undo the
+// premultiplication before transfer conversion, then restore it in linear
+// space. Alpha-zero RGB is epaint's additive-color encoding.
+fn linear_from_srgba_premultiplied(srgba: vec4<f32>) -> vec4<f32> {
+    if srgba.a > 0.0 {
+        let straight = clamp(srgba.rgb / srgba.a, vec3<f32>(0.0), vec3<f32>(1.0));
+        return vec4<f32>(linear_from_gamma_rgb(straight) * srgba.a, srgba.a);
+    }
+    return vec4<f32>(linear_from_gamma_rgb(srgba.rgb), 0.0);
 }
 
 @fragment
@@ -56,9 +72,13 @@ fn fs_main_linear_framebuffer(in: VsOut) -> @location(0) vec4<f32> {
             discard;
         }
     }
-    let sample = textureSample(font_tex, font_sampler, in.uv);
-    let color = vec4<f32>(linear_from_gamma_rgb(in.color.rgb), in.color.a);
-    return sample * color;
+    var sample = textureSample(font_tex, font_sampler, in.uv);
+    if in.texture_has_straight_alpha > 0.5 {
+        // User images sample as straight linear RGBA through an sRGB view;
+        // managed atlas pixels normalize to linear premultiplied on upload.
+        sample = vec4<f32>(sample.rgb * sample.a, sample.a);
+    }
+    return sample * in.color;
 }
 "#;
 

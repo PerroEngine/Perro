@@ -95,6 +95,259 @@ fn external_view(device: &wgpu::Device) -> wgpu::TextureView {
     texture.create_view(&wgpu::TextureViewDescriptor::default())
 }
 
+fn rgba_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    rgba: [u8; 4],
+) -> (wgpu::Texture, wgpu::TextureView) {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("ui alpha test user texture"),
+        size: wgpu::Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        texture.as_image_copy(),
+        &rgba,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(4),
+            rows_per_image: Some(1),
+        },
+        wgpu::Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+    );
+    let view = texture.create_view(&Default::default());
+    (texture, view)
+}
+
+fn colored_rect(
+    min_x: f32,
+    max_x: f32,
+    texture: TextureId,
+    color: Color32,
+) -> Arc<ClippedPrimitive> {
+    let mut mesh = Mesh::with_texture(texture);
+    mesh.vertices = vec![
+        Vertex {
+            pos: pos2(min_x, 8.0),
+            uv: pos2(0.0, 0.0),
+            color,
+        },
+        Vertex {
+            pos: pos2(max_x, 8.0),
+            uv: pos2(1.0, 0.0),
+            color,
+        },
+        Vertex {
+            pos: pos2(max_x, 40.0),
+            uv: pos2(1.0, 1.0),
+            color,
+        },
+        Vertex {
+            pos: pos2(min_x, 40.0),
+            uv: pos2(0.0, 1.0),
+            color,
+        },
+    ];
+    mesh.indices = vec![0, 1, 2, 0, 2, 3];
+    Arc::new(ClippedPrimitive {
+        clip_rect: Rect::EVERYTHING,
+        primitive: Primitive::Mesh(mesh),
+    })
+}
+
+fn render_ui_pixels(
+    ui: &mut GpuUi,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    primitives: &[Arc<ClippedPrimitive>],
+    textures_delta: &TexturesDelta,
+) -> Vec<u8> {
+    let output = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("ui alpha test output"),
+        size: wgpu::Extent3d {
+            width: VIEWPORT[0],
+            height: VIEWPORT[1],
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: OUTPUT_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let output_view = output.create_view(&Default::default());
+    let mut shared_textures = SharedTextureStore::default();
+    ui.prepare(
+        device,
+        queue,
+        UiPrepareInput {
+            resources: &ResourceStore::new(),
+            shared_textures: &mut shared_textures,
+            viewport: VIEWPORT,
+            primitives,
+            world_projections: &[],
+            textures_delta,
+            texture_size: [1, 1],
+            revision: 1,
+            static_texture_lookup: None,
+        },
+    );
+    let mut encoder = device.create_command_encoder(&Default::default());
+    {
+        let _clear = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("clear ui alpha test output"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &output_view,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            ..Default::default()
+        });
+    }
+    ui.render_pass(device, &mut encoder, &output_view, VIEWPORT, None);
+    let bytes_per_row = VIEWPORT[0] * 4;
+    let staging = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("ui alpha test readback"),
+        size: u64::from(bytes_per_row * VIEWPORT[1]),
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    encoder.copy_texture_to_buffer(
+        output.as_image_copy(),
+        wgpu::TexelCopyBufferInfo {
+            buffer: &staging,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(bytes_per_row),
+                rows_per_image: Some(VIEWPORT[1]),
+            },
+        },
+        wgpu::Extent3d {
+            width: VIEWPORT[0],
+            height: VIEWPORT[1],
+            depth_or_array_layers: 1,
+        },
+    );
+    queue.submit([encoder.finish()]);
+    let slice = staging.slice(..);
+    let (tx, rx) = std::sync::mpsc::channel();
+    slice.map_async(wgpu::MapMode::Read, move |result| {
+        tx.send(result).expect("GPU test map channel");
+    });
+    device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .expect("GPU test poll");
+    rx.recv().expect("GPU test map result").expect("GPU map");
+    slice.get_mapped_range().expect("GPU mapped bytes").to_vec()
+}
+
+fn pixel(bytes: &[u8], x: u32, y: u32) -> [u8; 4] {
+    let offset = ((y * VIEWPORT[0] + x) * 4) as usize;
+    bytes[offset..offset + 4].try_into().expect("RGBA pixel")
+}
+
+#[test]
+fn user_and_managed_translucency_match_without_double_alpha() {
+    pollster::block_on(async {
+        let Some((device, queue)) = test_device().await else {
+            eprintln!("skip UI alpha pixel test: no wgpu adapter");
+            return;
+        };
+        let mut ui = GpuUi::new(&device, OUTPUT_FORMAT, TextureFilterMode::Linear);
+        let user_key = TextureID::from_u64(912);
+        let (_user_texture, user_view) = rgba_texture(&device, &queue, [128, 0, 0, 128]);
+        ui.upsert_external_image_texture(&device, user_key, user_view, [1, 1]);
+
+        let tint = Color32::from_rgba_unmultiplied(255, 255, 255, 128);
+        let primitives = [
+            colored_rect(8.0, 56.0, TextureId::default(), tint),
+            colored_rect(72.0, 120.0, TextureId::User(user_key.as_u64()), tint),
+        ];
+        let mut delta = TexturesDelta::default();
+        delta.set.push((
+            TextureId::default(),
+            epaint::ImageDelta::full(
+                epaint::ColorImage::new(
+                    [1, 1],
+                    vec![Color32::from_rgba_unmultiplied(128, 0, 0, 128)],
+                ),
+                epaint::textures::TextureOptions::LINEAR,
+            ),
+        ));
+
+        let bytes = render_ui_pixels(&mut ui, &device, &queue, &primitives, &delta);
+        let managed = pixel(&bytes, 32, 24);
+        let user = pixel(&bytes, 96, 24);
+        assert_eq!(pixel(&bytes, 0, 0), [0, 0, 0, 0]);
+        for channel in 0..4 {
+            assert!(
+                managed[channel].abs_diff(user[channel]) <= 2,
+                "managed {managed:?}, user {user:?}"
+            );
+        }
+        assert!(
+            (62..=68).contains(&managed[0]) && (62..=68).contains(&managed[3]),
+            "expected two half-alpha factors once each: {managed:?}"
+        );
+        assert_eq!([managed[1], managed[2]], [0, 0]);
+    });
+}
+
+#[test]
+fn opaque_gray_matches_source_for_user_and_managed_textures() {
+    pollster::block_on(async {
+        let Some((device, queue)) = test_device().await else {
+            eprintln!("skip UI opaque color pixel test: no wgpu adapter");
+            return;
+        };
+        let mut ui = GpuUi::new(&device, OUTPUT_FORMAT, TextureFilterMode::Linear);
+        let user_key = TextureID::from_u64(913);
+        let (_user_texture, user_view) = rgba_texture(&device, &queue, [128, 128, 128, 255]);
+        ui.upsert_external_image_texture(&device, user_key, user_view, [1, 1]);
+        let primitives = [
+            colored_rect(8.0, 56.0, TextureId::default(), Color32::WHITE),
+            colored_rect(
+                72.0,
+                120.0,
+                TextureId::User(user_key.as_u64()),
+                Color32::WHITE,
+            ),
+        ];
+        let mut delta = TexturesDelta::default();
+        delta.set.push((
+            TextureId::default(),
+            epaint::ImageDelta::full(
+                epaint::ColorImage::new([1, 1], vec![Color32::from_gray(128)]),
+                epaint::textures::TextureOptions::LINEAR,
+            ),
+        ));
+
+        let bytes = render_ui_pixels(&mut ui, &device, &queue, &primitives, &delta);
+        let managed = pixel(&bytes, 32, 24);
+        let user = pixel(&bytes, 96, 24);
+        assert_eq!(managed, [128, 128, 128, 255]);
+        assert_eq!(user, [128, 128, 128, 255]);
+    });
+}
+
 fn cycle(
     ui: &mut GpuUi,
     device: &wgpu::Device,

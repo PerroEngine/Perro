@@ -358,9 +358,12 @@ pub(crate) fn write_static_lookup_fn(
         let _ = writeln!(out, "    {hash_name},");
     }
     out.push_str("];\n\n");
+    // Static tables infer reference lifetimes; returned references still need
+    // the explicit lifetime in the lookup function signature below.
+    let static_value_type = value_type.replace("&'static ", "&");
     let _ = writeln!(
         out,
-        "static {values_name}: [{value_type}; {entry_count}] = ["
+        "static {values_name}: [{static_value_type}; {entry_count}] = ["
     );
     for (_, _, value_expr) in &sorted {
         let _ = writeln!(out, "    {value_expr},");
@@ -489,6 +492,24 @@ mod tests {
         assert!(out.contains("    7\n"));
         assert!(!out.contains("TEST_HASHES"));
     }
+    #[test]
+    fn static_lookup_reference_table_uses_implicit_static_lifetime() {
+        let entries = (0..9)
+            .map(|index| (index, format!("HASH_{index}"), "EMPTY".to_string()))
+            .collect::<Vec<_>>();
+        let mut out = String::new();
+        write_static_lookup_fn(
+            &mut out,
+            "lookup_ref",
+            "REF",
+            "&'static [u8]",
+            "EMPTY",
+            &entries,
+        );
+        assert!(out.contains("static REF_VALUES: [&[u8]; 9]"));
+        assert!(out.contains("pub const fn lookup_ref(path_hash: u64) -> &'static [u8]"));
+    }
+
     const ITEM_COUNT: usize = 16;
     const ITERATIONS: usize = 20_000;
 

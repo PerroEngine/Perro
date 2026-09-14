@@ -254,9 +254,9 @@ fn decode_svg_rgba_sized(
     resvg::render(&tree, transform, &mut pixmap.as_mut());
 
     let _ = logical_size;
-    // pixmap buffer already holds premultiplied RGBA in that byte order, so the
-    // old per-pixel 4-byte push loop was an identity copy. take it whole.
-    let rgba: Arc<[u8]> = pixmap.take().into();
+    // Texture decodes use straight-alpha RGBA. tiny-skia stores premultiplied
+    // pixels, so demultiply before sharing the raster with sprite/UI uploads.
+    let rgba: Arc<[u8]> = pixmap.take_demultiplied().into();
     store_svg_rgba_cache_entry(cache_key, raster_size, Arc::clone(&rgba));
     Some((rgba, width, height))
 }
@@ -867,6 +867,14 @@ mod tests {
         assert_eq!(rgba.len(), 4 * 6 * 4);
         assert_eq!(decode_image_size(svg), Some((4, 6)));
         assert_eq!(decode_image_logical_size(svg), Some((2, 3)));
+    }
+
+    #[test]
+    fn decode_image_rgba_demultiplies_translucent_svg_pixels() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1" fill="#ff0000" fill-opacity="0.5"/></svg>"##;
+        let (rgba, width, height) = decode_image_rgba(svg).expect("decode translucent svg");
+        assert_eq!((width, height), (2, 2));
+        assert!(rgba.chunks_exact(4).all(|pixel| pixel == [255, 0, 0, 128]));
     }
 
     #[test]

@@ -4,6 +4,10 @@ use super::*;
 #[path = "../../tests/unit/composite_gpu_tests.rs"]
 mod tests;
 
+#[cfg(test)]
+#[path = "../../tests/unit/display_overlay_gpu_tests.rs"]
+mod display_overlay_tests;
+
 #[inline]
 fn post_effects_cache_safe(effects: &[PostProcessEffect]) -> bool {
     // Builtins read only their uniforms + input pixels. Custom shaders and
@@ -46,6 +50,9 @@ pub(super) struct FrameComposite {
     camera_generation: u64,
     camera_cache_key: Option<u64>,
     camera_cache_effects: Vec<PostProcessEffect>,
+    // Display-referred target exists only while accessibility needs to read
+    // the complete frame after source-faithful UI and startup overlays.
+    display_accessibility: Option<(wgpu::TextureFormat, VisualAccessibilityProcessor)>,
 }
 
 impl FrameComposite {
@@ -87,6 +94,7 @@ impl FrameComposite {
             camera_generation: 1,
             camera_cache_key: None,
             camera_cache_effects: Vec::new(),
+            display_accessibility: None,
         }
     }
 
@@ -127,6 +135,55 @@ impl FrameComposite {
         } else {
             &self.present_input
         }
+    }
+
+    pub fn display_accessibility_target(
+        &mut self,
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        enabled: bool,
+    ) -> Option<wgpu::TextureView> {
+        if !enabled {
+            if let Some((_, processor)) = self.display_accessibility.as_mut() {
+                processor.note_idle_frame(device);
+            }
+            return None;
+        }
+        if self
+            .display_accessibility
+            .as_ref()
+            .is_none_or(|(current, _)| *current != format)
+        {
+            self.display_accessibility = Some((
+                format,
+                VisualAccessibilityProcessor::new(device, format, self.size[0], self.size[1]),
+            ));
+        }
+        let (_, processor) = self
+            .display_accessibility
+            .as_mut()
+            .expect("display accessibility target initialized");
+        processor.resize(device, self.size[0], self.size[1]);
+        Some(processor.intermediate_view().clone())
+    }
+
+    pub fn apply_display_accessibility(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        output: &wgpu::TextureView,
+        settings: VisualAccessibilitySettings,
+    ) {
+        if settings.color_blind.is_none() {
+            return;
+        }
+        let (_, processor) = self
+            .display_accessibility
+            .as_mut()
+            .expect("display accessibility target prepared");
+        let input = processor.intermediate_view().clone();
+        processor.apply(device, queue, encoder, &input, output, settings);
     }
 
     pub fn camera_scene_view(&self) -> Option<&wgpu::TextureView> {

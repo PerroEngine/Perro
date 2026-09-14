@@ -171,7 +171,7 @@ impl Fixture {
         let scene = target(device, [32, 32], LINEAR).create_view(&Default::default());
         let white = target(device, [1, 1], LINEAR).create_view(&Default::default());
         let stream_post = FrameComposite::new(device, queue, LINEAR, [8, 8], &present);
-        let mut ui = GpuUi::new(device, LINEAR, TextureFilterMode::Nearest);
+        let mut ui = GpuUi::new(device, OUTPUT, TextureFilterMode::Nearest);
         ui.upsert_external_image_texture(device, TextureID::from_u64(91), white.clone(), [1, 1]);
         let mut label = UiRenderer::new();
         label.submit(UiCommand::UpsertLabel {
@@ -208,7 +208,7 @@ impl Fixture {
             ui,
             label,
             output: target(device, SIZE, OUTPUT),
-            overlay: Gpu2D::new(device, LINEAR, 1, TextureFilterMode::Nearest),
+            overlay: Gpu2D::new(device, OUTPUT, 1, TextureFilterMode::Nearest),
             resources: ResourceStore::new(),
             shared: SharedTextureStore::default(),
         }
@@ -306,6 +306,39 @@ impl Fixture {
                 LINEAR,
             );
         }
+        let (intermediate, _, _) = self.composite.apply_global(
+            device,
+            queue,
+            &mut encoder,
+            &self.present,
+            LINEAR,
+            &view,
+            1,
+            &camera,
+            global_fx,
+            None,
+            VisualAccessibilitySettings::default(),
+            None,
+            None,
+            false,
+            None,
+        );
+        let output_view = self.output.create_view(&Default::default());
+        let display_view = self
+            .composite
+            .display_accessibility_target(device, OUTPUT, access.color_blind.is_some())
+            .unwrap_or_else(|| output_view.clone());
+        self.present.apply(
+            queue,
+            &mut encoder,
+            self.composite.present_bind_group(intermediate),
+            &display_view,
+            SIZE,
+            1.0 / 60.0,
+            PresentExposureSettings::default(),
+            HdrStatus::default(),
+            None,
+        );
         if layers {
             let paint = self.label.prepare_paint([64.0, 64.0]);
             let mut primitives = paint.primitives.to_vec();
@@ -334,7 +367,8 @@ impl Fixture {
                     static_texture_lookup: None,
                 },
             );
-            self.ui.render_pass(device, &mut encoder, &view, SIZE, None);
+            self.ui
+                .render_pass(device, &mut encoder, &display_view, SIZE, None);
             self.overlay.prepare(
                 device,
                 queue,
@@ -369,35 +403,15 @@ impl Fixture {
                     static_texture_lookup: None,
                 },
             );
-            self.overlay.render_pass(&mut encoder, &view, None, 1);
+            self.overlay
+                .render_pass(&mut encoder, &display_view, None, 1);
         }
-        let (intermediate, _, _) = self.composite.apply_global(
+        self.composite.apply_display_accessibility(
             device,
             queue,
             &mut encoder,
-            &self.present,
-            LINEAR,
-            &view,
-            1,
-            &camera,
-            global_fx,
-            None,
+            &output_view,
             access,
-            None,
-            None,
-            false,
-            None,
-        );
-        self.present.apply(
-            queue,
-            &mut encoder,
-            self.composite.present_bind_group(intermediate),
-            &self.output.create_view(&Default::default()),
-            SIZE,
-            1.0 / 60.0,
-            PresentExposureSettings::default(),
-            HdrStatus::default(),
-            None,
         );
         queue.submit([encoder.finish()]);
         read(device, queue, &self.output)
@@ -702,7 +716,7 @@ fn final_composite_handles_depth_resize_msaa_and_output_formats() {
 }
 
 #[test]
-fn camera_effects_stop_before_ui_and_global_effects_cover_final_composite() {
+fn scene_effects_stop_before_ui_and_accessibility_covers_final_composite() {
     pollster::block_on(async {
         let Some((device, queue)) = device().await else {
             eprintln!("skip composite GPU test: no adapter");
@@ -731,21 +745,30 @@ fn camera_effects_stop_before_ui_and_global_effects_cover_final_composite() {
             "camera FX must not affect UI: {ui:?}"
         );
         let all_layers = [(28, 28), (8, 8), (40, 8), (48, 48), glyph];
-        for (global, access) in [
-            (bw.as_slice(), no_access),
-            (
-                &[][..],
-                no_access.with_color_blind(perro_structs::ColorBlindFilter::Achroma, 1.0),
-            ),
-        ] {
-            let result = f.frame(&device, &queue, &[], global, access, true);
-            for (x, y) in all_layers {
-                let p = pixel(&result, x, y);
-                assert!(
-                    p[0].abs_diff(p[1]) <= 1 && p[1].abs_diff(p[2]) <= 1,
-                    "global FX must affect layer ({x}, {y}): {p:?}"
-                );
-            }
+        let global_only = f.frame(&device, &queue, &[], &bw, no_access, true);
+        let p = pixel(&global_only, 28, 28);
+        assert!(p[0].abs_diff(p[1]) <= 1 && p[1].abs_diff(p[2]) <= 1);
+        for (x, y) in [(40, 8), (48, 48)] {
+            assert_eq!(
+                pixel(&global_only, x, y),
+                pixel(&baseline, x, y),
+                "global scene FX must leave opaque display overlays unchanged"
+            );
+        }
+        let result = f.frame(
+            &device,
+            &queue,
+            &[],
+            &[],
+            no_access.with_color_blind(perro_structs::ColorBlindFilter::Achroma, 1.0),
+            true,
+        );
+        for (x, y) in all_layers {
+            let p = pixel(&result, x, y);
+            assert!(
+                p[0].abs_diff(p[1]) <= 1 && p[1].abs_diff(p[2]) <= 1,
+                "accessibility must affect layer ({x}, {y}): {p:?}"
+            );
         }
         let filtered = f.frame(&device, &queue, &bw, &[tint()], no_access, true);
         let p = pixel(&filtered, 28, 28);

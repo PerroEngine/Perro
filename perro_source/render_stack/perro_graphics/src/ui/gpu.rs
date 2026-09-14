@@ -55,6 +55,9 @@ struct UiVertexGpu {
     // [homogeneous world position, sample scene depth]. Both are per primitive.
     depth_test: [f32; 2],
     color: [u8; 4],
+    // Managed atlases normalize to linear premultiplied RGBA on upload.
+    // User textures decode through an sRGB view and keep straight alpha.
+    texture_has_straight_alpha: f32,
 }
 
 #[repr(C)]
@@ -377,6 +380,11 @@ impl GpuUi {
                                 format: wgpu::VertexFormat::Unorm8x4,
                                 offset: 32,
                                 shader_location: 3,
+                            },
+                            wgpu::VertexAttribute {
+                                format: wgpu::VertexFormat::Float32,
+                                offset: 36,
+                                shader_location: 4,
                             },
                         ],
                     })],
@@ -709,6 +717,9 @@ impl GpuUi {
                                 [1.0, u8::from(projection.depth_test) as f32]
                             }),
                             color: vertex.color.to_array(),
+                            texture_has_straight_alpha: f32::from(texture_has_straight_alpha(
+                                mesh.texture_id,
+                            )),
                         }),
                 );
             let index_count = mesh.indices.len().min(u32::MAX as usize) as u32;
@@ -1111,6 +1122,9 @@ impl GpuUi {
                         uv: [vertex.uv.x, vertex.uv.y],
                         depth_test: [0.0, 0.0],
                         color: vertex.color.to_array(),
+                        texture_has_straight_alpha: f32::from(texture_has_straight_alpha(
+                            mesh.texture_id,
+                        )),
                     };
                 }
                 for (dst, &index) in self.indices[index_start..index_start + mesh.indices.len()]
@@ -1247,9 +1261,10 @@ impl GpuUi {
         let size = [image.size[0] as u32, image.size[1] as u32];
         let origin = delta.pos.unwrap_or([0, 0]);
         let required_size = font_delta_required_size(size, origin, texture_size);
-        // Color32 is Pod over [u8; 4]: reinterpret the atlas pixels in place
-        // instead of copying them into a scratch Vec every delta.
-        let rgba: &[u8] = bytemuck::cast_slice(image.pixels.as_slice());
+        // epaint atlas pixels are gamma-space premultiplied Color32. Normalize
+        // before upload so bilinear filtering happens in linear premultiplied
+        // space, matching the render target and One/OneMinusSrcAlpha blend.
+        let rgba = linear_premultiplied_rgba(&image.pixels);
         let needs_texture = match &self.font_texture {
             Some(texture) => {
                 delta.pos.is_none()
@@ -1347,7 +1362,7 @@ impl GpuUi {
                 },
                 aspect: wgpu::TextureAspect::All,
             },
-            rgba,
+            &rgba,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(size[0].max(1) * 4),
@@ -1371,9 +1386,7 @@ impl GpuUi {
         let size = [image.size[0] as u32, image.size[1] as u32];
         let origin = delta.pos.unwrap_or([0, 0]);
         let required_size = font_delta_required_size(size, origin, size);
-        // Color32 is Pod over [u8; 4]: reinterpret the atlas pixels in place
-        // instead of copying them into a scratch Vec every delta.
-        let rgba: &[u8] = bytemuck::cast_slice(image.pixels.as_slice());
+        let rgba = linear_premultiplied_rgba(&image.pixels);
         let needs_texture = match &self.harfbuzz_font_texture {
             Some(texture) => {
                 delta.pos.is_none()
@@ -1473,7 +1486,7 @@ impl GpuUi {
                 },
                 aspect: wgpu::TextureAspect::All,
             },
-            rgba,
+            &rgba,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(size[0].max(1) * 4),
@@ -1737,6 +1750,40 @@ fn align_buffer_bytes(bytes: usize) -> usize {
     bytes.next_multiple_of(wgpu::COPY_BUFFER_ALIGNMENT as usize)
 }
 
+fn linear_premultiplied_rgba(pixels: &[epaint::Color32]) -> Vec<u8> {
+    let mut rgba = Vec::with_capacity(pixels.len() * 4);
+    for &pixel in pixels {
+        rgba.extend_from_slice(&linear_premultiplied_color32(pixel));
+    }
+    rgba
+}
+
+fn texture_has_straight_alpha(texture_id: TextureId) -> bool {
+    matches!(texture_id, TextureId::User(_))
+}
+
+fn linear_premultiplied_color32(color: epaint::Color32) -> [u8; 4] {
+    let [r, g, b, a] = color.to_array();
+    let alpha = f32::from(a) / 255.0;
+    let convert = |channel: u8| {
+        let premultiplied = f32::from(channel) / 255.0;
+        let straight = if a == 0 {
+            // epaint uses alpha-zero RGB for additive colors.
+            premultiplied
+        } else {
+            (premultiplied / alpha).clamp(0.0, 1.0)
+        };
+        let linear = if straight <= 0.04045 {
+            straight / 12.92
+        } else {
+            ((straight + 0.055) / 1.055).powf(2.4)
+        };
+        let linear_premultiplied = if a == 0 { linear } else { linear * alpha };
+        (linear_premultiplied * 255.0).round().clamp(0.0, 255.0) as u8
+    };
+    [convert(r), convert(g), convert(b), a]
+}
+
 fn hash_f32(value: f32, hasher: &mut impl Hasher) {
     value.to_bits().hash(hasher);
 }
@@ -1847,8 +1894,8 @@ mod ui_gpu_tests;
 #[cfg(test)]
 mod tests {
     use super::{
-        UI_SUPERSAMPLE_FORMAT, UiMeshGpu, push_ui_mesh, supersampled_size,
-        ui_mesh_signature_for_test,
+        UI_SUPERSAMPLE_FORMAT, UiMeshGpu, linear_premultiplied_color32, linear_premultiplied_rgba,
+        push_ui_mesh, supersampled_size, texture_has_straight_alpha, ui_mesh_signature_for_test,
     };
     use epaint::{ClippedPrimitive, Color32, Mesh, Primitive, Rect, TextureId, Vertex, pos2};
     use perro_structs::TextureFilterMode;
@@ -1986,6 +2033,36 @@ mod tests {
     fn opaque_pixel_stays_one_alpha() {
         let pixel = premultiplied_over([0.25, 0.5, 0.75, 1.0], [0.1; 4]);
         assert_eq!(pixel[3], 1.0);
+    }
+
+    #[test]
+    fn color32_decode_unpremultiplies_before_gamma_transfer() {
+        assert_eq!(
+            linear_premultiplied_color32(Color32::from_rgba_premultiplied(64, 0, 0, 128)),
+            [27, 0, 0, 128]
+        );
+        assert_eq!(
+            linear_premultiplied_color32(Color32::from_rgba_premultiplied(128, 0, 0, 128)),
+            [128, 0, 0, 128]
+        );
+    }
+
+    #[test]
+    fn color32_decode_keeps_additive_alpha_zero_rgb() {
+        assert_eq!(
+            linear_premultiplied_color32(Color32::from_rgba_premultiplied(128, 0, 0, 0)),
+            [55, 0, 0, 0]
+        );
+    }
+
+    #[test]
+    fn managed_atlas_normalizes_while_user_texture_stays_straight() {
+        assert_eq!(
+            linear_premultiplied_rgba(&[Color32::from_rgb(128, 128, 128)]),
+            [55, 55, 55, 255]
+        );
+        assert!(!texture_has_straight_alpha(TextureId::Managed(7)));
+        assert!(texture_has_straight_alpha(TextureId::User(7)));
     }
 
     #[test]

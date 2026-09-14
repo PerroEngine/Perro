@@ -181,10 +181,10 @@ choice with `hdr_set!(ctx.res, HdrMode::...)`.
 
 `anti_alias` picks one anti-aliasing technique (never two at once):
 
-- `"fxaa"` (default): FXAA 3.11-quality post pass on the full tonemapped frame, including UI,
+- `"fxaa"` (default): FXAA 3.11-quality post pass on the tonemapped scene, before UI and startup overlays,
   at output resolution. Costs a few texture taps per pixel with an early exit on
   flat regions; its GPU resources only allocate while the pass actually runs.
-- `"smaa"`: SMAA 1x, a three-pass morphological chain on the same full tonemapped frame.
+- `"smaa"`: SMAA 1x, a three-pass morphological chain on the same tonemapped scene.
   Reconstructs edge shapes instead of blurring along them, so gradients on
   long edges and diagonals come out noticeably cleaner than FXAA at roughly 2-3x its GPU
   cost — still cheaper than `msaa4` on most GPUs, and it also applies to alpha-tested and

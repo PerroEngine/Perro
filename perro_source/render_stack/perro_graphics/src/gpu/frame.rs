@@ -1897,6 +1897,51 @@ impl Gpu {
                     ^ u64::from(self.render_height).rotate_left(47)
                     ^ self.composite.camera_generation().rotate_left(59),
             );
+        // Scene FX and exposure precede display-referred UI and startup art.
+        let (final_intermediate, post_time, accessibility_time) = self.composite.apply_global(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            &self.present,
+            self.render_format,
+            &composite_view,
+            composite_generation,
+            &camera_3d,
+            global_post_chain,
+            self.three_d.as_ref().map(|gpu| {
+                (
+                    gpu.depth_prepass_view(),
+                    gpu.depth_prepass_view_generation(),
+                )
+            }),
+            VisualAccessibilitySettings::default(),
+            static_shader_lookup,
+            static_texture_lookup,
+            self.hdr_status.active,
+            post_cache_key,
+        );
+        timing.post_process = camera_post_time + post_time;
+        timing.accessibility = accessibility_time;
+        let display_accessibility_view = self.composite.display_accessibility_target(
+            &self.device,
+            self.surface_view_format,
+            accessibility_enabled,
+        );
+        let display_view = display_accessibility_view.as_ref().or(swap_view.as_ref());
+        if let Some(output_view) = display_view {
+            let final_bind_group = self.composite.present_bind_group(final_intermediate);
+            self.present.apply(
+                &self.queue,
+                &mut encoder,
+                final_bind_group,
+                output_view,
+                composite_size,
+                frame_delta_seconds,
+                exposure_settings,
+                self.hdr_status,
+                None,
+            );
+        }
         if ui_primitives.is_empty() {
             if let Some(ui) = self.ui.as_mut() {
                 ui.clear();
@@ -1905,12 +1950,12 @@ impl Gpu {
             if self.ui.is_none() {
                 self.ui = Some(GpuUi::new(
                     &self.device,
-                    self.render_format,
+                    self.surface_view_format,
                     self.texture_filter,
                 ));
             }
             if let Some(ui) = self.ui.as_mut() {
-                let output_view = &composite_view;
+                let output_view = display_view.expect("surface acquired before display overlays");
                 let viewport = [self.config.width.max(1), self.config.height.max(1)];
                 ui.set_max_render_pixels(
                     self.max_render_pixels
@@ -1952,13 +1997,13 @@ impl Gpu {
             if self.late_overlay_2d.is_none() {
                 self.late_overlay_2d = Some(Gpu2D::new(
                     &self.device,
-                    self.render_format,
+                    self.surface_view_format,
                     1,
                     self.texture_filter,
                 ));
             }
             if let Some(late_overlay_2d) = self.late_overlay_2d.as_mut() {
-                let output_view = &composite_view;
+                let output_view = display_view.expect("surface acquired before display overlays");
                 late_overlay_2d.prepare(
                     &self.device,
                     &self.queue,
@@ -1986,44 +2031,16 @@ impl Gpu {
                 );
             }
         }
-        // Global FX run aft UI + late overlay.
-        let (final_intermediate, post_time, accessibility_time) = self.composite.apply_global(
-            &self.device,
-            &self.queue,
-            &mut encoder,
-            &self.present,
-            self.render_format,
-            &composite_view,
-            composite_generation,
-            &camera_3d,
-            global_post_chain,
-            self.three_d.as_ref().map(|gpu| {
-                (
-                    gpu.depth_prepass_view(),
-                    gpu.depth_prepass_view_generation(),
-                )
-            }),
-            accessibility,
-            static_shader_lookup,
-            static_texture_lookup,
-            self.hdr_status.active,
-            post_cache_key,
-        );
-        timing.post_process = camera_post_time + post_time;
-        timing.accessibility = accessibility_time;
         if let Some(output_view) = swap_view.as_ref() {
-            let final_bind_group = self.composite.present_bind_group(final_intermediate);
-            self.present.apply(
+            let accessibility_start = Instant::now();
+            self.composite.apply_display_accessibility(
+                &self.device,
                 &self.queue,
                 &mut encoder,
-                final_bind_group,
                 output_view,
-                composite_size,
-                frame_delta_seconds,
-                exposure_settings,
-                self.hdr_status,
-                None,
+                accessibility,
             );
+            timing.accessibility += accessibility_start.elapsed();
         }
         if gpu_timer_active && let Some(timer) = self.gpu_timer.as_ref() {
             // Post pair closes immediately before the frame end marker, so it

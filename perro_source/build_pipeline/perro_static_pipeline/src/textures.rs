@@ -24,6 +24,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+const SVG_ALPHA_ENCODING_REVISION: &str = "straight-v1";
+
 pub fn generate_static_textures(
     project_root: &Path,
     res_tree: &ResFileTree,
@@ -50,7 +52,9 @@ pub fn generate_static_textures(
     // The SVG raster scale changes decoded output bytes without touching the
     // source file stat key, so it must live in the cache context: a future
     // scale change rebakes instead of serving stale rasters.
-    let context = format!("textures svg_scale={SVG_RASTER_SCALE} ptex_v{PTEX_VERSION}");
+    let context = format!(
+        "textures svg_scale={SVG_RASTER_SCALE} svg_alpha={SVG_ALPHA_ENCODING_REVISION} ptex_v{PTEX_VERSION}"
+    );
     let mut cache = SourceCache::open(&embedded_textures_dir, &context);
     let mut textures = Vec::<(String, String)>::with_capacity(texture_inputs.len());
     let mut baked_texture_uris = HashSet::<String>::new();
@@ -314,7 +318,7 @@ fn encode_ptex(raw_rgba: &[u8], width: u32, height: u32) -> io::Result<Vec<u8>> 
 #[cfg(test)]
 mod tests {
     use super::{PTEX_VERSION, generate_static_textures};
-    use perro_graphics_assets::decode_ptex;
+    use perro_graphics_assets::{decode_image_rgba, decode_ptex};
     use std::{
         fs,
         time::{SystemTime, UNIX_EPOCH},
@@ -481,18 +485,37 @@ mod tests {
             unique
         ));
         fs::create_dir_all(root.join("res")).expect("create res");
-        fs::write(
-            root.join("res").join("icon.svg"),
-            br#"<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="red"/></svg>"#,
-        )
-        .expect("write svg");
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="#ff0000" fill-opacity="0.5"/></svg>"##;
+        fs::write(root.join("res").join("icon.svg"), svg).expect("write svg");
 
-        generate_static_textures(&root, &crate::ResFileTree::scan(&root).expect("res scan"))
-            .expect("generate textures");
+        // Seed the exact cache context used before SVG rasters switched from
+        // premultiplied to straight alpha. A normal build must reject it even
+        // though the source length and mtime still match.
+        let embedded = root.join(".perro/project/embedded/textures");
+        fs::create_dir_all(&embedded).expect("create embedded textures");
         let ptex_name = format!(
             "texture_{:016x}.ptex",
             perro_ids::string_to_u64("res://icon.svg")
         );
+        let stale_rgba = [128, 0, 0, 128].repeat(4 * 4);
+        let stale_ptex = super::encode_ptex(&stale_rgba, 4, 4).expect("encode stale ptex");
+        fs::write(embedded.join(&ptex_name), stale_ptex).expect("write stale ptex");
+        let (source_len, source_mtime) =
+            crate::source_stat(&root.join("res/icon.svg")).expect("source stat");
+        let mut stale_cache = crate::SourceCache::open(&embedded, "textures svg_scale=2 ptex_v2");
+        stale_cache.store(
+            "icon.svg",
+            source_len,
+            source_mtime,
+            crate::CachedSource {
+                rows: vec![vec!["res://icon.svg".into(), ptex_name.clone()]],
+                files: vec![ptex_name.clone()],
+            },
+        );
+        stale_cache.finish().expect("finish stale cache");
+
+        generate_static_textures(&root, &crate::ResFileTree::scan(&root).expect("res scan"))
+            .expect("generate textures");
         let ptex = fs::read(
             root.join(".perro")
                 .join("project")
@@ -502,8 +525,12 @@ mod tests {
         )
         .expect("read ptex");
         let (rgba, width, height) = decode_ptex(&ptex).expect("decode ptex");
+        let (loose_rgba, loose_width, loose_height) =
+            decode_image_rgba(svg).expect("decode loose svg");
         assert_eq!((width, height), (4, 4));
-        assert_eq!(rgba.len(), 4 * 4 * 4);
+        assert_eq!((width, height), (loose_width, loose_height));
+        assert_eq!(rgba, loose_rgba);
+        assert!(rgba.chunks_exact(4).all(|pixel| pixel == [255, 0, 0, 128]));
 
         let _ = fs::remove_dir_all(root);
     }

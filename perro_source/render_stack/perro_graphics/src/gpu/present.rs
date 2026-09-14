@@ -1617,9 +1617,9 @@ impl PresentProcessor {
             self.last_exposure_groups = 0;
             write_manual_exposure(queue, self, settings.exposure);
         }
-        // The full composite (including UI) enters final tonemap. FXAA/SMAA
-        // operate at output resolution. Scene TAA has already resolved before
-        // UI; the standalone path can still resolve its own supplied frame.
+        // Tone-map the scene before display-referred UI and startup overlays.
+        // FXAA/SMAA operate at output resolution. Scene TAA has already resolved;
+        // the standalone path can still resolve its own supplied frame.
         let taa = if taa_run { self.taa.as_ref() } else { None };
         let smaa = if taa.is_none() && self.smaa_active {
             self.smaa.as_ref()

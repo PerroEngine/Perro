@@ -428,6 +428,123 @@ fn exposure_two_pass_matches_the_legacy_single_group_shader() {
     });
 }
 
+fn render_present_bytes(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    scene_view: &wgpu::TextureView,
+    base_format: wgpu::TextureFormat,
+    view_format: wgpu::TextureFormat,
+) -> Vec<u8> {
+    let dimensions = [64, 1];
+    let mut present = PresentProcessor::new(device, view_format);
+    present.set_output_size(dimensions[0], dimensions[1]);
+    let bind_groups = present.create_bind_group(device, scene_view);
+    let view_formats = (base_format != view_format)
+        .then_some(view_format)
+        .into_iter()
+        .collect::<Vec<_>>();
+    let output = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("perro_present_srgb_view_parity_output"),
+        size: wgpu::Extent3d {
+            width: dimensions[0],
+            height: dimensions[1],
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: base_format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &view_formats,
+    });
+    let output_view = output.create_view(&wgpu::TextureViewDescriptor {
+        format: Some(view_format),
+        ..Default::default()
+    });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("perro_present_srgb_view_parity_encoder"),
+    });
+    present.apply(
+        queue,
+        &mut encoder,
+        &bind_groups,
+        &output_view,
+        dimensions,
+        0.0,
+        PresentExposureSettings::default(),
+        HdrStatus::default(),
+        None,
+    );
+    let staging = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("perro_present_srgb_view_parity_readback"),
+        size: 256,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    encoder.copy_texture_to_buffer(
+        wgpu::TexelCopyTextureInfo {
+            texture: &output,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::TexelCopyBufferInfo {
+            buffer: &staging,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(1),
+            },
+        },
+        output.size(),
+    );
+    queue.submit([encoder.finish()]);
+    let slice = staging.slice(..);
+    let (tx, rx) = std::sync::mpsc::channel();
+    slice.map_async(wgpu::MapMode::Read, move |result| {
+        let _ = tx.send(result);
+    });
+    let _ = device.poll(wgpu::PollType::wait_indefinitely());
+    rx.recv()
+        .expect("map callback")
+        .expect("sRGB view parity readback map");
+    let bytes = slice
+        .get_mapped_range()
+        .expect("mapped sRGB view parity readback")
+        .to_vec();
+    staging.unmap();
+    bytes
+}
+
+#[test]
+fn present_srgb_view_alias_matches_native_srgb_storage() {
+    pollster::block_on(async {
+        let Some((device, queue)) = test_device().await else {
+            eprintln!("skip sRGB view parity test: no wgpu adapter");
+            return;
+        };
+        let dimensions = [64, 1];
+        let scene_view = scene_texture(&device, &queue, dimensions);
+        for (linear, srgb) in [
+            (
+                wgpu::TextureFormat::Rgba8Unorm,
+                wgpu::TextureFormat::Rgba8UnormSrgb,
+            ),
+            (
+                wgpu::TextureFormat::Bgra8Unorm,
+                wgpu::TextureFormat::Bgra8UnormSrgb,
+            ),
+        ] {
+            let native = render_present_bytes(&device, &queue, &scene_view, srgb, srgb);
+            let aliased = render_present_bytes(&device, &queue, &scene_view, linear, srgb);
+            assert_eq!(
+                aliased, native,
+                "{linear:?} storage with {srgb:?} view changed present bytes"
+            );
+        }
+    });
+}
+
 const TAA_SIZE: [u32; 2] = [64, 64];
 
 /// Runs `frames` TAA frames and returns (swapchain bytes, passes encoded by

@@ -424,8 +424,6 @@ mod tests {
         set_var!(&mut ctx, script_id, "health", Variant::from(10_i32));
         let _ = call_method!(&mut ctx, script_id, "heal", &[]);
 
-        drop(ctx);
-
         assert_eq!(
             api.members,
             vec![
