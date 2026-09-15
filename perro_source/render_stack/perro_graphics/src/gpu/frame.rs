@@ -199,9 +199,10 @@ impl Gpu {
                     );
                 }
                 if self.ui.is_none() {
+                    // This is the main UI instance; it later composites into the surface view.
                     self.ui = Some(GpuUi::new(
                         &self.device,
-                        self.render_format,
+                        self.surface_view_format,
                         self.texture_filter,
                     ));
                 }

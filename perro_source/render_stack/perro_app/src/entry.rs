@@ -35,6 +35,38 @@ fn native_crash_log_path() -> std::path::PathBuf {
 }
 
 #[cfg(target_os = "windows")]
+fn redirect_native_stdio() {
+    use std::os::windows::io::{FromRawHandle, IntoRawHandle};
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn SetStdHandle(kind: u32, handle: *mut std::ffi::c_void) -> i32;
+    }
+
+    let output_path = native_crash_log_path().with_file_name("perro_output.log");
+    for kind in [u32::MAX - 10, u32::MAX - 11] {
+        let Ok(file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&output_path)
+        else {
+            continue;
+        };
+        let handle = file.into_raw_handle();
+        // SAFETY: `handle` stays owned by the process after `into_raw_handle`.
+        // `kind` is STD_OUTPUT_HANDLE (-11) or STD_ERROR_HANDLE (-12).
+        unsafe {
+            if SetStdHandle(kind, handle.cast()) == 0 {
+                let _ = std::fs::File::from_raw_handle(handle);
+            }
+        }
+    }
+}
+
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "windows")))]
+fn redirect_native_stdio() {}
+
+#[cfg(target_os = "windows")]
 fn show_native_crash_message(project_name: &str, log_path: &Path) {
     use std::os::windows::ffi::OsStrExt;
 
@@ -73,6 +105,7 @@ fn show_native_crash_message(_project_name: &str, _log_path: &Path) {}
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn install_native_crash_reporter(project_name: &'static str) {
+    redirect_native_stdio();
     std::panic::set_hook(Box::new(move |info| {
         let log_path = native_crash_log_path();
         let report = format!(

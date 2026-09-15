@@ -268,7 +268,12 @@ pub(super) fn choose_surface_selection(
     SurfaceSelection {
         format,
         view_format,
-        color_space: wgpu::SurfaceColorSpace::Srgb,
+        // Let the platform compositor pick its native SDR presentation path.
+        // Explicit `Srgb` changes Windows' fullscreen composition behavior on
+        // some displays, producing a darker scene after a resize even though
+        // the swapchain format stays sRGB. HDR still requests its explicit
+        // extended-linear color space in the branch above.
+        color_space: wgpu::SurfaceColorSpace::Auto,
         status: HdrStatus {
             requested: mode,
             supported,
@@ -2585,6 +2590,7 @@ mod tests {
             true,
         );
         assert_eq!(selected.format, wgpu::TextureFormat::Bgra8UnormSrgb);
+        assert_eq!(selected.color_space, wgpu::SurfaceColorSpace::Auto);
         assert!(selected.status.supported);
         assert!(!selected.status.active);
         assert_eq!(selected.status.fallback, Some(HdrFallback::Disabled));
