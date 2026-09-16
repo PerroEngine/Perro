@@ -221,6 +221,23 @@ pub fn fallback_gamepads(native_gamepad_count: usize) -> Result<Vec<FallbackGame
     app::with_client(|client| {
         let input = client.input();
         input.run_frame();
+        let controllers: Vec<_> = input
+            .get_connected_controllers()
+            .into_iter()
+            .map(|handle| {
+                let input_type: InputType = input.get_input_type_for_handle(handle).into();
+                (handle, input_type)
+            })
+            .collect();
+        let input_types: Vec<_> = controllers
+            .iter()
+            .map(|(_, input_type)| *input_type)
+            .collect();
+        let selected = fallback_selection(&input_types, native_gamepad_count);
+        if !selected.iter().any(|selected| *selected) {
+            return Ok(Vec::new());
+        }
+
         let actions = {
             let mut cached = fallback_actions()
                 .lock()
@@ -235,19 +252,6 @@ pub fn fallback_gamepads(native_gamepad_count: usize) -> Result<Vec<FallbackGame
             return Err(SteamError::CallFailed("input.fallback_action_set"));
         }
 
-        let controllers: Vec<_> = input
-            .get_connected_controllers()
-            .into_iter()
-            .map(|handle| {
-                let input_type: InputType = input.get_input_type_for_handle(handle).into();
-                (handle, input_type)
-            })
-            .collect();
-        let input_types: Vec<_> = controllers
-            .iter()
-            .map(|(_, input_type)| *input_type)
-            .collect();
-        let selected = fallback_selection(&input_types, native_gamepad_count);
         let mut gamepads = Vec::new();
         for ((handle, input_type), selected) in controllers.into_iter().zip(selected) {
             if !selected {
