@@ -129,6 +129,10 @@ All inherit `UiNode` layout fields.
 
 `UiImage`
 
+- Draws a texture with stretch, fit, or cover scaling.
+- Use `corner_radius = 0.0..1.0` to round all image corners.
+- Use `corner_radii = (tl, tr, br, bl)` to set corners separately.
+
 `UiSubView`
 
 - Owns an isolated mixed 2D/3D child render scope inside its computed UI rect.
@@ -751,6 +755,7 @@ Image button example:
     texture = "res://ui/play.png"
     size_ratio = (0.08, 0.08)
     scale_mode = "fit"
+    corner_radius = 0.2
     # Extra signal. Default play_icon_clicked still emits.
     clicked_signals = ["play_clicked"]
     hover = { scale = (1.06, 1.06) tint = "#FFFFFFFF" }

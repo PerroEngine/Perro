@@ -934,6 +934,7 @@ mod streams {
         button.hover_tint = Color::new(0.4, 0.5, 0.6, 1.0);
         button.pressed_tint = Color::new(0.7, 0.8, 0.9, 1.0);
         button.scale_mode = perro_ui::UiImageScaleMode::Fit;
+        button.corner_radii = perro_ui::UiCornerRadii::all(0.25);
         let node = insert_ui_node(&mut runtime, SceneNodeData::UiImageButton(Box::new(button)));
 
         runtime.extract_render_ui_commands();
@@ -948,9 +949,10 @@ mod streams {
 
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertImage { node: n, tint, scale_mode, .. } if *n == node
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertImage { node: n, tint, scale_mode, corner_radii, .. } if *n == node
                     && *tint == Color::new(0.4, 0.5, 0.6, 1.0)
-                    && *scale_mode == UiImageScaleState::Fit))));
+                    && *scale_mode == UiImageScaleState::Fit
+                    && corner_radii.tl == 0.25))));
     }
 
     #[test]
@@ -968,6 +970,7 @@ mod streams {
         image.texture = TextureID::from_parts(44, 0);
         image.layout.size = UiVector2::pixels(32.0, 32.0);
         image.tint = Color::new(0.5, 1.0, 1.0, 1.0);
+        image.corner_radii = perro_ui::UiCornerRadii::all(0.4);
         let child = insert_ui_node(&mut runtime, SceneNodeData::UiImage(Box::new(image)));
         attach_child(&mut runtime, parent, child);
 
@@ -981,7 +984,9 @@ mod streams {
         );
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertImage { node: n, tint, .. } if *n == child && *tint == expected))));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertImage { node: n, tint, corner_radii, .. } if *n == child
+                && *tint == expected
+                && corner_radii.tl == 0.4))));
     }
 
     #[test]

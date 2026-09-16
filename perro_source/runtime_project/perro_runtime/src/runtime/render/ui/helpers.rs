@@ -773,7 +773,7 @@ pub(super) fn ui_command_from_node(
                 h_align: text_align_state(image.h_align),
                 v_align: text_align_state(image.v_align),
                 aspect_ratio,
-                corner_radii: UiCornerRadiiState::default(),
+                corner_radii: ui_corner_radii_state(image.corner_radii),
             })
         }
         SceneNodeData::UiImageButton(image) => {
@@ -794,7 +794,7 @@ pub(super) fn ui_command_from_node(
                 h_align: text_align_state(image.h_align),
                 v_align: text_align_state(image.v_align),
                 aspect_ratio,
-                corner_radii: UiCornerRadiiState::default(),
+                corner_radii: ui_corner_radii_state(image.corner_radii),
             })
         }
         SceneNodeData::UiNineSliceButton(image) => {

@@ -120,6 +120,7 @@ pub struct UiImage {
     pub h_align: UiTextAlign,
     pub v_align: UiTextAlign,
     pub aspect_ratio: f32,
+    pub corner_radii: UiCornerRadii,
 }
 
 impl UiImage {
@@ -133,6 +134,7 @@ impl UiImage {
             h_align: UiTextAlign::Center,
             v_align: UiTextAlign::Center,
             aspect_ratio: 0.0,
+            corner_radii: UiCornerRadii::zero(),
         }
     }
 }
@@ -206,6 +208,7 @@ pub struct UiImageButton {
     pub h_align: UiTextAlign,
     pub v_align: UiTextAlign,
     pub aspect_ratio: f32,
+    pub corner_radii: UiCornerRadii,
     pub input_mask: UiInputMask,
     pub cursor_icon: CursorIcon,
     pub hover_base: Option<UiNode>,
@@ -285,6 +288,7 @@ impl UiImageButton {
             h_align: UiTextAlign::Center,
             v_align: UiTextAlign::Center,
             aspect_ratio: 0.0,
+            corner_radii: UiCornerRadii::zero(),
             input_mask: UiInputMask::new(),
             cursor_icon: CursorIcon::Pointer,
             hover_base: None,

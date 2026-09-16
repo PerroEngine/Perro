@@ -414,6 +414,15 @@ mod tests {
     }
 
     #[test]
+    fn ui_image_schemas_expose_corner_fields() {
+        for node_type in [NodeType::UiImage, NodeType::UiImageButton] {
+            let fields = scene_node_fields(node_type);
+            assert!(fields.iter().any(|field| field.name == "corner_radius"));
+            assert!(fields.iter().any(|field| field.name == "corner_radii"));
+        }
+    }
+
+    #[test]
     fn world_label_and_sprite_schemas_expose_runtime_fields() {
         let label_2d = scene_node_fields(NodeType::Label2D);
         let label_3d = scene_node_fields(NodeType::Label3D);

@@ -133,7 +133,7 @@ fn ui_button_like_hit_data(
             input_enabled: button.input_enabled,
             mouse_filter: button.mouse_filter,
             input_mask: &button.input_mask,
-            corner_radius: 0.0,
+            corner_radius: button.corner_radii.tl,
         }),
         SceneNodeData::UiNineSliceButton(button) => Some(UiButtonLikeHitData {
             disabled: button.disabled,

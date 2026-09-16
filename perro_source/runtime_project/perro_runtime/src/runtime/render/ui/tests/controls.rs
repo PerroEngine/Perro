@@ -1043,6 +1043,38 @@ mod controls {
     }
 
     #[test]
+    fn rounded_image_button_does_not_hover_trimmed_corner() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut button = perro_ui::UiImageButton::new();
+        button.layout.size = UiVector2::pixels(100.0, 100.0);
+        button.texture = TextureID::from_parts(100, 0);
+        button.corner_radii = perro_ui::UiCornerRadii::all(1.0);
+        let button = insert_ui_node(&mut runtime, SceneNodeData::UiImageButton(Box::new(button)));
+
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        runtime.begin_input_frame();
+        runtime.set_mouse_position(351.0, 251.0);
+        runtime.extract_render_ui_commands();
+        assert_ne!(
+            runtime.render_ui.button_states.get(&button).copied(),
+            Some(UiButtonVisualState::Hover)
+        );
+
+        runtime.begin_input_frame();
+        runtime.set_mouse_position(400.0, 300.0);
+        runtime.extract_render_ui_commands();
+        assert_eq!(
+            runtime.render_ui.button_states.get(&button).copied(),
+            Some(UiButtonVisualState::Hover)
+        );
+    }
+
+    #[test]
     fn panel_over_scroll_vlayout_button_blocks_click() {
         let mut runtime = Runtime::new();
         runtime.set_viewport_size(800, 600);

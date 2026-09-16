@@ -597,6 +597,7 @@ mod scene_data {
                 hover_tint = "#55667788"
                 pressed_tint = "#99AABBCC"
                 texture_region = (1, 2, 16, 32)
+                corner_radii = (0.1, 0.2, 0.3, 0.4)
                 clicked_signals = ["play_clicked"]
                 hover = { scale = (1.1, 1.1), tint = "#FFFFFFFF" }
                 pressed = { scale = (0.9, 0.9), tint = "#CCCCCCFF" }
@@ -626,6 +627,10 @@ mod scene_data {
                 assert_eq!(button.hover_tint, Color::WHITE);
                 assert_eq!(button.pressed_tint, Color::new(0.8, 0.8, 0.8, 1.0));
                 assert_eq!(button.texture_region, Some([1.0, 2.0, 16.0, 32.0]));
+                assert_eq!(button.corner_radii.tl, 0.1);
+                assert_eq!(button.corner_radii.tr, 0.2);
+                assert_eq!(button.corner_radii.br, 0.3);
+                assert_eq!(button.corner_radii.bl, 0.4);
                 assert_eq!(
                     button.clicked_signals,
                     vec![SignalID::from_string("play_clicked")]
@@ -1017,6 +1022,35 @@ mod scene_data {
             viewport.projection,
             CameraProjection::Orthographic { size, .. } if size == 4.0
         ));
+    }
+
+    #[test]
+    fn scene_loader_builds_ui_image_corner_radius() {
+        let scene = Parser::new(
+            r##"
+            $root = @image
+            [image]
+            [UiImage]
+                texture = "res://ui/avatar.png"
+                corner_radius = 0.6
+            [/UiImage]
+            [/image]
+            "##,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+        let image = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "image")
+            .expect("image node");
+        let SceneNodeData::UiImage(image) = &image.node.data else {
+            panic!("expected UiImage node");
+        };
+        assert_eq!(image.corner_radii, perro_ui::UiCornerRadii::all(0.6));
     }
 
     #[test]

@@ -81,6 +81,36 @@ pub(super) fn apply_ui_image_fields(node: &mut UiImage, fields: &[SceneObjectFie
                 node.aspect_ratio = v.max(0.0);
             }
         }
+        "corner_radius" | "radius" => {
+            if let Some(v) = as_ui_corner_radius(value) {
+                node.corner_radii = perro_ui::UiCornerRadii::all(v);
+            }
+        }
+        "corner_radii" => {
+            if let Some(v) = as_ui_corner_radii(value) {
+                node.corner_radii = v;
+            }
+        }
+        "radius_tl" | "corner_radius_tl" => {
+            if let Some(v) = as_ui_corner_radius(value) {
+                node.corner_radii.tl = v;
+            }
+        }
+        "radius_tr" | "corner_radius_tr" => {
+            if let Some(v) = as_ui_corner_radius(value) {
+                node.corner_radii.tr = v;
+            }
+        }
+        "radius_br" | "corner_radius_br" => {
+            if let Some(v) = as_ui_corner_radius(value) {
+                node.corner_radii.br = v;
+            }
+        }
+        "radius_bl" | "corner_radius_bl" => {
+            if let Some(v) = as_ui_corner_radius(value) {
+                node.corner_radii.bl = v;
+            }
+        }
         name if scene_key_in(name, TEXTURE_REGION_KEYS) => {
             if let Some(v) = as_vec4_array(value) {
                 node.texture_region = Some(v);
@@ -252,6 +282,36 @@ pub(super) fn apply_ui_image_button_image_fields(
             "aspect_ratio" | "ratio" => {
                 if let Some(v) = as_f32(value) {
                     node.aspect_ratio = v.max(0.0);
+                }
+            }
+            "corner_radius" | "radius" if prefix.is_empty() => {
+                if let Some(v) = as_ui_corner_radius(value) {
+                    node.corner_radii = perro_ui::UiCornerRadii::all(v);
+                }
+            }
+            "corner_radii" if prefix.is_empty() => {
+                if let Some(v) = as_ui_corner_radii(value) {
+                    node.corner_radii = v;
+                }
+            }
+            "radius_tl" | "corner_radius_tl" if prefix.is_empty() => {
+                if let Some(v) = as_ui_corner_radius(value) {
+                    node.corner_radii.tl = v;
+                }
+            }
+            "radius_tr" | "corner_radius_tr" if prefix.is_empty() => {
+                if let Some(v) = as_ui_corner_radius(value) {
+                    node.corner_radii.tr = v;
+                }
+            }
+            "radius_br" | "corner_radius_br" if prefix.is_empty() => {
+                if let Some(v) = as_ui_corner_radius(value) {
+                    node.corner_radii.br = v;
+                }
+            }
+            "radius_bl" | "corner_radius_bl" if prefix.is_empty() => {
+                if let Some(v) = as_ui_corner_radius(value) {
+                    node.corner_radii.bl = v;
                 }
             }
             name if scene_key_in(name, TEXTURE_REGION_KEYS) => {

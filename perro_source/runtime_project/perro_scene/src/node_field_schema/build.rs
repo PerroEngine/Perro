@@ -587,6 +587,10 @@ define_scene_node_specs! { fields, node_type;
         | NodeType::UiNineSlice => {
             texture_field(fields, "Image", "texture");
             push(fields, "Image", "texture_region", NodeFieldType::Vec4);
+            if matches!(node_type, NodeType::UiImage | NodeType::UiImageButton) {
+                push(fields, "Image", "corner_radius", NodeFieldType::F32);
+                push(fields, "Image", "corner_radii", NodeFieldType::Vec4);
+            }
             if matches!(
                 node_type,
                 NodeType::UiNineSliceButton | NodeType::UiNineSlice

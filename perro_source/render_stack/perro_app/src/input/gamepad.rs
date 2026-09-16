@@ -65,7 +65,7 @@ mod backend {
                             .gamepads()
                             .filter(|(_, gamepad)| gamepad.is_connected())
                             .count();
-                        eprintln!("[gamepad] backend preinit connected={count}");
+                        eprintln!("[gamepad] backend preinit gilrs_connected={count}");
                         *slot.borrow_mut() = Some(gilrs);
                     }
                     Err(err) => eprintln!("[gamepad][error] backend preinit failed: {err}"),
@@ -177,6 +177,16 @@ mod backend {
                     .iter()
                     .filter_map(|uuid| self.uuid_to_index.get(uuid).copied()),
             );
+            #[cfg(target_os = "windows")]
+            for slot in 0..self.xinput_connected.len() {
+                if !self.xinput_connected[slot] {
+                    continue;
+                }
+                let index = self.xinput_app_index(slot);
+                if !out.contains(&index) {
+                    out.push(index);
+                }
+            }
         }
 
         fn consume_output_requests<S: GamepadSink>(&mut self, app: &mut S) {
@@ -288,7 +298,7 @@ mod backend {
                 .gamepads()
                 .filter(|(_, gamepad)| gamepad.is_connected())
                 .count();
-            eprintln!("[gamepad] backend ready connected={count}");
+            eprintln!("[gamepad] backend ready gilrs_connected={count}");
             self.backend_ready_logged = true;
         }
 

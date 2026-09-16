@@ -226,6 +226,14 @@ fn feed_rect(h: &mut ahash::AHasher, r: perro_ui::UiRect) {
 }
 
 #[inline]
+fn feed_corner_radii(h: &mut ahash::AHasher, r: perro_ui::UiCornerRadii) {
+    feed_f32(h, r.tl);
+    feed_f32(h, r.tr);
+    feed_f32(h, r.br);
+    feed_f32(h, r.bl);
+}
+
+#[inline]
 fn feed_depth_effect(h: &mut ahash::AHasher, e: &perro_ui::UiDepthEffect) {
     feed_color(h, e.color);
     feed_f32(h, e.distance);
@@ -242,10 +250,7 @@ fn feed_style(h: &mut ahash::AHasher, s: &perro_ui::UiStyle) {
     feed_vector2(h, s.gradient.vector);
     feed_color(h, s.stroke);
     feed_f32(h, s.stroke_width);
-    feed_f32(h, s.corner_radii.tl);
-    feed_f32(h, s.corner_radii.tr);
-    feed_f32(h, s.corner_radii.br);
-    feed_f32(h, s.corner_radii.bl);
+    feed_corner_radii(h, s.corner_radii);
     feed_depth_effect(h, &s.outer_shadow);
     feed_depth_effect(h, &s.inner_shadow);
     feed_depth_effect(h, &s.outer_highlight);
@@ -511,6 +516,7 @@ const TAG_HLAYOUT: u8 = 10;
 const TAG_VLAYOUT: u8 = 11;
 const TAG_GRID: u8 = 12;
 const TAG_TREELIST: u8 = 13;
+const TAG_IMAGE: u8 = 14;
 
 fn text_edit_fingerprint(edit: &perro_ui::UiTextEdit) -> UiPayloadFingerprint {
     // Group A: text/font group -> TEXT|LAYOUT_SELF|LAYOUT_PARENT|COMMANDS.
@@ -633,9 +639,34 @@ pub(super) fn ui_payload_fingerprint(data: &SceneNodeData) -> UiPayloadFingerpri
             a.write_u8(node.h_align as u8);
             a.write_u8(node.v_align as u8);
             feed_f32(&mut a, node.aspect_ratio);
+            feed_corner_radii(&mut a, node.corner_radii);
             a.write_u8(node.disabled as u8);
             UiPayloadFingerprint {
                 tag: TAG_IMAGE_BUTTON,
+                group_a: a.finish(),
+                group_b: 0,
+            }
+        }
+        SceneNodeData::UiImage(node) => {
+            let mut a = new_hasher();
+            a.write_u64(node.texture.as_u64());
+            match node.texture_region {
+                Some(region) => {
+                    a.write_u8(1);
+                    for value in region {
+                        feed_f32(&mut a, value);
+                    }
+                }
+                None => a.write_u8(0),
+            }
+            feed_color(&mut a, node.tint);
+            a.write_u8(node.scale_mode as u8);
+            a.write_u8(node.h_align as u8);
+            a.write_u8(node.v_align as u8);
+            feed_f32(&mut a, node.aspect_ratio);
+            feed_corner_radii(&mut a, node.corner_radii);
+            UiPayloadFingerprint {
+                tag: TAG_IMAGE,
                 group_a: a.finish(),
                 group_b: 0,
             }
@@ -800,7 +831,7 @@ pub(super) fn classify_ui_payload_fingerprint(
             flags
         }
         TAG_PANEL | TAG_BUTTON | TAG_DROPDOWN | TAG_CHECKBOX | TAG_COLOR_PICKER
-        | TAG_IMAGE_BUTTON
+        | TAG_IMAGE_BUTTON | TAG_IMAGE
             if group_a_changed =>
         {
             Runtime::UI_DIRTY_COMMANDS
@@ -1053,6 +1084,24 @@ mod fingerprint_tests {
         let mut button = UiButton::new();
         button.disabled = true;
         let after = SceneNodeData::UiButton(Box::new(button));
+        assert_eq!(payload_flags(&before, &after), F_COMMANDS);
+    }
+
+    #[test]
+    fn image_corner_change_commands() {
+        let before = SceneNodeData::UiImage(Box::new(perro_ui::UiImage::new()));
+        let mut image = perro_ui::UiImage::new();
+        image.corner_radii = perro_ui::UiCornerRadii::all(0.25);
+        let after = SceneNodeData::UiImage(Box::new(image));
+        assert_eq!(payload_flags(&before, &after), F_COMMANDS);
+    }
+
+    #[test]
+    fn image_button_corner_change_commands() {
+        let before = SceneNodeData::UiImageButton(Box::new(perro_ui::UiImageButton::new()));
+        let mut button = perro_ui::UiImageButton::new();
+        button.corner_radii = perro_ui::UiCornerRadii::all(0.25);
+        let after = SceneNodeData::UiImageButton(Box::new(button));
         assert_eq!(payload_flags(&before, &after), F_COMMANDS);
     }
 

@@ -265,9 +265,15 @@ fn ui_image_button_defaults_to_image_click_target() {
     assert_eq!(button.hover_tint, Color::WHITE);
     assert_eq!(button.pressed_tint, Color::WHITE);
     assert_eq!(button.scale_mode, UiImageScaleMode::Stretch);
+    assert_eq!(button.corner_radii, UiCornerRadii::zero());
     assert_eq!(button.cursor_icon, CursorIcon::Pointer);
     assert!(button.web.is_none());
     assert!(!button.disabled);
+}
+
+#[test]
+fn ui_image_defaults_to_square_corners() {
+    assert_eq!(UiImage::new().corner_radii, UiCornerRadii::zero());
 }
 
 #[test]
