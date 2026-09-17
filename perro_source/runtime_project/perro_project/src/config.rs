@@ -297,6 +297,21 @@ pub struct ProjectRoutesConfig {
     pub routes: Vec<ProjectRoute>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InputConfig {
+    pub gamepad_scanning: bool,
+    pub joycon_scanning: bool,
+}
+
+impl Default for InputConfig {
+    fn default() -> Self {
+        Self {
+            gamepad_scanning: true,
+            joycon_scanning: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StaticProjectConfig {
     pub name: &'static str,
@@ -348,6 +363,8 @@ pub struct StaticProjectConfig {
     pub audio_3d_rays_per_tick: u32,
     pub audio_3d_max_ray_distance: f32,
     pub localization_default_locale: &'static str,
+    pub input_gamepad_scanning: bool,
+    pub input_joycon_scanning: bool,
     pub steam_enabled: bool,
     pub steam_app_id: Option<u32>,
     pub steam_input_mode: SteamInputMode,
@@ -411,6 +428,8 @@ impl StaticProjectConfig {
             audio_3d_rays_per_tick: 128,
             audio_3d_max_ray_distance: 500.0,
             localization_default_locale: "en",
+            input_gamepad_scanning: true,
+            input_joycon_scanning: true,
             steam_enabled: false,
             steam_app_id: None,
             steam_input_mode: SteamInputMode::Fallback,
@@ -568,6 +587,12 @@ impl StaticProjectConfig {
         self
     }
 
+    pub const fn with_input_scanning(mut self, gamepads: bool, joycons: bool) -> Self {
+        self.input_gamepad_scanning = gamepads;
+        self.input_joycon_scanning = joycons;
+        self
+    }
+
     pub const fn with_steam(mut self, enabled: bool, app_id: Option<u32>) -> Self {
         self.steam_enabled = enabled;
         self.steam_app_id = app_id;
@@ -652,6 +677,10 @@ impl StaticProjectConfig {
                 key_column: "key".to_string(),
                 default_locale: self.localization_default_locale.to_string(),
             }),
+            input: InputConfig {
+                gamepad_scanning: self.input_gamepad_scanning,
+                joycon_scanning: self.input_joycon_scanning,
+            },
             input_map: perro_input_api::InputMap::new(),
             steam: SteamConfig {
                 enabled: self.steam_enabled,
@@ -706,6 +735,7 @@ pub struct ProjectConfig {
     pub rendering: RenderingConfig,
     pub audio: AudioConfig,
     pub localization: Option<LocalizationConfig>,
+    pub input: InputConfig,
     pub input_map: perro_input_api::InputMap,
     pub steam: SteamConfig,
     pub demo: DemoBuildConfig,
@@ -845,6 +875,7 @@ impl ProjectConfig {
             rendering: RenderingConfig::default(),
             audio: AudioConfig::default(),
             localization: None,
+            input: InputConfig::default(),
             input_map: perro_input_api::InputMap::new(),
             steam: SteamConfig::default(),
             demo: DemoBuildConfig::default(),

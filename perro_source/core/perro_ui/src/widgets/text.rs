@@ -7,6 +7,11 @@ pub struct UiLabel {
     pub text: Arc<str>,
     pub color: Color,
     pub font_size: f32,
+    /// Optional stable raster size in authored pixels.
+    ///
+    /// Runtime scales this by virtual viewport scale but leaves node scale
+    /// out, so animated parents scale the cached glyph mesh smoothly.
+    pub raster_font_size: Option<f32>,
     pub font: UiFont,
     pub text_size_ratio: f32,
     pub font_sizing: UiFontSizing,
@@ -21,6 +26,7 @@ impl UiLabel {
             text: empty_arc_str(),
             color: Color::WHITE,
             font_size: 20.0,
+            raster_font_size: None,
             font: UiFont::Default,
             text_size_ratio: 0.68,
             font_sizing: UiFontSizing::new(),

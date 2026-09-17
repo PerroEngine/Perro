@@ -89,6 +89,10 @@ pixel_snapping = true
 frame_rate_cap = "refresh_rate"  # fps number | "unlimited" | "refresh_rate"
 target_fixed_update = 60
 
+[input]
+gamepad_scanning = true
+joycon_scanning = true
+
 [physics]
 gravity = -9.81
 coef = 1.0
@@ -126,6 +130,7 @@ keywords = ["game", "perro"]
 | `[graphics]`     | no   | render defaults + global font       |
 | `[ui]`           | no   | UI render defaults                  |
 | `[runtime]`      | no   | frame timing                        |
+| `[input]`        | no   | controller discovery + polling      |
 | `[physics]`      | no   | world physics defaults              |
 | `[audio]`        | no   | audio + ray propagation defaults    |
 | `[localization]` | no   | locale default + sibling csv enable |
@@ -276,6 +281,18 @@ Current limit:
 
 - global only
 - node override planned for `Sprite2D`, `AnimatedSprite2D`, `MeshInstance3D`
+
+## Input
+
+| Field | Type | Default | Note |
+| --- | --- | --- | --- |
+| `gamepad_scanning` | bool | `true` | init + poll native/Steam gamepad backends |
+| `joycon_scanning` | bool | `true` | scan Joy-Con HID + BLE backends |
+
+Set either key to `false` when a game never uses that device family. Disabled
+backends do not initialize or poll. Scripts may change the policy later with
+`ctx.ipt.Gamepads().set_scan_enabled(bool)` or
+`ctx.ipt.JoyCons().set_scan_enabled(bool)`.
 
 ## Runtime
 

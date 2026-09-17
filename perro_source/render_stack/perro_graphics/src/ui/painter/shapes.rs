@@ -582,6 +582,7 @@ pub(super) fn push_label_shape(
                 clip_rect: clip_rect_from_state(label.clip_rect, viewport),
                 text: label.text.as_ref(),
                 font_size: label.font_size,
+                raster_font_size: label.raster_font_size,
                 font: &label.font,
                 wrap_width: label.wrap_width,
                 color: label.color,
@@ -603,6 +604,7 @@ pub(super) fn push_label_shape(
             clip_rect: clip_rect_from_state(label.clip_rect, viewport),
             text: label.text.as_ref(),
             font_size: label.font_size,
+            raster_font_size: label.raster_font_size,
             font: &label.font,
             wrap_width: label.wrap_width,
             color: label.color,
@@ -638,6 +640,7 @@ pub(super) fn push_harfbuzz_text_shape(
         clip_rect,
         text,
         mut font_size,
+        raster_font_size,
         font,
         wrap_width: _,
         color,
@@ -672,6 +675,18 @@ pub(super) fn push_harfbuzz_text_shape(
         line_width *= scale;
     }
     let line_height = font_size;
+    let raster_font_size = raster_font_size.filter(|size| size.is_finite() && *size > 0.0);
+    let glyph_font_size = raster_font_size.unwrap_or(font_size);
+    let glyph_geometry_scale = if raster_font_size.is_some() {
+        let scale = font_size / glyph_font_size;
+        if scale.is_finite() && scale > 0.0 {
+            scale
+        } else {
+            1.0
+        }
+    } else {
+        1.0
+    };
     let mut cursor = match h_align {
         UiTextAlignState::Start => min[0],
         UiTextAlignState::Center => min[0] + (rect.size[0] - line_width).max(0.0) * 0.5,
@@ -687,14 +702,16 @@ pub(super) fn push_harfbuzz_text_shape(
     let mut mesh = Mesh::with_texture(UI_HARFBUZZ_TEXTURE_ID);
     let color = color32(color);
     for glyph in run.glyphs.iter().copied() {
-        let Some(alloc) = harfbuzz_atlas.glyph(&font, glyph.glyph_id, font_size) else {
+        let Some(alloc) = harfbuzz_atlas.glyph(&font, glyph.glyph_id, glyph_font_size) else {
             cursor += glyph.x_advance * font_size;
             continue;
         };
         if alloc.size.x > 0.0 && alloc.size.y > 0.0 {
-            let x = cursor + glyph.x_offset * font_size + alloc.offset.x;
-            let y = baseline - glyph.y_offset * font_size + alloc.offset.y;
-            let rect = Rect::from_min_size(pos2(x, y), alloc.size);
+            let offset = alloc.offset * glyph_geometry_scale;
+            let size = alloc.size * glyph_geometry_scale;
+            let x = cursor + glyph.x_offset * font_size + offset.x;
+            let y = baseline - glyph.y_offset * font_size + offset.y;
+            let rect = Rect::from_min_size(pos2(x, y), size);
             let base = mesh.vertices.len() as u32;
             mesh.vertices.extend_from_slice(&[
                 Vertex {

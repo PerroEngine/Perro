@@ -43,6 +43,10 @@ pixel_snapping = true
 frame_rate_cap = "refresh_rate"  # fps number | "unlimited" | "refresh_rate"
 target_fixed_update = 60
 
+[input]
+gamepad_scanning = true           # init + poll gamepad backends
+joycon_scanning = true            # init + scan HID/BLE Joy-Con backends
+
 [physics]
 gravity = -9.81
 coef = 1.0
@@ -139,6 +143,7 @@ const KNOWN_PROJECT_TOML_TABLES: &[&str] = &[
     "physics",
     "audio",
     "localization",
+    "input",
     "steam",
     "demo",
     "playtest",
@@ -210,6 +215,7 @@ pub fn parse_project_toml_with_variants(
     let web_table = value.get("web").and_then(Value::as_table);
     let rendering_table = value.get("rendering").and_then(Value::as_table);
     let ui_table = value.get("ui").and_then(Value::as_table);
+    let input_table = value.get("input").and_then(Value::as_table);
 
     let name = project_table
         .get("name")
@@ -309,6 +315,10 @@ pub fn parse_project_toml_with_variants(
     let audio = parse_audio(audio_table)?;
     let web = parse_web(web_table)?;
     let rendering = parse_rendering(graphics_table, rendering_table, ui_table)?;
+    let input = InputConfig {
+        gamepad_scanning: parse_bool_with_default(input_table.unwrap_or(&empty_table), "gamepad_scanning", true)?,
+        joycon_scanning: parse_bool_with_default(input_table.unwrap_or(&empty_table), "joycon_scanning", true)?,
+    };
 
     Ok(ProjectConfig {
         name,
@@ -347,6 +357,7 @@ pub fn parse_project_toml_with_variants(
         rendering,
         audio,
         localization,
+        input,
         input_map: perro_input_api::InputMap::new(),
         steam,
         demo: demo_config,

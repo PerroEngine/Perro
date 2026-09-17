@@ -12,6 +12,8 @@
 | API Reference | [API Reference](#api-reference) |
 | `all` | [`all`](#all) |
 | `get` | [`get`](#get) |
+| `scan_enabled` | [`scan_enabled`](#scan_enabled) |
+| `set_scan_enabled` | [`set_scan_enabled`](#set_scan_enabled) |
 | `set_rumble` | [`set_rumble`](#set_rumble) |
 | `set_indicator` | [`set_indicator`](#set_indicator) |
 | `set_indicator_slot` | [`set_indicator_slot`](#set_indicator_slot) |
@@ -127,6 +129,17 @@ lifecycle!({
 | Use when | HD rumble feedback; set both to `0.0` to stop. |
 | Edge behavior | Queues a command when a command buffer exists; missing slots are ignored. |
 
+### `scan_enabled`
+
+`ctx.ipt.JoyCons().scan_enabled() -> bool` returns current project/runtime scan
+policy.
+
+### `set_scan_enabled`
+
+`ctx.ipt.JoyCons().set_scan_enabled(enabled)` queues a policy change. `false`
+stops HID/BLE discovery, device workers, and clears connected Joy-Con state;
+`true` lazily starts scanning on the next input frame.
+
 ### `set_indicator`
 
 | Field | Detail |
@@ -185,6 +198,8 @@ Command macros queue work only when an input command buffer exists.
 | `joycon_calibrating!` | `joycon_calibrating!(ctx.ipt, 0)` | `bool` |
 | `joycon_needs_calibration!` | `joycon_needs_calibration!(ctx.ipt, 0)` | `bool` |
 | `joycon_calibration_bias!` | `joycon_calibration_bias!(ctx.ipt, 0)` | `Vector3` |
+| `joycon_scan_enabled!` | `joycon_scan_enabled!(ctx.ipt)` | `bool` |
+| `joycon_set_scan_enabled!` | `joycon_set_scan_enabled!(ctx.ipt, false)` | `()` |
 | `joycon_request_calibration!` | `joycon_request_calibration!(ctx.ipt, 0)` | `()` (always queues a calibration request) |
 | `joycon_ensure_calibration!` | `joycon_ensure_calibration!(ctx.ipt, 0)` | `bool` (queues calibration only if needed; stores result for all Perro projects) |
 | `joycon_set_rumble!` | `joycon_set_rumble!(ctx.ipt, 0, 0.5, 0.5)` | `()` |

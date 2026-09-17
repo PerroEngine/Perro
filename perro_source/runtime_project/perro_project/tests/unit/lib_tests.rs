@@ -1603,6 +1603,35 @@ fn default_project_toml_template_parses() {
     assert_eq!(cfg.audio.propagation_3d.rays_per_tick, 128);
     assert_eq!(cfg.audio.propagation_2d.max_bounces, 4);
     assert_eq!(cfg.audio.propagation_3d.max_bounces, 4);
+    assert!(cfg.input.gamepad_scanning);
+    assert!(cfg.input.joycon_scanning);
+}
+
+#[test]
+fn parse_project_toml_reads_input_scanning_defaults() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+
+[input]
+gamepad_scanning = false
+joycon_scanning = true
+"#;
+    let cfg = parse_project_toml(toml).expect("input scanning config");
+    assert!(!cfg.input.gamepad_scanning);
+    assert!(cfg.input.joycon_scanning);
+
+    let defaults = parse_project_toml(
+        r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+"#,
+    )
+    .expect("input scanning defaults");
+    assert!(defaults.input.gamepad_scanning);
+    assert!(defaults.input.joycon_scanning);
 }
 
 #[test]

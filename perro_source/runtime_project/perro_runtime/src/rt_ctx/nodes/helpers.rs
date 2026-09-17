@@ -701,6 +701,13 @@ pub(super) fn ui_payload_fingerprint(data: &SceneNodeData) -> UiPayloadFingerpri
             let mut a = new_hasher();
             a.write(node.text.as_bytes());
             feed_f32(&mut a, node.font_size);
+            match node.raster_font_size {
+                Some(size) => {
+                    a.write_u8(1);
+                    feed_f32(&mut a, size);
+                }
+                None => a.write_u8(0),
+            }
             feed_f32(&mut a, node.text_size_ratio);
             feed_font_sizing(&mut a, &node.font_sizing);
             // Group B -> COMMANDS.

@@ -926,6 +926,7 @@ impl Runtime {
         let static_csv_lookup = project.static_csv_lookup;
         let localization_config = project.config.localization.clone();
         let input_map = project.config.input_map.clone();
+        let input_config = project.config.input;
         #[cfg(feature = "steamworks")]
         let steam_config = project.config.steam.clone();
         runtime.project = Some(Rc::new(project));
@@ -945,6 +946,9 @@ impl Runtime {
         runtime.configure_audio_from_project();
         perro_structs::structs::boot_log::mark("runtime_audio_cfg_ready");
         runtime.input.set_input_map(input_map);
+        runtime
+            .input
+            .configure_device_scanning(input_config.gamepad_scanning, input_config.joycon_scanning);
         perro_structs::structs::boot_log::mark("runtime_input_map_ready");
         if let Some(entries) = script_registry {
             debug_assert!(entries.windows(2).all(|pair| pair[0].0 < pair[1].0));

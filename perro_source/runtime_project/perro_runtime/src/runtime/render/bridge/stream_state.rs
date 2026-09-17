@@ -203,6 +203,7 @@ impl Runtime {
                 text,
                 color: Runtime::color_modulate(color, modulate),
                 font_size: font_size.max(0.001).min(content_size[1]),
+                raster_font_size: None,
                 font,
                 wrap_width: Some(content_size[0]),
                 h_align: text_align_state_3d(h_align),

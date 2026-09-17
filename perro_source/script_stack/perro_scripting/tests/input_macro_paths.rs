@@ -16,6 +16,8 @@
 use perro_input_api::prelude::*;
 
 fn exercise_joycon_macros<IP: InputAPI + ?Sized>(ipt: &InputWindow<'_, IP>) {
+    let _ = joycon_scan_enabled!(ipt);
+    joycon_set_scan_enabled!(ipt, false);
     let _ = joycon_list!(ipt);
     let _ = joycon_get!(ipt, 0);
     let _ = joycon_side!(ipt, 0);
@@ -38,6 +40,8 @@ fn exercise_joycon_macros<IP: InputAPI + ?Sized>(ipt: &InputWindow<'_, IP>) {
 }
 
 fn exercise_gamepad_macros<IP: InputAPI + ?Sized>(ipt: &InputWindow<'_, IP>) {
+    let _ = gamepad_scan_enabled!(ipt);
+    gamepad_set_scan_enabled!(ipt, false);
     let _ = gamepad_list!(ipt);
     let _ = gamepad_get!(ipt, 0);
     let _ = gamepad_down!(ipt, 0, GamepadButton::Bottom);

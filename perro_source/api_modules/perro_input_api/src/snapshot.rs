@@ -27,6 +27,10 @@ pub struct InputSnapshot {
     pending_gamepad_rumble: Vec<GamepadRumbleRequest>,
     pending_joycon_rumble: Vec<JoyConRumbleRequest>,
     pending_joycon_indicator: Vec<JoyConIndicatorRequest>,
+    gamepad_scan_enabled: bool,
+    joycon_scan_enabled: bool,
+    pending_gamepad_scan_enabled: Option<bool>,
+    pending_joycon_scan_enabled: Option<bool>,
 }
 
 impl InputSnapshot {
@@ -51,7 +55,19 @@ impl InputSnapshot {
             pending_gamepad_rumble: Vec::new(),
             pending_joycon_rumble: Vec::new(),
             pending_joycon_indicator: Vec::new(),
+            gamepad_scan_enabled: true,
+            joycon_scan_enabled: true,
+            pending_gamepad_scan_enabled: None,
+            pending_joycon_scan_enabled: None,
         }
+    }
+
+    /// Seed device scanning from project config without queuing backend work.
+    pub fn configure_device_scanning(&mut self, gamepads: bool, joycons: bool) {
+        self.gamepad_scan_enabled = gamepads;
+        self.joycon_scan_enabled = joycons;
+        self.pending_gamepad_scan_enabled = None;
+        self.pending_joycon_scan_enabled = None;
     }
 
     /// Start a new frame.
@@ -346,6 +362,14 @@ impl InputSnapshot {
                     self.pending_joycon_indicator
                         .push(JoyConIndicatorRequest { index, indicator });
                 }
+                InputCommand::SetGamepadScanEnabled { enabled } => {
+                    self.gamepad_scan_enabled = enabled;
+                    self.pending_gamepad_scan_enabled = Some(enabled);
+                }
+                InputCommand::SetJoyConScanEnabled { enabled } => {
+                    self.joycon_scan_enabled = enabled;
+                    self.pending_joycon_scan_enabled = Some(enabled);
+                }
             }
         }
     }
@@ -600,6 +624,26 @@ impl InputSnapshot {
         std::mem::take(&mut self.pending_joycon_indicator)
     }
 
+    #[inline]
+    pub fn take_gamepad_scan_enabled_request(&mut self) -> Option<bool> {
+        self.pending_gamepad_scan_enabled.take()
+    }
+
+    #[inline]
+    pub fn take_joycon_scan_enabled_request(&mut self) -> Option<bool> {
+        self.pending_joycon_scan_enabled.take()
+    }
+
+    #[inline]
+    pub fn gamepad_scan_enabled(&self) -> bool {
+        self.gamepad_scan_enabled
+    }
+
+    #[inline]
+    pub fn joycon_scan_enabled(&self) -> bool {
+        self.joycon_scan_enabled
+    }
+
     // ---- Action queries ----
 
     /// Return `true` while the next button press waits to bind an action.
@@ -832,6 +876,10 @@ pub enum InputCommand {
         index: usize,
         indicator: PlayerIndicatorSlot,
     },
+    /// Enable or disable native gamepad discovery and polling.
+    SetGamepadScanEnabled { enabled: bool },
+    /// Enable or disable Joy-Con HID and BLE discovery.
+    SetJoyConScanEnabled { enabled: bool },
 }
 
 /// Read-only input contract used by [`InputWindow`].
@@ -847,6 +895,14 @@ pub trait InputAPI {
     fn gamepads(&self) -> &[GamepadState];
     /// Return Joy-Con states.
     fn joycons(&self) -> &[JoyConState];
+    /// Return current gamepad scan policy.
+    fn gamepad_scan_enabled(&self) -> bool {
+        true
+    }
+    /// Return current Joy-Con scan policy.
+    fn joycon_scan_enabled(&self) -> bool {
+        true
+    }
     /// Return player binding states.
     fn players(&self) -> &[PlayerState];
     /// Return input-map actions.
@@ -919,6 +975,16 @@ impl InputAPI for InputSnapshot {
     #[inline]
     fn joycons(&self) -> &[JoyConState] {
         self.joycons()
+    }
+
+    #[inline]
+    fn gamepad_scan_enabled(&self) -> bool {
+        self.gamepad_scan_enabled()
+    }
+
+    #[inline]
+    fn joycon_scan_enabled(&self) -> bool {
+        self.joycon_scan_enabled()
     }
 
     #[inline]

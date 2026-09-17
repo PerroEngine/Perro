@@ -459,6 +459,16 @@ impl<B: GraphicsBackend> App<B> {
     }
 
     #[inline]
+    pub fn take_gamepad_scan_enabled_request(&mut self) -> Option<bool> {
+        self.runtime.take_gamepad_scan_enabled_request()
+    }
+
+    #[inline]
+    pub fn take_joycon_scan_enabled_request(&mut self) -> Option<bool> {
+        self.runtime.take_joycon_scan_enabled_request()
+    }
+
+    #[inline]
     pub fn take_joycon_rumble_requests(&mut self) -> Vec<JoyConRumbleRequest> {
         self.runtime.take_joycon_rumble_requests()
     }

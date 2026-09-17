@@ -240,7 +240,9 @@ pub fn create_app_from_project<B: GraphicsBackend>(
     project: RuntimeProject,
     provider_mode: ProviderMode,
 ) -> App<B> {
-    crate::input::preinit_gamepads();
+    if project.config.input.gamepad_scanning {
+        crate::input::preinit_gamepads();
+    }
     App::new(
         create_runtime_from_project(project, provider_mode),
         graphics,
@@ -445,7 +447,6 @@ pub fn run_dev_project_from_path(
     default_name: &str,
 ) -> Result<AppExitResult, RunProjectError> {
     crate::boot_log::start();
-    crate::input::preinit_gamepads();
     // B4 any rayon use: the worker-count cap only applies to a pool that has
     // not been built yet.
     crate::devsim::init();
@@ -454,6 +455,9 @@ pub fn run_dev_project_from_path(
         project_root.to_string_lossy()
     );
     let project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)?;
+    if project.config.input.gamepad_scanning {
+        crate::input::preinit_gamepads();
+    }
     crate::boot_log::mark("project_parsed");
     clear_steam_fossilize_application_filter(project.config.steam.enabled);
     let _ = perro_web::init_router();
@@ -601,6 +605,8 @@ pub struct StaticEmbeddedInputAction {
 
 pub struct StaticEmbeddedInputMapConfig<'a> {
     pub actions: &'a [StaticEmbeddedInputAction],
+    pub gamepad_scanning: bool,
+    pub joycon_scanning: bool,
 }
 
 pub struct StaticEmbeddedGraphicsConfig {
@@ -676,7 +682,9 @@ pub fn run_static_embedded_project(
     input: StaticEmbeddedProject<'_>,
 ) -> Result<AppExitResult, RunProjectError> {
     crate::boot_log::start();
-    crate::input::preinit_gamepads();
+    if input.input.gamepad_scanning {
+        crate::input::preinit_gamepads();
+    }
     crate::devsim::init();
     clear_steam_fossilize_application_filter(input.steam.enabled);
     let _ = perro_web::init_router();
@@ -693,6 +701,7 @@ pub fn run_static_embedded_project(
     .with_base_name(input.project.base_name)
     .with_startup_splash_size(input.project.startup_splash_size)
     .with_target_fixed_update(input.runtime.target_fixed_update)
+    .with_input_scanning(input.input.gamepad_scanning, input.input.joycon_scanning)
     .with_frame_rate_cap(input.runtime.frame_rate_cap)
     .with_physics_gravity(input.runtime.physics_gravity)
     .with_physics_coef(input.runtime.physics_coef)
@@ -807,6 +816,7 @@ pub fn run_static_embedded_project_headless(input: StaticEmbeddedProject<'_>) {
     .with_base_name(input.project.base_name)
     .with_startup_splash_size(input.project.startup_splash_size)
     .with_target_fixed_update(input.runtime.target_fixed_update)
+    .with_input_scanning(input.input.gamepad_scanning, input.input.joycon_scanning)
     .with_frame_rate_cap(input.runtime.frame_rate_cap)
     .with_physics_gravity(input.runtime.physics_gravity)
     .with_physics_coef(input.runtime.physics_coef)
@@ -867,6 +877,7 @@ pub fn run_static_embedded_project_android(
     .with_base_name(input.project.base_name)
     .with_startup_splash_size(input.project.startup_splash_size)
     .with_target_fixed_update(input.runtime.target_fixed_update)
+    .with_input_scanning(input.input.gamepad_scanning, input.input.joycon_scanning)
     .with_frame_rate_cap(input.runtime.frame_rate_cap)
     .with_physics_gravity(input.runtime.physics_gravity)
     .with_physics_coef(input.runtime.physics_coef)
@@ -973,6 +984,7 @@ pub fn run_static_embedded_project_web(input: StaticEmbeddedProject<'_>) -> Resu
         .with_base_name(input.project.base_name)
         .with_startup_splash_size(input.project.startup_splash_size)
         .with_target_fixed_update(input.runtime.target_fixed_update)
+        .with_input_scanning(input.input.gamepad_scanning, input.input.joycon_scanning)
         .with_frame_rate_cap(input.runtime.frame_rate_cap)
         .with_physics_gravity(input.runtime.physics_gravity)
         .with_physics_coef(input.runtime.physics_coef)

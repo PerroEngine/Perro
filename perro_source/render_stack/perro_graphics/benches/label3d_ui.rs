@@ -25,6 +25,7 @@ fn label_command(index: usize, camera_step: f32, text: Arc<str>) -> UiCommand {
         text,
         color: Color::WHITE,
         font_size: 20.0,
+        raster_font_size: None,
         font: perro_ui::UiFont::Default,
         wrap_width: Some(160.0),
         h_align: UiTextAlignState::Center,

@@ -219,6 +219,10 @@ mod backend {
     }
 
     enum JoyConEvent {
+        HidScanResult {
+            devices: Vec<ScannedDevice>,
+        },
+        HidScanFailed,
         OutputReady {
             key: String,
             tx: Sender<DeviceCommand>,
@@ -246,6 +250,13 @@ mod backend {
             token: u64,
         },
         BleWorkerStopped,
+    }
+
+    struct ScannedDevice {
+        device_path: std::ffi::CString,
+        device_serial: Option<String>,
+        pid: u16,
+        side: JoyConSide,
     }
 
     #[derive(Clone, Copy)]
@@ -322,7 +333,8 @@ mod backend {
         output_txs: HashMap<String, Sender<DeviceCommand>>,
         last_player_lamp: HashMap<usize, u8>,
         scan_connected_keys: HashSet<String>,
-        last_scan: Option<Instant>,
+        hid_scan_stop: Option<Sender<()>>,
+        hid_scan_thread: Option<thread::JoinHandle<()>>,
         ble_started: bool,
         ble_stop: Option<Arc<AtomicBool>>,
         last_ble_start: Option<Instant>,
@@ -347,7 +359,7 @@ mod backend {
         pub(super) fn begin_frame<S: JoyConSink>(&mut self, app: &mut S) {
             self.ensure_channel();
             self.start_ble_worker_if_needed();
-            self.scan_if_needed(app);
+            self.start_hid_scan_worker_if_needed();
             self.consume_calibration_requests(app);
             self.sync_player_binding_lamps(app);
             self.consume_output_requests(app);
@@ -383,38 +395,77 @@ mod backend {
             self.last_ble_start = Some(Instant::now());
         }
 
-        fn scan_if_needed<S: JoyConSink>(&mut self, app: &mut S) {
-            let now = Instant::now();
-            let scan_due = self
-                .last_scan
-                .map(|t| now.duration_since(t) >= SCAN_INTERVAL)
-                .unwrap_or(true);
-
-            if !scan_due {
+        fn start_hid_scan_worker_if_needed(&mut self) {
+            if self.hid_scan_thread.is_some() {
                 return;
             }
-            self.last_scan = Some(now);
-
-            let Ok(api) = HidApi::new() else {
+            let Some(tx) = self.tx.clone() else {
                 return;
             };
+            let (stop_tx, stop_rx) = mpsc::channel();
+            let spawned = thread::Builder::new()
+                .name("perro-joycon-scan".to_owned())
+                .spawn(move || hid_scan_worker(tx, stop_rx));
+            if let Ok(thread) = spawned {
+                self.hid_scan_stop = Some(stop_tx);
+                self.hid_scan_thread = Some(thread);
+            }
+        }
 
+        fn stop_hid_scan_worker(&mut self) {
+            if let Some(stop) = self.hid_scan_stop.take() {
+                let _ = stop.send(());
+            }
+            if let Some(thread) = self.hid_scan_thread.take() {
+                let _ = thread.join();
+            }
+        }
+
+        pub(super) fn disable<S: JoyConSink>(&mut self, app: &mut S) {
+            self.stop_hid_scan_worker();
+            if let Some(stop) = self.ble_stop.take() {
+                stop.store(true, Ordering::Relaxed);
+            }
+            for handle in self.devices.values() {
+                handle.stop.store(true, Ordering::Relaxed);
+            }
+            let indices: Vec<_> = self
+                .slots
+                .lock()
+                .expect("joycon slot allocator poisoned")
+                .assigned
+                .values()
+                .copied()
+                .collect();
+            for index in indices {
+                clear_joycon_index(app, index);
+            }
+            *self.slots.lock().expect("joycon slot allocator poisoned") = SlotAllocator::default();
+            self.devices.clear();
+            self.connected.clear();
+            self.output_txs.clear();
+            self.last_buttons.clear();
+            self.last_player_lamp.clear();
+            self.scan_connected_keys.clear();
+            self.ble_started = false;
+            self.last_ble_start = None;
+            self.rx = None;
+            self.tx = None;
+            let _ = app.take_joycon_calibration_requests();
+            let _ = app.take_joycon_rumble_requests();
+            let _ = app.take_joycon_indicator_requests();
+        }
+
+        fn apply_scan<S: JoyConSink>(&mut self, app: &mut S, devices: Vec<ScannedDevice>) {
             self.scan_connected_keys.clear();
 
-            for dev in api.device_list() {
-                if dev.vendor_id() != joycon1::JOYCON_VENDOR_ID {
-                    continue;
-                }
-
-                let pid = dev.product_id();
-                let side = match pid {
-                    joycon1::JOYCON_L_PID => JoyConSide::LJoyCon,
-                    joycon1::JOYCON_R_PID => JoyConSide::RJoyCon,
-                    _ => continue,
-                };
-
-                let device_path = dev.path().to_owned();
-                let device_serial = dev.serial_number().map(str::to_owned);
+            for ScannedDevice {
+                device_path,
+                device_serial,
+                pid,
+                side,
+            } in devices
+            {
                 let serial = device_serial
                     .clone()
                     .unwrap_or_else(|| device_path.to_string_lossy().into_owned());
@@ -580,6 +631,10 @@ mod backend {
 
         fn handle_event<S: JoyConSink>(&mut self, app: &mut S, event: JoyConEvent) {
             match event {
+                JoyConEvent::HidScanResult { devices } => {
+                    self.apply_scan(app, devices);
+                }
+                JoyConEvent::HidScanFailed => {}
                 JoyConEvent::OutputReady { key, tx } => {
                     self.output_txs.insert(key, tx);
                 }
@@ -812,6 +867,75 @@ mod backend {
                 self.apply_indicator(index, indicator.to_lamp_pattern());
             }
         }
+    }
+
+    impl Drop for JoyConBackend {
+        fn drop(&mut self) {
+            self.stop_hid_scan_worker();
+            if let Some(stop) = self.ble_stop.take() {
+                stop.store(true, Ordering::Relaxed);
+            }
+            for handle in self.devices.values() {
+                handle.stop.store(true, Ordering::Relaxed);
+            }
+        }
+    }
+
+    fn hid_scan_worker(tx: Sender<JoyConEvent>, stop_rx: Receiver<()>) {
+        let mut api = None;
+        loop {
+            let event = match api.as_mut() {
+                Some(hid_api) => match scan_hid_devices(hid_api) {
+                    Ok(devices) => JoyConEvent::HidScanResult { devices },
+                    Err(()) => {
+                        api = None;
+                        JoyConEvent::HidScanFailed
+                    }
+                },
+                None => match HidApi::new() {
+                    Ok(new_api) => {
+                        api = Some(new_api);
+                        scan_hid_devices(api.as_mut().expect("HID API set"))
+                            .map(|devices| JoyConEvent::HidScanResult { devices })
+                            .unwrap_or(JoyConEvent::HidScanFailed)
+                    }
+                    Err(_) => JoyConEvent::HidScanFailed,
+                },
+            };
+            if tx.send(event).is_err() {
+                break;
+            }
+            match stop_rx.recv_timeout(SCAN_INTERVAL) {
+                Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+            }
+        }
+    }
+
+    fn scan_hid_devices(api: &mut HidApi) -> Result<Vec<ScannedDevice>, ()> {
+        api.refresh_devices().map_err(|_| ())?;
+        let mut devices = Vec::new();
+
+        for dev in api.device_list() {
+            if dev.vendor_id() != joycon1::JOYCON_VENDOR_ID {
+                continue;
+            }
+
+            let pid = dev.product_id();
+            let side = match pid {
+                joycon1::JOYCON_L_PID => JoyConSide::LJoyCon,
+                joycon1::JOYCON_R_PID => JoyConSide::RJoyCon,
+                _ => continue,
+            };
+            devices.push(ScannedDevice {
+                device_path: dev.path().to_owned(),
+                device_serial: dev.serial_number().map(str::to_owned),
+                pid,
+                side,
+            });
+        }
+
+        Ok(devices)
     }
 
     fn assign_slot(slots: &Arc<Mutex<SlotAllocator>>, key: &str) -> usize {
@@ -1480,6 +1604,131 @@ mod backend {
             Ok(())
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        struct TestSink;
+
+        impl JoyConSink for TestSink {
+            fn set_joycon_button_state(&mut self, _: usize, _: JoyConButton, _: bool) {}
+            fn set_joycon_stick(&mut self, _: usize, _: f32, _: f32) {}
+            fn set_joycon_stick_unit(&mut self, _: usize, _: SignedUnitVector2) {}
+            fn set_joycon_side(&mut self, _: usize, _: JoyConSide) {}
+            fn set_joycon_generation(&mut self, _: usize, _: JoyConGeneration) {}
+            fn set_joycon_connected(&mut self, _: usize, _: bool) {}
+            fn set_joycon_calibrated(&mut self, _: usize, _: bool) {}
+            fn set_joycon_calibration_in_progress(&mut self, _: usize, _: bool) {}
+            fn set_joycon_calibration_bias(&mut self, _: usize, _: f32, _: f32, _: f32) {}
+            fn set_joycon_gyro(&mut self, _: usize, _: f32, _: f32, _: f32) {}
+            fn set_joycon_accel(&mut self, _: usize, _: f32, _: f32, _: f32) {}
+            fn set_joycon_mouse_sensor(&mut self, _: usize, _: f32, _: f32, _: f32, _: f32) {}
+            fn take_joycon_calibration_requests(&mut self) -> Vec<usize> {
+                Vec::new()
+            }
+            fn take_joycon_rumble_requests(&mut self) -> Vec<JoyConRumbleRequest> {
+                Vec::new()
+            }
+            fn take_joycon_indicator_requests(&mut self) -> Vec<JoyConIndicatorRequest> {
+                Vec::new()
+            }
+            fn for_each_player_binding(&self, _: &mut dyn FnMut(usize, PlayerBinding)) {}
+            fn bind_player(&mut self, _: usize, _: PlayerBinding) {}
+        }
+
+        fn scanned(serial: Option<&str>, path: &str, pid: u16) -> ScannedDevice {
+            let side = match pid {
+                joycon1::JOYCON_L_PID => JoyConSide::LJoyCon,
+                joycon1::JOYCON_R_PID => JoyConSide::RJoyCon,
+                _ => panic!("test pid must be a Joy-Con 1 pid"),
+            };
+            ScannedDevice {
+                device_path: std::ffi::CString::new(path).unwrap(),
+                device_serial: serial.map(str::to_owned),
+                pid,
+                side,
+            }
+        }
+
+        #[test]
+        fn hid_scan_failure_keeps_devices() {
+            let mut backend = JoyConBackend::default();
+            backend.devices.insert(
+                "hid:known".to_owned(),
+                DeviceHandle {
+                    stop: Arc::new(AtomicBool::new(false)),
+                    token: 1,
+                },
+            );
+
+            backend.handle_event(&mut TestSink, JoyConEvent::HidScanFailed);
+
+            assert!(backend.devices.contains_key("hid:known"));
+        }
+
+        #[test]
+        fn empty_hid_scan_removes_stale_devices() {
+            let mut backend = JoyConBackend::default();
+            let stop = Arc::new(AtomicBool::new(false));
+            backend.devices.insert(
+                "hid:stale".to_owned(),
+                DeviceHandle {
+                    stop: Arc::clone(&stop),
+                    token: 1,
+                },
+            );
+
+            backend.handle_event(
+                &mut TestSink,
+                JoyConEvent::HidScanResult {
+                    devices: Vec::new(),
+                },
+            );
+
+            assert!(backend.devices.is_empty());
+            assert!(stop.load(Ordering::Relaxed));
+        }
+
+        #[test]
+        fn duplicate_known_hid_scan_keeps_one_worker() {
+            let mut backend = JoyConBackend::default();
+            let key = "hid:known".to_owned();
+            backend.devices.insert(
+                key,
+                DeviceHandle {
+                    stop: Arc::new(AtomicBool::new(false)),
+                    token: 1,
+                },
+            );
+
+            backend.handle_event(
+                &mut TestSink,
+                JoyConEvent::HidScanResult {
+                    devices: vec![
+                        scanned(Some("known"), "/hid/a", joycon1::JOYCON_L_PID),
+                        scanned(Some("known"), "/hid/b", joycon1::JOYCON_L_PID),
+                    ],
+                },
+            );
+
+            assert_eq!(backend.devices.len(), 1);
+            assert_eq!(backend.scan_connected_keys.len(), 1);
+        }
+
+        #[test]
+        fn backend_drop_stops_hid_scan_worker() {
+            let (stop_tx, stop_rx) = mpsc::channel();
+            let thread = thread::spawn(move || {
+                assert!(stop_rx.recv().is_ok());
+            });
+            let mut backend = JoyConBackend::default();
+            backend.hid_scan_stop = Some(stop_tx);
+            backend.hid_scan_thread = Some(thread);
+
+            drop(backend);
+        }
+    }
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
@@ -1489,20 +1738,44 @@ mod backend {
 
     impl JoyConBackend {
         pub fn begin_frame<S>(&mut self, _app: &mut S) {}
+        pub fn disable<S>(&mut self, _app: &mut S) {}
     }
 }
 
-#[derive(Default)]
 pub struct JoyConInput {
     backend: backend::JoyConBackend,
+    scan_enabled: bool,
 }
 
 impl JoyConInput {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(scan_enabled: bool) -> Self {
+        Self {
+            backend: backend::JoyConBackend::default(),
+            scan_enabled,
+        }
     }
 
     pub fn begin_frame<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
+        if let Some(enabled) = app.take_joycon_scan_enabled_request()
+            && enabled != self.scan_enabled
+        {
+            self.scan_enabled = enabled;
+            if !enabled {
+                self.backend.disable(app);
+            }
+        }
+        if !self.scan_enabled {
+            let _ = app.take_joycon_calibration_requests();
+            let _ = app.take_joycon_rumble_requests();
+            let _ = app.take_joycon_indicator_requests();
+            return;
+        }
         self.backend.begin_frame(app);
+    }
+}
+
+impl Default for JoyConInput {
+    fn default() -> Self {
+        Self::new(true)
     }
 }

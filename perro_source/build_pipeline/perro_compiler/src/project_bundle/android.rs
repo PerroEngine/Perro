@@ -259,6 +259,8 @@ perro_app::entry::{native_entry}(perro_app::entry::StaticEmbeddedProject {{\n\
   }},\n\
   input: perro_app::entry::StaticEmbeddedInputMapConfig {{\n\
         actions: {input_map_block},\n\
+        gamepad_scanning: {gamepad_scanning},\n\
+        joycon_scanning: {joycon_scanning},\n\
   }},\n\
   graphics: perro_app::entry::StaticEmbeddedGraphicsConfig {{\n\
         vsync: {vsync},\n\
@@ -313,6 +315,8 @@ perro_app::entry::{native_entry}(perro_app::entry::StaticEmbeddedProject {{\n\
         h = cfg.virtual_height,
         routes_block = emit_static_routes_block(&routes),
         input_map_block = emit_static_input_map_block(&cfg.input_map),
+        gamepad_scanning = cfg.input.gamepad_scanning,
+        joycon_scanning = cfg.input.joycon_scanning,
         assets_block = STATIC_EMBEDDED_ASSETS_BLOCK,
         vsync = cfg.vsync,
         hdr = emit_hdr_expr(cfg.hdr),
@@ -378,6 +382,8 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
   }},\n\
   input: perro_app::entry::StaticEmbeddedInputMapConfig {{\n\
         actions: {input_map_block},\n\
+        gamepad_scanning: {gamepad_scanning},\n\
+        joycon_scanning: {joycon_scanning},\n\
   }},\n\
   graphics: perro_app::entry::StaticEmbeddedGraphicsConfig {{\n\
         vsync: {vsync},\n\
@@ -431,6 +437,8 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
         h = cfg.virtual_height,
         routes_block = emit_static_routes_block(&routes),
         input_map_block = emit_static_input_map_block(&cfg.input_map),
+        gamepad_scanning = cfg.input.gamepad_scanning,
+        joycon_scanning = cfg.input.joycon_scanning,
         assets_block = STATIC_EMBEDDED_ASSETS_BLOCK,
         vsync = cfg.vsync,
         hdr = emit_hdr_expr(cfg.hdr),
@@ -487,6 +495,8 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
   }},\n\
   input: perro_app::entry::StaticEmbeddedInputMapConfig {{\n\
         actions: {input_map_block},\n\
+        gamepad_scanning: {gamepad_scanning},\n\
+        joycon_scanning: {joycon_scanning},\n\
   }},\n\
   graphics: perro_app::entry::StaticEmbeddedGraphicsConfig {{\n\
         vsync: {vsync},\n\
@@ -541,6 +551,8 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
         h = cfg.virtual_height,
         routes_block = emit_static_routes_block(&routes),
         input_map_block = emit_static_input_map_block(&cfg.input_map),
+        gamepad_scanning = cfg.input.gamepad_scanning,
+        joycon_scanning = cfg.input.joycon_scanning,
         assets_block = STATIC_EMBEDDED_ASSETS_BLOCK,
         vsync = cfg.vsync,
         hdr = emit_hdr_expr(cfg.hdr),

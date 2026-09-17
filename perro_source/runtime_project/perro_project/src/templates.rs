@@ -1242,6 +1242,8 @@ fn project_root() -> std::path::PathBuf {
               }],
           },
           input: perro_app::entry::StaticEmbeddedInputMapConfig {
+              gamepad_scanning: true,
+              joycon_scanning: true,
               actions: &[perro_app::entry::StaticEmbeddedInputAction {
                   name: "jump",
                   keys: &[perro_input_api::KeyCode::Space, perro_input_api::KeyCode::ArrowUp],

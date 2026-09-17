@@ -57,6 +57,28 @@ fn mouse_mode_defaults_visible() {
 }
 
 #[test]
+fn device_scan_commands_update_state_and_queue_backend_requests() {
+    let mut input = InputSnapshot::new();
+    input.configure_device_scanning(false, true);
+    {
+        let ctx = InputWindow::new(&input);
+        assert!(!ctx.Gamepads().scan_enabled());
+        assert!(ctx.JoyCons().scan_enabled());
+        ctx.Gamepads().set_scan_enabled(true);
+        ctx.JoyCons().set_scan_enabled(false);
+    }
+
+    input.apply_queued_commands();
+
+    assert!(input.gamepad_scan_enabled());
+    assert!(!input.joycon_scan_enabled());
+    assert_eq!(input.take_gamepad_scan_enabled_request(), Some(true));
+    assert_eq!(input.take_joycon_scan_enabled_request(), Some(false));
+    assert_eq!(input.take_gamepad_scan_enabled_request(), None);
+    assert_eq!(input.take_joycon_scan_enabled_request(), None);
+}
+
+#[test]
 fn mouse_mode_command_sets_state_and_request() {
     let mut input = InputSnapshot::new();
     {

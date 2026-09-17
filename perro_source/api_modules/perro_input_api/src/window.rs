@@ -525,6 +525,22 @@ impl<'ipt, IP: InputAPI + ?Sized> GamepadModule<'ipt, IP> {
         self.ipt.gamepads().get(index)
     }
 
+    /// Return whether native gamepad discovery and polling is enabled.
+    #[inline(always)]
+    pub fn scan_enabled(&self) -> bool {
+        self.ipt.gamepad_scan_enabled()
+    }
+
+    /// Queue native gamepad discovery and polling state.
+    #[inline(always)]
+    pub fn set_scan_enabled(&self, enabled: bool) {
+        if let Some(buffer) = self.ipt.command_buffer() {
+            buffer
+                .borrow_mut()
+                .push(InputCommand::SetGamepadScanEnabled { enabled });
+        }
+    }
+
     /// Queue gamepad rumble for a device slot.
     #[inline(always)]
     pub fn set_rumble(&self, index: usize, low_frequency: f32, high_frequency: f32) {
@@ -559,6 +575,22 @@ impl<'ipt, IP: InputAPI + ?Sized> JoyConModule<'ipt, IP> {
     #[inline(always)]
     pub fn get(&self, index: usize) -> Option<&'ipt JoyConState> {
         self.ipt.joycons().get(index)
+    }
+
+    /// Return whether Joy-Con HID and BLE discovery is enabled.
+    #[inline(always)]
+    pub fn scan_enabled(&self) -> bool {
+        self.ipt.joycon_scan_enabled()
+    }
+
+    /// Queue Joy-Con HID and BLE discovery state.
+    #[inline(always)]
+    pub fn set_scan_enabled(&self, enabled: bool) {
+        if let Some(buffer) = self.ipt.command_buffer() {
+            buffer
+                .borrow_mut()
+                .push(InputCommand::SetJoyConScanEnabled { enabled });
+        }
     }
 
     /// Queue Joy-Con rumble for a device slot.

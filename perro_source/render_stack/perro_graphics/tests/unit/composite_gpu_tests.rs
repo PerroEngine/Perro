@@ -187,6 +187,7 @@ impl Fixture {
             text: Arc::from("UI"),
             color: perro_structs::Color::from_rgba([0.0, 1.0, 0.0, 1.0]),
             font_size: 20.0,
+            raster_font_size: None,
             font: perro_ui::UiFont::Default,
             wrap_width: None,
             h_align: UiTextAlignState::Center,

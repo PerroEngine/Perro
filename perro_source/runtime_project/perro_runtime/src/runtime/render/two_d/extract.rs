@@ -261,6 +261,7 @@ impl Runtime {
                             color: Runtime::color_modulate(color, modulate),
                             font_size: (font_size * transform.scale.y.abs() * virtual_scale)
                                 .max(0.001),
+                            raster_font_size: None,
                             font,
                             wrap_width: None,
                             h_align: text_align_state_2d(h_align),

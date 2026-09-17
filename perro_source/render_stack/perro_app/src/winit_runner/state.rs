@@ -42,6 +42,11 @@ impl<B: GraphicsBackend> RunnerState<B> {
             .project()
             .map(|project| project.config.vsync)
             .unwrap_or(false);
+        let input_config = app
+            .runtime
+            .project()
+            .map(|project| project.config.input)
+            .unwrap_or_default();
         eprintln!("[perro][runtime] frame_rate_cap=({frame_rate_cap:?})");
         Self {
             app,
@@ -79,8 +84,8 @@ impl<B: GraphicsBackend> RunnerState<B> {
             fps_window_start: now,
             fps_window_frames: 0,
             kbm_input: crate::input::KbmInput::new(),
-            gamepad_input: crate::input::GamepadInput::new(),
-            joycon_input: crate::input::JoyConInput::new(),
+            gamepad_input: crate::input::GamepadInput::new(input_config.gamepad_scanning),
+            joycon_input: crate::input::JoyConInput::new(input_config.joycon_scanning),
             mouse_mode: MouseMode::Visible,
             mouse_uses_raw_motion: false,
             cursor_icon: perro_ui::CursorIcon::Default,

@@ -50,6 +50,7 @@ pub fn run_static_embedded_project(
     .with_base_name(input.project.base_name)
     .with_startup_splash_size(input.project.startup_splash_size)
     .with_target_fixed_update(input.runtime.target_fixed_update)
+    .with_input_scanning(input.input.gamepad_scanning, input.input.joycon_scanning)
     .with_frame_rate_cap(input.runtime.frame_rate_cap)
     .with_physics_gravity(input.runtime.physics_gravity)
     .with_physics_coef(input.runtime.physics_coef)
@@ -259,6 +260,8 @@ pub struct StaticEmbeddedInputAction {
 }
 pub struct StaticEmbeddedInputMapConfig<'a> {
     pub actions: &'a [StaticEmbeddedInputAction],
+    pub gamepad_scanning: bool,
+    pub joycon_scanning: bool,
 }
 pub struct StaticEmbeddedGraphicsConfig {
     pub vsync: bool,

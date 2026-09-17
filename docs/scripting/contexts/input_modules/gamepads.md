@@ -11,6 +11,8 @@
 | API Reference | [API Reference](#api-reference) |
 | `all` | [`all`](#all) |
 | `get` | [`get`](#get) |
+| `scan_enabled` | [`scan_enabled`](#scan_enabled) |
+| `set_scan_enabled` | [`set_scan_enabled`](#set_scan_enabled) |
 | `set_rumble` | [`set_rumble`](#set_rumble) |
 | Macros | [Macros](#macros) |
 
@@ -101,6 +103,17 @@ lifecycle!({
 | Use when | Add force feedback; set both to `0.0` to stop. |
 | Edge behavior | Queues a rumble command when an input command buffer exists; missing slots are ignored. |
 
+### `scan_enabled`
+
+`ctx.ipt.Gamepads().scan_enabled() -> bool` returns current project/runtime
+scan policy.
+
+### `set_scan_enabled`
+
+`ctx.ipt.Gamepads().set_scan_enabled(enabled)` queues a policy change. `false`
+stops discovery/polling and clears connected gamepad state; `true` lazily
+starts the backend on the next input frame.
+
 ## Macros
 
 For a missing slot, button reads return `false`, state reads return `None`, and
@@ -118,4 +131,6 @@ input command buffer exists.
 | `gamepad_right_stick!` | `gamepad_right_stick!(ctx.ipt, 0)` | `Vector2` |
 | `gamepad_gyro!` | `gamepad_gyro!(ctx.ipt, 0)` | `Vector3` |
 | `gamepad_accel!` | `gamepad_accel!(ctx.ipt, 0)` | `Vector3` |
+| `gamepad_scan_enabled!` | `gamepad_scan_enabled!(ctx.ipt)` | `bool` |
+| `gamepad_set_scan_enabled!` | `gamepad_set_scan_enabled!(ctx.ipt, false)` | `()` |
 | `gamepad_set_rumble!` | `gamepad_set_rumble!(ctx.ipt, 0, 0.5, 0.5)` | `()` |

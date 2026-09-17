@@ -8,7 +8,7 @@ use epaint::{
     AlphaFromCoverage, CircleShape, ClippedPrimitive, ClippedShape, Color32, CornerRadius,
     FontFamily, FontId, Fonts, Galley, Mesh, Primitive, Rect, RectShape, Shape, Stroke, StrokeKind,
     TessellationOptions, Tessellator, TextureAtlas, TextureId, Vertex,
-    emath::{Align, Rot2},
+    emath::{Align, Rot2, TSTransform},
     pos2,
     text::{FontData, FontDefinitions, LayoutJob},
     textures::TexturesDelta,
@@ -207,6 +207,11 @@ enum NodeTess {
     CachedProjected {
         quad: [[f32; 4]; 4],
     },
+    /// Stable-raster single-word label. Reuse its unscaled cached mesh and
+    /// apply the animated geometry scale without layout or tessellation.
+    CachedRasterScaled {
+        scale: f32,
+    },
     Staged {
         shapes: Vec<ClippedShape>,
         rotations: Vec<(f32, epaint::Pos2)>,
@@ -242,6 +247,7 @@ fn cached_matches_unprojected_label(cached: &UiDraw, label: &UiLabelDraw) -> boo
         text,
         color,
         font_size,
+        raster_font_size,
         font,
         wrap_width,
         h_align,
@@ -259,6 +265,7 @@ fn cached_matches_unprojected_label(cached: &UiDraw, label: &UiLabelDraw) -> boo
         && cached.text == *text
         && cached.color == *color
         && cached.font_size == *font_size
+        && cached.raster_font_size == *raster_font_size
         && cached.font == *font
         && cached.wrap_width == *wrap_width
         && cached.h_align == *h_align
@@ -268,6 +275,78 @@ fn cached_matches_unprojected_label(cached: &UiDraw, label: &UiLabelDraw) -> boo
         && cached.padding == *padding
         && cached.depth_test == *depth_test
         && cached.fit_content == *fit_content
+}
+
+/// Return the geometry scale for a label whose cached mesh is held at its
+/// raster size. This deliberately accepts only a no-wrap, no-backdrop label:
+/// changing size for those labels is an affine mesh transform. Everything
+/// that could change layout or include non-text geometry stays on the normal
+/// staged path.
+fn cached_raster_label_scale(cached: &UiDraw, label: &UiLabelDraw) -> Option<f32> {
+    let (normalized, scale) = raster_label_cache_key(label)?;
+    (cached == &UiDraw::Label(normalized)).then_some(scale)
+}
+
+fn raster_label_cache_key(label: &UiLabelDraw) -> Option<(UiLabelDraw, f32)> {
+    let raster_size = label
+        .raster_font_size
+        .filter(|size| size.is_finite() && *size > 0.0)?;
+    let scale = label.font_size / raster_size;
+    if !scale.is_finite()
+        || scale <= 0.0
+        || label.fit_content
+        || label.wrap_width.is_some()
+        || label.projected_quad.is_some()
+        || label.backdrop_color.to_rgba_u8()[3] != 0
+        || label.text.is_empty()
+        || label.text.chars().any(char::is_whitespace)
+    {
+        return None;
+    }
+    let mut normalized = label.clone();
+    normalized.font_size = raster_size;
+    Some((normalized, scale))
+}
+
+fn raster_label_scale_anchor(label: &UiLabelDraw, viewport: [f32; 2]) -> epaint::Pos2 {
+    let text_rect = label_text_rect(label.rect, label.padding);
+    let (min, max) = text_rect.screen_min_max(viewport);
+    let anchor = pos2(
+        match label.h_align {
+            UiTextAlignState::Start => min[0],
+            UiTextAlignState::Center => (min[0] + max[0]) * 0.5,
+            UiTextAlignState::End => max[0],
+        },
+        match label.v_align {
+            UiTextAlignState::Start => min[1],
+            UiTextAlignState::Center => (min[1] + max[1]) * 0.5,
+            UiTextAlignState::End => max[1],
+        },
+    );
+    if !label.rect.rotation_radians.is_finite() || label.rect.rotation_radians == 0.0 {
+        return anchor;
+    }
+    let pivot = screen_pivot(label.rect, viewport);
+    pivot + Rot2::from_angle(-label.rect.rotation_radians) * (anchor - pivot)
+}
+
+fn scale_cached_primitives(
+    primitives: &[Arc<ClippedPrimitive>],
+    scale: f32,
+    anchor: epaint::Pos2,
+) -> Vec<Arc<ClippedPrimitive>> {
+    primitives
+        .iter()
+        .map(|primitive| {
+            let mut primitive = (**primitive).clone();
+            if let Primitive::Mesh(mesh) = &mut primitive.primitive {
+                for vertex in &mut mesh.vertices {
+                    vertex.pos = anchor + (vertex.pos - anchor) * scale;
+                }
+            }
+            Arc::new(primitive)
+        })
+        .collect()
 }
 
 fn retain_nonempty_meshes(primitives: &mut Vec<ClippedPrimitive>) {
@@ -305,6 +384,8 @@ pub(crate) struct EpaintUiPainter {
     textures_delta: TexturesDelta,
     last_viewport: [f32; 2],
     paint_revision: u64,
+    #[cfg(test)]
+    tessellation_count: usize,
 }
 
 impl Default for EpaintUiPainter {
@@ -337,6 +418,8 @@ impl EpaintUiPainter {
             textures_delta: TexturesDelta::default(),
             last_viewport: [0.0, 0.0],
             paint_revision: u64::MAX,
+            #[cfg(test)]
+            tessellation_count: 0,
         }
     }
 
@@ -528,6 +611,12 @@ impl EpaintUiPainter {
                     staged.push((*node, NodeTess::CachedProjected { quad }));
                     continue;
                 }
+                if let UiDraw::Label(label) = draw
+                    && let Some(scale) = cached_raster_label_scale(&cached.draw, label)
+                {
+                    staged.push((*node, NodeTess::CachedRasterScaled { scale }));
+                    continue;
+                }
             }
             self.push_node_shapes(draw, viewport);
             staged.push((
@@ -592,7 +681,27 @@ impl EpaintUiPainter {
                     self.world_projections
                         .extend(projections.into_iter().map(Some));
                 }
+                NodeTess::CachedRasterScaled { scale } => {
+                    let Some(cached) = self.node_cache.get(&node) else {
+                        continue;
+                    };
+                    let Some(UiDraw::Label(label)) = nodes.get(&node) else {
+                        continue;
+                    };
+                    let scaled = scale_cached_primitives(
+                        &cached.primitives,
+                        scale,
+                        raster_label_scale_anchor(label, viewport),
+                    );
+                    self.world_projections
+                        .extend((0..scaled.len()).map(|_| None));
+                    self.primitives.extend(scaled);
+                }
                 NodeTess::Staged { shapes, rotations } => {
+                    #[cfg(test)]
+                    {
+                        self.tessellation_count += 1;
+                    }
                     let mut tessellated = tessellator.tessellate_shapes(shapes);
                     rotate_primitives(&mut tessellated, &rotations);
                     let projected_label = match nodes.get(&node) {
@@ -641,14 +750,26 @@ impl EpaintUiPainter {
                     self.world_projections
                         .extend((0..node_primitives.len()).map(|_| None));
                     if let Some(draw) = nodes.get(&node) {
-                        self.node_cache.insert(
-                            node,
+                        let cache = if let UiDraw::Label(label) = draw
+                            && let Some((normalized, scale)) = raster_label_cache_key(label)
+                        {
+                            CachedNode {
+                                draw: UiDraw::Label(normalized),
+                                viewport,
+                                primitives: scale_cached_primitives(
+                                    &node_primitives,
+                                    scale.recip(),
+                                    raster_label_scale_anchor(label, viewport),
+                                ),
+                            }
+                        } else {
                             CachedNode {
                                 draw: draw.clone(),
                                 viewport,
                                 primitives: node_primitives,
-                            },
-                        );
+                            }
+                        };
+                        self.node_cache.insert(node, cache);
                     }
                 }
             }
@@ -1059,6 +1180,7 @@ mod tests {
                 clip_rect: Rect::from_min_max(pos2(0.0, 0.0), pos2(800.0, 600.0)),
                 text: "alpha beta gamma delta epsilon",
                 font_size: 24.0,
+                raster_font_size: None,
                 font: &UiFont::Default,
                 wrap_width: None,
                 color: perro_structs::Color::WHITE,
@@ -1107,6 +1229,7 @@ mod tests {
                     clip_rect: Rect::from_min_max(pos2(0.0, 0.0), pos2(800.0, 600.0)),
                     text: "seed\nfood",
                     font_size: 16.0,
+                    raster_font_size: None,
                     font: &UiFont::Default,
                     wrap_width: None,
                     color: perro_structs::Color::WHITE,
@@ -1124,6 +1247,255 @@ mod tests {
             assert_eq!(text_shape.galley.job.halign, expected_align);
             assert!((text_shape.pos.x - expected_x).abs() < 1.0e-3);
         }
+    }
+
+    #[test]
+    fn single_line_text_reuses_raster_size_and_scales_mesh() {
+        let mut fonts = Fonts::new(
+            UI_FONT_ATLAS_SIZE,
+            AlphaFromCoverage::default(),
+            default_ui_font_definitions(),
+        );
+        fonts.begin_pass(UI_FONT_ATLAS_SIZE, AlphaFromCoverage::default());
+        let input = |font_size| TextShapeInput {
+            rect: UiRectState {
+                center: [0.0, 0.0],
+                size: [240.0, 80.0],
+                pivot: [0.5, 0.5],
+                rotation_radians: 0.0,
+                z_index: 0,
+            },
+            viewport: [800.0, 600.0],
+            clip_rect: Rect::from_min_max(pos2(0.0, 0.0), pos2(800.0, 600.0)),
+            text: "Perro Label",
+            font_size,
+            raster_font_size: Some(12.0),
+            font: &UiFont::Default,
+            wrap_width: None,
+            color: perro_structs::Color::WHITE,
+            h_align: UiTextAlignState::Center,
+            v_align: UiTextAlignState::Center,
+            fit_content: false,
+        };
+        let mut first = Vec::new();
+        push_text_shape(input(12.0), &mut fonts, &mut first);
+        let mut second = Vec::new();
+        push_text_shape(input(12.2), &mut fonts, &mut second);
+
+        let Shape::Text(first) = &first[0].shape else {
+            panic!("expected text shape");
+        };
+        let Shape::Text(second) = &second[0].shape else {
+            panic!("expected text shape");
+        };
+        assert_eq!(fonts.num_galleys_in_cache(), 1);
+        assert_eq!(first.galley.job.sections[0].format.font_id.size, 12.0);
+        assert_eq!(second.galley.job.sections[0].format.font_id.size, 12.0);
+        assert_eq!(first.pos.x, second.pos.x);
+        let width_ratio = second.galley.mesh_bounds.width() / first.galley.mesh_bounds.width();
+        assert!((width_ratio - 12.2 / 12.0).abs() < 1.0e-3);
+    }
+
+    #[test]
+    fn stable_raster_label_size_change_reuses_base_mesh_without_tessellation() {
+        let node = NodeID::from_parts(77, 0);
+        let label = |font_size| UiLabelDraw {
+            rect: UiRectState {
+                center: [0.0, 0.0],
+                size: [240.0, 80.0],
+                pivot: [0.5, 0.5],
+                rotation_radians: 0.0,
+                z_index: 0,
+            },
+            clip_rect: [0.0, 0.0, 800.0, 600.0],
+            text: Arc::from("Perro"),
+            color: perro_structs::Color::WHITE,
+            font_size,
+            raster_font_size: Some(12.0),
+            font: UiFont::Default,
+            wrap_width: None,
+            h_align: UiTextAlignState::Center,
+            v_align: UiTextAlignState::Center,
+            backdrop_color: perro_structs::Color::TRANSPARENT,
+            corner_radii: UiCornerRadiiState::default(),
+            padding: [0.0; 4],
+            projected_quad: None,
+            depth_test: false,
+            fit_content: false,
+        };
+        let mut nodes = AHashMap::new();
+        nodes.insert(node, UiDraw::Label(label(12.0)));
+        let mut painter = EpaintUiPainter::new();
+        painter.paint(&nodes, 1, [800.0, 600.0]);
+        assert_eq!(painter.tessellation_count, 1);
+
+        let cached = painter.node_cache.get(&node).expect("base cache");
+        let UiDraw::Label(cached_label) = &cached.draw else {
+            panic!("expected cached label");
+        };
+        assert_eq!(cached_label.font_size, 12.0);
+        let cached_ptr = Arc::as_ptr(&cached.primitives[0]);
+        let Primitive::Mesh(base_mesh) = &cached.primitives[0].primitive else {
+            panic!("expected base text mesh");
+        };
+        let base_pos = base_mesh.vertices[0].pos;
+
+        nodes.insert(node, UiDraw::Label(label(18.0)));
+        let scaled_pos = {
+            let frame = painter.paint(&nodes, 2, [800.0, 600.0]);
+            let Primitive::Mesh(scaled_mesh) = &frame.primitives[0].primitive else {
+                panic!("expected scaled text mesh");
+            };
+            scaled_mesh.vertices[0].pos
+        };
+        assert_eq!(painter.tessellation_count, 1);
+        let anchor = pos2(400.0, 300.0);
+        let expected = anchor + (base_pos - anchor) * 1.5;
+        assert!((scaled_pos - expected).length() < 1.0e-3);
+        assert_eq!(
+            Arc::as_ptr(&painter.node_cache[&node].primitives[0]),
+            cached_ptr
+        );
+
+        let mut wrapped = label(24.0);
+        wrapped.wrap_width = Some(120.0);
+        nodes.insert(node, UiDraw::Label(wrapped));
+        painter.paint(&nodes, 3, [800.0, 600.0]);
+        assert_eq!(painter.tessellation_count, 2);
+    }
+
+    #[test]
+    fn default_label_path_keeps_requested_raster_size() {
+        let mut fonts = Fonts::new(
+            UI_FONT_ATLAS_SIZE,
+            AlphaFromCoverage::default(),
+            default_ui_font_definitions(),
+        );
+        fonts.begin_pass(UI_FONT_ATLAS_SIZE, AlphaFromCoverage::default());
+        let input = |font_size| TextShapeInput {
+            rect: UiRectState {
+                center: [0.0, 0.0],
+                size: [240.0, 80.0],
+                pivot: [0.5, 0.5],
+                rotation_radians: 0.0,
+                z_index: 0,
+            },
+            viewport: [800.0, 600.0],
+            clip_rect: Rect::from_min_max(pos2(0.0, 0.0), pos2(800.0, 600.0)),
+            text: "Perro Label",
+            font_size,
+            raster_font_size: None,
+            font: &UiFont::Default,
+            wrap_width: None,
+            color: perro_structs::Color::WHITE,
+            h_align: UiTextAlignState::Center,
+            v_align: UiTextAlignState::Center,
+            fit_content: false,
+        };
+        let mut first = Vec::new();
+        push_text_shape(input(12.0), &mut fonts, &mut first);
+        let mut second = Vec::new();
+        push_text_shape(input(12.2), &mut fonts, &mut second);
+
+        let Shape::Text(first) = &first[0].shape else {
+            panic!("expected text shape");
+        };
+        let Shape::Text(second) = &second[0].shape else {
+            panic!("expected text shape");
+        };
+        assert_eq!(first.galley.job.sections[0].format.font_id.size, 12.0);
+        assert_eq!(second.galley.job.sections[0].format.font_id.size, 12.2);
+        assert_ne!(fonts.num_galleys_in_cache(), 1);
+    }
+
+    #[test]
+    fn stable_raster_path_preserves_multiline_wrap_and_anchor() {
+        let mut fonts = Fonts::new(
+            UI_FONT_ATLAS_SIZE,
+            AlphaFromCoverage::default(),
+            default_ui_font_definitions(),
+        );
+        fonts.begin_pass(UI_FONT_ATLAS_SIZE, AlphaFromCoverage::default());
+        let rect = UiRectState {
+            center: [0.0, 0.0],
+            size: [100.0, 60.0],
+            pivot: [0.5, 0.5],
+            rotation_radians: 0.0,
+            z_index: 0,
+        };
+        for (h_align, expected_x) in [
+            (UiTextAlignState::Center, 400.0),
+            (UiTextAlignState::End, 450.0),
+        ] {
+            let mut shapes = Vec::new();
+            push_text_shape(
+                TextShapeInput {
+                    rect,
+                    viewport: [800.0, 600.0],
+                    clip_rect: Rect::from_min_max(pos2(0.0, 0.0), pos2(800.0, 600.0)),
+                    text: "one two three\nfour",
+                    font_size: 24.0,
+                    raster_font_size: Some(12.0),
+                    font: &UiFont::Default,
+                    wrap_width: Some(70.0),
+                    color: perro_structs::Color::WHITE,
+                    h_align,
+                    v_align: UiTextAlignState::Start,
+                    fit_content: false,
+                },
+                &mut fonts,
+                &mut shapes,
+            );
+
+            let Shape::Text(text_shape) = &shapes[0].shape else {
+                panic!("expected text shape");
+            };
+            assert_eq!(text_shape.galley.job.sections[0].format.font_id.size, 12.0);
+            assert!(text_shape.galley.rows.len() >= 2);
+            assert!((text_shape.pos.x - expected_x).abs() < 1.0e-3);
+        }
+    }
+
+    #[test]
+    fn stable_raster_fit_content_scales_geometry_not_glyph_raster() {
+        let mut fonts = Fonts::new(
+            UI_FONT_ATLAS_SIZE,
+            AlphaFromCoverage::default(),
+            default_ui_font_definitions(),
+        );
+        fonts.begin_pass(UI_FONT_ATLAS_SIZE, AlphaFromCoverage::default());
+        let mut shapes = Vec::new();
+        push_text_shape(
+            TextShapeInput {
+                rect: UiRectState {
+                    center: [0.0, 0.0],
+                    size: [200.0, 20.0],
+                    pivot: [0.5, 0.5],
+                    rotation_radians: 0.0,
+                    z_index: 0,
+                },
+                viewport: [800.0, 600.0],
+                clip_rect: Rect::from_min_max(pos2(0.0, 0.0), pos2(800.0, 600.0)),
+                text: "Perro",
+                font_size: 40.0,
+                raster_font_size: Some(20.0),
+                font: &UiFont::Default,
+                wrap_width: None,
+                color: perro_structs::Color::WHITE,
+                h_align: UiTextAlignState::Center,
+                v_align: UiTextAlignState::Center,
+                fit_content: true,
+            },
+            &mut fonts,
+            &mut shapes,
+        );
+
+        let Shape::Text(text_shape) = &shapes[0].shape else {
+            panic!("expected text shape");
+        };
+        assert_eq!(text_shape.galley.job.sections[0].format.font_id.size, 20.0);
+        assert!(text_shape.galley.size().y <= 20.0);
+        assert!(text_shape.visual_bounding_rect().is_finite());
     }
 
     #[test]
@@ -1145,6 +1517,7 @@ mod tests {
                 clip_rect: Rect::from_min_max(pos2(0.0, 0.0), pos2(800.0, 600.0)),
                 text: "Perro",
                 font_size: 24.0,
+                raster_font_size: None,
                 font: &UiFont::Default,
                 wrap_width: None,
                 color: perro_structs::Color::WHITE,

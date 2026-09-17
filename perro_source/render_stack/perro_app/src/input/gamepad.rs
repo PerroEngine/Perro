@@ -169,6 +169,47 @@ mod backend {
             self.gilrs = Some(gilrs);
         }
 
+        pub(super) fn disable<S: GamepadSink>(&mut self, app: &mut S) {
+            let mut indices: Vec<_> = self
+                .uuid_in_use
+                .iter()
+                .filter_map(|uuid| self.uuid_to_index.get(uuid).copied())
+                .collect();
+            #[cfg(target_os = "windows")]
+            for slot in 0..self.xinput_connected.len() {
+                if self.xinput_connected[slot] {
+                    let index = self.xinput_app_index(slot);
+                    if !indices.contains(&index) {
+                        indices.push(index);
+                    }
+                }
+            }
+            for index in indices {
+                clear_gamepad(app, index);
+                app.set_gamepad_connected(index, false);
+            }
+            for (_, effect) in self.rumble_effects.drain() {
+                let _ = effect.stop();
+            }
+            let _ = app.take_gamepad_rumble_requests();
+            self.gilrs = None;
+            self.id_to_uuid.clear();
+            self.uuid_to_index.clear();
+            self.index_to_uuid.clear();
+            self.free_indices.clear();
+            self.free_index_set.clear();
+            self.next_index = 0;
+            self.down_masks.clear();
+            self.uuid_in_use.clear();
+            self.sync_ids.clear();
+            self.state_sync_frame_counter = 0;
+            #[cfg(target_os = "windows")]
+            {
+                self.xinput = None;
+                self.xinput_connected.fill(false);
+            }
+        }
+
         #[cfg(feature = "steamworks")]
         pub(super) fn collect_connected_indices(&self, out: &mut Vec<usize>) {
             out.clear();
@@ -840,6 +881,8 @@ mod backend {
     impl GamepadBackend {
         pub fn begin_frame<S>(&mut self, _app: &mut S) {}
 
+        pub fn disable<S>(&mut self, _app: &mut S) {}
+
         #[cfg(feature = "steamworks")]
         pub fn collect_connected_indices(&self, out: &mut Vec<usize>) {
             out.clear();
@@ -1007,9 +1050,9 @@ fn clear_steam_gamepad<B: GraphicsBackend>(app: &mut App<B>, index: usize) {
     app.set_gamepad_accel(index, 0.0, 0.0, 0.0);
 }
 
-#[derive(Default)]
 pub struct GamepadInput {
     backend: backend::GamepadBackend,
+    scan_enabled: bool,
     #[cfg(feature = "steamworks")]
     steam_fallback: SteamFallbackBackend,
     #[cfg(feature = "steamworks")]
@@ -1017,11 +1060,32 @@ pub struct GamepadInput {
 }
 
 impl GamepadInput {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(scan_enabled: bool) -> Self {
+        Self {
+            backend: backend::GamepadBackend::default(),
+            scan_enabled,
+            #[cfg(feature = "steamworks")]
+            steam_fallback: SteamFallbackBackend::default(),
+            #[cfg(feature = "steamworks")]
+            native_indices: Vec::new(),
+        }
     }
 
     pub fn begin_frame<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
+        if let Some(enabled) = app.take_gamepad_scan_enabled_request()
+            && enabled != self.scan_enabled
+        {
+            self.scan_enabled = enabled;
+            if !enabled {
+                self.backend.disable(app);
+                #[cfg(feature = "steamworks")]
+                self.steam_fallback.clear_all(app, &[]);
+            }
+        }
+        if !self.scan_enabled {
+            let _ = app.take_gamepad_rumble_requests();
+            return;
+        }
         self.backend.begin_frame(app);
         #[cfg(feature = "steamworks")]
         {
@@ -1029,6 +1093,12 @@ impl GamepadInput {
                 .collect_connected_indices(&mut self.native_indices);
             self.steam_fallback.begin_frame(app, &self.native_indices);
         }
+    }
+}
+
+impl Default for GamepadInput {
+    fn default() -> Self {
+        Self::new(true)
     }
 }
 

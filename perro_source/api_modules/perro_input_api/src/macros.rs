@@ -315,3 +315,31 @@ macro_rules! joycon_set_rumble {
 macro_rules! joycon_set_indicator {
     ($ipt:expr, $index:expr, $indicator:expr) => {{ $ipt.JoyCons().set_indicator($index, $indicator) }};
 }
+
+#[macro_export]
+/// Signature:
+/// - `gamepad_scan_enabled!(&InputWindow<_>) -> bool`
+macro_rules! gamepad_scan_enabled {
+    ($ipt:expr) => {{ $ipt.Gamepads().scan_enabled() }};
+}
+
+#[macro_export]
+/// Signature:
+/// - `gamepad_set_scan_enabled!(&InputWindow<_>, bool) -> ()`
+macro_rules! gamepad_set_scan_enabled {
+    ($ipt:expr, $enabled:expr) => {{ $ipt.Gamepads().set_scan_enabled($enabled) }};
+}
+
+#[macro_export]
+/// Signature:
+/// - `joycon_scan_enabled!(&InputWindow<_>) -> bool`
+macro_rules! joycon_scan_enabled {
+    ($ipt:expr) => {{ $ipt.JoyCons().scan_enabled() }};
+}
+
+#[macro_export]
+/// Signature:
+/// - `joycon_set_scan_enabled!(&InputWindow<_>, bool) -> ()`
+macro_rules! joycon_set_scan_enabled {
+    ($ipt:expr, $enabled:expr) => {{ $ipt.JoyCons().set_scan_enabled($enabled) }};
+}

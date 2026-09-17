@@ -14,7 +14,7 @@ use perro_ids::TextureID;
 use perro_structs::TextureFilterMode;
 use std::borrow::Cow;
 use std::hash::{BuildHasher, Hash, Hasher};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 #[path = "gpu/helpers.rs"]
 mod helpers;
@@ -142,6 +142,9 @@ pub struct GpuUi {
     texture_filter: TextureFilterMode,
     font_texture: Option<UiTextureGpu>,
     harfbuzz_font_texture: Option<UiTextureGpu>,
+    // Shared by both font-atlas upload paths. `Queue::write_texture` consumes
+    // its source bytes before it returns, so the next delta may reuse it.
+    font_upload_rgba: Vec<u8>,
     image_textures: AHashMap<TextureID, UiTextureGpu>,
     // stream texture ids (webcam/video): built single-level so per-frame base
     // writes update in place instead of rebuilding the whole image texture.
@@ -495,6 +498,7 @@ impl GpuUi {
             texture_filter,
             font_texture: None,
             harfbuzz_font_texture: None,
+            font_upload_rgba: Vec::new(),
             image_textures: AHashMap::new(),
             stream_texture_ids: AHashSet::new(),
             supersample_target: None,
@@ -1264,7 +1268,7 @@ impl GpuUi {
         // epaint atlas pixels are gamma-space premultiplied Color32. Normalize
         // before upload so bilinear filtering happens in linear premultiplied
         // space, matching the render target and One/OneMinusSrcAlpha blend.
-        let rgba = linear_premultiplied_rgba(&image.pixels);
+        linear_premultiplied_rgba_into(&image.pixels, &mut self.font_upload_rgba);
         let needs_texture = match &self.font_texture {
             Some(texture) => {
                 delta.pos.is_none()
@@ -1362,7 +1366,7 @@ impl GpuUi {
                 },
                 aspect: wgpu::TextureAspect::All,
             },
-            &rgba,
+            &self.font_upload_rgba,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(size[0].max(1) * 4),
@@ -1386,7 +1390,7 @@ impl GpuUi {
         let size = [image.size[0] as u32, image.size[1] as u32];
         let origin = delta.pos.unwrap_or([0, 0]);
         let required_size = font_delta_required_size(size, origin, size);
-        let rgba = linear_premultiplied_rgba(&image.pixels);
+        linear_premultiplied_rgba_into(&image.pixels, &mut self.font_upload_rgba);
         let needs_texture = match &self.harfbuzz_font_texture {
             Some(texture) => {
                 delta.pos.is_none()
@@ -1486,7 +1490,7 @@ impl GpuUi {
                 },
                 aspect: wgpu::TextureAspect::All,
             },
-            &rgba,
+            &self.font_upload_rgba,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(size[0].max(1) * 4),
@@ -1750,10 +1754,35 @@ fn align_buffer_bytes(bytes: usize) -> usize {
     bytes.next_multiple_of(wgpu::COPY_BUFFER_ALIGNMENT as usize)
 }
 
+#[cfg(test)]
 fn linear_premultiplied_rgba(pixels: &[epaint::Color32]) -> Vec<u8> {
+    let mut rgba = Vec::new();
+    linear_premultiplied_rgba_into(pixels, &mut rgba);
+    rgba
+}
+
+fn linear_premultiplied_rgba_into(pixels: &[epaint::Color32], rgba: &mut Vec<u8>) {
+    rgba.clear();
+    rgba.reserve(pixels.len().saturating_mul(4));
+    let lut = linear_premultiplied_lut();
+    for &pixel in pixels {
+        let [r, g, b, a] = pixel.to_array();
+        let row = usize::from(a) * LINEAR_PREMULTIPLIED_LUT_WIDTH;
+        rgba.extend_from_slice(&[
+            lut[row + usize::from(r)],
+            lut[row + usize::from(g)],
+            lut[row + usize::from(b)],
+            a,
+        ]);
+    }
+}
+
+#[cfg(test)]
+fn linear_premultiplied_rgba_generic(pixels: &[epaint::Color32]) -> Vec<u8> {
+    let lut = linear_premultiplied_lut();
     let mut rgba = Vec::with_capacity(pixels.len() * 4);
     for &pixel in pixels {
-        rgba.extend_from_slice(&linear_premultiplied_color32(pixel));
+        rgba.extend_from_slice(&linear_premultiplied_color32_with_lut(pixel, lut));
     }
     rgba
 }
@@ -1762,26 +1791,62 @@ fn texture_has_straight_alpha(texture_id: TextureId) -> bool {
     matches!(texture_id, TextureId::User(_))
 }
 
-fn linear_premultiplied_color32(color: epaint::Color32) -> [u8; 4] {
-    let [r, g, b, a] = color.to_array();
-    let alpha = f32::from(a) / 255.0;
-    let convert = |channel: u8| {
-        let premultiplied = f32::from(channel) / 255.0;
-        let straight = if a == 0 {
-            // epaint uses alpha-zero RGB for additive colors.
-            premultiplied
-        } else {
-            (premultiplied / alpha).clamp(0.0, 1.0)
-        };
-        let linear = if straight <= 0.04045 {
-            straight / 12.92
-        } else {
-            ((straight + 0.055) / 1.055).powf(2.4)
-        };
-        let linear_premultiplied = if a == 0 { linear } else { linear * alpha };
-        (linear_premultiplied * 255.0).round().clamp(0.0, 255.0) as u8
+const LINEAR_PREMULTIPLIED_LUT_WIDTH: usize = 256;
+const LINEAR_PREMULTIPLIED_LUT_LEN: usize =
+    LINEAR_PREMULTIPLIED_LUT_WIDTH * LINEAR_PREMULTIPLIED_LUT_WIDTH;
+static LINEAR_PREMULTIPLIED_LUT: OnceLock<Box<[u8]>> = OnceLock::new();
+
+#[inline]
+fn linear_premultiplied_channel(channel: u8, alpha_byte: u8) -> u8 {
+    let alpha = f32::from(alpha_byte) / 255.0;
+    let premultiplied = f32::from(channel) / 255.0;
+    let straight = if alpha_byte == 0 {
+        // epaint uses alpha-zero RGB for additive colors.
+        premultiplied
+    } else {
+        (premultiplied / alpha).clamp(0.0, 1.0)
     };
-    [convert(r), convert(g), convert(b), a]
+    let linear = if straight <= 0.04045 {
+        straight / 12.92
+    } else {
+        ((straight + 0.055) / 1.055).powf(2.4)
+    };
+    let linear_premultiplied = if alpha_byte == 0 {
+        linear
+    } else {
+        linear * alpha
+    };
+    (linear_premultiplied * 255.0).round().clamp(0.0, 255.0) as u8
+}
+
+fn linear_premultiplied_lut() -> &'static [u8] {
+    LINEAR_PREMULTIPLIED_LUT.get_or_init(|| {
+        let mut table = Vec::with_capacity(LINEAR_PREMULTIPLIED_LUT_LEN);
+        for alpha in 0..=u8::MAX {
+            for channel in 0..=u8::MAX {
+                table.push(linear_premultiplied_channel(channel, alpha));
+            }
+        }
+        table.into_boxed_slice()
+    })
+}
+
+#[cfg(test)]
+#[inline]
+fn linear_premultiplied_color32_with_lut(color: epaint::Color32, lut: &[u8]) -> [u8; 4] {
+    let [r, g, b, a] = color.to_array();
+    let row = usize::from(a) * LINEAR_PREMULTIPLIED_LUT_WIDTH;
+    [
+        lut[row + usize::from(r)],
+        lut[row + usize::from(g)],
+        lut[row + usize::from(b)],
+        a,
+    ]
+}
+
+#[cfg(test)]
+fn linear_premultiplied_color32(color: epaint::Color32) -> [u8; 4] {
+    linear_premultiplied_color32_with_lut(color, linear_premultiplied_lut())
 }
 
 fn hash_f32(value: f32, hasher: &mut impl Hasher) {
@@ -1894,11 +1959,16 @@ mod ui_gpu_tests;
 #[cfg(test)]
 mod tests {
     use super::{
-        UI_SUPERSAMPLE_FORMAT, UiMeshGpu, linear_premultiplied_color32, linear_premultiplied_rgba,
-        push_ui_mesh, supersampled_size, texture_has_straight_alpha, ui_mesh_signature_for_test,
+        LINEAR_PREMULTIPLIED_LUT_LEN, LINEAR_PREMULTIPLIED_LUT_WIDTH, UI_SUPERSAMPLE_FORMAT,
+        UiMeshGpu, linear_premultiplied_color32, linear_premultiplied_lut,
+        linear_premultiplied_rgba, linear_premultiplied_rgba_generic,
+        linear_premultiplied_rgba_into, push_ui_mesh, supersampled_size,
+        texture_has_straight_alpha, ui_mesh_signature_for_test,
     };
     use epaint::{ClippedPrimitive, Color32, Mesh, Primitive, Rect, TextureId, Vertex, pos2};
     use perro_structs::TextureFilterMode;
+    use std::hint::black_box;
+    use std::time::Instant;
 
     /// SINGLE-SUPERSAMPLE INVARIANT (graphics half): the UI raster target is
     /// the viewport times THE shared factor, never a local constant. The
@@ -2052,6 +2122,159 @@ mod tests {
         assert_eq!(
             linear_premultiplied_color32(Color32::from_rgba_premultiplied(128, 0, 0, 0)),
             [55, 0, 0, 0]
+        );
+    }
+
+    fn reference_linear_premultiplied_channel(channel: u8, alpha_byte: u8) -> u8 {
+        let alpha = f32::from(alpha_byte) / 255.0;
+        let premultiplied = f32::from(channel) / 255.0;
+        let straight = if alpha_byte == 0 {
+            premultiplied
+        } else {
+            (premultiplied / alpha).clamp(0.0, 1.0)
+        };
+        let linear = if straight <= 0.04045 {
+            straight / 12.92
+        } else {
+            ((straight + 0.055) / 1.055).powf(2.4)
+        };
+        let linear_premultiplied = if alpha_byte == 0 {
+            linear
+        } else {
+            linear * alpha
+        };
+        (linear_premultiplied * 255.0).round().clamp(0.0, 255.0) as u8
+    }
+
+    #[test]
+    fn linear_premultiplied_lut_matches_float_reference() {
+        let lut = linear_premultiplied_lut();
+        assert_eq!(lut.len(), LINEAR_PREMULTIPLIED_LUT_LEN);
+        for alpha in 0..=u8::MAX {
+            for channel in 0..=u8::MAX {
+                let index =
+                    usize::from(alpha) * LINEAR_PREMULTIPLIED_LUT_WIDTH + usize::from(channel);
+                assert_eq!(
+                    lut[index],
+                    reference_linear_premultiplied_channel(channel, alpha),
+                    "alpha={alpha}, channel={channel}"
+                );
+                assert_eq!(
+                    linear_premultiplied_color32(Color32::from_rgba_premultiplied(
+                        channel, 0, 0, alpha
+                    )),
+                    [lut[index], 0, 0, alpha]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn grayscale_lut_path_matches_reference_for_all_alpha_values() {
+        let mut pixels = Vec::with_capacity(256 * 256);
+        for alpha in 0..=u8::MAX {
+            for gray in 0..=u8::MAX {
+                pixels.push(Color32::from_rgba_premultiplied(gray, gray, gray, alpha));
+            }
+        }
+        assert_eq!(
+            linear_premultiplied_rgba(&pixels),
+            linear_premultiplied_rgba_generic(&pixels)
+        );
+    }
+
+    #[test]
+    fn atlas_upload_scratch_reuses_capacity_and_keeps_mixed_and_additive_bytes() {
+        let pixels = [
+            Color32::from_rgba_premultiplied(128, 128, 128, 128),
+            Color32::from_rgba_premultiplied(128, 0, 64, 0),
+            Color32::from_rgba_premultiplied(12, 60, 120, 180),
+        ];
+        let mut scratch = Vec::new();
+        linear_premultiplied_rgba_into(&pixels, &mut scratch);
+        let capacity = scratch.capacity();
+        assert_eq!(scratch, linear_premultiplied_rgba_generic(&pixels));
+
+        linear_premultiplied_rgba_into(&pixels[..1], &mut scratch);
+        assert_eq!(scratch, linear_premultiplied_rgba_generic(&pixels[..1]));
+        assert_eq!(scratch.capacity(), capacity);
+    }
+
+    fn reference_linear_premultiplied_rgba(pixels: &[Color32]) -> Vec<u8> {
+        let mut rgba = Vec::with_capacity(pixels.len() * 4);
+        for &pixel in pixels {
+            let [r, g, b, a] = pixel.to_array();
+            rgba.extend_from_slice(&[
+                reference_linear_premultiplied_channel(r, a),
+                reference_linear_premultiplied_channel(g, a),
+                reference_linear_premultiplied_channel(b, a),
+                a,
+            ]);
+        }
+        rgba
+    }
+
+    fn byte_sum(bytes: &[u8]) -> u64 {
+        bytes.iter().map(|&byte| u64::from(byte)).sum()
+    }
+
+    #[test]
+    #[ignore = "timing bench; run with --ignored"]
+    fn linear_premultiplied_rgba_bench_realistic_atlas() {
+        const WIDTH: usize = 1024;
+        const HEIGHT: usize = 1024;
+        const ROUNDS: usize = 8;
+        let mut pixels = Vec::with_capacity(WIDTH * HEIGHT);
+        for index in 0..(WIDTH * HEIGHT) {
+            let alpha = ((index.wrapping_mul(251) ^ (index >> 7)) & 255) as u8;
+            let gray = ((index.wrapping_mul(17) >> 3) & 255) as u8;
+            let (r, g, b) = if index % 32 == 0 {
+                (
+                    ((index.wrapping_mul(13)) & 255) as u8,
+                    ((index.wrapping_mul(29)) & 255) as u8,
+                    ((index.wrapping_mul(43)) & 255) as u8,
+                )
+            } else {
+                (gray, gray, gray)
+            };
+            pixels.push(Color32::from_rgba_premultiplied(
+                r.min(alpha),
+                g.min(alpha),
+                b.min(alpha),
+                alpha,
+            ));
+        }
+
+        let expected = reference_linear_premultiplied_rgba(black_box(&pixels));
+        let init_start = Instant::now();
+        let lut = linear_premultiplied_lut();
+        let init_time = init_start.elapsed();
+        assert_eq!(lut.len(), LINEAR_PREMULTIPLIED_LUT_LEN);
+
+        let first_start = Instant::now();
+        let first = linear_premultiplied_rgba(black_box(&pixels));
+        let first_time = first_start.elapsed();
+        assert_eq!(first, expected);
+
+        let old_start = Instant::now();
+        let mut old_sum = 0_u64;
+        for _ in 0..ROUNDS {
+            let output = reference_linear_premultiplied_rgba(black_box(&pixels));
+            old_sum = old_sum.wrapping_add(byte_sum(black_box(&output)));
+        }
+        let old_time = old_start.elapsed();
+
+        let warm_start = Instant::now();
+        let mut warm_sum = 0_u64;
+        for _ in 0..ROUNDS {
+            let output = linear_premultiplied_rgba(black_box(&pixels));
+            warm_sum = warm_sum.wrapping_add(byte_sum(black_box(&output)));
+        }
+        let warm_time = warm_start.elapsed();
+        let warm_check = linear_premultiplied_rgba(black_box(&pixels));
+        assert_eq!(warm_check, expected);
+        eprintln!(
+            "atlas={WIDTH}x{HEIGHT} rounds={ROUNDS} lut_init={init_time:?} lut_first={first_time:?} old={old_time:?} lut_warm={warm_time:?} old_sum={old_sum} lut_sum={warm_sum}"
         );
     }
 

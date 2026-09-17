@@ -744,6 +744,16 @@ pub(super) fn ui_command_from_node(
                     };
                 resolve_font_size(base, node_scale, viewport_scale, label.font_sizing)
             },
+            // Keep opt-in raster size independent of animated node scale;
+            // painter applies that scale to the finished glyph geometry.
+            raster_font_size: label.raster_font_size.map(|base| {
+                resolve_font_size(
+                    fallback_text_size(base),
+                    1.0,
+                    virtual_font_scale,
+                    label.font_sizing,
+                )
+            }),
             font: label.font.clone(),
             wrap_width: None,
             h_align: text_align_state(label.h_align),

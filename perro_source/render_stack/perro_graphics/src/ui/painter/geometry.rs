@@ -305,6 +305,7 @@ pub(super) struct TextShapeInput<'a> {
     pub(super) clip_rect: Rect,
     pub(super) text: &'a str,
     pub(super) font_size: f32,
+    pub(super) raster_font_size: Option<f32>,
     pub(super) font: &'a UiFont,
     pub(super) wrap_width: Option<f32>,
     pub(super) color: perro_structs::Color,
@@ -324,6 +325,7 @@ pub(super) fn push_text_shape(
         clip_rect,
         text,
         mut font_size,
+        raster_font_size,
         font,
         wrap_width,
         color,
@@ -345,8 +347,13 @@ pub(super) fn push_text_shape(
         .filter(|width| width.is_finite() && *width > 0.0)
         .unwrap_or(rect.size[0])
         .max(1.0);
+    // Opt-in labels keep a stable raster size while their retained geometry
+    // keeps the requested size. None preserves the existing epaint path.
+    let raster_font_size = raster_font_size.filter(|size| size.is_finite() && *size > 0.0);
+    let stable_raster = raster_font_size.is_some();
+    let raster_font_size = raster_font_size.unwrap_or(font_size);
     let mut font_id = FontId::new(
-        font_size,
+        raster_font_size,
         selected_text_family(text, font, FontFamily::Proportional),
     );
     let paragraph_align = match h_align {
@@ -354,17 +361,33 @@ pub(super) fn push_text_shape(
         UiTextAlignState::Center => Align::Center,
         UiTextAlignState::End => Align::RIGHT,
     };
-    let layout = |fonts: &mut Fonts, font_id: FontId| {
+    // Start at the authored width. This keeps ordinary one-line labels on
+    // one galley cache key while the requested geometry scale animates.
+    // Multi-line or overflowing labels relayout at the scaled width below.
+    let mut layout_wrap_width = wrap_width;
+    let layout = |fonts: &mut Fonts, font_id: FontId, wrap_width: f32| {
         let mut job = LayoutJob::simple(text.to_string(), font_id, color32(color), wrap_width);
         job.halign = paragraph_align;
         fonts.with_pixels_per_point(UI_RASTER_SCALE).layout_job(job)
     };
-    let mut galley = layout(fonts, font_id.clone());
+    let mut galley = layout(fonts, font_id.clone(), layout_wrap_width);
+    let initial_geometry_scale = if stable_raster {
+        font_size / raster_font_size
+    } else {
+        1.0
+    };
+    if stable_raster
+        && (initial_geometry_scale - 1.0).abs() > f32::EPSILON
+        && (galley.rows.len() > 1 || galley.size().x * initial_geometry_scale > wrap_width)
+    {
+        layout_wrap_width = wrap_width / initial_geometry_scale;
+        galley = layout(fonts, font_id.clone(), layout_wrap_width);
+    }
     // Keep whole words whole. Shrink a word that cannot fit instead of
     // splitting it across rows or letting it escape the label's world size.
     // A single row that fits proves no word overflowed, so the common case
     // (short label, no wrap) skips the per-word measuring entirely.
-    if galley.rows.len() > 1 || galley.size().x > wrap_width {
+    if galley.rows.len() > 1 || galley.size().x > layout_wrap_width {
         let longest_word_width = text
             .split_whitespace()
             .map(|word| {
@@ -381,18 +404,51 @@ pub(super) fn push_text_shape(
                     .x
             })
             .fold(0.0_f32, f32::max);
-        if longest_word_width > wrap_width {
-            font_size *= wrap_width / longest_word_width;
-            font_id.size = font_size.max(0.001);
-            galley = layout(fonts, font_id.clone());
+        if longest_word_width > layout_wrap_width {
+            font_size *= layout_wrap_width / longest_word_width;
+            font_id.size = if stable_raster {
+                raster_font_size
+            } else {
+                font_size.max(0.001)
+            };
+            layout_wrap_width = if stable_raster {
+                wrap_width * raster_font_size / font_size
+            } else {
+                wrap_width
+            };
+            galley = layout(fonts, font_id.clone(), layout_wrap_width);
         }
     }
-    if fit_content && galley.size().y > rect.size[1] {
-        font_size *= (rect.size[1] / galley.size().y).clamp(0.001, 1.0);
-        font_id.size = font_size;
-        galley = layout(fonts, font_id);
+    let raster_scale = if stable_raster {
+        font_size / raster_font_size
+    } else {
+        1.0
+    };
+    if fit_content && galley.size().y * raster_scale > rect.size[1] {
+        font_size *= (rect.size[1] / (galley.size().y * raster_scale)).clamp(0.001, 1.0);
+        font_id.size = if stable_raster {
+            raster_font_size
+        } else {
+            font_size
+        };
+        layout_wrap_width = if stable_raster {
+            wrap_width * raster_font_size / font_size
+        } else {
+            wrap_width
+        };
+        galley = layout(fonts, font_id.clone(), layout_wrap_width);
     }
-    let text_size = galley.size();
+    let geometry_scale = if stable_raster {
+        let scale = font_size / raster_font_size;
+        if scale.is_finite() && scale > 0.0 {
+            scale
+        } else {
+            1.0
+        }
+    } else {
+        1.0
+    };
+    let text_size = galley.size() * geometry_scale;
     let x = match h_align {
         UiTextAlignState::Start => min[0],
         UiTextAlignState::Center => min[0] + rect.size[0] * 0.5,
@@ -403,9 +459,20 @@ pub(super) fn push_text_shape(
         UiTextAlignState::Center => min[1] + (rect.size[1] - text_size.y).max(0.0) * 0.5,
         UiTextAlignState::End => max[1] - text_size.y,
     };
+    let pos = pos2(x, y);
+    let mut text_shape = epaint::TextShape::new(pos, galley, color32(color))
+        .with_override_text_color(color32(color));
+    if stable_raster && (geometry_scale - 1.0).abs() > f32::EPSILON {
+        // Scale galley mesh around its draw anchor, so position / alignment
+        // stay fixed while glyphs use one stable atlas size.
+        text_shape.transform(TSTransform::new(
+            pos.to_vec2() * (1.0 - geometry_scale),
+            geometry_scale,
+        ));
+    }
     out.push(ClippedShape {
         clip_rect,
-        shape: Shape::galley_with_override_text_color(pos2(x, y), galley, color32(color)),
+        shape: Shape::Text(text_shape),
     });
 }
 

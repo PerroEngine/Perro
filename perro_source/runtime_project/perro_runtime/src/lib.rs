@@ -41,7 +41,7 @@ pub fn normalize_fixed_timestep_seconds(value: Option<f32>) -> Option<f32> {
     })
 }
 pub use runtime_project::{
-    AntiAlias, AudioConfig, AudioPropagationConfig, FrameRateCap, LocalizationConfig,
+    AntiAlias, AudioConfig, AudioPropagationConfig, FrameRateCap, InputConfig, LocalizationConfig,
     OcclusionCulling, ParticleSimDefault, PowerPreference, ProjectLoadError, ProjectMetadata,
     ProjectRoute, ProjectRoutesConfig, ProviderMode, RenderUiConfig, RenderingConfig,
     RuntimeProject, RuntimeProjectConfig, ShadowQuality, SsaoQuality, StaticAnimationLookup,

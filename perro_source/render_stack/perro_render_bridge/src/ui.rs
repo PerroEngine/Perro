@@ -174,6 +174,8 @@ pub enum UiCommand {
         text: Arc<str>,
         color: Color,
         font_size: f32,
+        /// Optional stable raster size in final logical pixels.
+        raster_font_size: Option<f32>,
         font: perro_ui::UiFont,
         wrap_width: Option<f32>,
         h_align: UiTextAlignState,
