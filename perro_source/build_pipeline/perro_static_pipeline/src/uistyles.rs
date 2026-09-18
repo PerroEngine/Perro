@@ -586,6 +586,14 @@ fn color_to_code(color: Color) -> String {
 mod tests {
     use super::load_uistyle_literal;
     use perro_structs::Color;
+    use perro_ui::UiDepthEffect;
+
+    #[test]
+    fn partial_uistyle_defaults_to_no_outer_shadow() {
+        let style = load_uistyle_literal(r##"fill = "#222222DD""##).expect("style");
+
+        assert_eq!(style.outer_shadow, UiDepthEffect::none());
+    }
 
     #[test]
     fn key_value_uistyle_parses_nested_effects() {

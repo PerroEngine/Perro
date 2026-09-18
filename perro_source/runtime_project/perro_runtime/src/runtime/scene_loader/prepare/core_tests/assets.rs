@@ -100,6 +100,37 @@ mod assets {
     }
 
     #[test]
+    fn scene_loader_partial_panel_style_defaults_to_no_outer_shadow() {
+        let scene = Parser::new(
+            r##"
+            $root = @panel
+            [panel]
+            [UiPanel]
+                style = { fill = "#101820" }
+            [/UiPanel]
+            [/panel]
+            "##,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+        let node = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "panel")
+            .expect("panel node");
+
+        match &node.node.data {
+            SceneNodeData::UiPanel(panel) => {
+                assert_eq!(panel.style.outer_shadow, perro_ui::UiDepthEffect::none());
+            }
+            other => panic!("expected UiPanel node, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn scene_loader_button_state_style_inherits_base_fields() {
         let scene = Parser::new(
             r##"

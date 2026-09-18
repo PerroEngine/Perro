@@ -84,11 +84,17 @@ pub fn init_from_config_with_input(
 /// forget: the game does not wait for it or reconnect this session.
 fn open_steam_client() {
     #[cfg(target_os = "windows")]
-    let spawned = std::process::Command::new("explorer").arg("steam://open/main").spawn();
+    let spawned = std::process::Command::new("explorer")
+        .arg("steam://open/main")
+        .spawn();
     #[cfg(target_os = "macos")]
-    let spawned = std::process::Command::new("open").arg("steam://open/main").spawn();
+    let spawned = std::process::Command::new("open")
+        .arg("steam://open/main")
+        .spawn();
     #[cfg(all(unix, not(target_os = "macos")))]
-    let spawned = std::process::Command::new("xdg-open").arg("steam://open/main").spawn();
+    let spawned = std::process::Command::new("xdg-open")
+        .arg("steam://open/main")
+        .spawn();
     #[cfg(not(any(unix, target_os = "windows")))]
     let spawned: std::io::Result<()> = Ok(());
     if let Err(err) = spawned {
@@ -124,7 +130,6 @@ fn init_client(app_id: u32) -> Result<steamworks::Client, SteamError> {
         }
     }
 }
-
 
 pub fn run_callbacks() -> Result<(), SteamError> {
     if crate::game_server::is_ready_internal() {

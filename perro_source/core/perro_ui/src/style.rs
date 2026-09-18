@@ -90,13 +90,7 @@ impl UiStyle {
             stroke: Color::new(0.22, 0.24, 0.28, 1.0),
             stroke_width: 1.0,
             corner_radii: UiCornerRadii::all(0.2),
-            outer_shadow: UiDepthEffect {
-                color: Color::new(0.0, 0.0, 0.0, 0.28),
-                distance: 2.0,
-                falloff: 4.0,
-                vector: Vector2::new(0.0, -1.0),
-                size: 1.0,
-            },
+            outer_shadow: UiDepthEffect::none(),
             inner_shadow: UiDepthEffect::none(),
             outer_highlight: UiDepthEffect::none(),
             inner_highlight: UiDepthEffect {

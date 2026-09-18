@@ -651,13 +651,8 @@ impl GpuUi {
                 continue;
             }
             changed = true;
-            let Some(old_bounds) = self.prepared_primitive_bounds[index] else {
-                return None;
-            };
-            let Some(new_bounds) = primitive_render_bounds(new, render_viewport, render_scale)
-            else {
-                return None;
-            };
+            let old_bounds = self.prepared_primitive_bounds[index]?;
+            let new_bounds = primitive_render_bounds(new, render_viewport, render_scale)?;
             let min_x = old_bounds[0].min(new_bounds[0]);
             let min_y = old_bounds[1].min(new_bounds[1]);
             let old_max_x = old_bounds[0].saturating_add(old_bounds[2]);

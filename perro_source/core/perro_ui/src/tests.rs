@@ -231,13 +231,17 @@ fn ui_button_defaults_to_no_web_action() {
 }
 
 #[test]
-fn default_depth_effects_do_not_scale_past_widget_bounds() {
+fn panel_defaults_to_no_outer_shadow() {
     let panel = UiStyle::panel();
+
+    assert_eq!(panel.outer_shadow, UiDepthEffect::none());
+}
+
+#[test]
+fn button_default_shadow_does_not_scale_past_widget_bounds() {
     let button = UiStyle::button();
 
-    assert_eq!(panel.outer_shadow.size, 1.0);
     assert_eq!(button.outer_shadow.size, 1.0);
-    assert!(panel.outer_shadow.falloff > button.outer_shadow.falloff);
 }
 
 #[test]

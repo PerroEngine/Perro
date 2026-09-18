@@ -8,17 +8,28 @@ mod controls {
         let panel = insert_panel(&mut runtime, [200.0, 100.0], Color::WHITE);
         assert!(runtime.get_ui_rect_pixels(panel).is_none());
         runtime.extract_render_ui_commands();
-        let rect = runtime.get_ui_rect_pixels(panel).unwrap();
+        let rect = runtime
+            .get_ui_rect_pixels(panel)
+            .expect("panel rect after render extraction");
         assert_eq!(rect.size, Vector2::new(200.0, 100.0));
         runtime.clear_dirty_flags();
         runtime.extract_render_ui_commands();
-        assert_eq!(runtime.get_ui_rect_pixels(panel).unwrap().size, rect.size);
+        assert_eq!(
+            runtime
+                .get_ui_rect_pixels(panel)
+                .expect("panel rect after unchanged render extraction")
+                .size,
+            rect.size
+        );
         runtime.with_node_mut::<UiPanel, _, _>(panel, |node| {
             node.layout.size = UiVector2::pixels(320.0, 150.0);
         });
         runtime.extract_render_ui_commands();
         assert_eq!(
-            runtime.get_ui_rect_pixels(panel).unwrap().size,
+            runtime
+                .get_ui_rect_pixels(panel)
+                .expect("panel rect after layout update")
+                .size,
             Vector2::new(320.0, 150.0)
         );
         runtime.with_node_mut::<UiPanel, _, _>(panel, |node| node.visible = false);

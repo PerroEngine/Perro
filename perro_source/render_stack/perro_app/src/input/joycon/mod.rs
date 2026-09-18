@@ -1644,7 +1644,8 @@ mod backend {
                 _ => panic!("test pid must be a Joy-Con 1 pid"),
             };
             ScannedDevice {
-                device_path: std::ffi::CString::new(path).unwrap(),
+                device_path: std::ffi::CString::new(path)
+                    .expect("test device path must not contain nul bytes"),
                 device_serial: serial.map(str::to_owned),
                 pid,
                 side,
