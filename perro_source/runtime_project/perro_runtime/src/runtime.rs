@@ -961,7 +961,7 @@ impl Runtime {
             map_steam_input_mode(steam_config.input_mode),
         ) {
             eprintln!(
-                "[runtime][warn] Steam enabled but init failed: {err}. Steam features stay unavailable. Check that Steam is open, the app_id is valid, and the account has access."
+                "[runtime][warn] Steam enabled but init failed: {err}. Steam features stay off this session; opening the Steam client for next launch. Check that Steam is open, the app_id is valid, and the account has access."
             );
         }
         if defer_boot {

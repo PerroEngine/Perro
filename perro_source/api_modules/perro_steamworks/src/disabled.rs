@@ -74,7 +74,6 @@ pub mod app {
         Ok(false)
     }
 
-    #[cfg(test)]
     pub fn is_ready() -> Result<bool, SteamError> {
         Ok(false)
     }

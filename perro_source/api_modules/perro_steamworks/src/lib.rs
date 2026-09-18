@@ -92,6 +92,10 @@ pub mod runtime {
         crate::app::shutdown()
     }
 
+    pub fn is_ready() -> Result<bool, SteamError> {
+        crate::app::is_ready()
+    }
+
     #[cfg(feature = "steamworks-runtime")]
     pub fn init_game_server(
         config: crate::game_server::GameServerConfig,
@@ -122,6 +126,15 @@ pub use types::{
     SteamAvatarSize, SteamEvent, SteamEventQueueStats, SteamID, StoreOverlayAction,
     UserOverlayDialog, WorkshopFileID,
 };
+
+/// `true` while a Steam client is live. Boot tries once; if Steam was closed
+/// this stays `false` for the session (the engine opens Steam for next launch).
+#[macro_export]
+macro_rules! steam_ready {
+    () => {
+        $crate::runtime::is_ready().unwrap_or(false)
+    };
+}
 
 #[macro_export]
 macro_rules! steam_unlock {
