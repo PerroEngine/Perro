@@ -54,13 +54,18 @@ use perro_api::prelude::*;
 
 const HITTABLE: BitMask = BitMask::with([1, 32]);
 
-fn fire<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, from: Vector3, dir: Vector3) {
-    let filter = PhysicsQueryFilter { layers: HITTABLE, ..Default::default() };
-    if let Some(hit) = physics_raycast_3d!(ctx.run, from, dir, 100.0, filter) {
-        let _ = hit;
+methods!({
+    fn fire(&self, ctx: &mut ScriptContext<'_, API>, from: Vector3, dir: Vector3) {
+        let filter = PhysicsQueryFilter { layers: HITTABLE, ..Default::default() };
+        if let Some(hit) = physics_raycast_3d!(ctx.run, from, dir, 100.0, filter) {
+            let _ = hit;
+        }
     }
-}
+});
 ```
+
+Keep `BitMask` constants and pure mask helpers as free Rust items. Put the
+engine-facing raycast helper in `methods!`, even when it stays private.
 
 ## Reference
 

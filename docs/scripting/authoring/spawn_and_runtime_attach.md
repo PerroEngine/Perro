@@ -2,26 +2,31 @@
 
 ## Purpose
 
-Create nodes at runtime only when scene topology cannot know the instance in
-advance: projectiles, enemies, pooled effects, or user-generated objects.
+Author every reusable or reviewable subtree as a `.scn` file. Create or load
+content at runtime only for generated/transient leaf data, tooling, tests, or
+user-generated topology. Projectiles, pooled effects, enemies, and other
+gameplay objects still use authored `.scn` prefabs when they have reusable
+shape, child nodes, assets, tags, scripts, or `script_vars`.
 
 ## Mental Model
 
 ```text
-manager chooses when/where -> create or instantiate node -> attach/configure
+manager chooses when/where -> load authored .scn -> attach/configure
 spawned script owns its state -> signal reports lifecycle facts
 query/registry tracks dynamic set
 ```
 
-Prefer pre-authored scene instances for fixed dependencies. Use a preloaded
-scene when a spawn has meaningful child structure or needs scene vars before
-`on_init`; use direct node creation for a simple single node.
+Prefer a pre-authored `.scn` for every reusable gameplay spawn. Load or
+preload the scene, attach its returned root, and let the scene own its
+composition. Use direct node creation only for a narrow transient leaf with
+no reusable authored topology; do not use it as a shorter way to build a game
+scene.
 
 Keep runtime attachment intentional. `script_attach!` creates default state and
 runs the attached script's `on_init` synchronously. It accepts no scene vars.
 The caller may set dynamic vars or call an explicit init method only after
 `on_init`, but before queued `on_all_init` and update work. If `on_init` needs
-required config, spawn an authored scene with `script_vars` instead.
+required config, spawn an authored `.scn` with `script_vars` instead.
 
 ## Failure And Cleanup
 

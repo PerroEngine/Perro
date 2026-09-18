@@ -52,31 +52,40 @@ connection boundary; emit typed game events after validation.
 
 ## Practical Example
 
-```rust
-use std::cell::RefCell;
+Keep the connection in an owning manager node's `#[State]`. `Option` gives the
+state a default disconnected value; no global `Mutex`, `RefCell`, or
+`thread_local!` wrapper is needed. Copy a completed event out before emitting
+it through `ctx.run`.
 
-thread_local! {
-    static WS: RefCell<Option<WebSocketConnection>> = RefCell::new(None);
+```rust
+#[State]
+struct WebSocketState {
+    connection: Option<WebSocketConnection>,
 }
 
 lifecycle!({
-    fn on_init(&self, _ctx: &mut ScriptContext<'_, API>) {
-        if let Ok(conn) = WebSocketConnection::connect_with_options(
+    fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
+        let connection = WebSocketConnection::connect_with_options(
             "ws://127.0.0.1:7777",
             WebSocketConnectOptions::new().variant_protocol(),
-        ) {
-            WS.with(|ws| *ws.borrow_mut() = Some(conn));
-        }
+        )
+        .ok();
+        let _ = with_state_mut!(ctx.run, WebSocketState, ctx.id, |state| {
+            state.connection = connection;
+        });
     }
 
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        WS.with(|ws| {
-            let mut ws = ws.borrow_mut();
-            let Some(conn) = ws.as_mut() else { return; };
-            if let Ok(Some(event)) = conn.poll_variant_event_default() {
-                emit_net_event!(ctx.run, event);
-            }
-        });
+        let event = with_state_mut!(ctx.run, WebSocketState, ctx.id, |state| {
+            let Some(conn) = state.connection.as_mut() else {
+                return None;
+            };
+            conn.poll_variant_event_default().ok().flatten()
+        })
+        .flatten();
+        if let Some(event) = event {
+            emit_net_event!(ctx.run, event);
+        }
     }
 });
 ```

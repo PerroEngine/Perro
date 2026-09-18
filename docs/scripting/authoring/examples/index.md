@@ -15,4 +15,10 @@ caller knows. A feature does not need every path.
 
 Runnable source: [ScriptPatterns](https://github.com/PerroEngine/Perro/tree/main/demos/ScriptPatterns).
 
+Each script file in these stories follows the same shape: imports and helper
+types, one `#[State]` root, `lifecycle!`, then `methods!`. Private methods
+serve same-script calls; `pub fn` marks only externally dispatched methods.
+Fixed trees and reusable wiring belong in the referenced `.scn` scene. Runtime
+creation belongs only to dynamic instances.
+
 [Back To Authoring Guide](../index.md)

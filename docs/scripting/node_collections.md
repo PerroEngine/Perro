@@ -23,19 +23,40 @@
 
 ## Purpose
 
-A `NodeCollection` is an in-code scene tree: you describe nodes as Rust data with `node_collection!` and spawn them live with `create_nodes!`. It is how a script builds things that were never placed in a `.scn` file — enemy waves, projectiles, generated UI, spawned prefabs, and debug overlays. Collections nest, splice into one another, and can embed `.scn` scenes, so a single spawn call can create a whole subtree. Use `.scn` files for editor-authored scenes and node collections for anything a script generates.
+A `NodeCollection` is a runtime-only batch: describe nodes as Rust data with
+`node_collection!` and spawn them live with `create_nodes!`. Use it for content
+whose count or shape exists only at runtime, such as generated UI rows, debug
+overlays, test fixtures, and transient leaf nodes. For projectiles, waves,
+enemies, and other gameplay objects, instance an authored `.scn` prefab and
+vary only the runtime count/placement. Keep reusable composition, fixed node
+trees, editor wiring, and per-placement values in `.scn` files. Follow the
+[scene templates](scene_node_templates/index.md) and [scene docs](contexts/resource_modules/scene_docs.md)
+for authored composition, then load or instance that scene from script.
+
+Do not use `NodeCollection` as a code replacement for an authored scene. If a
+tree is known before play, put it in a `.scn` file so designers and tools can
+inspect, override, reuse, and compose it. A collection may instance that `.scn`
+at runtime and add truly dynamic children around it.
 
 ## Use Cases
 
-- Spawn an enemy wave or a burst of pickups at runtime: build a flat `node_collection![ ... ]` and instantiate it with `create_nodes!(ctx.run, wave, parent_id)`.
-- Fire a projectile or one-shot effect as a small prefab: a `node_collection!` subtree with a `script = ...` entry, spawned on each shot.
-- Generate UI on the fly (a scoreboard row per player, an inventory grid): a nested `node_collection!` of `Ui*` nodes parented under a panel.
-- Compose a spawn from an authored scene plus extra nodes: mix `scene = "res://..."` entries and `collection = ...` splices inside one collection.
+- Spawn a wave by instancing an authored enemy `.scn` prefab per member.
+- Fire an authored projectile or one-shot-effect `.scn` prefab per shot.
+- Generate UI rows on the fly when player/item count is unknown in the scene.
+- Add transient leaf markers or test fixtures around an authored `.scn` root.
 - Build runtime-only debug or tool overlays: parent the collection under `NodeID::nil()` to keep it a root, or under `ctx.id` to scope it to the caller.
 
 ## Ownership And Choice
 
-A collection owns a batch of nodes and optional tree relationships outside the main scene tree. Use it when one system creates, updates, and removes many similar runtime nodes. Keep ordinary authored nodes in a scene when they need editor-visible individual wiring. Store the collection ID in the owning script state; pass member IDs out only when another system truly needs a stable target.
+A collection owns a batch of nodes and optional tree relationships outside the
+main scene tree. Use it when one system creates, updates, and removes many
+similar runtime nodes. Keep ordinary authored nodes in a `.scn` when they need
+editor-visible wiring or composition. Store the collection ID in the owning
+script state; pass member IDs out only when another system needs a stable target.
+
+The nested forms below document the low-level API for generated/tooling data.
+Do not use them to compose a reusable gameplay tree; put that topology in a
+`.scn` and instance it.
 
 ## Shape
 

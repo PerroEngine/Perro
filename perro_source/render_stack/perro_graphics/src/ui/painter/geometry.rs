@@ -388,22 +388,8 @@ pub(super) fn push_text_shape(
     // A single row that fits proves no word overflowed, so the common case
     // (short label, no wrap) skips the per-word measuring entirely.
     if galley.rows.len() > 1 || galley.size().x > layout_wrap_width {
-        let longest_word_width = text
-            .split_whitespace()
-            .map(|word| {
-                let word_job = LayoutJob::simple(
-                    word.to_string(),
-                    font_id.clone(),
-                    color32(color),
-                    f32::INFINITY,
-                );
-                fonts
-                    .with_pixels_per_point(UI_RASTER_SCALE)
-                    .layout_job(word_job)
-                    .size()
-                    .x
-            })
-            .fold(0.0_f32, f32::max);
+        let longest_word_width =
+            measure_longest_word_width(text, fonts, font_id.clone(), color32(color));
         if longest_word_width > layout_wrap_width {
             font_size *= layout_wrap_width / longest_word_width;
             font_id.size = if stable_raster {
@@ -474,6 +460,32 @@ pub(super) fn push_text_shape(
         clip_rect,
         shape: Shape::Text(text_shape),
     });
+}
+
+fn measure_longest_word_width(
+    text: &str,
+    fonts: &mut Fonts,
+    font_id: FontId,
+    color: Color32,
+) -> f32 {
+    let mut words = String::with_capacity(text.len());
+    for word in text.split_whitespace() {
+        if !words.is_empty() {
+            words.push('\n');
+        }
+        words.push_str(word);
+    }
+    if words.is_empty() {
+        return 0.0;
+    }
+    let job = LayoutJob::simple(words, font_id, color, f32::INFINITY);
+    fonts
+        .with_pixels_per_point(UI_RASTER_SCALE)
+        .layout_job(job)
+        .rows
+        .iter()
+        .map(|row| row.size.x)
+        .fold(0.0_f32, f32::max)
 }
 
 pub(super) fn clip_rect_from_state(clip: [f32; 4], viewport: [f32; 2]) -> Rect {
@@ -597,4 +609,43 @@ pub(super) fn clamp_char_boundary(text: &str, mut index: usize) -> usize {
         index -= 1;
     }
     index
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn longest_word_measure_matches_individual_layouts() {
+        let text = "short much-longer middle\nwide";
+        let font_id = FontId::new(16.0, FontFamily::Proportional);
+        let color = Color32::WHITE;
+
+        let mut compact_fonts = Fonts::new(
+            UI_FONT_ATLAS_SIZE,
+            AlphaFromCoverage::default(),
+            default_ui_font_definitions(),
+        );
+        compact_fonts.begin_pass(UI_FONT_ATLAS_SIZE, AlphaFromCoverage::default());
+        let compact = measure_longest_word_width(text, &mut compact_fonts, font_id.clone(), color);
+
+        let mut reference_fonts = Fonts::new(
+            UI_FONT_ATLAS_SIZE,
+            AlphaFromCoverage::default(),
+            default_ui_font_definitions(),
+        );
+        reference_fonts.begin_pass(UI_FONT_ATLAS_SIZE, AlphaFromCoverage::default());
+        let reference = text
+            .split_whitespace()
+            .map(|word| {
+                reference_fonts
+                    .with_pixels_per_point(UI_RASTER_SCALE)
+                    .layout(word.to_owned(), font_id.clone(), color, f32::INFINITY)
+                    .size()
+                    .x
+            })
+            .fold(0.0_f32, f32::max);
+
+        assert!((compact - reference).abs() < 1.0e-4);
+    }
 }

@@ -16,6 +16,66 @@ scene construction -> script_vars -> on_init -> on_all_init -> update callbacks
 owned node <-> owned typed state -> fixed refs / relations / queries -> other owners
 ```
 
+## Canonical File Shape
+
+Keep attachable gameplay files in this order:
+
+1. imports and optional helper types
+2. one `#[State]` root struct
+3. `lifecycle!` engine callbacks
+4. `methods!` behavior methods
+
+```rust
+use perro_api::prelude::*;
+
+#[State]
+struct GameState {
+    #[default = 100]
+    pub health: i32,
+    velocity: Vector2,
+}
+
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        self.internal_method(ctx);
+    }
+});
+
+methods!({
+    fn internal_method(&self, ctx: &mut ScriptContext<'_, API>) {
+        with_state_mut!(ctx.run, GameState, ctx.id, |state| {
+            state.velocity.x = 0.0;
+        });
+    }
+
+    pub fn externally_callable_method(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+        amount: i32,
+    ) {
+        with_state_mut!(ctx.run, GameState, ctx.id, |state| {
+            state.health += amount;
+        });
+    }
+});
+```
+
+The state type name may match the behavior (`PlayerState`, `DoorState`, and so
+on). Group cohesive large data in nested helper structs; derive `Variant` when
+the group crosses scene or dynamic script boundaries. Keep private methods for
+same-script calls. Use `pub fn` only for external dispatch, signal handlers,
+animation events, or `call_method!`. Do not hand-write an `impl` for script
+behavior.
+
+Author fixed node trees and reusable composition in `.scn` files. Use the
+[scene templates](../scene_node_templates/index.md) for node blocks and
+[runtime spawning](spawn_and_runtime_attach.md) for authored `.scn` prefabs plus
+small generated/transient leaf data.
+
+See [state](../state.md) for persistent/nested state and ownership rules,
+[lifecycle](lifecycle.md) for callback/helper boundaries, and
+[methods](../methods.md) for engine-facing vs pure helpers.
+
 ## Guide Map
 
 | Need | Use |

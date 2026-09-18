@@ -25,7 +25,7 @@ side: the state that changes every frame.
 
 - Frame-rate-independent movement and cooldowns: read the frame delta with `delta_time!(ctx.run)` and drive one-shot delays with `timer_start!` (see [Time](runtime_modules/time.md)).
 - Move and pose the world: reposition a character with `set_global_pos_3d!(ctx.run, id, pos)`, aim a turret with `look_at_3d!`, or spawn a pickup with `spawn!` (see [Nodes](runtime_modules/nodes.md)).
-- Level flow: swap the active level with `scene_load!(ctx.run, "res://levels/boss.pscene")` or warm the next area with `scene_preload!` (see [Scenes](runtime_modules/scenes.md)).
+- Level flow: swap the active level with `scene_load!(ctx.run, "res://levels/boss.scn")` or warm the next area with `scene_preload!` (see [Scenes](runtime_modules/scenes.md)).
 - Cross-system messaging: announce `signal_emit!(ctx.run, signal!("boss_defeated"), params![])` and let unlocks, music, and UI react (see [Signals](runtime_modules/signals.md)).
 - Character control and hit detection: slide a player with `physics_move_and_slide_3d!` and shoot a line-of-sight ray with `ctx.run.Physics().raycast_3d(...)` (see [Physics](runtime_modules/physics.md)).
 - Playback and feedback: trigger a jump clip with `anim_player_play!`, or attach a footstep sound to the player with `audio_play_attached!` (see [Animations](runtime_modules/animations.md), [Audio](runtime_modules/audio.md)).

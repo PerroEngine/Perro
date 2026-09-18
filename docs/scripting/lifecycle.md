@@ -16,9 +16,34 @@
 
 Lifecycle hooks are the engine-called entry points of a script: setup, per-frame logic, fixed-step simulation, and cleanup. Instead of registering callbacks by hand, you declare `on_init`, `on_update`, and friends inside `lifecycle!`, and the engine runs each one at the right moment for the node the script is attached to. This is where almost all gameplay code starts.
 
+Place `lifecycle!` after the `#[State]` root and before `methods!`. Keep
+engine-called callbacks here; keep private helpers and externally dispatched
+behavior in `methods!`. See the [canonical script layout](README.md#canonical-script-layout).
+
 ## Mental Model
 
 Hooks choose time, not ownership. `ctx.id` still identifies the node that owns the script. Read scene-injected state in `on_init`; defer work only when it needs another script to finish initialization. Use named timers for delayed one-shot work instead of polling a countdown in `on_update`. Use a state clock only when each intermediate value matters, such as a visible progress bar.
+
+Keep callbacks short and call a private method for engine-facing helper logic:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        self.step(ctx);
+    }
+});
+
+methods!({
+    fn step(&self, ctx: &mut ScriptContext<'_, API>) {
+        let dt = delta_time!(ctx.run);
+        let _ = dt;
+    }
+});
+```
+
+Bad: move `ctx.run`, `ctx.res`, or `ctx.ipt` access into a free
+`fn helper<API: ScriptAPI>(ctx: &mut ScriptContext<...>)`. Put that helper in
+`methods!`; keep free functions pure and data-only.
 
 ## Use Cases
 
@@ -141,10 +166,17 @@ lifecycle!({
 
 ## Examples
 
-Use free helper functions only outside `lifecycle!`; those helpers must declare their generic.
+Use `methods!` for helpers that touch a script context. Keep free helpers
+pure/data-only and context-free:
 
 ```rust
-fn read_dt<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) -> f32 {
-    delta_time!(ctx.run)
+methods!({
+    fn read_dt(&self, ctx: &mut ScriptContext<'_, API>) -> f32 {
+        delta_time!(ctx.run)
+    }
+});
+
+fn clamp_speed(speed: f32, max: f32) -> f32 {
+    speed.clamp(0.0, max)
 }
 ```

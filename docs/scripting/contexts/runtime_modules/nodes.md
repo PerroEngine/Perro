@@ -1,5 +1,11 @@
 # Nodes Module
 
+Use `.scn` files for fixed node trees, reusable composition, and editor wiring.
+Use `create_node!` / `create_nodes!` only for runtime-generated content whose
+shape or count is unknown during authoring. See [Node Collections](../../node_collections.md)
+for the runtime-only boundary and [scene templates](../../scene_node_templates/index.md)
+for authored composition.
+
 ## Page Map
 
 | Header | Link |
@@ -183,7 +189,7 @@ transforms between a node's space and the world.
 | Script edits its own known camera/sprite/body | `with_node_mut!` + `ctx.id` | Typed closure exposes the concrete node fields | Returns no value on missing ID or wrong node type |
 | Script reads shared base fields from an unknown concrete node | `with_base_node!` | Base dispatch avoids guessing its concrete type | Only base fields are available |
 | Scene has one fixed target | state `NodeID` | Scene wiring gives a stable explicit dependency | Target may later be removed; guard every access |
-| Projectile or pickup appears at runtime | `spawn!` under an owned parent | Creation, name, tags, and initial data stay together | Caller owns later cleanup and any attached script setup |
+| Projectile or pickup appears at runtime | authored `.scn` + `scene_load!` | Prefab keeps child nodes, assets, scripts, and vars composable | Caller owns root placement and later cleanup |
 | Item changes hierarchy | `reparent!` then local transform | Parent defines the new transform space | Preserving world pose requires reading/writing the intended transform explicitly |
 | System needs all current enemies | tags + query | Membership follows runtime tags/spawns | Query is weaker and costlier than a known ref |
 | Muzzle point must enter world space | `to_global_point_3d!` | Conversion includes the node hierarchy | Missing/wrong-dimensional node returns the helper's empty value |
@@ -230,10 +236,10 @@ methods!({
     // pub because the timer-finished signal dispatches it.
     pub fn fire(&self, ctx: &mut ScriptContext<'_, API>) {
         if let Some(muzzle) = get_global_pos_3d!(ctx.run, ctx.id) {
-            let bullet = spawn!(ctx.run, Node3D, "Bullet", tags!["bullet"], ctx.id, |node| {
-                let _ = node; // set velocity, mesh, lifetime, etc.
-            });
-            let _ = set_global_pos_3d!(ctx.run, bullet, muzzle);
+            if let Ok(bullet) = scene_load!(ctx.run, "res://scenes/projectiles/bullet.scn") {
+                let _ = reparent!(ctx.run, ctx.id, bullet);
+                let _ = set_global_pos_3d!(ctx.run, bullet, muzzle);
+            }
         }
         timer_start!(ctx.run, Duration::from_millis(500), "fire");
     }
@@ -250,7 +256,7 @@ methods!({
 | Signature | `pub fn create<T>(&mut self) -> NodeID where T: Default + Into<SceneNodeData>,` |
 | Params | `&mut self` |
 | Returns | `NodeID where T: Default + Into<SceneNodeData>,` |
-| Use when | Use `create` to create on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Use when | Use `create` only for a generated/transient leaf, test fixture, or tooling node; use an authored `.scn` for reusable gameplay topology. |
 | Fails when / edge behavior | Has no optional/error return; `create` returns the documented value directly. |
 
 ### `create_nodes`
@@ -261,7 +267,7 @@ methods!({
 | Signature | `pub fn create_nodes<'a, B>(&mut self, requests: B, parent_id: NodeID) -> Vec<NodeID> where B: IntoNodeCreateBatch<'a>` |
 | Params | `&mut self, requests: NodeCollection / NodeSpec slice, parent_id: NodeID` |
 | Returns | `Vec<NodeID>` |
-| Use when | Use `create_nodes` to create nodes on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Use when | Use `create_nodes` only for generated/transient leaves, tests, or tooling; instance authored `.scn` prefabs for reusable gameplay topology. |
 | Fails when / edge behavior | Returns an empty vector when `create_nodes` finds no values; callers must treat zero results as normal. |
 
 ### `with_node_mut`
@@ -1182,7 +1188,7 @@ methods!({
 | Signature | `create_node!(ctx.run, node_ty)` |
 | Params | `ctx, node_ty` |
 | Returns | `resource/runtime ID or `Result` as shown by backing method` |
-| Use when | Use `create_node` to create node on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Use when | Use `create_node` only for a generated/transient leaf, test fixture, or tooling node; use an authored `.scn` for reusable gameplay topology. |
 | Fails when / edge behavior | Uses the backing `create_node` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `node_collection`
@@ -1193,7 +1199,7 @@ methods!({
 | Signature | `node_collection!({ ... })` or `node_collection![{ ... }, { ... }]` |
 | Params | `name =`, `tags =`, `node =`, optional `children = [...]`, or `collection = expr` |
 | Returns | `NodeCollection` |
-| Use when | Use `node_collection` to node collection on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Use when | Use `node_collection` only for generated/transient leaf batches, tests, or tooling; do not compose reusable gameplay trees in code. |
 | Fails when / edge behavior | Has no optional/error return; `node_collection` returns the documented value directly. |
 
 ### `create_nodes`
@@ -1204,7 +1210,7 @@ methods!({
 | Signature | `create_nodes!(ctx.run, requests)` |
 | Params | `ctx, NodeCollection, optional parent` |
 | Returns | `resource/runtime ID or `Result` as shown by backing method` |
-| Use when | Use `create_nodes` to create nodes on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Use when | Use `create_nodes` only for generated/transient leaf batches, tests, or tooling; instance authored `.scn` prefabs for reusable gameplay trees. |
 | Fails when / edge behavior | Uses the backing `create_nodes` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `get_node_name`
@@ -1875,7 +1881,7 @@ methods!({
 | Signature | `spawn!(ctx.run, NodeTy, name, tags, parent, \|node\| { ... }) -> NodeID` |
 | Params | `ctx, node_ty, [name], [tags], [parent], closure` |
 | Returns | `NodeID` |
-| Use when | Use when a single dynamically-computed node needs create + configure in one step (`create_node!` then `with_node_mut!`). Name/tags/parent are optional, matching `create_node!` arms. |
+| Use when | Use only when a single transient/generated leaf needs create + configure in one step (`create_node!` then `with_node_mut!`). Load an authored `.scn` for reusable gameplay objects. |
 | Fails when / edge behavior | Configuration closure is a no-op if the created node type does not match; the id is still returned. |
 
 ### `find_node`

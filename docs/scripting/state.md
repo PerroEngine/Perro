@@ -28,6 +28,11 @@ Behavior is separate from state.
 
 The generated behavior object owns lifecycle/method dispatch, while each attached node owns a separate state value.
 
+Use one `#[State]` root in the canonical script order: imports/helper types,
+state, `lifecycle!`, then `methods!`. The root type name is flexible. Group
+cohesive large data in nested structs to keep the root readable; derive
+`Variant` when a nested type crosses a scene or dynamic script boundary.
+
 Source path:
 
 - `perro_source/script_stack/perro_scripting/src/script_trait.rs`
@@ -39,6 +44,38 @@ Source path:
 State answers: "what must this script instance remember after this callback returns?"
 
 Put mutable per-instance values, cached results, fixed `NodeID` dependencies, and typed asset IDs in `#[State]`. Keep constants at module scope. Keep one-callback calculations in locals. Keep node transform/render fields on the node type instead of copying them into script state.
+
+Good: persistent gameplay data lives in the state root, with cohesive groups
+in nested structs:
+
+```rust
+#[derive(Clone, Default, Variant)]
+struct MovementState {
+    velocity: Vector2,
+    grounded: bool,
+}
+
+#[State]
+struct PlayerState {
+    #[default = 100]
+    pub health: i32,
+    movement: MovementState,
+}
+```
+
+Bad: keep a persistent counter in a callback local or a global `Mutex`,
+`RefCell`, or `thread_local!`. Locals reset each callback; global wrappers
+bypass per-node ownership, scene injection, and runtime borrow checks. Use
+`with_state!` / `with_state_mut!` for gameplay state. Reserve synchronization
+wrappers for an actual cross-thread or library requirement.
+
+```rust
+// Bad: local resets every callback; global wrapper hides node ownership.
+let mut elapsed = 0.0;
+let mut game = GLOBAL_GAME_STATE.lock().unwrap();
+elapsed += delta;
+game.health -= 1;
+```
 
 Scene `script_vars` inject only `pub` state fields before `on_init`; `#[expose]` only decides whether the editor inspector lists a field. Scene asset paths may decode into supported typed asset IDs during this scene-only injection path. Runtime `set_var!` remains strict and expects the correct `Variant` kind.
 

@@ -112,6 +112,36 @@ mod write_lock_tests {
     }
 }
 
+#[cfg(test)]
+mod scaffold_template_tests {
+    use super::{default_project_agents_md, default_project_readme_md, default_script_empty_rs};
+
+    #[test]
+    fn scaffold_guides_keep_script_and_scene_sources_composable() {
+        for guide in [default_project_agents_md(), default_project_readme_md("Game")] {
+            assert!(guide.contains("#[State]"));
+            assert!(guide.contains("lifecycle!"));
+            assert!(guide.contains("methods!"));
+            assert!(guide.contains("pub fn externally_callable_method"));
+            assert!(guide.contains("self.internal_method(ctx)"));
+            assert!(guide.contains("ScriptContext"));
+            assert!(guide.contains("free helpers pure"));
+            assert!(guide.contains("Mutex"));
+            assert!(guide.contains("composable `.scn`"));
+            assert!(guide.contains("Do not construct authored scene trees"));
+        }
+    }
+
+    #[test]
+    fn empty_script_template_marks_private_and_external_methods() {
+        let script = default_script_empty_rs();
+
+        assert!(script.contains("struct GameState"));
+        assert!(script.contains("fn internal_method"));
+        assert!(script.contains("pub fn externally_callable_method"));
+    }
+}
+
 fn crate_name_from_project_name(project_name: &str) -> String {
     let mut out = String::with_capacity(project_name.len() + 8);
     for c in project_name.chars() {
@@ -176,6 +206,54 @@ fn default_project_agents_md() -> String {
 Read the [Script Authoring Guide](https://github.com/PerroEngine/Perro/blob/main/docs/scripting/authoring_guide.md#ai-agents-start-with-perro-state) before choosing a gameplay structure.
 Check the relevant [state](https://github.com/PerroEngine/Perro/blob/main/docs/scripting/state.md), [lifecycle](https://github.com/PerroEngine/Perro/blob/main/docs/scripting/lifecycle.md), and [method examples](https://github.com/PerroEngine/Perro/blob/main/docs/scripting/methods.md#direct-calls) before inventing a pattern or API.
 
+## Script Shape
+
+Start each attached behavior with one per-instance `#[State]` owner. The state
+type may use any clear name, such as `GameState` or `PlayerState`. Combine
+related values in nested structs when that keeps the script readable.
+
+Use this layout in project scripts under `res/**/*.rs`:
+
+```rust
+#[derive(Default, Variant)]
+struct MotionState {
+    speed: f32,
+}
+
+#[State]
+struct GameState {
+    score: i32,
+    motion: MotionState,
+}
+
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        self.internal_method(ctx);
+    }
+});
+
+methods!({
+    // GameState methods
+
+    fn internal_method(&self, ctx: &mut ScriptContext<'_, API>) {
+        // private, lifecycle-local logic
+    }
+
+    pub fn externally_callable_method(&self, ctx: &mut ScriptContext<'_, API>) {
+        // cross-script, signal, or generated dispatch entry point
+    }
+});
+```
+
+Keep same-script helpers private with `fn`. Mark methods `pub fn` only when
+other scripts, signals, or generated dispatch need them. Keep engine-facing
+work in lifecycle or method blocks and shared pure logic in normal Rust modules.
+
+Good: keep durable per-node fields in `#[State]`; group related fields in nested structs.
+Good: call private methods from lifecycle callbacks; keep free helpers pure.
+Bad: pass `ScriptContext` or `ScriptAPI` into free functions; use lifecycle or methods instead.
+Bad: default gameplay state to `Mutex`, `RefCell`, or `thread_local!`.
+
 ## State And Behavior
 
 - `&self` in a callback does not prevent mutable gameplay state. Perro stores separate `#[State]` data per node and provides access through `ctx.run`.
@@ -193,6 +271,8 @@ Check the relevant [state](https://github.com/PerroEngine/Perro/blob/main/docs/s
 - Keep data that must survive callbacks in `#[State]`; keep temporary values local.
 - Put shared constants, types, and pure helpers in plain Rust modules. See [project modules](https://github.com/PerroEngine/Perro/blob/main/docs/scripting/project_modules.md).
 - Keep game scripts, scenes, and assets under `res/`. Edit project settings in `project.toml` and script dependencies in `deps.toml`.
+- Author scene topology, child nodes, script attachments, refs, and defaults in composable `.scn` files. Follow the [scene and node docs](https://github.com/PerroEngine/Perro/blob/main/docs/scripting/scene_node_templates/index.md).
+- Do not construct authored scene trees through gameplay code. Use runtime scene APIs only to load or instantiate authored `.scn` assets when runtime composition needs them. Engine internals, tests, and editor/tooling may build nodes when their job requires it.
 - Do not edit generated crates under `.perro/`.
 - Run `perro check` to check scripts and `perro doctor` for project diagnostics.
 
@@ -210,6 +290,50 @@ Welcome to your Perro project. This README is a quick map of how things fit toge
 AI agents: read [AGENTS.md](AGENTS.md) before choosing a gameplay structure. It explains Perro's per-node mutable state and script model.
 
 Run `perro check` to sync scripts and get rust-analyzer working.
+
+## Script Shape
+
+Put per-instance data in `#[State]`. Put engine callbacks in `lifecycle!` and
+methods in `methods!`. The state type may use any clear name, and related data
+may live in nested structs:
+
+```rust
+#[derive(Default, Variant)]
+struct MotionState {{
+    speed: f32,
+}}
+
+#[State]
+struct GameState {{
+    score: i32,
+    motion: MotionState,
+}}
+
+lifecycle!({{
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {{
+        self.internal_method(ctx);
+    }}
+}});
+
+methods!({{
+    fn internal_method(&self, ctx: &mut ScriptContext<'_, API>) {{
+        // private, lifecycle-local logic
+    }}
+
+    pub fn externally_callable_method(&self, ctx: &mut ScriptContext<'_, API>) {{
+        // externally callable entry point
+    }}
+}});
+```
+
+Keep same-script helpers private with `fn`. Mark methods `pub fn` only when
+other scripts, signals, or generated dispatch need them. Keep shared pure logic
+in normal Rust modules.
+
+Good: keep durable per-node fields in `#[State]`; group related fields in nested structs.
+Good: call private methods from lifecycle callbacks; keep free helpers pure.
+Bad: pass `ScriptContext` or `ScriptAPI` into free functions; use lifecycle or methods instead.
+Bad: default gameplay state to `Mutex`, `RefCell`, or `thread_local!`.
 
 ## Project Layout
 - `project.toml` is the project config (main scene, icon, graphics defaults).
@@ -237,6 +361,12 @@ Run `perro check` to sync scripts and get rust-analyzer working.
 - Scenes are `.scn` files under `res/`.
 - Script files are Rust files under `res/` (any `.rs` file under `res/`).
 - You attach scripts to nodes in scenes using a `script` field with a `res://` path.
+- Author topology, child nodes, refs, script attachments, and defaults in
+  composable `.scn` files. Follow the [scene and node docs](https://github.com/PerroEngine/Perro/blob/main/docs/scripting/scene_node_templates/index.md).
+- Do not construct authored scene trees through gameplay code. Use runtime scene
+  APIs only to load or instantiate authored `.scn` assets when runtime
+  composition needs them. Engine internals, tests, and editor/tooling may build
+  nodes when their job requires it.
 - Example:
 ```text
 [Player]
@@ -264,6 +394,7 @@ pub fn default_script_example_rs() -> String {
 
 // State holds per-instance data that must survive a callback.
 // Keep constants and callback-local temporary values outside state.
+// Keep free helpers pure; pass no ScriptContext or ScriptAPI into them.
 
 // Custom structs/enums used in #[State] or methods! typed params/returns should derive Variant.
 // Without Variant, runtime variant conversion for those types will not compile.
@@ -439,7 +570,11 @@ pub fn default_script_empty_rs() -> String {
     r#"use perro_api::prelude::*;
 
 #[State]
-struct EmptyState {}
+struct GameState {
+    #[default = 0]
+    score: i32,
+    // Group related fields in nested structs when useful.
+}
 
 lifecycle!({
     fn on_init(
@@ -469,7 +604,14 @@ lifecycle!({
 });
 
 methods!({
-    fn default_method(
+    // Keep same-script helpers private.
+    fn internal_method(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+    ) {}
+
+    // Mark methods pub only when external dispatch needs them.
+    pub fn externally_callable_method(
         &self,
         ctx: &mut ScriptContext<'_, API>,
     ) {}

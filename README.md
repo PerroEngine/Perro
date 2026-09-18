@@ -22,6 +22,62 @@
 - **Fast Access**: flat ID lookups keep common node/script operations efficient, with room to cache IDs for hot paths.
 - **Quick Iteration**: project scripts build and reload in usually less than 1 second after initial compilation.
 
+## Game Engineering Workflow
+
+Project scripts use a small, predictable shape. Put per-instance data in a
+`#[State]` struct, lifecycle callbacks in `lifecycle!`, and methods in
+`methods!`:
+
+```rust
+#[derive(Default, Variant)]
+struct MotionState {
+    speed: f32,
+}
+
+#[State]
+struct GameState {
+    score: i32,
+    motion: MotionState,
+}
+
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        self.internal_method(ctx);
+    }
+});
+
+methods!({
+    // GameState methods
+
+    fn internal_method(&self, ctx: &mut ScriptContext<'_, API>) {
+        // private, lifecycle-local logic
+    }
+
+    pub fn externally_callable_method(&self, ctx: &mut ScriptContext<'_, API>) {
+        // externally callable entry point
+    }
+});
+```
+
+The state type may use any clear name. Group related values in nested structs
+when that keeps one script readable. Keep same-script helpers private with
+`fn`; mark methods `pub fn` only when other scripts, signals, or generated
+dispatch need to call them.
+
+Good: keep durable per-node fields in `#[State]`; group related fields in nested structs.
+Good: call private methods from lifecycle callbacks; keep free helpers pure.
+Bad: pass `ScriptContext` or `ScriptAPI` into free functions; use lifecycle or methods instead.
+Bad: default gameplay state to `Mutex`, `RefCell`, or `thread_local!`.
+
+Author scene topology, child nodes, script attachments, refs, and defaults in
+composable `.scn` files. Do not construct authored scene trees in gameplay code.
+Use runtime scene APIs to load or instantiate authored `.scn` assets when runtime
+composition needs them. Engine internals, tests, and editor/tooling may build
+nodes when their job requires it.
+
+Treat `res/**/*.rs` and `.scn` files as source. Treat `.perro/` generated glue
+as output: inspect it for diagnosis, never edit it as source.
+
 For more details, see the full documentation: [perroengine.com/docs](https://www.perroengine.com/docs).
 
 Local reference:

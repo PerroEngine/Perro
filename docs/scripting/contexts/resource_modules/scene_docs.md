@@ -22,7 +22,11 @@
 
 `SceneDocs` works with `.scn` text documents.
 
-This module is for parsing, inspecting, generating, and writing scene files. It is mostly editor/tooling-facing. Gameplay code usually loads scenes through `ctx.run.Scenes()` instead of loading or saving `.scn` source documents.
+This module is for parsing, inspecting, and writing scene files. It is mostly
+editor/tooling-facing. Author normal game composition in `.scn` files and load
+it at runtime through `ctx.run.Scene()`. Gameplay code should not generate a
+known scene tree with `SceneDoc::from_scene`; use that path only for an editor,
+converter, importer, migration, or other explicit content pipeline.
 
 Use this page when building an editor feature, scene conversion tool, debug exporter, project migration script, or custom authoring flow that needs the scene file format as data.
 
@@ -38,7 +42,12 @@ Do not treat this as the normal gameplay scene-load API. For runtime scene insta
 
 ## Ownership And Choice
 
-Scene docs own parsed or generated scene data before runtime instantiation. Use them for tools, procedural scene authoring, import/export, or runtime content pipelines. Use runtime node APIs to change the live world. Keep document edits and live-node edits separate, and validate references before loading the resulting document as a scene.
+Scene docs own parsed scene data before runtime instantiation. Use them for
+tools, import/export, migration, or an explicit procedural content pipeline.
+Use runtime node APIs to change the live world. Keep document edits and
+live-node edits separate, and validate references before loading the resulting
+document as a scene. For authored gameplay topology, edit a `.scn` asset so
+the tree stays composable, reviewable, and visible to editor/build tooling.
 
 ## Context
 

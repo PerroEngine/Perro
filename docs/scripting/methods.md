@@ -19,6 +19,11 @@
 
 `methods!` gives a script named behavior methods you can call directly from its own lifecycle hooks or dynamically from other scripts. It is how a node gets an API — `apply_damage`, `toggle`, `interact` — so gameplay reads as method calls instead of scattered flag-poking. Direct calls stay ordinary typed Rust; cross-script calls go through `call_method!` and `Variant`.
 
+Place `methods!` after `#[State]` and `lifecycle!`. Keep same-script helpers
+private. Mark only externally dispatched methods `pub`: `call_method!`, signal
+handlers, and animation events need that visibility. See the [canonical script
+layout](README.md#canonical-script-layout).
+
 ## Use Cases
 
 | Situation | Choice | Why | Tradeoff |
@@ -38,6 +43,11 @@ A method is a targeted request: the caller chooses one `NodeID`, one method, ord
 `methods!` adds callable behavior methods to the generated script type. The macro rewrites methods that take `ctx: &mut ScriptContext<'_, API>` into generic Rust methods with the correct `where API: ScriptAPI + ?Sized` bound. Because the macro owns that rewrite, methods do not declare `<API: ScriptAPI>` themselves.
 
 Use `methods!` for logic you want to call directly from lifecycle hooks or dynamically through `call_method!`.
+
+Put any helper that reads `ctx.run`, `ctx.res`, or `ctx.ipt` in this block,
+even when it stays private. Keep free functions pure and data-only; do not
+give a free function `ScriptContext` or `ScriptAPI` params. This keeps all
+engine access under the generated script method boundary.
 
 Source path:
 
@@ -82,6 +92,10 @@ Two rules follow:
 ## Direct Calls
 
 Direct calls are normal Rust calls. Use them inside the same script when you know the method at compile time. A method used only this way does not need `pub`.
+
+Good: lifecycle calls a private method. Bad: lifecycle calls a free function
+that carries `ScriptContext`; move that function into `methods!` and keep only
+pure calculations free.
 
 ```rust
 lifecycle!({

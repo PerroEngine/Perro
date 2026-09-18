@@ -124,6 +124,25 @@ fn fs_composite_linear_framebuffer(in: VsOut) -> @location(0) vec4<f32> {
 }
 "#;
 
+/// Fullscreen transparent draw used with a scissor rect to clear one retained
+/// UI dirty tile without touching pixels outside that tile.
+pub(super) const UI_DIRTY_CLEAR_SHADER: &str = r#"
+@vertex
+fn vs_dirty_clear(@builtin(vertex_index) vertex_index: u32) -> @builtin(position) vec4<f32> {
+    let pos = array<vec2<f32>, 3>(
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>(3.0, -1.0),
+        vec2<f32>(-1.0, 3.0),
+    );
+    return vec4<f32>(pos[vertex_index], 0.0, 1.0);
+}
+
+@fragment
+fn fs_dirty_clear() -> @location(0) vec4<f32> {
+    return vec4<f32>(0.0);
+}
+"#;
+
 #[cfg(test)]
 mod wgsl_validation_tests {
     use super::*;
@@ -143,5 +162,6 @@ mod wgsl_validation_tests {
     fn ui_shaders_validate() {
         parse_and_validate(UI_SHADER, "ui shader");
         parse_and_validate(UI_COMPOSITE_SHADER, "ui composite shader");
+        parse_and_validate(UI_DIRTY_CLEAR_SHADER, "ui dirty clear shader");
     }
 }

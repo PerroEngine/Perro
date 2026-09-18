@@ -45,24 +45,31 @@ session transport when the server must push an ongoing stream.
 
 ## Practical Example
 
-```rust
-use std::cell::RefCell;
+Keep the client on the node that owns the HTTP flow. `HttpClient` owns its
+background worker pool, but gameplay state still belongs in `#[State]`; no
+global `Mutex`, `RefCell`, or `thread_local!` wrapper is needed. Copy completed
+events out of the state closure before touching `ctx.run` again.
 
-thread_local! {
-    static HTTP: RefCell<HttpClient> = RefCell::new(HttpClient::new());
+```rust
+#[State]
+struct HttpState {
+    client: HttpClient,
 }
 
 lifecycle!({
-    fn on_init(&self, _ctx: &mut ScriptContext<'_, API>) {
+    fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
         // Fire a request; the worker pool handles it off the game thread.
-        HTTP.with(|http| {
-            http.borrow_mut().get("https://example.com/motd");
+        let _ = with_state_mut!(ctx.run, HttpState, ctx.id, |state| {
+            state.client.get("https://example.com/motd");
         });
     }
 
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
         // Poll finished requests and forward them as signals.
-        let events = HTTP.with(|http| http.borrow_mut().poll_all(8));
+        let events = with_state_mut!(ctx.run, HttpState, ctx.id, |state| {
+            state.client.poll_all(8)
+        })
+        .unwrap_or_default();
         for event in events {
             emit_http_event!(ctx.run, event);
         }

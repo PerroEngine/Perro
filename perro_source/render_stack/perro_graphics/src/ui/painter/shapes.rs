@@ -555,24 +555,26 @@ pub(super) fn push_label_shape(
     fonts: &mut Fonts,
     out: &mut Vec<ClippedShape>,
 ) {
-    push_panel_shape(
-        &UiPanelDraw {
-            rect: label.rect,
-            clip_rect: label.clip_rect,
-            fill: label.backdrop_color,
-            fill_kind: UiFillKindState::Solid,
-            gradient: UiLinearGradientState::none(),
-            stroke: Color::TRANSPARENT,
-            stroke_width: 0.0,
-            corner_radii: label.corner_radii,
-            outer_shadow: UiDepthEffectState::none(),
-            inner_shadow: UiDepthEffectState::none(),
-            outer_highlight: UiDepthEffectState::none(),
-            inner_highlight: UiDepthEffectState::none(),
-        },
-        viewport,
-        out,
-    );
+    if label.backdrop_color.to_rgba_u8()[3] != 0 {
+        push_panel_shape(
+            &UiPanelDraw {
+                rect: label.rect,
+                clip_rect: label.clip_rect,
+                fill: label.backdrop_color,
+                fill_kind: UiFillKindState::Solid,
+                gradient: UiLinearGradientState::none(),
+                stroke: Color::TRANSPARENT,
+                stroke_width: 0.0,
+                corner_radii: label.corner_radii,
+                outer_shadow: UiDepthEffectState::none(),
+                inner_shadow: UiDepthEffectState::none(),
+                outer_highlight: UiDepthEffectState::none(),
+                inner_highlight: UiDepthEffectState::none(),
+            },
+            viewport,
+            out,
+        );
+    }
     let text_rect = label_text_rect(label.rect, label.padding);
     if needs_harfbuzz(label.text.as_ref())
         && push_harfbuzz_text_shape(
@@ -1085,18 +1087,24 @@ pub(super) fn push_text_edit_shapes(
         push_selection_shapes(edit, galley, clip_rect, draw_pos, out);
     }
     if !body.is_empty() && valid_color(color) {
-        let family = selected_text_family(body, &edit.font, FontFamily::Monospace);
-        let galley = fonts.with_pixels_per_point(UI_RASTER_SCALE).layout(
-            body.to_string(),
-            FontId::new(edit.font_size, family),
-            color32(color),
-            wrap_width,
-        );
-        let draw_pos = text_edit_draw_pos(edit, content_min, content_max, &galley);
-        out.push(ClippedShape {
-            clip_rect,
-            shape: Shape::galley_with_override_text_color(draw_pos, galley, color32(color)),
-        });
+        let body_galley = if edit.focused && !edit.text.is_empty() {
+            edit_galley.clone()
+        } else {
+            let family = selected_text_family(body, &edit.font, FontFamily::Monospace);
+            Some(fonts.with_pixels_per_point(UI_RASTER_SCALE).layout(
+                body.to_string(),
+                FontId::new(edit.font_size, family),
+                color32(color),
+                wrap_width,
+            ))
+        };
+        if let Some(galley) = body_galley {
+            let draw_pos = text_edit_draw_pos(edit, content_min, content_max, &galley);
+            out.push(ClippedShape {
+                clip_rect,
+                shape: Shape::galley_with_override_text_color(draw_pos, galley, color32(color)),
+            });
+        }
     }
 
     if !edit.focused {
@@ -1215,5 +1223,149 @@ pub(super) fn push_caret_shape(
             });
             break;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn label(backdrop_color: Color) -> UiLabelDraw {
+        UiLabelDraw {
+            rect: UiRectState {
+                center: [0.0, 0.0],
+                size: [120.0, 32.0],
+                pivot: [0.5, 0.5],
+                rotation_radians: 0.0,
+                z_index: 0,
+            },
+            clip_rect: [0.0, 0.0, 800.0, 600.0],
+            text: Arc::from("Run"),
+            color: Color::WHITE,
+            font_size: 16.0,
+            raster_font_size: None,
+            font: UiFont::Default,
+            wrap_width: None,
+            h_align: UiTextAlignState::Center,
+            v_align: UiTextAlignState::Center,
+            backdrop_color,
+            corner_radii: UiCornerRadiiState::default(),
+            padding: [0.0; 4],
+            projected_quad: None,
+            depth_test: false,
+            fit_content: false,
+        }
+    }
+
+    #[test]
+    fn transparent_label_skips_backdrop_shape() {
+        let definitions = default_ui_font_definitions();
+        let mut fonts = Fonts::new(
+            UI_FONT_ATLAS_SIZE,
+            AlphaFromCoverage::default(),
+            definitions.clone(),
+        );
+        fonts.begin_pass(UI_FONT_ATLAS_SIZE, AlphaFromCoverage::default());
+        let mut harfbuzz_atlas = HarfBuzzAtlas::new();
+        let mut shapes = Vec::new();
+
+        push_label_shape(
+            &label(Color::TRANSPARENT),
+            [800.0, 600.0],
+            &definitions,
+            &mut harfbuzz_atlas,
+            &mut fonts,
+            &mut shapes,
+        );
+
+        assert_eq!(shapes.len(), 1);
+        assert!(matches!(shapes[0].shape, Shape::Text(_)));
+    }
+
+    #[test]
+    fn opaque_label_keeps_backdrop_shape() {
+        let definitions = default_ui_font_definitions();
+        let mut fonts = Fonts::new(
+            UI_FONT_ATLAS_SIZE,
+            AlphaFromCoverage::default(),
+            definitions.clone(),
+        );
+        fonts.begin_pass(UI_FONT_ATLAS_SIZE, AlphaFromCoverage::default());
+        let mut harfbuzz_atlas = HarfBuzzAtlas::new();
+        let mut shapes = Vec::new();
+
+        push_label_shape(
+            &label(Color::BLACK),
+            [800.0, 600.0],
+            &definitions,
+            &mut harfbuzz_atlas,
+            &mut fonts,
+            &mut shapes,
+        );
+
+        assert_eq!(shapes.len(), 2);
+        assert!(matches!(shapes[0].shape, Shape::Rect(_)));
+        assert!(matches!(shapes[1].shape, Shape::Text(_)));
+    }
+
+    fn text_edit(focused: bool) -> UiTextEditDraw {
+        UiTextEditDraw {
+            panel: UiPanelDraw {
+                rect: UiRectState {
+                    center: [0.0, 0.0],
+                    size: [120.0, 32.0],
+                    pivot: [0.5, 0.5],
+                    rotation_radians: 0.0,
+                    z_index: 0,
+                },
+                clip_rect: [0.0, 0.0, 800.0, 600.0],
+                fill: Color::TRANSPARENT,
+                fill_kind: UiFillKindState::Solid,
+                gradient: UiLinearGradientState::none(),
+                stroke: Color::TRANSPARENT,
+                stroke_width: 0.0,
+                corner_radii: UiCornerRadiiState::default(),
+                outer_shadow: UiDepthEffectState::none(),
+                inner_shadow: UiDepthEffectState::none(),
+                outer_highlight: UiDepthEffectState::none(),
+                inner_highlight: UiDepthEffectState::none(),
+            },
+            text: Arc::from("Run"),
+            placeholder: Arc::from("Hint"),
+            color: Color::WHITE,
+            placeholder_color: Color::WHITE,
+            selection_color: Color::WHITE,
+            caret_color: Color::WHITE,
+            font_size: 16.0,
+            font: UiFont::Default,
+            h_align: UiTextAlignState::Start,
+            v_align: UiTextAlignState::Start,
+            padding: [0.0; 4],
+            scroll: [0.0; 2],
+            caret: 3,
+            anchor: 3,
+            focused,
+            multiline: false,
+        }
+    }
+
+    #[test]
+    fn unfocused_text_edit_keeps_nonempty_body() {
+        let definitions = default_ui_font_definitions();
+        let mut fonts = Fonts::new(
+            UI_FONT_ATLAS_SIZE,
+            AlphaFromCoverage::default(),
+            definitions,
+        );
+        fonts.begin_pass(UI_FONT_ATLAS_SIZE, AlphaFromCoverage::default());
+        let mut shapes = Vec::new();
+
+        push_text_edit_shapes(&text_edit(false), [800.0, 600.0], &mut fonts, &mut shapes);
+
+        assert!(
+            shapes
+                .iter()
+                .any(|shape| matches!(shape.shape, Shape::Text(_)))
+        );
     }
 }

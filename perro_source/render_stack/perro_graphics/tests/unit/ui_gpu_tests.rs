@@ -175,11 +175,23 @@ fn render_ui_pixels(
     primitives: &[Arc<ClippedPrimitive>],
     textures_delta: &TexturesDelta,
 ) -> Vec<u8> {
+    render_ui_pixels_at(ui, device, queue, primitives, textures_delta, 1, VIEWPORT)
+}
+
+fn render_ui_pixels_at(
+    ui: &mut GpuUi,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    primitives: &[Arc<ClippedPrimitive>],
+    textures_delta: &TexturesDelta,
+    revision: u64,
+    viewport: [u32; 2],
+) -> Vec<u8> {
     let output = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("ui alpha test output"),
         size: wgpu::Extent3d {
-            width: VIEWPORT[0],
-            height: VIEWPORT[1],
+            width: viewport[0],
+            height: viewport[1],
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
@@ -197,12 +209,12 @@ fn render_ui_pixels(
         UiPrepareInput {
             resources: &ResourceStore::new(),
             shared_textures: &mut shared_textures,
-            viewport: VIEWPORT,
+            viewport,
             primitives,
             world_projections: &[],
             textures_delta,
             texture_size: [1, 1],
-            revision: 1,
+            revision,
             static_texture_lookup: None,
         },
     );
@@ -222,11 +234,11 @@ fn render_ui_pixels(
             ..Default::default()
         });
     }
-    ui.render_pass(device, &mut encoder, &output_view, VIEWPORT, None);
-    let bytes_per_row = VIEWPORT[0] * 4;
+    ui.render_pass(device, &mut encoder, &output_view, viewport, None);
+    let bytes_per_row = viewport[0] * 4;
     let staging = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("ui alpha test readback"),
-        size: u64::from(bytes_per_row * VIEWPORT[1]),
+        size: u64::from(bytes_per_row * viewport[1]),
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -237,12 +249,12 @@ fn render_ui_pixels(
             layout: wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(bytes_per_row),
-                rows_per_image: Some(VIEWPORT[1]),
+                rows_per_image: Some(viewport[1]),
             },
         },
         wgpu::Extent3d {
-            width: VIEWPORT[0],
-            height: VIEWPORT[1],
+            width: viewport[0],
+            height: viewport[1],
             depth_or_array_layers: 1,
         },
     );
@@ -356,6 +368,18 @@ fn cycle(
     primitives: &[Arc<ClippedPrimitive>],
     revision: u64,
 ) {
+    cycle_at(ui, device, queue, view, primitives, revision, VIEWPORT);
+}
+
+fn cycle_at(
+    ui: &mut GpuUi,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    view: &wgpu::TextureView,
+    primitives: &[Arc<ClippedPrimitive>],
+    revision: u64,
+    viewport: [u32; 2],
+) {
     let resources = ResourceStore::new();
     let mut shared_textures = SharedTextureStore::default();
     let textures_delta = TexturesDelta::default();
@@ -365,7 +389,7 @@ fn cycle(
         UiPrepareInput {
             resources: &resources,
             shared_textures: &mut shared_textures,
-            viewport: VIEWPORT,
+            viewport,
             primitives,
             world_projections: &[],
             textures_delta: &textures_delta,
@@ -377,7 +401,7 @@ fn cycle(
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("perro_ui_test_encoder"),
     });
-    ui.render_pass(device, &mut encoder, view, VIEWPORT, None);
+    ui.render_pass(device, &mut encoder, view, viewport, None);
     queue.submit(Some(encoder.finish()));
 }
 
@@ -678,6 +702,36 @@ fn sparse_ui_patch_matches_full_geometry_and_falls_back_on_layout_changes() {
         assert!(ui.prepared_uses_depth_test);
         assert_eq!(ui.vertices[17 * 3].depth_test, [1.0, 1.0]);
         assert_eq!(ui.vertices[17 * 3].pos, [0.0, 0.0, 0.25, 1.0]);
+
+        // Camera motion keeps the retained UI revision, mesh Arcs and topology
+        // stable: patch projected verts only and skip the index upload.
+        let mut moved_depths = vec![None; primitives.len()];
+        moved_depths[17] = Some(crate::ui::painter::UiWorldProjection {
+            clip_positions: Arc::from([[0.1, 0.0, 0.5, 1.0]; 3]),
+            depth_test: true,
+        });
+        ui.prepare(
+            &device,
+            &queue,
+            UiPrepareInput {
+                resources: &resources,
+                shared_textures: &mut shared_textures,
+                viewport: VIEWPORT,
+                primitives: &primitives,
+                world_projections: &moved_depths,
+                textures_delta: &TexturesDelta::default(),
+                texture_size: [0, 0],
+                revision: 6,
+                static_texture_lookup: None,
+            },
+        );
+        assert_eq!(ui.perf_counters.patched_primitives, 1);
+        assert_eq!(ui.perf_counters.mesh_upload_calls, 1);
+        assert_eq!(
+            ui.perf_counters.mesh_upload_bytes,
+            3 * std::mem::size_of::<UiVertexGpu>()
+        );
+        assert_eq!(ui.vertices[17 * 3].pos, [0.1, 0.0, 0.5, 1.0]);
     });
 }
 
@@ -779,6 +833,101 @@ fn changed_ui_redraws_the_supersample_raster() {
         ui.invalidate_image_texture(perro_ids::TextureID::from_u64(7));
         cycle(&mut ui, &device, &queue, &view, unchanged, 4);
         assert_eq!(ui.ui_supersample_redraws(), retained + 1);
+    });
+}
+
+#[test]
+fn one_mesh_topology_change_redraws_dirty_tiles_only() {
+    pollster::block_on(async {
+        let Some((device, queue)) = test_device().await else {
+            eprintln!("skip UI dirty tile test: no wgpu adapter");
+            return;
+        };
+        let viewport = [1024, 768];
+        let output = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("perro_ui_dirty_tile_output"),
+            size: wgpu::Extent3d {
+                width: viewport[0],
+                height: viewport[1],
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: OUTPUT_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = output.create_view(&Default::default());
+        let mut ui = GpuUi::new(&device, OUTPUT_FORMAT, TextureFilterMode::Linear);
+        let mut primitives: Vec<_> = (0..64)
+            .map(|index| quad((index % 8) as f32 * 12.0))
+            .collect();
+
+        cycle_at(&mut ui, &device, &queue, &view, &primitives, 1, viewport);
+        assert_eq!(ui.ui_partial_redraws(), 0);
+
+        // Model a label whose glyph count changes: primitive count stays one,
+        // but vertex/index topology grows and sparse buffer patching falls back.
+        primitives[17] = colored_rect(12.0, 36.0, TextureId::default(), Color32::WHITE);
+        cycle_at(&mut ui, &device, &queue, &view, &primitives, 2, viewport);
+
+        assert_eq!(ui.perf_counters.patched_primitives, 0);
+        assert_eq!(ui.ui_partial_redraws(), 1);
+        assert!(ui.dirty_tiles.is_empty(), "render must consume dirty tiles");
+    });
+}
+
+#[test]
+fn dirty_tile_pixels_match_full_raster_with_interleaved_z() {
+    pollster::block_on(async {
+        let Some((device, queue)) = test_device().await else {
+            eprintln!("skip UI dirty tile pixel test: no wgpu adapter");
+            return;
+        };
+        let viewport = [1024, 768];
+        let mut atlas = TexturesDelta::default();
+        atlas.set.push((
+            TextureId::default(),
+            epaint::ImageDelta::full(
+                epaint::ColorImage::new([1, 1], vec![Color32::WHITE]),
+                epaint::textures::TextureOptions::NEAREST,
+            ),
+        ));
+        let initial = vec![
+            colored_rect(
+                0.0,
+                700.0,
+                TextureId::default(),
+                Color32::from_rgb(20, 30, 80),
+            ),
+            colored_rect(12.0, 44.0, TextureId::default(), Color32::RED),
+            colored_rect(32.0, 64.0, TextureId::default(), Color32::GREEN),
+        ];
+        let changed = vec![
+            initial[0].clone(),
+            colored_rect(20.0, 52.0, TextureId::default(), Color32::BLUE),
+            initial[2].clone(),
+        ];
+
+        let mut partial = GpuUi::new(&device, OUTPUT_FORMAT, TextureFilterMode::Linear);
+        render_ui_pixels_at(&mut partial, &device, &queue, &initial, &atlas, 1, viewport);
+        let partial_pixels = render_ui_pixels_at(
+            &mut partial,
+            &device,
+            &queue,
+            &changed,
+            &TexturesDelta::default(),
+            2,
+            viewport,
+        );
+        assert_eq!(partial.ui_partial_redraws(), 1);
+
+        let mut full = GpuUi::new(&device, OUTPUT_FORMAT, TextureFilterMode::Linear);
+        let full_pixels =
+            render_ui_pixels_at(&mut full, &device, &queue, &changed, &atlas, 2, viewport);
+
+        assert_eq!(partial_pixels, full_pixels);
     });
 }
 

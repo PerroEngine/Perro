@@ -46,34 +46,45 @@ game events, not raw socket reads, to feature scripts.
 
 ## Practical Example
 
-```rust
-use std::cell::RefCell;
+Keep the connection in an owning manager node's `#[State]`. `Option` gives the
+state a default disconnected value; no global `Mutex`, `RefCell`, or
+`thread_local!` wrapper is needed. Poll and reply while the state borrow is
+active, copy a non-heartbeat event out, then emit it through `ctx.run`.
 
-thread_local! {
-    static LINK: RefCell<Option<TcpConnection>> = RefCell::new(None);
+```rust
+#[State]
+struct TcpState {
+    link: Option<TcpConnection>,
 }
 
 lifecycle!({
-    fn on_init(&self, _ctx: &mut ScriptContext<'_, API>) {
-        if let Ok(conn) = TcpConnection::connect("127.0.0.1:7777") {
-            LINK.with(|link| *link.borrow_mut() = Some(conn));
-        }
+    fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
+        let connection = TcpConnection::connect("127.0.0.1:7777").ok();
+        let _ = with_state_mut!(ctx.run, TcpState, ctx.id, |state| {
+            state.link = connection;
+        });
     }
 
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        LINK.with(|link| {
-            let mut link = link.borrow_mut();
-            let Some(conn) = link.as_mut() else { return; };
-            // Drain one framed message and forward it as a signal.
-            if let Ok(Some(event)) = conn.poll_frame_event(64 * 1024) {
-                match event {
-                    NetEvent::HeartbeatPing { .. } => {
-                        let _ = conn.write_frame(heartbeat_pong());
-                    }
-                    other => emit_net_event!(ctx.run, other),
+        let event = with_state_mut!(ctx.run, TcpState, ctx.id, |state| {
+            let Some(conn) = state.link.as_mut() else {
+                return None;
+            };
+            let Ok(Some(event)) = conn.poll_frame_event(64 * 1024) else {
+                return None;
+            };
+            match event {
+                NetEvent::HeartbeatPing { .. } => {
+                    let _ = conn.write_frame(heartbeat_pong());
+                    None
                 }
+                other => Some(other),
             }
-        });
+        })
+        .flatten();
+        if let Some(event) = event {
+            emit_net_event!(ctx.run, event);
+        }
     }
 });
 ```

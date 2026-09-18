@@ -58,6 +58,9 @@ pub(super) const HARFBUZZ_RUN_CACHE_LIMIT: usize = 1024;
 /// drop the coldest instead of holding `families * 1024` strings forever.
 pub(super) const HARFBUZZ_FAMILY_CACHE_LIMIT: usize = 16;
 
+/// Bound owned parsed faces: each entry keeps one full font file copy.
+pub(super) const HARFBUZZ_RASTER_FONT_CACHE_LIMIT: usize = HARFBUZZ_FAMILY_CACHE_LIMIT;
+
 /// Rebuild the atlas once it is this full, same threshold epaint's `Fonts`
 /// uses. Past it `TextureAtlas` wraps its cursor and overwrites live glyphs.
 pub(super) const HARFBUZZ_ATLAS_REBUILD_FILL: f32 = 0.8;
@@ -80,6 +83,7 @@ pub(super) const HARFBUZZ_ATLAS_IDLE_PASSES: u32 = 300;
 pub(super) const HARFBUZZ_RASTER_GRID_LIMIT: f32 = 24.0;
 
 pub(super) type HarfBuzzShapedRun = Option<(UiFontSource, Arc<HarfBuzzGlyphRun>)>;
+type HarfBuzzRasterFont = ab_glyph::FontArc;
 
 pub(super) struct HarfBuzzAtlas {
     /// Built on the first shaped glyph: pure-Latin apps never reach
@@ -88,6 +92,12 @@ pub(super) struct HarfBuzzAtlas {
     atlas: Option<TextureAtlas>,
     glyphs: AHashMap<HarfBuzzGlyphKey, HarfBuzzGlyphPixels>,
     runs: AHashMap<FontFamily, AHashMap<String, HarfBuzzShapedRun>>,
+    /// Parsed raster faces, keyed by the same stable source key as glyphs.
+    /// Owned FontArc values avoid reparsing on glyph misses and free when the
+    /// source cache drops.
+    raster_fonts: AHashMap<Arc<str>, Option<HarfBuzzRasterFont>>,
+    /// Least-recently-used first; caps owned source font copies.
+    raster_font_order: Vec<Arc<str>>,
     /// Least-recently-used first; caps `runs`.
     family_order: Vec<FontFamily>,
     /// Bumped on every rebuild so callers holding baked UVs can tell that
@@ -109,6 +119,8 @@ impl HarfBuzzAtlas {
             atlas: None,
             glyphs: AHashMap::new(),
             runs: AHashMap::new(),
+            raster_fonts: AHashMap::new(),
+            raster_font_order: Vec::new(),
             family_order: Vec::new(),
             generation: 0,
             idle_passes: 0,
@@ -213,6 +225,14 @@ impl HarfBuzzAtlas {
         self.family_order.clear();
     }
 
+    /// Font set changed (resource font registered): parsed faces may point at
+    /// replaced source data, so drop them with shaped runs.
+    pub(super) fn invalidate_font_sources(&mut self) {
+        self.invalidate_runs();
+        self.raster_fonts.clear();
+        self.raster_font_order.clear();
+    }
+
     pub(super) fn shape_cached(
         &mut self,
         definitions: &FontDefinitions,
@@ -263,13 +283,32 @@ impl HarfBuzzAtlas {
         let pixels = match self.glyphs.get(&key).copied() {
             Some(pixels) => pixels,
             None => {
-                let atlas = self.atlas.get_or_insert_with(|| {
-                    TextureAtlas::new(
-                        [UI_HARFBUZZ_ATLAS_SIZE, UI_HARFBUZZ_ATLAS_INITIAL_HEIGHT],
-                        AlphaFromCoverage::default(),
-                    )
-                });
-                let pixels = raster_harfbuzz_glyph(font, glyph_id, raster_size, atlas)?;
+                let font_face = self.raster_font(font)?;
+                let (pixels, overflowed) = {
+                    let atlas = self.atlas.get_or_insert_with(|| {
+                        TextureAtlas::new(
+                            [UI_HARFBUZZ_ATLAS_SIZE, UI_HARFBUZZ_ATLAS_INITIAL_HEIGHT],
+                            AlphaFromCoverage::default(),
+                        )
+                    });
+                    let pixels = raster_harfbuzz_glyph(&font_face, glyph_id, raster_size, atlas)?;
+                    // TextureAtlas reports a hard overflow as fill 1.0 after
+                    // it wraps its cursor over live pixels. Rebuild before
+                    // exposing this glyph or caching its stale placement.
+                    (pixels, atlas.fill_ratio() >= 1.0)
+                };
+                let pixels = if overflowed {
+                    self.rebuild();
+                    let atlas = self.atlas.get_or_insert_with(|| {
+                        TextureAtlas::new(
+                            [UI_HARFBUZZ_ATLAS_SIZE, UI_HARFBUZZ_ATLAS_INITIAL_HEIGHT],
+                            AlphaFromCoverage::default(),
+                        )
+                    });
+                    raster_harfbuzz_glyph(&font_face, glyph_id, raster_size, atlas)?
+                } else {
+                    pixels
+                };
                 self.glyphs.insert(key, pixels);
                 pixels
             }
@@ -289,6 +328,39 @@ impl HarfBuzzAtlas {
         })
     }
 
+    fn raster_font(&mut self, font: &UiFontSource) -> Option<HarfBuzzRasterFont> {
+        if let Some(face) = self.raster_fonts.get(&font.key).cloned() {
+            self.touch_raster_font(&font.key);
+            return face;
+        }
+        if !self.raster_fonts.contains_key(&font.key) {
+            // FontArc owns one parsed face per source key. This copies each
+            // source once, but avoids a per-glyph parse and frees on eviction.
+            let face = ab_glyph::FontVec::try_from_vec_and_index(
+                font.data.font.as_ref().to_vec(),
+                font.data.index,
+            )
+            .ok()
+            .map(ab_glyph::FontArc::new);
+            self.raster_fonts.insert(font.key.clone(), face);
+            self.touch_raster_font(&font.key);
+        }
+        self.raster_fonts.get(&font.key).cloned().flatten()
+    }
+
+    fn touch_raster_font(&mut self, key: &Arc<str>) {
+        if let Some(index) = self.raster_font_order.iter().position(|held| held == key) {
+            let held = self.raster_font_order.remove(index);
+            self.raster_font_order.push(held);
+        } else {
+            self.raster_font_order.push(key.clone());
+        }
+        while self.raster_font_order.len() > HARFBUZZ_RASTER_FONT_CACHE_LIMIT {
+            let evicted = self.raster_font_order.remove(0);
+            self.raster_fonts.remove(&evicted);
+        }
+    }
+
     fn uv(&self, pos: (usize, usize)) -> epaint::Pos2 {
         let size = self.size();
         if size[0] == 0 || size[1] == 0 {
@@ -305,6 +377,23 @@ impl HarfBuzzAtlas {
     #[cfg(test)]
     pub(super) fn family_count(&self) -> usize {
         self.runs.len()
+    }
+
+    #[cfg(test)]
+    pub(super) fn raster_font_count(&self) -> usize {
+        self.raster_fonts.len()
+    }
+
+    #[cfg(test)]
+    fn force_overflow_for_test(&mut self) {
+        let mut atlas = TextureAtlas::new(
+            [1024, UI_HARFBUZZ_ATLAS_INITIAL_HEIGHT],
+            AlphaFromCoverage::default(),
+        );
+        while atlas.fill_ratio() < 1.0 {
+            atlas.allocate((1024, 1024));
+        }
+        self.atlas = Some(atlas);
     }
 
     /// Swap in a filled stand-in atlas. Reaching the threshold on the real
@@ -827,16 +916,15 @@ pub(super) fn shape_text_with_font_fallbacks(
 }
 
 pub(super) fn raster_harfbuzz_glyph(
-    font: &UiFontSource,
+    font: &impl ab_glyph::Font,
     glyph_id: u32,
     font_size: f32,
     atlas: &mut TextureAtlas,
 ) -> Option<HarfBuzzGlyphPixels> {
-    let font_ref = ab_glyph::FontRef::try_from_slice(font.data.font.as_ref()).ok()?;
     let glyph_id = ab_glyph::GlyphId(glyph_id.min(u16::MAX as u32) as u16);
     let glyph =
         glyph_id.with_scale_and_position(font_size * UI_RASTER_SCALE, ab_glyph::point(0.0, 0.0));
-    let outlined = font_ref.outline_glyph(glyph)?;
+    let outlined = font.outline_glyph(glyph)?;
     let bounds = outlined.px_bounds();
     let width = bounds.width().ceil().max(0.0) as usize;
     let height = bounds.height().ceil().max(0.0) as usize;
@@ -869,4 +957,56 @@ pub(super) fn font_texture_size(fonts: &Fonts) -> [u32; 2] {
         size[0].min(u32::MAX as usize) as u32,
         size[1].min(u32::MAX as usize) as u32,
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_font_glyph() -> (UiFontSource, u32) {
+        let font = font_sources_for_family(&FontDefinitions::default(), FontFamily::Proportional)
+            .into_iter()
+            .next()
+            .expect("required value must be present");
+        let run = shape_text_with_harfbuzz(&font, "Perro").expect("required value must be present");
+        let glyph_id = run.glyphs[0].glyph_id;
+        (font, glyph_id)
+    }
+
+    #[test]
+    fn midpass_overflow_rebuilds_before_cache() {
+        let mut atlas = HarfBuzzAtlas::new();
+        let (font, glyph_id) = test_font_glyph();
+        atlas.force_overflow_for_test();
+        let epoch = atlas.epoch();
+
+        let alloc = atlas
+            .glyph(&font, glyph_id, 12.0)
+            .expect("required value must be present");
+
+        assert_ne!(atlas.epoch(), epoch);
+        assert_eq!(atlas.glyph_count(), 1);
+        assert!(alloc.uv_min.x >= 0.0 && alloc.uv_max.x <= 1.0);
+        assert!(alloc.uv_min.y >= 0.0 && alloc.uv_max.y <= 1.0);
+        assert!(atlas.take_delta().is_some());
+        assert!(atlas.take_released());
+    }
+
+    #[test]
+    fn raster_face_cache_caps_source_copies() {
+        let mut atlas = HarfBuzzAtlas::new();
+        let (font, glyph_id) = test_font_glyph();
+
+        for index in 0..(HARFBUZZ_RASTER_FONT_CACHE_LIMIT * 2) {
+            let source = UiFontSource {
+                key: Arc::from(format!("{}-{index}", font.key)),
+                data: font.data.clone(),
+            };
+            atlas
+                .glyph(&source, glyph_id, 12.0)
+                .expect("required value must be present");
+        }
+
+        assert_eq!(atlas.raster_font_count(), HARFBUZZ_RASTER_FONT_CACHE_LIMIT);
+    }
 }

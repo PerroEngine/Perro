@@ -19,14 +19,16 @@ Perro manages the Rust module declarations for the whole `res` tree. You normall
 
 ## Use Cases
 
-- Attach gameplay behavior to a scene node: a file with `#[State]` (plus optional `lifecycle!` / `methods!`) is referenced by `script = "res://scripts/player.rs"` in the scene.
+- Attach gameplay behavior to a scene node: a file with the canonical
+  `#[State]` -> `lifecycle!` -> `methods!` shape is referenced by
+  `script = "res://scripts/player.rs"` in the scene.
 - Share damage tables, tuning constants, or math helpers across many scripts: put free functions and structs in a bare module (no `#[State]`) and import it.
 - Reuse code by importing another project file: `use crate::scripts::math;` for `res/scripts/math.rs`, or use `super::math` from a sibling module.
 - Keep a large system organized across folders: `res/ai/nav/util.rs` becomes `crate::ai::nav::util`.
 
 ## Decision Guide
 
-Use a project module when several scripts share Rust types, pure calculations, or adapters. Keep lifecycle hooks, methods, and `#[State]` in the script that owns the node instance. A module call is an in-process Rust call, not cross-node messaging; use a method or signal when the target is another script instance.
+Use a project module when several scripts share Rust types, pure calculations, or adapters. Keep one state root, lifecycle hooks, and methods in the script that owns the node instance. A module call is an in-process Rust call, not cross-node messaging; use a method or signal when the target is another script instance. Keep fixed node composition in `.scn`; use runtime node APIs only for dynamic instances.
 
 ## Practical Example
 

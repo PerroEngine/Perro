@@ -890,6 +890,87 @@ mod tests {
         );
     }
 
+    fn test_label_command(node: u32, z_index: i32, text: &str) -> UiCommand {
+        UiCommand::UpsertLabel {
+            node: NodeID::from_parts(node, 0),
+            rect: UiRectState {
+                center: [(node as f32 - 10.0) * 100.0 - 50.0, 0.0],
+                size: [64.0, 40.0],
+                pivot: [0.5, 0.5],
+                rotation_radians: 0.0,
+                z_index,
+            },
+            clip_rect: [0.0, 0.0, 800.0, 600.0],
+            text: Arc::from(text),
+            color: Color::WHITE,
+            font_size: 18.0,
+            raster_font_size: None,
+            font: perro_ui::UiFont::Default,
+            wrap_width: None,
+            h_align: UiTextAlignState::Center,
+            v_align: UiTextAlignState::Center,
+            backdrop_color: Color::TRANSPARENT,
+            corner_radii: UiCornerRadiiState::default(),
+            padding: [0.0; 4],
+            projected_quad: None,
+            depth_test: false,
+            fit_content: false,
+        }
+    }
+
+    #[test]
+    fn one_label_change_keeps_static_meshes_and_z_order() {
+        let mut renderer = UiRenderer::new();
+        renderer.submit(UiCommand::UpsertPanel {
+            node: NodeID::from_parts(10, 0),
+            rect: UiRectState {
+                center: [0.0, 0.0],
+                size: [80.0, 40.0],
+                pivot: [0.5, 0.5],
+                rotation_radians: 0.0,
+                z_index: 0,
+            },
+            clip_rect: [0.0, 0.0, 800.0, 600.0],
+            fill: [0.15, 0.15, 0.15, 1.0],
+            fill_kind: UiFillKindState::Solid,
+            gradient: UiLinearGradientState::none(),
+            stroke: [0.0, 0.0, 0.0, 0.0],
+            stroke_width: 0.0,
+            corner_radii: UiCornerRadiiState::default(),
+            outer_shadow: UiDepthEffectState::none(),
+            inner_shadow: UiDepthEffectState::none(),
+            outer_highlight: UiDepthEffectState::none(),
+            inner_highlight: UiDepthEffectState::none(),
+        });
+        renderer.submit(test_label_command(11, 1, "Score"));
+        renderer.submit(test_label_command(12, 2, "Lives"));
+
+        let first_ptrs: Vec<*const epaint::ClippedPrimitive> = renderer
+            .prepare_paint([800.0, 600.0])
+            .primitives
+            .iter()
+            .map(std::sync::Arc::as_ptr)
+            .collect();
+        assert_eq!(first_ptrs.len(), 3);
+
+        // Same glyph set keeps atlas UVs stable; only node 11 content moves.
+        renderer.submit(test_label_command(11, 1, "Sorce"));
+        let second_ptrs: Vec<*const epaint::ClippedPrimitive> = renderer
+            .prepare_paint([800.0, 600.0])
+            .primitives
+            .iter()
+            .map(std::sync::Arc::as_ptr)
+            .collect();
+
+        assert_eq!(second_ptrs.len(), first_ptrs.len());
+        assert_eq!(second_ptrs[0], first_ptrs[0], "static panel changed");
+        assert_ne!(
+            second_ptrs[1], first_ptrs[1],
+            "changed label reused old mesh"
+        );
+        assert_eq!(second_ptrs[2], first_ptrs[2], "unchanged label changed");
+    }
+
     #[test]
     fn panel_rotation_changes_mesh_bounds() {
         let mut renderer = UiRenderer::new();

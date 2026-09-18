@@ -276,18 +276,30 @@ const MATCH_MESHES: [&str; 2] = [
     "res://models/crate.glb:mesh[0]",
 ];
 
-fn warm<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
-    for path in MATCH_MESHES {
-        let _ = mesh_reserve!(ctx.res, path);
+methods!({
+    fn warm(&self, ctx: &mut ScriptContext<'_, API>) {
+        for path in MATCH_MESHES {
+            let _ = mesh_reserve!(ctx.res, path);
+        }
     }
-}
 
-fn warms_ready<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) -> bool {
-    MATCH_MESHES.iter().all(|path| {
-        let mesh = mesh_load!(ctx.res, *path);
-        !mesh.is_nil() && mesh_is_loaded!(ctx.res, mesh)
-    })
-}
+    fn warms_ready(&self, ctx: &mut ScriptContext<'_, API>) -> bool {
+        MATCH_MESHES.iter().all(|path| {
+            let mesh = mesh_load!(ctx.res, *path);
+            !mesh.is_nil() && mesh_is_loaded!(ctx.res, mesh)
+        })
+    }
+
+    fn warms_pending(&self, ctx: &mut ScriptContext<'_, API>) -> u32 {
+        MATCH_MESHES
+            .iter()
+            .filter(|path| {
+                let mesh = mesh_load!(ctx.res, *path);
+                mesh.is_nil() || !mesh_is_loaded!(ctx.res, mesh)
+            })
+            .count() as u32
+    }
+});
 ```
 
 Use `reserve`, not `load`, for a warm. A warm that finishes early sits at zero
@@ -297,8 +309,11 @@ during that window. Polling with `mesh_load!` is also the recovery path, because
 
 A full transition gate is both halves summed:
 
+Inside a lifecycle or methods callback, call the private helper after its
+state/resource borrow boundary stays clear:
+
 ```rust
-let pending = warms_pending(ctx) + scene_asset_progress!(ctx.run).0;
+let pending = self.warms_pending(ctx) + scene_asset_progress!(ctx.run).0;
 ```
 
 ### When Not To Gate

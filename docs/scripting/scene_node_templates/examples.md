@@ -12,6 +12,11 @@
 
 Worked, copy-ready `.scn` fragments for setups that wire several nodes together: scene roots and parenting, live camera and webcam streams, per-placement script vars, animation bindings, render-layer filtering, and matching 2D/3D physics bodies. Reach for these when a single node template is not enough and you want a known-good arrangement to adapt. For node trees a script builds at runtime, use [Node Collections](../node_collections.md).
 
+Use these scene files as the source of truth for fixed topology. Do not move a
+known parent/child layout into Rust: `.scn` composition stays reusable,
+reviewable, editor-visible, and available to build tooling. Rust should load
+the scene and handle behavior or dynamic decisions around its returned root.
+
 ## Use Cases
 
 - Understand scene parenting and the root key: [Parent And Root](#parent-and-root) (`parent = $root`, `parent = @Key`).
@@ -25,6 +30,13 @@ Worked, copy-ready `.scn` fragments for setups that wire several nodes together:
 ## Decision Guide
 
 Start from the smallest example that matches the relationship you need, then replace names and injected values with project data. Keep fixed dependencies in `script_vars`, keep structural dependencies in parent/child links, and use queries only for changing sets. Do not combine unrelated examples into one node merely because their fields parse together.
+
+The runtime boundary stays explicit:
+
+```text
+.scn -> create authored subtree + inject fixed refs
+Rust -> load/reparent subtree + run state/lifecycle/method logic
+```
 
 ## Reference
 

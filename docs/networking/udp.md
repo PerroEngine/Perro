@@ -41,32 +41,35 @@ multiplayer session layer when the game cannot tolerate loss or reordering.
 
 ## Practical Example
 
-```rust
-use std::cell::RefCell;
+Keep one `NetworkWorld` on the manager node that owns the network flow.
+`NetworkWorld` is ordinary per-node state; do not hide it in a global
+`Mutex`, `RefCell`, or `thread_local!` slot. Copy polled events out before
+emitting signals through `ctx.run`.
 
-thread_local! {
-    static NET: RefCell<Option<NetworkWorld>> = RefCell::new(None);
+```rust
+#[State]
+struct NetworkState {
+    world: NetworkWorld,
 }
 
 lifecycle!({
-    fn on_init(&self, _ctx: &mut ScriptContext<'_, API>) {
-        let mut world = NetworkWorld::new();
-        if world.bind_udp("127.0.0.1:7777").is_ok() {
-            NET.with(|net| *net.borrow_mut() = Some(world));
-        }
+    fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
+        let _ = with_state_mut!(ctx.run, NetworkState, ctx.id, |state| {
+            state.world.bind_udp("127.0.0.1:7777")
+        });
     }
 
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        NET.with(|net| {
-            let mut net = net.borrow_mut();
-            let Some(world) = net.as_mut() else { return; };
+        let events = with_state_mut!(ctx.run, NetworkState, ctx.id, |state| {
             // Drain up to 16 packets per socket, 1200 bytes each.
-            for net_event in world.poll_events(16, 1200) {
-                if matches!(net_event.event, NetEvent::UdpPacket { .. }) {
-                    emit_net_event!(ctx.run, net_event.event);
-                }
+            state.world.poll_events(16, 1200)
+        })
+        .unwrap_or_default();
+        for net_event in events {
+            if matches!(&net_event.event, NetEvent::UdpPacket { .. }) {
+                emit_net_event!(ctx.run, net_event.event);
             }
-        });
+        }
     }
 });
 ```

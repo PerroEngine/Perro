@@ -45,6 +45,74 @@ Useful crates:
 - Test all: `cargo test`
 - Run CLI help: `cargo run -p perro_cli -- --help`
 
+## Game Engineering Rules
+
+### Script Shape
+
+Keep each attached behavior centered on one per-instance `#[State]` owner.
+The state type may use any clear name, such as `GameState` or `PlayerState`.
+Combine related values in nested structs when that keeps the script readable.
+
+Use this layout for project scripts under `res/**/*.rs`:
+
+```rust
+#[derive(Default, Variant)]
+struct MotionState {
+    speed: f32,
+}
+
+#[State]
+struct GameState {
+    score: i32,
+    motion: MotionState,
+}
+
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        self.internal_method(ctx);
+    }
+});
+
+methods!({
+    // GameState methods
+
+    fn internal_method(&self, ctx: &mut ScriptContext<'_, API>) {
+        // private, lifecycle-local logic
+    }
+
+    pub fn externally_callable_method(&self, ctx: &mut ScriptContext<'_, API>) {
+        // cross-script, signal, or other generated dispatch entry point
+    }
+});
+```
+
+Keep same-script helpers private with `fn`.
+Mark methods `pub fn` only when other scripts, signals, or generated dispatch need them.
+Keep engine-facing work in lifecycle or method blocks.
+Keep shared pure logic in normal Rust modules.
+
+Good: keep durable per-node fields in `#[State]`; group related fields in nested structs.
+Good: call private methods from lifecycle callbacks; keep free helpers pure.
+Bad: pass `ScriptContext` or `ScriptAPI` into free functions; use lifecycle or methods instead.
+Bad: default gameplay state to `Mutex`, `RefCell`, or `thread_local!`.
+
+### Scene Shape
+
+Author gameplay topology, child nodes, script attachments, refs, and defaults in `.scn` files.
+Compose reusable scenes and scene templates per scene docs.
+Do not construct authored scene trees through gameplay code.
+Use runtime scene APIs only to load or instantiate authored `.scn` assets when runtime composition needs them.
+Engine internals, tests, and editor/tooling may build nodes when their job requires it.
+
+Treat `res/**/*.rs` and `.scn` files as source.
+Treat `.perro/` generated glue as output; inspect it for diagnosis, never edit it as source.
+
+### Agent Workflow
+
+Read the target scene and script docs before adding gameplay code.
+Follow the script and scene shapes above.
+Keep changes composable: attach behavior and data through scene files, not hard-coded tree setup.
+
 ## Caveman Rule (IMPORTANT)
 
 - tiny words

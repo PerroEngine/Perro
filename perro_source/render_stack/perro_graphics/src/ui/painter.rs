@@ -2,7 +2,6 @@ use super::renderer::{
     UiCheckboxDraw, UiColorWheelDraw, UiDraw, UiImageDraw, UiLabelDraw, UiNineSliceDraw,
     UiPanelDraw, UiProgressBarDraw, UiShapeDraw, UiTextEditDraw,
 };
-use ab_glyph::Font as _;
 use ahash::AHashMap;
 use epaint::{
     AlphaFromCoverage, CircleShape, ClippedPrimitive, ClippedShape, Color32, CornerRadius,
@@ -356,6 +355,46 @@ fn retain_nonempty_meshes(primitives: &mut Vec<ClippedPrimitive>) {
     });
 }
 
+/// Cull labels whose conservative screen bounds do not meet their clip.
+///
+/// Projected labels skip this test: their world quad can move into the screen
+/// even when their unprojected UI rect sits outside the viewport.
+fn label_render_culled(label: &UiLabelDraw, viewport: [f32; 2]) -> bool {
+    if label.projected_quad.is_some() {
+        return false;
+    }
+    if !valid_rect(label.rect) {
+        return true;
+    }
+    let (min, max) = label.rect.screen_min_max(viewport);
+    let mut bounds = Rect::from_min_max(pos2(min[0], min[1]), pos2(max[0], max[1]));
+    if label.rect.rotation_radians.is_finite() && label.rect.rotation_radians != 0.0 {
+        let pivot = screen_pivot(label.rect, viewport);
+        if !pivot.x.is_finite() || !pivot.y.is_finite() {
+            return false;
+        }
+        let rotation = Rot2::from_angle(-label.rect.rotation_radians);
+        let mut rotated_min = pos2(f32::INFINITY, f32::INFINITY);
+        let mut rotated_max = pos2(f32::NEG_INFINITY, f32::NEG_INFINITY);
+        for corner in [
+            pos2(min[0], min[1]),
+            pos2(max[0], min[1]),
+            pos2(max[0], max[1]),
+            pos2(min[0], max[1]),
+        ] {
+            let corner = pivot + rotation * (corner - pivot);
+            rotated_min.x = rotated_min.x.min(corner.x);
+            rotated_min.y = rotated_min.y.min(corner.y);
+            rotated_max.x = rotated_max.x.max(corner.x);
+            rotated_max.y = rotated_max.y.max(corner.y);
+        }
+        bounds = Rect::from_min_max(rotated_min, rotated_max);
+    }
+    let clip = clip_rect_from_state(label.clip_rect, viewport);
+    let visible = bounds.intersect(clip);
+    visible.width() <= 0.0 || visible.height() <= 0.0
+}
+
 pub(crate) struct EpaintUiPainter {
     fonts: Fonts,
     font_definitions: FontDefinitions,
@@ -423,6 +462,11 @@ impl EpaintUiPainter {
         }
     }
 
+    fn clear_node_cache(&mut self) {
+        self.node_cache.clear();
+        self.node_cache_atlas_size = [0, 0];
+    }
+
     pub(crate) fn register_resource_font(
         &mut self,
         path: &str,
@@ -453,6 +497,7 @@ impl EpaintUiPainter {
                     AlphaFromCoverage::default(),
                     self.font_definitions.clone(),
                 );
+                self.clear_node_cache();
                 self.paint_revision = u64::MAX;
                 return;
             };
@@ -473,7 +518,8 @@ impl EpaintUiPainter {
             AlphaFromCoverage::default(),
             self.font_definitions.clone(),
         );
-        self.harfbuzz_atlas.invalidate_runs();
+        self.clear_node_cache();
+        self.harfbuzz_atlas.invalidate_font_sources();
         self.paint_revision = u64::MAX;
     }
 
@@ -539,8 +585,12 @@ impl EpaintUiPainter {
         revision: u64,
         viewport: [f32; 2],
     ) {
+        let epaint_atlas_reset = self.fonts.font_atlas_fill_ratio() > 0.8;
         self.fonts
             .begin_pass(UI_FONT_ATLAS_SIZE, AlphaFromCoverage::default());
+        if epaint_atlas_reset {
+            self.clear_node_cache();
+        }
         self.harfbuzz_atlas.begin_pass();
         self.shapes.clear();
         self.shape_rotations.clear();
@@ -618,6 +668,16 @@ impl EpaintUiPainter {
                     continue;
                 }
             }
+            if matches!(draw, UiDraw::Label(label) if label_render_culled(label, viewport)) {
+                staged.push((
+                    *node,
+                    NodeTess::Staged {
+                        shapes: Vec::new(),
+                        rotations: Vec::new(),
+                    },
+                ));
+                continue;
+            }
             self.push_node_shapes(draw, viewport);
             staged.push((
                 *node,
@@ -627,8 +687,9 @@ impl EpaintUiPainter {
                 },
             ));
         }
-        // An atlas resized during layout: cached primitives were tessellated
-        // against the old size, so their UVs are stale. Re-stage everything.
+        // An atlas resized during layout: every staged mesh and cached
+        // primitive was tessellated against the old size, so its UVs are
+        // stale. Re-stage every node, including the node that caused growth.
         // Re-staging cannot grow either atlas again — every glyph it touches
         // was allocated by the pass above and is still cached.
         if self.fonts.font_image_size() != atlas_size_before
@@ -636,12 +697,16 @@ impl EpaintUiPainter {
         {
             self.node_cache.clear();
             for (node, entry) in &mut staged {
-                if matches!(entry, NodeTess::Staged { .. }) {
-                    continue;
-                }
                 let Some(draw) = nodes.get(node) else {
                     continue;
                 };
+                if matches!(draw, UiDraw::Label(label) if label_render_culled(label, viewport)) {
+                    *entry = NodeTess::Staged {
+                        shapes: Vec::new(),
+                        rotations: Vec::new(),
+                    };
+                    continue;
+                }
                 self.push_node_shapes(draw, viewport);
                 *entry = NodeTess::Staged {
                     shapes: std::mem::take(&mut self.shapes),
@@ -1539,6 +1604,137 @@ mod tests {
         assert!(atlas.take_delta().is_some());
     }
 
+    #[test]
+    fn label_cull_skips_offscreen_and_empty_clip_but_keeps_projected() {
+        let mut label = UiLabelDraw {
+            rect: UiRectState {
+                center: [1000.0, 0.0],
+                size: [80.0, 24.0],
+                pivot: [0.5, 0.5],
+                rotation_radians: 0.0,
+                z_index: 0,
+            },
+            clip_rect: [0.0, 0.0, 800.0, 600.0],
+            text: Arc::from("Perro"),
+            color: perro_structs::Color::WHITE,
+            font_size: 16.0,
+            raster_font_size: None,
+            font: UiFont::Default,
+            wrap_width: None,
+            h_align: UiTextAlignState::Center,
+            v_align: UiTextAlignState::Center,
+            backdrop_color: perro_structs::Color::TRANSPARENT,
+            corner_radii: UiCornerRadiiState::default(),
+            padding: [0.0; 4],
+            projected_quad: None,
+            depth_test: false,
+            fit_content: false,
+        };
+
+        assert!(label_render_culled(&label, [800.0, 600.0]));
+        label.rect.center = [-410.0, 0.0];
+        label.rect.size = [20.0, 20.0];
+        label.rect.rotation_radians = std::f32::consts::FRAC_PI_4;
+        assert!(!label_render_culled(&label, [800.0, 600.0]));
+        label.rect.center = [0.0, 0.0];
+        label.rect.size = [80.0, 24.0];
+        label.rect.rotation_radians = 0.0;
+        label.clip_rect = [100.0, 100.0, 100.0, 100.0];
+        assert!(label_render_culled(&label, [800.0, 600.0]));
+        label.projected_quad = Some([[0.0; 4]; 4]);
+        assert!(!label_render_culled(&label, [800.0, 600.0]));
+    }
+
+    #[test]
+    fn epaint_atlas_reset_drops_cached_meshes() {
+        let node = NodeID::from_parts(81, 0);
+        let label = UiLabelDraw {
+            rect: UiRectState {
+                center: [0.0, 0.0],
+                size: [160.0, 40.0],
+                pivot: [0.5, 0.5],
+                rotation_radians: 0.0,
+                z_index: 0,
+            },
+            clip_rect: [0.0, 0.0, 800.0, 600.0],
+            text: Arc::from("Perro"),
+            color: perro_structs::Color::WHITE,
+            font_size: 16.0,
+            raster_font_size: None,
+            font: UiFont::Default,
+            wrap_width: None,
+            h_align: UiTextAlignState::Center,
+            v_align: UiTextAlignState::Center,
+            backdrop_color: perro_structs::Color::TRANSPARENT,
+            corner_radii: UiCornerRadiiState::default(),
+            padding: [0.0; 4],
+            projected_quad: None,
+            depth_test: false,
+            fit_content: false,
+        };
+        let mut nodes = AHashMap::new();
+        nodes.insert(node, UiDraw::Label(label));
+        let mut painter = EpaintUiPainter::new();
+        painter.paint(&nodes, 1, [800.0, 600.0]);
+        assert_eq!(painter.tessellation_count, 1);
+
+        for size in (16..=1024).step_by(8) {
+            let job = LayoutJob::simple(
+                "A".to_string(),
+                FontId::new(size as f32, FontFamily::Proportional),
+                Color32::WHITE,
+                f32::INFINITY,
+            );
+            let _ = painter.fonts.with_pixels_per_point(1.0).layout_job(job);
+            if painter.fonts.font_atlas_fill_ratio() > 0.8 {
+                break;
+            }
+        }
+        assert!(painter.fonts.font_atlas_fill_ratio() > 0.8);
+
+        painter.paint(&nodes, 2, [800.0, 600.0]);
+        assert_eq!(painter.tessellation_count, 2);
+    }
+
+    #[test]
+    fn resource_font_reset_drops_cached_meshes() {
+        let node = NodeID::from_parts(82, 0);
+        let label = UiLabelDraw {
+            rect: UiRectState {
+                center: [0.0, 0.0],
+                size: [160.0, 40.0],
+                pivot: [0.5, 0.5],
+                rotation_radians: 0.0,
+                z_index: 0,
+            },
+            clip_rect: [0.0, 0.0, 800.0, 600.0],
+            text: Arc::from("Perro"),
+            color: perro_structs::Color::WHITE,
+            font_size: 16.0,
+            raster_font_size: None,
+            font: UiFont::Default,
+            wrap_width: None,
+            h_align: UiTextAlignState::Center,
+            v_align: UiTextAlignState::Center,
+            backdrop_color: perro_structs::Color::TRANSPARENT,
+            corner_radii: UiCornerRadiiState::default(),
+            padding: [0.0; 4],
+            projected_quad: None,
+            depth_test: false,
+            fit_content: false,
+        };
+        let mut nodes = AHashMap::new();
+        nodes.insert(node, UiDraw::Label(label));
+        let mut painter = EpaintUiPainter::new();
+        painter.paint(&nodes, 1, [800.0, 600.0]);
+        assert!(!painter.node_cache.is_empty());
+
+        painter.register_resource_font("../missing-perro-font.ttf", None);
+
+        assert!(painter.node_cache.is_empty());
+        assert_eq!(painter.node_cache_atlas_size, [0, 0]);
+    }
+
     /// A font plus one of its outlined glyph ids (id 0/1 are not drawable).
     fn test_font_glyph() -> (UiFontSource, u32) {
         let font = font_sources_for_family(&FontDefinitions::default(), FontFamily::Proportional)
@@ -1548,6 +1744,19 @@ mod tests {
         let run = shape_text_with_harfbuzz(&font, "Perro").expect("required value must be present");
         let glyph_id = run.glyphs[0].glyph_id;
         (font, glyph_id)
+    }
+
+    #[test]
+    fn harfbuzz_raster_face_parses_once_per_source() {
+        let font = test_font_glyph().0;
+        let run = shape_text_with_harfbuzz(&font, "Perro").expect("required value must be present");
+        let mut atlas = HarfBuzzAtlas::new();
+
+        for glyph in run.glyphs {
+            atlas.glyph(&font, glyph.glyph_id, 12.0);
+        }
+
+        assert_eq!(atlas.raster_font_count(), 1);
     }
 
     #[test]

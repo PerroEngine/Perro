@@ -32,21 +32,40 @@
 
 ## Purpose
 
-The scenes module instances and swaps `.pscene` files while the game runs. This
-is how you move from a menu into gameplay, transition between levels, and spawn
-prefab instances such as enemy waves or destructible props. Loading returns the
-`NodeID` of the new subtree's root, so gameplay code can immediately parent,
-position, or configure what it just spawned. Preloading warms a scene off the
+The scenes module instances and swaps authored `.scn` files while the game
+runs. This is how you move from a menu into gameplay, transition between
+levels, and spawn reusable prefabs such as enemy waves or destructible props.
+Loading returns the `NodeID` of the new subtree's root, so gameplay code can
+attach that root or apply runtime-only state. Preloading warms a scene off the
 hot path so the actual swap does not hitch mid-action.
+
+## Authoring Boundary
+
+Make fixed game composition in `.scn` files. Keep the node tree, child nodes,
+stable names, transforms, assets, tags, scripts, and `script_vars` in the scene
+asset. A scene stays composable, reusable, editor-visible, reviewable, and
+available to tooling when its topology lives in source data instead of a Rust
+builder.
+
+Keep Rust scripts focused on `#[State]`, `lifecycle!`, `methods!`, signals,
+queries, and runtime decisions. Do not express a known scene layout with
+`create_nodes!`, `node_collection!`, or `SceneDoc::from_scene`. Use those APIs
+only for generated/transient leaf data, tests, tooling/import pipelines, or
+user-generated topology. Projectiles, pooled effects, enemies, and other
+gameplay objects use authored `.scn` prefabs; load them with `scene_load!` or
+`scene_preload!`.
+
+The boundary is simple: `.scn` creates the authored subtree; Rust receives its
+root `NodeID` and attaches it, selects it, or updates dynamic state.
 
 ## Use Cases
 
-- Level transition when the player reaches an exit: `scene_load!(ctx.run, "res://levels/level2.pscene")` returns the new root `NodeID`.
-- Seamless streaming: `scene_preload!(ctx.run, "res://levels/boss.pscene")` during a calm corridor, then instance the warmed copy with `ctx.run.Scene().load_preloaded(id)` at the boss door.
-- Preloading never costs the calling frame: `scene_preload!(ctx.run, "res://levels/boss.pscene")` returns a handle immediately and parses + prepares the scene on a worker thread, like mesh/material/texture loads. Check `ctx.run.Scene().preload_ready(handle)` on a later frame, then `load_preloaded`.
-- Spawn a prefab instance (enemy squad, pickup, particle burst): `scene_load!` a small scene and reparent its root under a spawn-point node.
+- Level transition when the player reaches an exit: `scene_load!(ctx.run, "res://levels/level2.scn")` returns the new root `NodeID`.
+- Seamless streaming: `scene_preload!(ctx.run, "res://levels/boss.scn")` during a calm corridor, then instance the warmed copy with `ctx.run.Scene().load_preloaded(id)` at the boss door.
+- Preloading never costs the calling frame: `scene_preload!(ctx.run, "res://levels/boss.scn")` returns a handle immediately and parses + prepares the scene on a worker thread, like mesh/material/texture loads. Check `ctx.run.Scene().preload_ready(handle)` on a later frame, then `load_preloaded`.
+- Spawn a reusable prefab (enemy squad, pickup, particle burst): author a small `.scn`, load it, then reparent its root under a spawn-point node.
 - Main-menu "Play": load the first gameplay scene from the button handler.
-- Reclaim memory once an area is behind the player: `scene_free_preloaded!(ctx.run, "res://levels/boss.pscene")` or `scene_drop_preloaded!`.
+- Reclaim memory once an area is behind the player: `scene_free_preloaded!(ctx.run, "res://levels/boss.scn")` or `scene_drop_preloaded!`.
 - Hold a loading screen until the swapped-in level can actually draw: `scene_assets_ready!(ctx.run)`. A mesh whose material is still resolving is skipped, not drawn late, so dismissing the cover early shows a world with holes in it. Bound the wait by frames and fall through, or a bad asset hangs the transition. See [Loading Gates](../../../resources/resource_management.md#loading-gates).
 - Drive a loading bar: `scene_asset_progress!(ctx.run)` returns `(pending, total)` mesh draws, so the ratio needs no separate counter.
 
@@ -58,9 +77,30 @@ hot path so the actual swap does not hitch mid-action.
 
 ## Practical Example
 
-Preload the next level at startup, then swap to it when a door-trigger signal
-fires. `scene_load!` and `load_preloaded` return `Result<NodeID, String>`, so
-handle the error case.
+Author the level layout in `res://levels/level2.scn`. Preload it at startup,
+then instance it when a door-trigger signal fires. `scene_load!` and
+`load_preloaded` return `Result<NodeID, String>`, so handle the error case.
+
+The scene owns topology and fixed references:
+
+```text
+$root = @Level
+
+[Level]
+script = "res://scripts/level.rs"
+    [Node2D/]
+[/Level]
+
+[ExitSpawn]
+parent = @Level
+    [Node2D]
+        position = (320.0, 0.0)
+    [/Node2D]
+[/ExitSpawn]
+```
+
+The script owns the transition and receives the loaded root. Reparenting is a
+runtime attachment step, not a replacement for authoring the subtree:
 
 ```rust
 #[State]
@@ -72,15 +112,16 @@ struct DoorState {
 lifecycle!({
     fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
         // Warm the next level so the transition does not stutter.
-        let _ = scene_preload!(ctx.run, "res://levels/level2.pscene");
+        let _ = scene_preload!(ctx.run, "res://levels/level2.scn");
     }
 });
 
 methods!({
     // Connected to the exit trigger's "body_entered" signal; pub so it can dispatch.
     pub fn on_exit_reached(&self, ctx: &mut ScriptContext<'_, API>) {
-        match scene_load!(ctx.run, "res://levels/level2.pscene") {
+        match scene_load!(ctx.run, "res://levels/level2.scn") {
             Ok(root) => {
+                let _ = reparent!(ctx.run, ctx.id, root);
                 with_state_mut!(ctx.run, DoorState, ctx.id, |state| state.next_area = root);
             }
             Err(err) => {
@@ -312,4 +353,3 @@ methods!({
 | Returns | `bool` |
 | Use when | Wraps `assets_ready` as the gate condition. |
 | Fails when / edge behavior | Uses the backing `assets_ready` return and behavior unchanged; the wrapper adds no coercion or fallback. |
-

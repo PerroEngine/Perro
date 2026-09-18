@@ -17,37 +17,63 @@ Rust engine's ownership model.
 
 `&self` in a callback does not prevent mutable gameplay state. The runtime
 stores a separate `#[State]` value for each node using the script and provides
-access through `ctx.run`. Start with `#[State] struct Name`, `lifecycle!`, and
-`methods!`; no handwritten `impl Name` is needed for script behavior.
+access through `ctx.run`. Start with imports/helper types, one `#[State]` root,
+`lifecycle!`, then `methods!`; no handwritten `impl` is needed for script
+behavior.
 
 ```rust
 use perro_api::prelude::*;
 
 #[State]
-struct PlayerState {
+struct GameState {
     #[default = 100]
     pub health: i32,
+    velocity: Vector2,
 }
 
 lifecycle!({
-    fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
-        self.heal(ctx, 10);
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        self.internal_method(ctx);
     }
 });
 
 methods!({
-    pub fn heal(&self, ctx: &mut ScriptContext<'_, API>, amount: i32) {
-        with_state_mut!(ctx.run, PlayerState, ctx.id, |state| {
+    fn internal_method(&self, ctx: &mut ScriptContext<'_, API>) {
+        with_state_mut!(ctx.run, GameState, ctx.id, |state| {
+            state.velocity.x = 0.0;
+        });
+    }
+
+    pub fn externally_callable_method(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+        amount: i32,
+    ) {
+        with_state_mut!(ctx.run, GameState, ctx.id, |state| {
             state.health = (state.health + amount).clamp(0, 100);
         });
     }
 });
 ```
 
+`GameState` is only a placeholder name. Match it to the script owner and keep
+large roots readable with cohesive nested structs. Derive `Variant` for nested
+types that cross a scene or dynamic script boundary. Keep fixed node trees and
+reusable composition in `.scn` files. Use runtime node creation only for
+generated leaf data, debug/tooling nodes, and transient objects with no
+reusable topology. Load authored `.scn` prefabs for projectiles, waves,
+enemies, and other gameplay objects. See [scene templates](scene_node_templates/index.md)
+and [runtime spawning](authoring/spawn_and_runtime_attach.md).
+
+See [state](state.md) for persistent/nested state and ownership rules,
+[lifecycle](lifecycle.md) for callback/helper boundaries, and
+[methods](methods.md) for engine-facing vs pure helpers.
+
 Use these defaults for a first pass:
 
 - Use `with_state!` / `with_state_mut!` for known state types on this node or
-  another node. Use direct calls such as `self.heal(ctx, 10)` within a script.
+  another node. Use direct calls such as `self.internal_method(ctx)` within a
+  script.
 - Use `get_var!` / `set_var!` for dynamic access to `pub` state fields and
   `call_method!` for dynamic calls to `pub fn` methods in `methods!`.
 - End each state-access closure before another `ctx.run` call. Copy the needed

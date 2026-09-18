@@ -43,6 +43,7 @@ const UI_HARFBUZZ_TEXTURE_ID: TextureId = TextureId::Managed(1);
 // Consecutive GC ticks with no UI pass encoded before the supersample target is
 // released; it recreates on demand (and the recreation forces a redraw).
 const UI_TARGET_IDLE_RELEASE_TICKS: u32 = 3;
+const UI_DIRTY_TILE_SIZE: u32 = 256;
 // Shrink floors for the mesh buffers: below these the GC leaves them alone.
 const UI_MIN_VERTEX_BYTES: usize = 8 * 1024;
 const UI_MIN_INDEX_BYTES: usize = 4 * 1024;
@@ -122,6 +123,7 @@ struct UiMeshTotals {
 
 pub struct GpuUi {
     pipeline: wgpu::RenderPipeline,
+    dirty_clear_pipeline: wgpu::RenderPipeline,
     composite_pipeline: wgpu::RenderPipeline,
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
@@ -165,6 +167,12 @@ pub struct GpuUi {
     prepared_revision: u64,
     prepared_viewport: [u32; 2],
     prepared_render_viewport: [u32; 2],
+    // Per-primitive bounds in retained-target pixels. Used to union old + new
+    // bounds when one source Arc changes, so only touched tiles replay.
+    prepared_primitive_bounds: Vec<Option<[u32; 4]>>,
+    // Dirty tile rects in retained-target pixels. Empty => full redraw when
+    // the mesh signature changes or a global dirty flag lands.
+    dirty_tiles: Vec<[u32; 4]>,
     // Retained supersample raster. The target keeps the previous frame's UI
     // pixels, so a frame whose UI did not change re-encodes only the cheap
     // full-screen composite instead of re-rasterizing the UI target.
@@ -179,6 +187,10 @@ pub struct GpuUi {
     // buffer changes whenever the 3D pass runs under the same view id.
     prepared_uses_depth_test: bool,
     prepared_uses_world_projection: bool,
+    // One flag per retained primitive. World projection can move while the
+    // source mesh Arc stays the same, so the projection patch path also needs
+    // to detect Some <-> None transitions per primitive.
+    prepared_projection_flags: Vec<bool>,
     prepared_live_texture_ids: AHashSet<TextureID>,
     // Ids bound to externally owned views (camera-stream outputs): the view
     // stays put while its pixels are re-rendered every frame.
@@ -188,6 +200,7 @@ pub struct GpuUi {
     supersample_idle_ticks: u32,
     used_since_shrink_tick: bool,
     ui_supersample_redraws: u64,
+    ui_partial_redraws: u64,
     ui_supersample_composites: u64,
     // Per-adapter render pixel budget (low-memory adapters cap at 1080p); the
     // supersample target obeys it instead of only the global frame cap.
@@ -229,6 +242,10 @@ impl GpuUi {
         let composite_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("perro_ui_composite_shader"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(UI_COMPOSITE_SHADER)),
+        });
+        let dirty_clear_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("perro_ui_dirty_clear_shader"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(UI_DIRTY_CLEAR_SHADER)),
         });
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_ui_uniform"),
@@ -350,6 +367,12 @@ impl GpuUi {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("perro_ui_composite_pipeline_layout"),
                 bind_group_layouts: &[Some(&composite_bind_group_layout)],
+                immediate_size: 0,
+            });
+        let dirty_clear_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("perro_ui_dirty_clear_pipeline_layout"),
+                bind_group_layouts: &[],
                 immediate_size: 0,
             });
         let pipeline = crate::pipeline_cache::create_render_pipeline(
@@ -481,8 +504,41 @@ impl GpuUi {
                 cache: None,
             },
         );
+        let dirty_clear_pipeline = crate::pipeline_cache::create_render_pipeline(
+            device,
+            wgpu::RenderPipelineDescriptor {
+                label: Some("perro_ui_dirty_clear_pipeline"),
+                layout: Some(&dirty_clear_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &dirty_clear_shader,
+                    entry_point: Some("vs_dirty_clear"),
+                    buffers: &[],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &dirty_clear_shader,
+                    entry_point: Some("fs_dirty_clear"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: UI_SUPERSAMPLE_FORMAT,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview_mask: None,
+                cache: None,
+            },
+        );
         Self {
             pipeline,
+            dirty_clear_pipeline,
             composite_pipeline,
             uniform_buffer,
             uniform_bind_group,
@@ -515,11 +571,14 @@ impl GpuUi {
             prepared_revision: u64::MAX,
             prepared_viewport: [0, 0],
             prepared_render_viewport: [0, 0],
+            prepared_primitive_bounds: Vec::new(),
+            dirty_tiles: Vec::new(),
             supersample_dirty: true,
             rasterized_signature: None,
             rasterized_render_viewport: [0, 0],
             prepared_uses_depth_test: false,
             prepared_uses_world_projection: false,
+            prepared_projection_flags: Vec::new(),
             prepared_live_texture_ids: AHashSet::new(),
             external_image_texture_ids: AHashSet::new(),
             shrink_vertices: ShrinkTracker::default(),
@@ -527,6 +586,7 @@ impl GpuUi {
             supersample_idle_ticks: 0,
             used_since_shrink_tick: false,
             ui_supersample_redraws: 0,
+            ui_partial_redraws: 0,
             ui_supersample_composites: 0,
             max_render_pixels: u64::MAX,
             perf_counters: UiPerfCounters::default(),
@@ -535,6 +595,110 @@ impl GpuUi {
 
     pub fn set_max_render_pixels(&mut self, max_render_pixels: u64) {
         self.max_render_pixels = max_render_pixels.max(1);
+    }
+
+    fn mark_full_raster_dirty(&mut self) {
+        self.supersample_dirty = true;
+        self.dirty_tiles.clear();
+    }
+
+    fn stage_dirty_tiles(&mut self, tiles: Option<Vec<[u32; 4]>>, render_viewport: [u32; 2]) {
+        let Some(tiles) = tiles else {
+            self.dirty_tiles.clear();
+            return;
+        };
+        for tile in tiles {
+            if !self.dirty_tiles.contains(&tile) {
+                self.dirty_tiles.push(tile);
+            }
+        }
+        let dirty_area: u64 = self
+            .dirty_tiles
+            .iter()
+            .map(|tile| u64::from(tile[2]) * u64::from(tile[3]))
+            .sum();
+        let target_area = u64::from(render_viewport[0]) * u64::from(render_viewport[1]);
+        if dirty_area.saturating_mul(2) >= target_area {
+            // Empty dirty tiles + changed signature selects the full path.
+            self.dirty_tiles.clear();
+        }
+    }
+
+    /// Union old + new bounds for changed primitive Arcs, then map them to
+    /// unique 256px target tiles. `None` means topology, bounds, or coverage
+    /// cannot prove a safe partial replay, so caller must use full redraw.
+    fn collect_dirty_tiles(
+        &self,
+        primitives: &[Arc<ClippedPrimitive>],
+        render_viewport: [u32; 2],
+        render_scale: [f32; 2],
+    ) -> Option<Vec<[u32; 4]>> {
+        if self.signature_pins.len() != primitives.len()
+            || self.prepared_primitive_bounds.len() != primitives.len()
+        {
+            return None;
+        }
+        let mut origins = AHashSet::new();
+        let mut changed = false;
+        for (index, (old, new)) in self.signature_pins.iter().zip(primitives).enumerate() {
+            if Arc::ptr_eq(old, new) {
+                continue;
+            }
+            changed = true;
+            let Some(old_bounds) = self.prepared_primitive_bounds[index] else {
+                return None;
+            };
+            let Some(new_bounds) = primitive_render_bounds(new, render_viewport, render_scale)
+            else {
+                return None;
+            };
+            let min_x = old_bounds[0].min(new_bounds[0]);
+            let min_y = old_bounds[1].min(new_bounds[1]);
+            let old_max_x = old_bounds[0].saturating_add(old_bounds[2]);
+            let old_max_y = old_bounds[1].saturating_add(old_bounds[3]);
+            let new_max_x = new_bounds[0].saturating_add(new_bounds[2]);
+            let new_max_y = new_bounds[1].saturating_add(new_bounds[3]);
+            let max_x = old_max_x.max(new_max_x).min(render_viewport[0]);
+            let max_y = old_max_y.max(new_max_y).min(render_viewport[1]);
+            if max_x <= min_x || max_y <= min_y {
+                return None;
+            }
+            let tile_x0 = min_x / UI_DIRTY_TILE_SIZE;
+            let tile_y0 = min_y / UI_DIRTY_TILE_SIZE;
+            let tile_x1 = (max_x.saturating_sub(1)) / UI_DIRTY_TILE_SIZE;
+            let tile_y1 = (max_y.saturating_sub(1)) / UI_DIRTY_TILE_SIZE;
+            for tile_y in tile_y0..=tile_y1 {
+                for tile_x in tile_x0..=tile_x1 {
+                    origins.insert((tile_x, tile_y));
+                }
+            }
+        }
+        if !changed || origins.is_empty() {
+            return None;
+        }
+        let mut tiles = Vec::with_capacity(origins.len());
+        for (tile_x, tile_y) in origins {
+            let x = tile_x.saturating_mul(UI_DIRTY_TILE_SIZE);
+            let y = tile_y.saturating_mul(UI_DIRTY_TILE_SIZE);
+            if x >= render_viewport[0] || y >= render_viewport[1] {
+                continue;
+            }
+            tiles.push([
+                x,
+                y,
+                UI_DIRTY_TILE_SIZE.min(render_viewport[0] - x),
+                UI_DIRTY_TILE_SIZE.min(render_viewport[1] - y),
+            ]);
+        }
+        let dirty_area: u64 = tiles
+            .iter()
+            .map(|tile| u64::from(tile[2]) * u64::from(tile[3]))
+            .sum();
+        let target_area = u64::from(render_viewport[0]) * u64::from(render_viewport[1]);
+        if tiles.is_empty() || dirty_area.saturating_mul(2) >= target_area {
+            return None;
+        }
+        Some(tiles)
     }
 
     /// This session's ONE supersample factor. `Nearest` projects point-sample
@@ -580,6 +744,8 @@ impl GpuUi {
             && self.prepared_render_viewport == render_viewport
             && textures_delta.set.is_empty()
             && textures_delta.free.is_empty()
+            && !self.prepared_uses_world_projection
+            && !world_projections.iter().any(Option::is_some)
         {
             return;
         }
@@ -591,11 +757,22 @@ impl GpuUi {
                 _pad: [0.0, 0.0],
             }),
         );
-        // Atlas pixels change under an unchanged mesh signature (a partial
-        // glyph delta reuses the same primitives), so any delta drops the
-        // retained raster.
-        if !textures_delta.set.is_empty() || !textures_delta.free.is_empty() {
-            self.supersample_dirty = true;
+        // Texture pixels can change under an unchanged mesh signature, so
+        // classify the delta before geometry decides full vs tiled redraw.
+        let texture_dirty = !textures_delta.set.is_empty() || !textures_delta.free.is_empty();
+        // A partial font-atlas upload only populates texels used by freshly
+        // tessellated text. Its changed primitive bounds safely localize the
+        // raster too. Full atlas replacement/free and non-font deltas remain
+        // global invalidations.
+        let localized_font_delta = !textures_delta.set.is_empty()
+            && textures_delta.free.is_empty()
+            && textures_delta.set.iter().all(|(texture_id, delta)| {
+                (*texture_id == TextureId::default() || *texture_id == UI_HARFBUZZ_TEXTURE_ID)
+                    && delta.pos.is_some()
+            });
+        let global_texture_dirty = texture_dirty && !localized_font_delta;
+        if global_texture_dirty {
+            self.mark_full_raster_dirty();
         }
         for (texture_id, delta) in &textures_delta.set {
             if *texture_id == TextureId::default() {
@@ -622,9 +799,44 @@ impl GpuUi {
             },
         );
         // Projection can change while local glyph mesh Arcs stay the same.
+        let uses_world_projection = world_projections.iter().any(Option::is_some);
         let unchanged = self.prepared_mesh_signature == Some(mesh_signature)
             && !self.prepared_uses_world_projection
-            && !world_projections.iter().any(Option::is_some);
+            && !uses_world_projection;
+        if unchanged && localized_font_delta {
+            // No changed primitive bounds explain these texels.
+            self.mark_full_raster_dirty();
+        }
+        let uses_depth_test =
+            world_projections
+                .iter()
+                .zip(primitives)
+                .any(|(projection, primitive)| {
+                    let Some(projection) = projection else {
+                        return false;
+                    };
+                    let Primitive::Mesh(mesh) = &primitive.primitive else {
+                        return false;
+                    };
+                    projection.depth_test && projection.clip_positions.len() == mesh.vertices.len()
+                });
+        // Compute dirty pixels while `signature_pins` and bounds still name
+        // the rasterized/prepared predecessor. Primitive topology may change
+        // (for example `9` -> `10`) while the node still owns one primitive,
+        // so partial raster is independent from sparse buffer patch success.
+        let partial_tiles = if !unchanged
+            && !global_texture_dirty
+            && !self.prepared_uses_world_projection
+            && !uses_world_projection
+            && !self.prepared_uses_depth_test
+            && !uses_depth_test
+            && self.prepared_render_viewport == render_viewport
+            && viewport_scale(self.prepared_viewport, self.prepared_render_viewport) == render_scale
+        {
+            self.collect_dirty_tiles(primitives, render_viewport, render_scale)
+        } else {
+            None
+        };
         let patched = !unchanged
             && self.patch_mesh_buffers(
                 queue,
@@ -634,6 +846,9 @@ impl GpuUi {
                 render_viewport,
                 render_scale,
             );
+        if !unchanged {
+            self.stage_dirty_tiles(partial_tiles, render_viewport);
+        }
         // ABA guard: the signature hashes `Arc::as_ptr` per primitive. Pin the
         // hashed Arcs for as long as the signature can gate a skip, so a
         // dropped primitive's address can never be reused by a different
@@ -642,7 +857,16 @@ impl GpuUi {
         self.signature_pins.extend_from_slice(primitives);
         if unchanged || patched {
             self.perf_counters.draw_calls = self.meshes.len() as u32;
+            // Projection-only changes keep the mesh signature stable, so the
+            // retained raster needs an explicit invalidation.
+            if self.prepared_uses_world_projection || uses_world_projection {
+                self.mark_full_raster_dirty();
+            }
+            self.prepared_primitive_bounds =
+                primitive_bounds_for(primitives, render_viewport, render_scale);
             self.prepared_mesh_signature = Some(mesh_signature);
+            self.prepared_uses_depth_test = uses_depth_test;
+            self.prepared_uses_world_projection = uses_world_projection;
             self.prepared_revision = revision;
             self.prepared_viewport = viewport;
             self.prepared_render_viewport = render_viewport;
@@ -651,6 +875,9 @@ impl GpuUi {
         self.meshes.clear();
         self.vertices.clear();
         self.indices.clear();
+        self.prepared_projection_flags.clear();
+        self.prepared_projection_flags
+            .resize(primitives.len(), false);
         self.meshes.reserve(mesh_totals.mesh_count);
         self.vertices.reserve(mesh_totals.vertex_count);
         self.indices.reserve(mesh_totals.index_count);
@@ -700,6 +927,7 @@ impl GpuUi {
                 .get(primitive_index)
                 .and_then(Option::as_ref)
                 .filter(|projection| projection.clip_positions.len() == mesh.vertices.len());
+            self.prepared_projection_flags[primitive_index] = projection.is_some();
             uses_depth_test |= projection.is_some_and(|projection| projection.depth_test);
             self.vertices
                 .extend(
@@ -737,12 +965,14 @@ impl GpuUi {
         }
         self.perf_counters.draw_calls = self.meshes.len() as u32;
         self.upload_mesh_buffers(device, queue);
-        if self.prepared_uses_world_projection || world_projections.iter().any(Option::is_some) {
-            self.supersample_dirty = true;
+        if self.prepared_uses_world_projection || uses_world_projection {
+            self.mark_full_raster_dirty();
         }
+        self.prepared_primitive_bounds =
+            primitive_bounds_for(primitives, render_viewport, render_scale);
         self.prepared_mesh_signature = Some(mesh_signature);
         self.prepared_uses_depth_test = uses_depth_test;
-        self.prepared_uses_world_projection = world_projections.iter().any(Option::is_some);
+        self.prepared_uses_world_projection = uses_world_projection;
         self.prepared_revision = revision;
         self.prepared_viewport = viewport;
         self.prepared_render_viewport = render_viewport;
@@ -774,6 +1004,10 @@ impl GpuUi {
         let target_created = self.ensure_supersample_target(device, render_viewport);
         if self.supersample_target.is_none() {
             return;
+        }
+        if target_created {
+            // Newly allocated target pixels have no usable retained content.
+            self.dirty_tiles.clear();
         }
         // rebuilt only when the bound view changes (incl None <-> Some); the
         // group was otherwise recreated every single frame.
@@ -812,8 +1046,18 @@ impl GpuUi {
             || self.rasterized_signature != self.prepared_mesh_signature
             || self.rasterized_render_viewport != render_viewport
             || self.prepared_uses_depth_test;
+        let partial_raster = needs_raster
+            && !target_created
+            && !self.dirty_tiles.is_empty()
+            && !self.prepared_uses_depth_test
+            && !self.prepared_uses_world_projection
+            && self.prepared_mesh_signature.is_some()
+            && self.rasterized_render_viewport == render_viewport;
         if needs_raster {
             self.ui_supersample_redraws = self.ui_supersample_redraws.wrapping_add(1);
+            if partial_raster {
+                self.ui_partial_redraws = self.ui_partial_redraws.wrapping_add(1);
+            }
             self.rasterized_signature = self.prepared_mesh_signature;
             self.rasterized_render_viewport = render_viewport;
             self.supersample_dirty = false;
@@ -831,44 +1075,110 @@ impl GpuUi {
             return;
         };
         if needs_raster {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("perro_ui_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &target.view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-            pass.set_bind_group(2, scene_depth_bind_group, &[]);
-            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-            pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            for mesh in &self.meshes {
-                if mesh.clip_rect[2] == 0 || mesh.clip_rect[3] == 0 {
-                    continue;
+            if partial_raster {
+                // Clear each dirty tile with replace blending, erasing old
+                // pixels before replaying every mesh in global z order.
+                let mut clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("perro_ui_dirty_clear_pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &target.view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                        depth_slice: None,
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                clear_pass.set_pipeline(&self.dirty_clear_pipeline);
+                for tile in &self.dirty_tiles {
+                    clear_pass.set_scissor_rect(tile[0], tile[1], tile[2], tile[3]);
+                    clear_pass.draw(0..3, 0..1);
                 }
-                let Some(bind_group) = self.ui_texture_bind_group(mesh.texture_id) else {
-                    continue;
-                };
-                pass.set_bind_group(1, bind_group, &[]);
-                pass.set_scissor_rect(
-                    mesh.clip_rect[0],
-                    mesh.clip_rect[1],
-                    mesh.clip_rect[2].min(render_viewport[0]),
-                    mesh.clip_rect[3].min(render_viewport[1]),
-                );
-                let start = mesh.index_start;
-                pass.draw_indexed(start..start.saturating_add(mesh.index_count), 0, 0..1);
+                drop(clear_pass);
+
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("perro_ui_dirty_pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &target.view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                        depth_slice: None,
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                pass.set_pipeline(&self.pipeline);
+                pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+                pass.set_bind_group(2, scene_depth_bind_group, &[]);
+                pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                for tile in &self.dirty_tiles {
+                    for mesh in &self.meshes {
+                        let Some(scissor) =
+                            intersect_scissor(*tile, mesh.clip_rect, render_viewport)
+                        else {
+                            continue;
+                        };
+                        let Some(bind_group) = self.ui_texture_bind_group(mesh.texture_id) else {
+                            continue;
+                        };
+                        pass.set_bind_group(1, bind_group, &[]);
+                        pass.set_scissor_rect(scissor[0], scissor[1], scissor[2], scissor[3]);
+                        let start = mesh.index_start;
+                        pass.draw_indexed(start..start.saturating_add(mesh.index_count), 0, 0..1);
+                    }
+                }
+            } else {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("perro_ui_pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &target.view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                            store: wgpu::StoreOp::Store,
+                        },
+                        depth_slice: None,
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                pass.set_pipeline(&self.pipeline);
+                pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+                pass.set_bind_group(2, scene_depth_bind_group, &[]);
+                pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                for mesh in &self.meshes {
+                    if mesh.clip_rect[2] == 0 || mesh.clip_rect[3] == 0 {
+                        continue;
+                    }
+                    let Some(bind_group) = self.ui_texture_bind_group(mesh.texture_id) else {
+                        continue;
+                    };
+                    pass.set_bind_group(1, bind_group, &[]);
+                    pass.set_scissor_rect(
+                        mesh.clip_rect[0],
+                        mesh.clip_rect[1],
+                        mesh.clip_rect[2].min(render_viewport[0]),
+                        mesh.clip_rect[3].min(render_viewport[1]),
+                    );
+                    let start = mesh.index_start;
+                    pass.draw_indexed(start..start.saturating_add(mesh.index_count), 0, 0..1);
+                }
             }
+            self.dirty_tiles.clear();
         }
 
         // Always composited: the swapchain image is fresh every frame, so the
@@ -904,11 +1214,14 @@ impl GpuUi {
         self.indices.clear();
         self.prepared_mesh_signature = None;
         self.signature_pins.clear();
+        self.prepared_primitive_bounds.clear();
+        self.dirty_tiles.clear();
         self.prepared_revision = u64::MAX;
         self.prepared_uses_depth_test = false;
         self.prepared_uses_world_projection = false;
+        self.prepared_projection_flags.clear();
         self.prepared_live_texture_ids.clear();
-        self.supersample_dirty = true;
+        self.mark_full_raster_dirty();
         // The buffers keep their high-water capacity; tell the GC the live
         // content is now empty so it can decay them.
         self.shrink_vertices.note_used(0);
@@ -919,6 +1232,11 @@ impl GpuUi {
     /// unchanged bumps only `ui_supersample_composites`.
     pub fn ui_supersample_redraws(&self) -> u64 {
         self.ui_supersample_redraws
+    }
+
+    /// Redraws limited to old + new dirty tiles instead of the full target.
+    pub fn ui_partial_redraws(&self) -> u64 {
+        self.ui_partial_redraws
     }
 
     /// UI composite passes encoded since creation (one per rendered frame).
@@ -994,7 +1312,7 @@ impl GpuUi {
         if self.supersample_idle_ticks >= UI_TARGET_IDLE_RELEASE_TICKS {
             self.supersample_idle_ticks = 0;
             self.supersample_target = None;
-            self.supersample_dirty = true;
+            self.mark_full_raster_dirty();
         }
     }
 
@@ -1026,9 +1344,9 @@ impl GpuUi {
         })
     }
 
-    /// Keep stable 2D draw ranges and upload only the primitive runs whose
-    /// retained Arcs changed. Depth-projected UI and every layout change use
-    /// the full path, so offsets, clipping and texture grouping stay exact.
+    /// Keep stable draw ranges and upload only primitive runs whose retained
+    /// Arcs or world projections changed. Projection-only updates keep the
+    /// existing topology and skip index writes.
     fn patch_mesh_buffers(
         &mut self,
         queue: &wgpu::Queue,
@@ -1041,13 +1359,14 @@ impl GpuUi {
         let Some(previous) = self.prepared_mesh_signature else {
             return false;
         };
+        let uses_world_projection = world_projections.iter().any(Option::is_some);
         if self.prepared_render_viewport != render_viewport
             || viewport_scale(self.prepared_viewport, self.prepared_render_viewport) != render_scale
-            || self.prepared_uses_world_projection
-            || world_projections.iter().any(Option::is_some)
+            || self.prepared_uses_world_projection != uses_world_projection
             || previous.mesh_count != primitives.len()
             || signature.mesh_count != primitives.len()
             || self.signature_pins.len() != primitives.len()
+            || self.prepared_projection_flags.len() != primitives.len()
             || previous.vertex_count != signature.vertex_count
             || previous.index_count != signature.index_count
             || self.vertices.len() != signature.vertex_count
@@ -1062,6 +1381,7 @@ impl GpuUi {
         self.patch_spans.clear();
         let (mut vertex_start, mut index_start, mut changed_vertices, mut changed_primitives) =
             (0, 0, 0, 0);
+        let mut indices_changed = false;
         // Validate all offsets before mutating any standing CPU/GPU bytes.
         for (index, (old, new)) in self.signature_pins.iter().zip(primitives).enumerate() {
             let (Primitive::Mesh(old_mesh), Primitive::Mesh(mesh)) =
@@ -1078,9 +1398,16 @@ impl GpuUi {
             }
             let vertex_end = vertex_start + mesh.vertices.len();
             let index_end = index_start + mesh.indices.len();
-            if !Arc::ptr_eq(old, new) {
+            let projection = world_projections
+                .get(index)
+                .and_then(Option::as_ref)
+                .filter(|projection| projection.clip_positions.len() == mesh.vertices.len());
+            let source_changed = !Arc::ptr_eq(old, new);
+            let projection_changed = self.prepared_projection_flags[index] != projection.is_some();
+            if source_changed || projection.is_some() || projection_changed {
                 changed_vertices += mesh.vertices.len();
                 changed_primitives += 1;
+                indices_changed |= source_changed;
                 if let Some(last) = self.patch_spans.last_mut()
                     && last.primitives.end == index
                 {
@@ -1098,12 +1425,30 @@ impl GpuUi {
             vertex_start = vertex_end;
             index_start = index_end;
         }
-        // Bound queue-call overhead on widely scattered/all-dynamic edits.
-        if self.patch_spans.is_empty()
-            || self.patch_spans.len() > 8
-            || changed_vertices > self.vertices.len() / 2
+        if self.patch_spans.is_empty() {
+            return false;
+        }
+        // Bound queue-call overhead on widely scattered/all-dynamic local
+        // edits. Projection updates may touch many labels on camera motion;
+        // coalesce those spans into one bounded vertex write instead of
+        // falling back to the full vertex + index repack.
+        if !uses_world_projection
+            && (self.patch_spans.len() > 8 || changed_vertices > self.vertices.len() / 2)
         {
             return false;
+        }
+        if uses_world_projection
+            && (self.patch_spans.len() > 8 || changed_vertices > self.vertices.len() / 2)
+        {
+            let first = self.patch_spans.first().expect("nonempty patch spans");
+            let last = self.patch_spans.last().expect("nonempty patch spans");
+            let coalesced = UiPatchSpan {
+                primitives: first.primitives.start..last.primitives.end,
+                vertices: first.vertices.start..last.vertices.end,
+                indices: first.indices.start..last.indices.end,
+            };
+            self.patch_spans.clear();
+            self.patch_spans.push(coalesced);
         }
         for span in &self.patch_spans {
             let mut vertex_start = span.vertices.start;
@@ -1112,48 +1457,75 @@ impl GpuUi {
                 let Primitive::Mesh(mesh) = &primitives[index].primitive else {
                     unreachable!()
                 };
-                for (dst, vertex) in self.vertices[vertex_start..vertex_start + mesh.vertices.len()]
+                let projection = world_projections
+                    .get(index)
+                    .and_then(Option::as_ref)
+                    .filter(|projection| projection.clip_positions.len() == mesh.vertices.len());
+                self.prepared_projection_flags[index] = projection.is_some();
+                for (vertex_index, (dst, vertex)) in self.vertices
+                    [vertex_start..vertex_start + mesh.vertices.len()]
                     .iter_mut()
                     .zip(&mesh.vertices)
+                    .enumerate()
                 {
+                    let (pos, depth_test) = projection.map_or(
+                        (
+                            [
+                                vertex.pos.x * render_scale[0],
+                                vertex.pos.y * render_scale[1],
+                                0.0,
+                                1.0,
+                            ],
+                            [0.0, 0.0],
+                        ),
+                        |projection| {
+                            (
+                                projection.clip_positions[vertex_index],
+                                [1.0, u8::from(projection.depth_test) as f32],
+                            )
+                        },
+                    );
                     *dst = UiVertexGpu {
-                        pos: [
-                            vertex.pos.x * render_scale[0],
-                            vertex.pos.y * render_scale[1],
-                            0.0,
-                            1.0,
-                        ],
+                        pos,
                         uv: [vertex.uv.x, vertex.uv.y],
-                        depth_test: [0.0, 0.0],
+                        depth_test,
                         color: vertex.color.to_array(),
                         texture_has_straight_alpha: f32::from(texture_has_straight_alpha(
                             mesh.texture_id,
                         )),
                     };
                 }
-                for (dst, &index) in self.indices[index_start..index_start + mesh.indices.len()]
-                    .iter_mut()
-                    .zip(&mesh.indices)
-                {
-                    *dst = index.saturating_add(vertex_start.min(u32::MAX as usize) as u32);
+                if indices_changed {
+                    for (dst, &index) in self.indices[index_start..index_start + mesh.indices.len()]
+                        .iter_mut()
+                        .zip(&mesh.indices)
+                    {
+                        *dst = index.saturating_add(vertex_start.min(u32::MAX as usize) as u32);
+                    }
                 }
                 vertex_start += mesh.vertices.len();
                 index_start += mesh.indices.len();
             }
             let vertices = bytemuck::cast_slice(&self.vertices[span.vertices.clone()]);
-            let indices = bytemuck::cast_slice(&self.indices[span.indices.clone()]);
             queue.write_buffer(
                 vertex_buffer,
                 (span.vertices.start * std::mem::size_of::<UiVertexGpu>()) as u64,
                 vertices,
             );
-            queue.write_buffer(
-                index_buffer,
-                (span.indices.start * std::mem::size_of::<u32>()) as u64,
-                indices,
-            );
-            self.perf_counters.mesh_upload_bytes += vertices.len() + indices.len();
-            self.perf_counters.mesh_upload_calls += 2;
+            let mut upload_bytes = vertices.len();
+            let mut upload_calls = 1;
+            if indices_changed {
+                let indices = bytemuck::cast_slice(&self.indices[span.indices.clone()]);
+                queue.write_buffer(
+                    index_buffer,
+                    (span.indices.start * std::mem::size_of::<u32>()) as u64,
+                    indices,
+                );
+                upload_bytes += indices.len();
+                upload_calls += 1;
+            }
+            self.perf_counters.mesh_upload_bytes += upload_bytes;
+            self.perf_counters.mesh_upload_calls += upload_calls;
         }
         self.perf_counters.patched_primitives = changed_primitives;
         self.shrink_vertices
@@ -1540,7 +1912,7 @@ impl GpuUi {
         self.prepared_mesh_signature = None;
         self.signature_pins.clear();
         self.prepared_revision = u64::MAX;
-        self.supersample_dirty = true;
+        self.mark_full_raster_dirty();
     }
 
     pub fn invalidate_image_texture(&mut self, texture: TextureID) {
@@ -1549,7 +1921,7 @@ impl GpuUi {
         self.prepared_mesh_signature = None;
         self.signature_pins.clear();
         self.prepared_revision = u64::MAX;
-        self.supersample_dirty = true;
+        self.mark_full_raster_dirty();
     }
 
     pub fn set_stream_texture(&mut self, texture: TextureID, is_stream: bool) {
@@ -1558,7 +1930,7 @@ impl GpuUi {
         } else if self.stream_texture_ids.remove(&texture) {
             self.image_textures.remove(&texture);
         }
-        self.supersample_dirty = true;
+        self.mark_full_raster_dirty();
     }
 
     /// In-place base-level upload for a resident UI stream image texture. Returns
@@ -1583,7 +1955,7 @@ impl GpuUi {
         write_texture_base_level(queue, &shared.texture, width, height, rgba);
         // Same texture id, new pixels: the retained raster is stale even though
         // the mesh signature is unchanged.
-        self.supersample_dirty = true;
+        self.mark_full_raster_dirty();
         true
     }
 
@@ -1716,7 +2088,7 @@ impl GpuUi {
         self.prepared_mesh_signature = None;
         self.signature_pins.clear();
         self.prepared_revision = u64::MAX;
-        self.supersample_dirty = true;
+        self.mark_full_raster_dirty();
     }
 
     /// True when this UI would composite byte-identical pixels to last frame.
@@ -1744,7 +2116,7 @@ impl GpuUi {
             || (self.stream_texture_ids.contains(&texture)
                 && self.image_textures.contains_key(&texture))
         {
-            self.supersample_dirty = true;
+            self.mark_full_raster_dirty();
         }
     }
 }
@@ -1851,6 +2223,82 @@ fn linear_premultiplied_color32(color: epaint::Color32) -> [u8; 4] {
 
 fn hash_f32(value: f32, hasher: &mut impl Hasher) {
     value.to_bits().hash(hasher);
+}
+
+fn primitive_render_bounds(
+    primitive: &ClippedPrimitive,
+    render_viewport: [u32; 2],
+    render_scale: [f32; 2],
+) -> Option<[u32; 4]> {
+    let Primitive::Mesh(mesh) = &primitive.primitive else {
+        return None;
+    };
+    if mesh.vertices.is_empty() || mesh.indices.is_empty() {
+        return None;
+    }
+    let clip = clip_rect_scaled(primitive, render_viewport, render_scale);
+    if clip[2] == 0 || clip[3] == 0 {
+        return None;
+    }
+    let mut min_x = f32::INFINITY;
+    let mut min_y = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
+    for vertex in &mesh.vertices {
+        let x = vertex.pos.x * render_scale[0];
+        let y = vertex.pos.y * render_scale[1];
+        if !x.is_finite() || !y.is_finite() {
+            return None;
+        }
+        min_x = min_x.min(x);
+        min_y = min_y.min(y);
+        max_x = max_x.max(x);
+        max_y = max_y.max(y);
+    }
+    let mesh_min_x = min_x.floor().max(0.0) as u32;
+    let mesh_min_y = min_y.floor().max(0.0) as u32;
+    let mesh_max_x = max_x.ceil().min(render_viewport[0] as f32).max(0.0) as u32;
+    let mesh_max_y = max_y.ceil().min(render_viewport[1] as f32).max(0.0) as u32;
+    let clip_max_x = clip[0].saturating_add(clip[2]);
+    let clip_max_y = clip[1].saturating_add(clip[3]);
+    let min_x = mesh_min_x.max(clip[0]);
+    let min_y = mesh_min_y.max(clip[1]);
+    let max_x = mesh_max_x.min(clip_max_x).min(render_viewport[0]);
+    let max_y = mesh_max_y.min(clip_max_y).min(render_viewport[1]);
+    if max_x <= min_x || max_y <= min_y {
+        return None;
+    }
+    // Include one target pixel for feathering/sampler coverage at bounds.
+    let min_x = min_x.saturating_sub(1);
+    let min_y = min_y.saturating_sub(1);
+    let max_x = max_x.saturating_add(1).min(render_viewport[0]);
+    let max_y = max_y.saturating_add(1).min(render_viewport[1]);
+    Some([min_x, min_y, max_x - min_x, max_y - min_y])
+}
+
+fn primitive_bounds_for(
+    primitives: &[Arc<ClippedPrimitive>],
+    render_viewport: [u32; 2],
+    render_scale: [f32; 2],
+) -> Vec<Option<[u32; 4]>> {
+    primitives
+        .iter()
+        .map(|primitive| primitive_render_bounds(primitive, render_viewport, render_scale))
+        .collect()
+}
+
+fn intersect_scissor(a: [u32; 4], b: [u32; 4], viewport: [u32; 2]) -> Option<[u32; 4]> {
+    let min_x = a[0].max(b[0]);
+    let min_y = a[1].max(b[1]);
+    let max_x = a[0]
+        .saturating_add(a[2])
+        .min(b[0].saturating_add(b[2]))
+        .min(viewport[0]);
+    let max_y = a[1]
+        .saturating_add(a[3])
+        .min(b[1].saturating_add(b[3]))
+        .min(viewport[1]);
+    (max_x > min_x && max_y > min_y).then_some([min_x, min_y, max_x - min_x, max_y - min_y])
 }
 
 fn hash_renderable_meshes(

@@ -34,6 +34,28 @@ The authored manager node owns this state. `on_init` preloads
 `res://scenes/enemy.scn` and stores its runtime scene handle. Each enemy scene
 root carries tag `enemy`; its own scene injects any child refs it needs.
 
+Keep the enemy composition in the authored scene, not in the manager script:
+
+```text
+$root = @Enemy
+
+[Enemy]
+tags = ["enemy"]
+script = "res://scripts/enemy.rs"
+    [Node2D/]
+[/Enemy]
+
+[Hitbox]
+parent = @Enemy
+    [Area2D]
+    [/Area2D]
+[/Hitbox]
+```
+
+Add child visuals, collision, audio, and fixed `script_vars` to this `.scn` as
+the enemy grows. The manager only preloads/loads the file, attaches its root,
+and tracks the dynamic instances.
+
 ```rust
 lifecycle!({
     fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {

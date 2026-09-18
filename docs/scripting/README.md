@@ -5,6 +5,7 @@
 | Header | Link |
 | --- | --- |
 | Purpose | [Purpose](#purpose) |
+| Canonical Script Layout | [Canonical Script Layout](#canonical-script-layout) |
 | Mental Model | [Mental Model](#mental-model) |
 | Scripting Group | [Scripting Group](#scripting-group) |
 | Use Cases | [Use Cases](#use-cases) |
@@ -20,6 +21,64 @@ This includes state, lifecycle hooks, custom methods, runtime node access, cross
 The book explains why Perro uses these shapes.
 
 The docs give exact macro/API paths and edge behavior.
+
+## Canonical Script Layout
+
+Start each attachable gameplay script with one state root, then put engine
+callbacks in `lifecycle!` and behavior methods in `methods!`:
+
+```rust
+use perro_api::prelude::*;
+
+#[State]
+struct GameState {
+    #[default = 100]
+    pub health: i32,
+    velocity: Vector2,
+}
+
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        self.internal_method(ctx);
+    }
+});
+
+methods!({
+    fn internal_method(&self, ctx: &mut ScriptContext<'_, API>) {
+        with_state_mut!(ctx.run, GameState, ctx.id, |state| {
+            state.velocity.x = 0.0;
+        });
+    }
+
+    pub fn externally_callable_method(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+        amount: i32,
+    ) {
+        with_state_mut!(ctx.run, GameState, ctx.id, |state| {
+            state.health += amount;
+        });
+    }
+});
+```
+
+`GameState` is a role name, not a required type name. Rename it to the owner
+(`PlayerState`, `DoorState`, and so on). Keep a large state root short by
+grouping cohesive data in nested structs that derive `Variant` when a dynamic
+boundary needs them. Do not hand-write `impl GameState` for script behavior;
+the macros provide the generated script entry points.
+
+Keep helpers private when only this script calls them. Mark a method `pub`
+only when another script, a signal, an animation event, or `call_method!` must
+dispatch to it. Keep state fields private unless scene injection or dynamic
+access needs `pub`.
+
+Author fixed node trees and reusable composition in `.scn` files. Follow the
+[scene templates](scene_node_templates/index.md) and [scene docs](contexts/resource_modules/scene_docs.md),
+then attach the script from the scene. Use runtime node creation only for
+generated leaf data, debug/tooling nodes, and other transient objects with no
+reusable topology. Load authored `.scn` prefabs for projectiles, waves,
+enemies, and other gameplay objects; see [runtime spawning](authoring/spawn_and_runtime_attach.md).
 
 ## Mental Model
 
@@ -126,7 +185,8 @@ See:
 - [Audio Nodes](audio_nodes.md)
 - [Water Bodies](water.md)
 - [Node Collections](node_collections.md)
-  - In-code scene trees, flat batches, child collections, and `create_nodes!`.
+  - Runtime-only batches, generated nodes, and `create_nodes!`; author fixed
+    composition in `.scn` files.
 - [Script State](state.md)
 - [Script Lifecycle](lifecycle.md)
 - [Script Methods](methods.md)
