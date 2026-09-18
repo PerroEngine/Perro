@@ -607,6 +607,12 @@ impl GpuUi {
             self.dirty_tiles.clear();
             return;
         };
+        // Full invalidation already pending (camera target / stream write):
+        // tiles would limit replay and leave the rest of the target stale.
+        if self.supersample_dirty {
+            self.dirty_tiles.clear();
+            return;
+        }
         for tile in tiles {
             if !self.dirty_tiles.contains(&tile) {
                 self.dirty_tiles.push(tile);
@@ -1048,6 +1054,7 @@ impl GpuUi {
             || self.prepared_uses_depth_test;
         let partial_raster = needs_raster
             && !target_created
+            && !self.supersample_dirty
             && !self.dirty_tiles.is_empty()
             && !self.prepared_uses_depth_test
             && !self.prepared_uses_world_projection
