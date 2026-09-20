@@ -252,9 +252,11 @@ Normal script flow:
 4. Call `stop()` to request a safe app-boundary stop.
 5. Poll `last_output()` after the boundary.
 
-`state()` reports the active session state. Normal app-boundary finalization
-consumes the session, so `state()` returns `None` after commit; a successful
-commit remains available through `last_output()`.
+`state()` reports the active session state. App-boundary stop drains and packs
+on a background worker; `state()` reports `Draining` until the app observes
+completion. A new capture cannot start during this phase. After commit,
+`state()` returns `None` and `last_output()` holds the committed output.
+Raw host `finish_raw()` still waits for drain and commit.
 
 `progress()` reports submitted frames, completed encoded frames, and the
 expected schedule count. `completed_frames()` reports only fully encoded PNG
@@ -283,8 +285,10 @@ lossless BGRA encoding and infinite looping.
 
 The core writes canonical PNG frames into a staging directory. Final media and
 metadata use temporary sibling files and atomic rename. Successful commit
-removes staging. A failed pack removes its temporary output and preserves the
-staging directory for diagnosis. No output commit means `last_output()` stays
+removes staging. Failed or abandoned sessions also remove their intermediate
+frames after workers stop; failed packs remove temporary output. Final PNG
+sequence frames remain in the requested output directory. Cleanup on drop is
+best effort if the filesystem rejects removal. No output commit means `last_output()` stays
 `None` for that session.
 
 `start`, `record_action`, `submit_rgba`, `drain`, `stop`, and raw host methods

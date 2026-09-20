@@ -127,6 +127,7 @@ pub(super) struct RunnerCapture {
     pre_roll_complete: bool,
     callback_enabled: bool,
     armed: bool,
+    finishing: bool,
     exit_when_done: bool,
 }
 
@@ -278,12 +279,19 @@ impl RunnerCapture {
             pre_roll_complete: false,
             callback_enabled: false,
             armed: false,
+            finishing: false,
             exit_when_done,
         }
     }
 }
 
 impl<B: GraphicsBackend> RunnerState<B> {
+    pub(super) fn capture_waits_for_exit(&self) -> bool {
+        self.capture
+            .as_ref()
+            .is_some_and(|capture| capture.finishing && capture.exit_when_done)
+    }
+
     pub(super) fn sync_capture_bridge(&mut self) {
         if self.capture.is_some() || self.app.runtime.capture_state().is_none() {
             return;
@@ -364,6 +372,9 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let Some(capture) = self.capture.as_mut() else {
             return;
         };
+        if capture.finishing {
+            return;
+        }
         if !capture.armed {
             if let Err(error) = self
                 .app
@@ -403,6 +414,21 @@ impl<B: GraphicsBackend> RunnerState<B> {
             return;
         };
         let result = (|| -> Result<bool, String> {
+            if capture.finishing {
+                let Some(result) = self.app.runtime.capture_poll_finish()? else {
+                    return Ok(false);
+                };
+                if let Some(expected) = capture.expected_frames
+                    && result.frame_count != expected
+                {
+                    return Err(format!(
+                        "capture finalized {} frames; expected {}",
+                        result.frame_count, expected
+                    ));
+                }
+                eprintln!("[perro][capture] output={}", result.output_path.display());
+                return Ok(true);
+            }
             let realtime = capture.cadence.is_some();
             if !realtime {
                 self.app.graphics.drain_capture()?;
@@ -505,24 +531,17 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 }
             }
             self.app.graphics.drain_capture()?;
-            self.app.runtime.capture_drain()?;
             let output = capture
                 .output
                 .clone()
                 .ok_or_else(|| "capture stop output missing".to_owned())?;
-            let result = self.app.runtime.capture_stop(output)?;
-            if let Some(expected) = capture.expected_frames
-                && result.frame_count != expected
-            {
-                return Err(format!(
-                    "capture finalized {} frames; expected {}",
-                    result.frame_count, expected
-                ));
-            }
             self.app.graphics.set_capture_callback(None);
             self.app.graphics.clear_capture_target();
-            eprintln!("[perro][capture] output={}", result.output_path.display());
-            Ok(true)
+            self.app.runtime.capture_stop_async(output)?;
+            capture.finishing = true;
+            capture.last_frame = None;
+            capture.pending_frame = None;
+            Ok(false)
         })();
         match result {
             Ok(true) if capture.exit_when_done => {
@@ -537,6 +556,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 }
                 self.app.graphics.set_capture_callback(None);
                 self.app.graphics.clear_capture_target();
+                self.app.runtime.capture_cancel();
                 if capture.exit_when_done {
                     self.request_exit(event_loop, AppExitResult::event_loop_exit());
                 }

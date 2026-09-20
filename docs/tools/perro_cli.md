@@ -279,7 +279,7 @@ GIF output uses one stable clip palette, exact colors when 255 opaque colors fit
 
 `--transparent` uses alpha-zero clear pixels for capture targets. World or IBL lighting still shades 3D objects; opaque environment background does not leak into transparent output. Omit the flag for normal opaque output.
 
-PNG frame data acts as the canonical intermediate for every format. The pipeline bounds in-flight GPU readbacks, packs requested formats at finalize, and removes intermediate frames on success. GIF uses the native encoder. WebM, MP4, and animated WebP need `ffmpeg` on `PATH`; API callers can set an explicit executable with `OutputSpec::with_ffmpeg`. The final media and metadata use temporary sibling files plus atomic rename. A failed pack removes its temporary output but keeps the staging directory and returns a nonzero CLI status; successful output cleanup remains automatic.
+PNG frame data acts as the canonical intermediate for every format. The pipeline bounds in-flight GPU readbacks and encoder work, packs requested formats on a background worker at finalize, and waits for commit before CLI exit. GIF uses the native encoder. WebM, MP4, and animated WebP need `ffmpeg` on `PATH`; API callers can set an explicit executable with `OutputSpec::with_ffmpeg`. The final media and metadata use temporary sibling files plus atomic rename. Success, failure, and abandoned sessions remove intermediate frames after workers stop; final PNG sequence output remains intact. Cleanup on drop is best effort if the filesystem rejects removal. A failed pack removes its temporary output and returns a nonzero CLI status.
 
 Examples:
 

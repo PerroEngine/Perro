@@ -693,28 +693,64 @@ pub fn downsample_rgba(
     target: OutputSize,
     parallel_workers: usize,
 ) -> Result<Vec<u8>, CaptureError> {
+    validate_downsample(rgba.len(), source, target)?;
+    downsample_rgba_owned(rgba.to_vec(), source, target, parallel_workers)
+}
+
+fn validate_downsample(
+    byte_count: usize,
+    source: OutputSize,
+    target: OutputSize,
+) -> Result<(), CaptureError> {
     let pixel_count = usize::try_from(u64::from(source.width) * u64::from(source.height))
         .map_err(|_| CaptureError::InvalidFrame("source pixel count overflow"))?;
     let expected = pixel_count
         .checked_mul(4)
         .ok_or(CaptureError::InvalidFrame("source byte count overflow"))?;
-    if rgba.len() != expected {
+    if byte_count != expected {
         return Err(CaptureError::InvalidFrame("RGBA byte count mismatch"));
     }
     OutputSize::new(target.width, target.height)?;
+    Ok(())
+}
 
+fn downsample_rgba_owned(
+    rgba: Vec<u8>,
+    source: OutputSize,
+    target: OutputSize,
+    parallel_workers: usize,
+) -> Result<Vec<u8>, CaptureError> {
+    validate_downsample(rgba.len(), source, target)?;
     if source == target {
-        return Ok(rgba.to_vec());
+        return Ok(rgba);
     }
 
-    let mut premultiplied = rgba.to_vec();
-    premultiplied.par_chunks_mut(4).for_each(|pixel| {
-        let alpha = u16::from(pixel[3]);
-        pixel[0] = ((u16::from(pixel[0]) * alpha + 127) / 255) as u8;
-        pixel[1] = ((u16::from(pixel[1]) * alpha + 127) / 255) as u8;
-        pixel[2] = ((u16::from(pixel[2]) * alpha + 127) / 255) as u8;
-    });
+    let worker_count = parallel_workers.max(1);
+    if worker_count > 1 {
+        if let Ok(pool) = rayon::ThreadPoolBuilder::new()
+            .num_threads(worker_count)
+            .build()
+        {
+            pool.install(|| resize_rgba_owned(rgba, source, target, true))
+        } else {
+            resize_rgba_owned(rgba, source, target, false)
+        }
+    } else {
+        resize_rgba_owned(rgba, source, target, false)
+    }
+}
 
+fn resize_rgba_owned(
+    mut premultiplied: Vec<u8>,
+    source: OutputSize,
+    target: OutputSize,
+    parallel: bool,
+) -> Result<Vec<u8>, CaptureError> {
+    if parallel {
+        premultiply(premultiplied.as_mut_slice());
+    } else {
+        premultiply_sequential(premultiplied.as_mut_slice());
+    }
     let source_image = RgbaImage::from_raw(source.width, source.height, premultiplied)
         .ok_or(CaptureError::InvalidFrame("RGBA image allocation failed"))?;
     let mut resized = imageops::resize(
@@ -723,35 +759,48 @@ pub fn downsample_rgba(
         target.height,
         imageops::FilterType::Lanczos3,
     );
-    let worker_count = parallel_workers.max(1);
-    if worker_count > 1 {
-        if let Ok(pool) = rayon::ThreadPoolBuilder::new()
-            .num_threads(worker_count)
-            .build()
-        {
-            pool.install(|| unpremultiply(resized.as_mut()));
-        } else {
-            unpremultiply(resized.as_mut());
-        }
-    } else {
+    if parallel {
         unpremultiply(resized.as_mut());
+    } else {
+        unpremultiply_sequential(resized.as_mut());
     }
     Ok(resized.into_raw())
 }
 
+fn premultiply(image: &mut [u8]) {
+    image.par_chunks_mut(4).for_each(premultiply_pixel);
+}
+
+fn premultiply_sequential(image: &mut [u8]) {
+    image.chunks_exact_mut(4).for_each(premultiply_pixel);
+}
+
+fn premultiply_pixel(pixel: &mut [u8]) {
+    let alpha = u16::from(pixel[3]);
+    pixel[0] = ((u16::from(pixel[0]) * alpha + 127) / 255) as u8;
+    pixel[1] = ((u16::from(pixel[1]) * alpha + 127) / 255) as u8;
+    pixel[2] = ((u16::from(pixel[2]) * alpha + 127) / 255) as u8;
+}
+
 fn unpremultiply(image: &mut [u8]) {
-    image.par_chunks_mut(4).for_each(|pixel| {
-        let alpha = u16::from(pixel[3]);
-        if alpha == 0 {
-            pixel[0] = 0;
-            pixel[1] = 0;
-            pixel[2] = 0;
-            return;
-        }
-        pixel[0] = ((u16::from(pixel[0]) * 255 + alpha / 2) / alpha).min(255) as u8;
-        pixel[1] = ((u16::from(pixel[1]) * 255 + alpha / 2) / alpha).min(255) as u8;
-        pixel[2] = ((u16::from(pixel[2]) * 255 + alpha / 2) / alpha).min(255) as u8;
-    });
+    image.par_chunks_mut(4).for_each(unpremultiply_pixel);
+}
+
+fn unpremultiply_sequential(image: &mut [u8]) {
+    image.chunks_exact_mut(4).for_each(unpremultiply_pixel);
+}
+
+fn unpremultiply_pixel(pixel: &mut [u8]) {
+    let alpha = u16::from(pixel[3]);
+    if alpha == 0 {
+        pixel[0] = 0;
+        pixel[1] = 0;
+        pixel[2] = 0;
+        return;
+    }
+    pixel[0] = ((u16::from(pixel[0]) * 255 + alpha / 2) / alpha).min(255) as u8;
+    pixel[1] = ((u16::from(pixel[1]) * 255 + alpha / 2) / alpha).min(255) as u8;
+    pixel[2] = ((u16::from(pixel[2]) * 255 + alpha / 2) / alpha).min(255) as u8;
 }
 
 /// Progress snapshot for a bounded capture session.
@@ -852,7 +901,7 @@ struct EncodeJob {
     source: OutputSize,
     target: OutputSize,
     workers: usize,
-    stage_dir: PathBuf,
+    stage_dir: Arc<PathBuf>,
 }
 
 /// Capture lifecycle with bounded staging workers and deterministic frame names.
@@ -863,6 +912,7 @@ pub struct CaptureSession {
     render_size: OutputSize,
     schedule: Option<FrameSchedule>,
     stage_dir: PathBuf,
+    stage_dir_shared: Arc<PathBuf>,
     sender: Option<SyncSender<EncodeJob>>,
     workers: Vec<JoinHandle<()>>,
     shared: Arc<(Mutex<WorkerState>, Condvar)>,
@@ -873,7 +923,7 @@ pub struct CaptureSession {
 }
 
 impl CaptureSession {
-    /// Start a session under `staging_root`; staged data remains on errors.
+    /// Start a session under `staging_root`; staged data is removed on finish or drop.
     pub fn start(
         config: CaptureConfig,
         source_size: OutputSize,
@@ -884,6 +934,7 @@ impl CaptureSession {
         let render_size = config.render_size(source_size)?;
         let schedule = config.schedule()?;
         let stage_dir = create_stage_dir(staging_root.as_ref())?;
+        let stage_dir_shared = Arc::new(stage_dir.clone());
         let worker_count = config.parallel_workers.clamp(1, 32);
         let (sender, receiver) = mpsc::sync_channel(worker_count.saturating_mul(2).max(1));
         let receiver = Arc::new(Mutex::new(receiver));
@@ -907,6 +958,7 @@ impl CaptureSession {
             render_size,
             schedule,
             stage_dir,
+            stage_dir_shared,
             sender: Some(sender),
             workers,
             shared,
@@ -1069,7 +1121,7 @@ impl CaptureSession {
             source: self.render_size,
             target: self.output_size,
             workers: 1,
-            stage_dir: self.stage_dir.clone(),
+            stage_dir: Arc::clone(&self.stage_dir_shared),
         };
         self.sender
             .as_ref()
@@ -1125,11 +1177,12 @@ impl CaptureSession {
 
     /// Finalize using config output.
     pub fn finalize(self) -> Result<FinalizedCapture, CaptureError> {
-        let spec = self
-            .config
-            .output
-            .clone()
-            .ok_or(CaptureError::InvalidConfig("output spec required"))?;
+        let spec = match self.config.output.clone() {
+            Some(spec) => spec,
+            None => {
+                return self.finalize_error(CaptureError::InvalidConfig("output spec required"));
+            }
+        };
         self.finalize_to(spec)
     }
 
@@ -1145,6 +1198,14 @@ impl CaptureSession {
 
     /// Finalize to output, atomically renaming only after encode success.
     pub fn finalize_to(mut self, spec: OutputSpec) -> Result<FinalizedCapture, CaptureError> {
+        let result = self.finalize_to_inner(spec);
+        match result {
+            Ok(result) => Ok(result),
+            Err(error) => self.finalize_error(error),
+        }
+    }
+
+    fn finalize_to_inner(&mut self, spec: OutputSpec) -> Result<FinalizedCapture, CaptureError> {
         self.drain()?;
         self.shutdown_workers()?;
         if let Some(expected) = self.schedule.map(FrameSchedule::frame_count)
@@ -1189,11 +1250,20 @@ impl CaptureSession {
             let _ = fs::remove_file(&temporary);
             return Err(error);
         }
-        fs::rename(&temporary, &spec.path)?;
+        if let Err(error) = fs::rename(&temporary, &spec.path) {
+            let _ = fs::remove_file(&temporary);
+            return Err(error.into());
+        }
         let metadata_path = spec.path.with_extension("json");
-        write_atomic(&metadata_path, metadata.as_bytes())?;
-        fs::remove_dir_all(&self.stage_dir)
-            .map_err(|error| CaptureError::CleanupFailed(error.to_string()))?;
+        if let Err(error) = write_atomic(&metadata_path, metadata.as_bytes()) {
+            return match fs::remove_file(&spec.path) {
+                Ok(()) => Err(error),
+                Err(cleanup) => Err(CaptureError::CleanupFailed(format!(
+                    "{error}; output rollback: {cleanup}"
+                ))),
+            };
+        }
+        self.cleanup_stage()?;
         self.finished = true;
         Ok(FinalizedCapture {
             output_path: spec.path,
@@ -1202,6 +1272,24 @@ impl CaptureSession {
             output_size: self.output_size,
             render_size: self.render_size,
         })
+    }
+
+    fn cleanup_stage(&self) -> Result<(), CaptureError> {
+        if self.stage_dir.exists() {
+            fs::remove_dir_all(&self.stage_dir)
+                .map_err(|error| CaptureError::CleanupFailed(error.to_string()))?;
+        }
+        Ok(())
+    }
+
+    fn finalize_error(mut self, primary: CaptureError) -> Result<FinalizedCapture, CaptureError> {
+        let _ = self.shutdown_workers();
+        match self.cleanup_stage() {
+            Ok(()) => Err(primary),
+            Err(error) => Err(CaptureError::CleanupFailed(format!(
+                "{primary}; cleanup: {error}"
+            ))),
+        }
     }
 
     fn drain_error(&self) -> Result<(), CaptureError> {
@@ -1216,12 +1304,15 @@ impl CaptureSession {
 
     fn shutdown_workers(&mut self) -> Result<(), CaptureError> {
         self.sender.take();
+        let mut panic_error = None;
         for worker in self.workers.drain(..) {
-            worker
-                .join()
-                .map_err(|_| CaptureError::EncoderFailed("PNG worker panicked".to_owned()))?;
+            if worker.join().is_err() && panic_error.is_none() {
+                panic_error = Some(CaptureError::EncoderFailed(
+                    "PNG worker panicked".to_owned(),
+                ));
+            }
         }
-        Ok(())
+        panic_error.map_or(Ok(()), Err)
     }
 
     fn metadata_json(&self) -> String {
@@ -1414,6 +1505,8 @@ impl CaptureSession {
             }
             OutputFormat::AnimatedWebP => {
                 command.args([
+                    "-f",
+                    "webp",
                     "-c:v",
                     "libwebp_anim",
                     "-lossless",
@@ -1445,6 +1538,9 @@ impl Drop for CaptureSession {
         self.sender.take();
         for worker in self.workers.drain(..) {
             let _ = worker.join();
+        }
+        if !self.finished {
+            let _ = fs::remove_dir_all(&self.stage_dir);
         }
     }
 }
@@ -1553,7 +1649,7 @@ fn worker_loop(
 }
 
 fn encode_job(job: EncodeJob) -> Result<(), CaptureError> {
-    let resized = downsample_rgba(&job.rgba, job.source, job.target, job.workers)?;
+    let resized = downsample_rgba_owned(job.rgba, job.source, job.target, job.workers)?;
     let path = job.stage_dir.join(format!("frame_{:06}.png", job.index));
     let temporary = path.with_extension("png.partial");
     let file = File::create(&temporary)?;
@@ -1568,7 +1664,6 @@ fn encode_job(job: EncodeJob) -> Result<(), CaptureError> {
     let file = writer
         .into_inner()
         .map_err(|error| CaptureError::Io(error.to_string()))?;
-    file.sync_all()?;
     drop(file);
     fs::rename(temporary, path)?;
     Ok(())
@@ -1806,6 +1901,19 @@ mod tests {
         assert!(matches!(result, Err(CaptureError::InvalidFrame(_))));
     }
 
+    #[test]
+    fn owned_downsample_reuses_same_size_buffer() {
+        let source = OutputSize {
+            width: 2,
+            height: 2,
+        };
+        let rgba = vec![17_u8; 16];
+        let ptr = rgba.as_ptr();
+        let resized = downsample_rgba_owned(rgba, source, source, 1)
+            .unwrap_or_else(|err| panic!("resize: {err}"));
+        assert_eq!(resized.as_ptr(), ptr);
+    }
+
     fn test_root(name: &str) -> PathBuf {
         let root =
             std::env::temp_dir().join(format!("perro-capture-test-{}-{name}", std::process::id()));
@@ -1950,7 +2058,7 @@ mod tests {
     }
 
     #[test]
-    fn failed_external_pack_preserves_staging_frames() {
+    fn failed_external_pack_removes_staging_frames() {
         let root = test_root("failed-pack");
         let mut session = CaptureSession::start(
             test_config(),
@@ -1978,13 +2086,12 @@ mod tests {
             Err(error) => panic!("unexpected error: {error:?}"),
             Ok(_) => panic!("missing encoder unexpectedly succeeded"),
         }
-        assert!(stage.exists());
-        assert!(stage.join("frame_000000.png").is_file());
+        assert!(!stage.exists());
         let _ = fs::remove_dir_all(root);
     }
 
     #[test]
-    fn finalize_rejects_missing_scheduled_frames_and_keeps_staging() {
+    fn finalize_rejects_missing_scheduled_frames_and_removes_staging() {
         let root = test_root("count");
         let mut session = CaptureSession::start(
             test_config(),
@@ -2011,8 +2118,68 @@ mod tests {
                 actual: 1
             })
         ));
-        assert!(stage.exists());
+        assert!(!stage.exists());
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn dropping_session_removes_staging_frames() {
+        let root = test_root("drop-cleanup");
+        let mut session = CaptureSession::start(
+            test_config(),
+            OutputSize {
+                width: 2,
+                height: 2,
+            },
+            &root,
+        )
+        .unwrap_or_else(|err| panic!("start: {err}"));
+        session
+            .ingest_rgba(4, 4, &test_frame())
+            .unwrap_or_else(|err| panic!("ingest: {err}"));
+        let stage = session.staging_dir().to_path_buf();
+        assert!(stage.exists());
+        drop(session);
+        assert!(!stage.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn metadata_failure_removes_media_staging_and_partial_files() {
+        let root = test_root("metadata-rollback");
+        let mut session = CaptureSession::start(
+            test_config(),
+            OutputSize {
+                width: 2,
+                height: 2,
+            },
+            &root,
+        )
+        .unwrap();
+        session.ingest_rgba(4, 4, &test_frame()).unwrap();
+        session.ingest_rgba(4, 4, &test_frame()).unwrap();
+        let stage = session.staging_dir().to_path_buf();
+        let output = root.join("clip.gif");
+        let metadata = output.with_extension("json");
+        fs::create_dir(&metadata).unwrap();
+        fs::write(metadata.join("keep"), b"keep").unwrap();
+        assert!(
+            session
+                .finalize_to(OutputSpec::new(&output, OutputFormat::Gif))
+                .is_err()
+        );
+        assert!(!stage.exists());
+        assert!(!output.exists());
+        assert!(metadata.join("keep").is_file());
+        assert!(fs::read_dir(&root).unwrap().all(|entry| {
+            entry
+                .unwrap()
+                .path()
+                .extension()
+                .is_none_or(|extension| extension != "partial")
+        }));
+        assert_eq!(fs::read_dir(stage.parent().unwrap()).unwrap().count(), 0);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

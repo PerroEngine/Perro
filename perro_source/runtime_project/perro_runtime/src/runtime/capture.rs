@@ -16,6 +16,19 @@ use perro_runtime_api::sub_apis::{CaptureAPI, CaptureSourceRoute, SignalAPI};
 use std::sync::Arc;
 use std::time::Duration;
 
+pub(crate) struct CaptureFinish {
+    worker: Option<std::thread::JoinHandle<Result<FinalizedCapture, String>>>,
+}
+
+impl Drop for CaptureFinish {
+    fn drop(&mut self) {
+        // Runtime shutdown must wait for output commit and staging cleanup.
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
 impl Runtime {
     pub(crate) fn apply_capture_actions_before_fixed_tick(&mut self, delta: f32) {
         let timestamp = self.capture_replay_time;
@@ -89,7 +102,7 @@ impl Runtime {
         source_size: OutputSize,
         staging_root: &str,
     ) -> Result<(), String> {
-        if self.capture_session.is_some() {
+        if self.capture_session.is_some() || self.capture_finish.is_some() {
             return Err("capture session already active".to_owned());
         }
         let typed_camera = matches!(
@@ -169,7 +182,14 @@ impl Runtime {
 
     /// Return active capture state, if a session exists.
     pub fn capture_state(&self) -> Option<CaptureSessionState> {
-        self.capture_session.as_ref().map(CaptureSession::state)
+        self.capture_session
+            .as_ref()
+            .map(CaptureSession::state)
+            .or_else(|| {
+                self.capture_finish
+                    .as_ref()
+                    .map(|_| CaptureSessionState::Draining)
+            })
     }
 
     /// Return active queue progress, if a session exists.
@@ -544,6 +564,56 @@ impl Runtime {
 
     /// Stop capture, drain workers, and commit output.
     pub fn capture_stop(&mut self, output: OutputSpec) -> Result<FinalizedCapture, String> {
+        let session = self.capture_take_session()?;
+        let result = session.stop_to(output).map_err(|error| error.to_string())?;
+        self.capture_last_output = Some(result.clone());
+        Ok(result)
+    }
+
+    /// Drain and pack off the app thread; poll until commit completes.
+    pub fn capture_stop_async(&mut self, output: OutputSpec) -> Result<(), String> {
+        let session = self.capture_take_session()?;
+        let worker = std::thread::Builder::new()
+            .name("perro-capture-pack".to_owned())
+            .spawn(move || session.stop_to(output).map_err(|error| error.to_string()))
+            .map_err(|error| error.to_string())?;
+        self.capture_finish = Some(CaptureFinish {
+            worker: Some(worker),
+        });
+        Ok(())
+    }
+
+    /// Return None while background packing remains active.
+    pub fn capture_poll_finish(&mut self) -> Result<Option<FinalizedCapture>, String> {
+        let Some(finish) = self.capture_finish.as_ref() else {
+            return Ok(None);
+        };
+        if !finish
+            .worker
+            .as_ref()
+            .is_some_and(|worker| worker.is_finished())
+        {
+            return Ok(None);
+        }
+        let mut finish = self.capture_finish.take().expect("capture finish present");
+        let result = finish
+            .worker
+            .take()
+            .expect("capture worker present")
+            .join()
+            .map_err(|_| "capture pack worker panicked".to_owned())??;
+        self.capture_last_output = Some(result.clone());
+        Ok(Some(result))
+    }
+
+    /// Release a failed recording and its temporary frames.
+    pub fn capture_cancel(&mut self) {
+        if self.capture_session.is_some() {
+            let _ = self.capture_take_session();
+        }
+    }
+
+    fn capture_take_session(&mut self) -> Result<CaptureSession, String> {
         let session = self
             .capture_session
             .take()
@@ -551,7 +621,6 @@ impl Runtime {
         let restore_route = self.capture_source_route;
         self.capture_source_route = None;
         let owned_render_node = self.capture_owned_render_node.take();
-        let result = session.stop_to(output).map_err(|error| error.to_string());
         if let Some(route) = restore_route {
             self.restore_capture_source_stream(route);
         }
@@ -561,11 +630,9 @@ impl Runtime {
             ));
             self.resource_api.release_camera_capture_texture(node);
         }
-        let result = result?;
-        self.capture_last_output = Some(result.clone());
         self.capture_stop_requested = false;
         self.capture_stop_output = None;
-        Ok(result)
+        Ok(session)
     }
 
     fn restore_capture_source_stream(&mut self, route: CaptureSourceRoute) {
@@ -879,6 +946,107 @@ mod tests {
     use perro_structs::Color;
     use std::borrow::Cow;
     use std::fs;
+
+    #[test]
+    fn async_finish_polls_without_waiting_and_clears_failed_worker() {
+        let mut runtime = Runtime::new();
+        let (release, wait) = std::sync::mpsc::channel();
+        runtime.capture_finish = Some(CaptureFinish {
+            worker: Some(std::thread::spawn(move || {
+                wait.recv().unwrap();
+                Err("pack failed".to_owned())
+            })),
+        });
+        assert_eq!(runtime.capture_state(), Some(CaptureSessionState::Draining));
+        assert_eq!(runtime.capture_poll_finish().unwrap(), None);
+        assert!(
+            runtime
+                .capture_start(
+                    CaptureConfig::default(),
+                    OutputSize {
+                        width: 2,
+                        height: 2
+                    },
+                    "."
+                )
+                .is_err()
+        );
+        release.send(()).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            match runtime.capture_poll_finish() {
+                Err(error) => {
+                    assert_eq!(error, "pack failed");
+                    break;
+                }
+                Ok(None) => {
+                    assert!(std::time::Instant::now() < deadline);
+                    std::thread::yield_now();
+                }
+                Ok(Some(_)) => panic!("unexpected output"),
+            }
+        }
+        assert_eq!(runtime.capture_state(), None);
+        assert!(runtime.capture_last_output().is_none());
+    }
+
+    #[test]
+    fn async_stop_commits_output_and_allows_restart_then_cancel() {
+        let root = std::env::temp_dir().join(format!(
+            "perro-runtime-async-capture-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let mut runtime = Runtime::new();
+        let config = CaptureConfig {
+            supersample: 1,
+            ..CaptureConfig::default()
+        };
+        let size = OutputSize {
+            width: 2,
+            height: 2,
+        };
+        runtime
+            .capture_start(config.clone(), size, root.to_str().unwrap())
+            .unwrap();
+        runtime.capture_submit_rgba(0, 2, 2, &[255; 16]).unwrap();
+        let stage = runtime
+            .capture_session
+            .as_ref()
+            .unwrap()
+            .staging_dir()
+            .to_owned();
+        let output = root.join("clip.gif");
+        runtime
+            .capture_stop_async(OutputSpec::new(&output, perro_capture::OutputFormat::Gif))
+            .unwrap();
+        assert_eq!(runtime.capture_state(), Some(CaptureSessionState::Draining));
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let result = loop {
+            if let Some(result) = runtime.capture_poll_finish().unwrap() {
+                break result;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        };
+        assert_eq!(result.frame_count, 1);
+        assert_eq!(runtime.capture_last_output(), Some(&result));
+        assert!(output.is_file());
+        assert!(!stage.exists());
+        runtime
+            .capture_start(config, size, root.to_str().unwrap())
+            .unwrap();
+        let stage = runtime
+            .capture_session
+            .as_ref()
+            .unwrap()
+            .staging_dir()
+            .to_owned();
+        runtime.capture_cancel();
+        assert_eq!(runtime.capture_state(), None);
+        assert!(!stage.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn host_exposes_start_state_stop_and_metadata() {

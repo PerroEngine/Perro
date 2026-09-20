@@ -5,6 +5,10 @@ impl<B: GraphicsBackend> RunnerState<B> {
         if event_loop.exiting() || self.exit_result.is_some() {
             return;
         }
+        if self.capture_waits_for_exit() {
+            self.poll_capture_after_present(event_loop);
+            return;
+        }
         if self.offline_fps.is_none() && self.pacer.blocks_frame(now) {
             self.apply_frame_control_flow(event_loop, now);
             return;

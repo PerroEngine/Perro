@@ -483,6 +483,10 @@ impl<B: GraphicsBackend> RunnerState<B> {
     }
 
     pub(super) fn apply_frame_control_flow(&self, event_loop: &ActiveEventLoop, now: Instant) {
+        if self.capture_waits_for_exit() {
+            event_loop.set_control_flow(ControlFlow::WaitUntil(now + Duration::from_millis(16)));
+            return;
+        }
         // A browser event loop shares its thread with the host page. Never use
         // Poll there: even the short native busy-poll tail can starve an
         // embedded page. Browser timers are precise enough for this path, so
