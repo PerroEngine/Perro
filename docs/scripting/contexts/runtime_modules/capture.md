@@ -147,7 +147,12 @@ methods!({
 });
 ```
 
-`OutputFormat::Gif` uses the native encoder and needs no external process.
+`OutputFormat::Gif` uses the native encoder and needs no external process. It
+uses one palette for the full clip, keeps exact colors when they fit, applies a
+fixed alpha cutoff, and varies GIF delays to keep the requested average rate.
+This avoids per-frame palette shimmer and transparent-frame trails. GIF still
+has 256-color and one-bit-alpha format limits. `OutputFormat::AnimatedWebP`
+uses ffmpeg lossless BGRA output with full alpha and infinite looping.
 `OutputSpec::new` accepts a file path for GIF and encoded animation formats;
 PNG sequence output uses a directory path.
 
@@ -271,9 +276,10 @@ Supported runtime action names include:
 ## Output + errors
 
 `OutputFormat::PngSequence` keeps numbered PNG files in an output directory.
-`Gif` uses the native encoder. `WebM`, `Mp4`, and `AnimatedWebP` invoke
-`ffmpeg` from `PATH`; use `OutputSpec::with_ffmpeg(path)` for an explicit
-executable.
+`Gif` uses the native global-palette encoder. `WebM`, `Mp4`, and
+`AnimatedWebP` invoke `ffmpeg` from `PATH`; use
+`OutputSpec::with_ffmpeg(path)` for an explicit executable. Animated WebP uses
+lossless BGRA encoding and infinite looping.
 
 The core writes canonical PNG frames into a staging directory. Final media and
 metadata use temporary sibling files and atomic rename. Successful commit

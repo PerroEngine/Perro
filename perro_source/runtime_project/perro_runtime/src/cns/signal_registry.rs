@@ -225,13 +225,13 @@ impl SignalRegistry {
         removed
     }
 
-    #[cfg(any(test, feature = "bench", feature = "profile"))]
+    #[cfg(any(test, feature = "bench"))]
     pub(crate) fn reset_disconnect_script_counters(&mut self) {
         self.disconnect_script_bucket_scans = 0;
         self.disconnect_script_connection_checks = 0;
     }
 
-    #[cfg(any(test, feature = "bench", feature = "profile"))]
+    #[cfg(any(test, feature = "bench"))]
     pub(crate) fn disconnect_script_counters(&self) -> (usize, usize) {
         (
             self.disconnect_script_bucket_scans,

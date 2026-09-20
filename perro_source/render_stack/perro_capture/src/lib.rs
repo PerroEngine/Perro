@@ -1,9 +1,9 @@
 //! Capture timing, sizing, and RGBA frame preparation.
 
-use image::codecs::gif::{GifEncoder, Repeat};
 use image::codecs::png::PngEncoder;
-use image::{Delay, ImageEncoder, RgbaImage, imageops};
+use image::{ImageEncoder, RgbaImage, imageops};
 use rayon::prelude::*;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs::{self, File};
 use std::io::{self, BufWriter, Write};
@@ -15,6 +15,10 @@ use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+const GIF_ALPHA_THRESHOLD: u8 = 128;
+const GIF_MAX_OPAQUE_COLORS: usize = 255;
+const GIF_MAX_PALETTE_SAMPLES: usize = 1_000_000;
 
 /// Capture source selected by a renderer adapter.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1294,15 +1298,80 @@ impl CaptureSession {
     }
 
     fn pack_gif(&self, output: &Path) -> Result<(), CaptureError> {
-        let file = File::create(output)?;
-        let mut encoder = GifEncoder::new(file);
-        encoder.set_repeat(Repeat::Infinite)?;
-        let delay = gif_delay(self.config.effective_frame_rate()?)?;
+        let width = u16::try_from(self.output_size.width)
+            .map_err(|_| CaptureError::InvalidConfig("GIF width exceeds 65535"))?;
+        let height = u16::try_from(self.output_size.height)
+            .map_err(|_| CaptureError::InvalidConfig("GIF height exceeds 65535"))?;
+        let palette = self.build_gif_palette()?;
+        let file = BufWriter::new(File::create(output)?);
+        let mut encoder = gif::Encoder::new(file, width, height, palette.colors())
+            .map_err(|error| CaptureError::Image(error.to_string()))?;
+        encoder
+            .set_repeat(gif::Repeat::Infinite)
+            .map_err(|error| CaptureError::Image(error.to_string()))?;
+        let rate = self.config.effective_frame_rate()?;
         for index in 0..self.submitted {
             let frame = image::open(self.frame_path(index))?.into_rgba8();
-            encoder.encode_frame(image::Frame::from_parts(frame, 0, 0, delay))?;
+            let mut frame = gif::Frame::from_indexed_pixels(
+                width,
+                height,
+                palette.index_pixels(frame.as_raw()),
+                Some(0),
+            );
+            frame.delay = gif_frame_delay_centiseconds(rate, index)?;
+            frame.dispose = gif::DisposalMethod::Background;
+            encoder
+                .write_frame(&frame)
+                .map_err(|error| CaptureError::Image(error.to_string()))?;
         }
         Ok(())
+    }
+
+    fn build_gif_palette(&self) -> Result<GifPalette, CaptureError> {
+        let frames = usize::try_from(self.submitted)
+            .map_err(|_| CaptureError::InvalidFrame("GIF frame count exceeds platform size"))?;
+        let frame_sample_budget = GIF_MAX_PALETTE_SAMPLES
+            .checked_div(frames.max(1))
+            .unwrap_or(1)
+            .max(1);
+        let mut exact = BTreeSet::new();
+        let mut exact_overflow = false;
+        let mut samples = Vec::new();
+
+        for index in 0..self.submitted {
+            let frame = image::open(self.frame_path(index))?.into_rgba8();
+            let opaque_count = frame
+                .as_raw()
+                .chunks_exact(4)
+                .filter(|pixel| pixel[3] >= GIF_ALPHA_THRESHOLD)
+                .count();
+            let sample_step = opaque_count.div_ceil(frame_sample_budget).max(1);
+            let mut opaque_index = 0_usize;
+            for pixel in frame.as_raw().chunks_exact(4) {
+                if pixel[3] < GIF_ALPHA_THRESHOLD {
+                    continue;
+                }
+                let rgb = [pixel[0], pixel[1], pixel[2]];
+                if !exact_overflow {
+                    exact.insert(rgb);
+                    if exact.len() > GIF_MAX_OPAQUE_COLORS {
+                        exact.clear();
+                        exact_overflow = true;
+                    }
+                }
+                if opaque_index.is_multiple_of(sample_step)
+                    && samples.len() / 4 < GIF_MAX_PALETTE_SAMPLES
+                {
+                    samples.extend_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);
+                }
+                opaque_index += 1;
+            }
+        }
+
+        if !exact_overflow {
+            return Ok(GifPalette::exact(exact));
+        }
+        Ok(GifPalette::quantized(samples))
     }
 
     fn pack_ffmpeg(&self, spec: &OutputSpec, output: &Path) -> Result<(), CaptureError> {
@@ -1344,7 +1413,18 @@ impl CaptureSession {
                 command.args(["-c:v", "libx264", "-pix_fmt", "yuv420p"]);
             }
             OutputFormat::AnimatedWebP => {
-                command.args(["-c:v", "libwebp_anim", "-lossless", "1"]);
+                command.args([
+                    "-c:v",
+                    "libwebp_anim",
+                    "-lossless",
+                    "1",
+                    "-compression_level",
+                    "6",
+                    "-pix_fmt",
+                    "bgra",
+                    "-loop",
+                    "0",
+                ]);
             }
             OutputFormat::PngSequence | OutputFormat::Gif => {}
         }
@@ -1369,26 +1449,81 @@ impl Drop for CaptureSession {
     }
 }
 
-fn gif_delay(rate: FrameRate) -> Result<Delay, CaptureError> {
-    let mut numerator = u64::from(rate.denominator()) * 1_000;
-    let mut denominator = u64::from(rate.numerator());
-    let divisor = gcd_u64(numerator, denominator);
-    numerator /= divisor;
-    denominator /= divisor;
-    let numerator = u32::try_from(numerator)
-        .map_err(|_| CaptureError::InvalidConfig("GIF frame delay overflow"))?;
-    let denominator = u32::try_from(denominator)
-        .map_err(|_| CaptureError::InvalidConfig("GIF frame delay overflow"))?;
-    Ok(Delay::from_numer_denom_ms(numerator, denominator))
+enum GifPalette {
+    Exact {
+        colors: Vec<u8>,
+        indexes: BTreeMap<[u8; 3], u8>,
+    },
+    Quantized {
+        colors: Vec<u8>,
+        quantizer: color_quant::NeuQuant,
+    },
 }
 
-fn gcd_u64(mut left: u64, mut right: u64) -> u64 {
-    while right != 0 {
-        let remainder = left % right;
-        left = right;
-        right = remainder;
+impl GifPalette {
+    fn exact(colors: BTreeSet<[u8; 3]>) -> Self {
+        let mut palette = vec![0, 0, 0];
+        let mut indexes = BTreeMap::new();
+        for (offset, color) in colors.into_iter().enumerate() {
+            let index = u8::try_from(offset + 1).unwrap_or(u8::MAX);
+            palette.extend_from_slice(&color);
+            indexes.insert(color, index);
+        }
+        if palette.len() == 3 {
+            palette.extend_from_slice(&[0, 0, 0]);
+        }
+        Self::Exact {
+            colors: palette,
+            indexes,
+        }
     }
-    left.max(1)
+
+    fn quantized(samples: Vec<u8>) -> Self {
+        let quantizer = color_quant::NeuQuant::new(1, GIF_MAX_OPAQUE_COLORS, &samples);
+        let mut colors = vec![0, 0, 0];
+        colors.extend_from_slice(&quantizer.color_map_rgb());
+        Self::Quantized { colors, quantizer }
+    }
+
+    fn colors(&self) -> &[u8] {
+        match self {
+            Self::Exact { colors, .. } | Self::Quantized { colors, .. } => colors,
+        }
+    }
+
+    fn index_pixels(&self, rgba: &[u8]) -> Vec<u8> {
+        rgba.chunks_exact(4)
+            .map(|pixel| {
+                if pixel[3] < GIF_ALPHA_THRESHOLD {
+                    return 0;
+                }
+                match self {
+                    Self::Exact { indexes, .. } => indexes
+                        .get(&[pixel[0], pixel[1], pixel[2]])
+                        .copied()
+                        .unwrap_or(0),
+                    Self::Quantized { quantizer, .. } => {
+                        let opaque = [pixel[0], pixel[1], pixel[2], 255];
+                        u8::try_from(quantizer.index_of(&opaque) + 1).unwrap_or(u8::MAX)
+                    }
+                }
+            })
+            .collect()
+    }
+}
+
+fn gif_frame_delay_centiseconds(rate: FrameRate, index: u64) -> Result<u16, CaptureError> {
+    let scale = u128::from(rate.denominator()) * 100;
+    let denominator = u128::from(rate.numerator());
+    let start = u128::from(index)
+        .checked_mul(scale)
+        .ok_or(CaptureError::InvalidConfig("GIF frame delay overflow"))?;
+    let end = u128::from(index.saturating_add(1))
+        .checked_mul(scale)
+        .ok_or(CaptureError::InvalidConfig("GIF frame delay overflow"))?;
+    let start = (start + denominator / 2) / denominator;
+    let end = (end + denominator / 2) / denominator;
+    Ok(u16::try_from(end.saturating_sub(start).max(1)).unwrap_or(u16::MAX))
 }
 
 fn worker_loop(
@@ -1537,6 +1672,33 @@ mod tests {
             schedule.timestamp(1),
             Some(Duration::from_nanos(33_366_666))
         );
+    }
+
+    #[test]
+    fn gif_delay_distributes_fractional_centiseconds() {
+        let rate = FrameRate::integer(60);
+        let delays = (0..6)
+            .map(|index| gif_frame_delay_centiseconds(rate, index).expect("GIF delay"))
+            .collect::<Vec<_>>();
+        assert_eq!(delays, [2, 1, 2, 2, 1, 2]);
+        assert_eq!(delays.into_iter().sum::<u16>(), 10);
+
+        let ntsc = FrameRate::new(30_000, 1_001).expect("NTSC rate");
+        let delays = (0..3)
+            .map(|index| gif_frame_delay_centiseconds(ntsc, index).expect("GIF delay"))
+            .collect::<Vec<_>>();
+        assert_eq!(delays, [3, 4, 3]);
+    }
+
+    #[test]
+    fn gif_palette_keeps_exact_colors_and_cuts_partial_alpha() {
+        let palette = GifPalette::exact(BTreeSet::from([[10, 20, 30], [40, 50, 60]]));
+        let indexed = palette.index_pixels(&[10, 20, 30, 255, 40, 50, 60, 128, 10, 20, 30, 127]);
+        assert_ne!(indexed[0], 0);
+        assert_ne!(indexed[1], 0);
+        assert_ne!(indexed[0], indexed[1]);
+        assert_eq!(indexed[2], 0);
+        assert_eq!(palette.colors().len(), 9);
     }
 
     #[test]
@@ -1762,6 +1924,24 @@ mod tests {
                 .all(|frame| frame.buffer().dimensions() == (2, 2))
         );
         assert_eq!(frames[0].delay().numer_denom_ms(), (500, 1));
+        let mut options = gif::DecodeOptions::new();
+        options.set_color_output(gif::ColorOutput::Indexed);
+        let mut decoder = options
+            .read_info(std::io::BufReader::new(
+                File::open(&output).unwrap_or_else(|err| panic!("open indexed GIF: {err}")),
+            ))
+            .unwrap_or_else(|err| panic!("decode indexed GIF: {err}"));
+        assert!(decoder.global_palette().is_some());
+        let mut indexed_frames = 0;
+        while let Some(frame) = decoder
+            .read_next_frame()
+            .unwrap_or_else(|err| panic!("read indexed GIF frame: {err}"))
+        {
+            assert!(frame.palette.is_none());
+            assert_eq!(frame.dispose, gif::DisposalMethod::Background);
+            indexed_frames += 1;
+        }
+        assert_eq!(indexed_frames, 2);
         let metadata = fs::read_to_string(&result.metadata_path)
             .unwrap_or_else(|err| panic!("read GIF metadata: {err}"));
         assert!(metadata.contains("\"frame_count\":2"));

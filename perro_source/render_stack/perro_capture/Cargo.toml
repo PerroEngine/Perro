@@ -7,5 +7,7 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+color_quant = "1.1"
+gif = "0.14.2"
 image = { version = "0.25.8", default-features = false, features = ["png", "gif", "webp"] }
 rayon = "1.10"

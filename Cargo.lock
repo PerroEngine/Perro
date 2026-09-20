@@ -4573,6 +4573,8 @@ version = "0.1.0"
 name = "perro_capture"
 version = "0.1.0"
 dependencies = [
+ "color_quant",
+ "gif",
  "image",
  "rayon",
 ]
