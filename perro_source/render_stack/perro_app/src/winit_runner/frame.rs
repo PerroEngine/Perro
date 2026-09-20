@@ -5,7 +5,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
         if event_loop.exiting() || self.exit_result.is_some() {
             return;
         }
-        if self.pacer.blocks_frame(now) {
+        if self.offline_fps.is_none() && self.pacer.blocks_frame(now) {
             self.apply_frame_control_flow(event_loop, now);
             return;
         }
@@ -14,6 +14,16 @@ impl<B: GraphicsBackend> RunnerState<B> {
         // fire in this same splash-covered frame.
         if boot_load_may_start(self.startup_splash.active, self.window_visible) {
             self.app.runtime.load_boot_scene_if_pending();
+        }
+        // Offline capture primes render assets/pipelines with render-only
+        // presents. No script, replay, physics, or output clock advances.
+        let pre_roll_pending = self.pre_roll_offline_capture();
+        if self.capture_error.is_some() {
+            self.request_exit(event_loop, AppExitResult::event_loop_exit());
+            return;
+        }
+        if pre_roll_pending {
+            return;
         }
         self.frame_index = self.frame_index.saturating_add(1);
         let frame_index = self.frame_index;
@@ -26,7 +36,16 @@ impl<B: GraphicsBackend> RunnerState<B> {
             return;
         }
         let frame_start = now;
-        let frame_delta = frame_start.duration_since(self.last_frame_start);
+        let frame_delta = self
+            .offline_fps
+            .map(|fps| {
+                if frame_index <= 1 {
+                    Duration::ZERO
+                } else {
+                    Duration::from_secs_f64(1.0 / fps)
+                }
+            })
+            .unwrap_or_else(|| frame_start.duration_since(self.last_frame_start));
         self.last_frame_start = frame_start;
 
         let fps_window_elapsed = frame_start.duration_since(self.fps_window_start);
@@ -38,7 +57,10 @@ impl<B: GraphicsBackend> RunnerState<B> {
         }
         self.fps_window_frames = self.fps_window_frames.saturating_add(1);
 
-        let elapsed_since_start = frame_start.duration_since(self.run_start);
+        let elapsed_since_start = self
+            .offline_fps
+            .map(|fps| Duration::from_secs_f64((frame_index.saturating_sub(1)) as f64 / fps))
+            .unwrap_or_else(|| frame_start.duration_since(self.run_start));
         self.app.set_elapsed_time(elapsed_since_start.as_secs_f32());
         let simulated_delta_seconds;
         let should_sample_timing = self.should_sample_timing();
@@ -94,7 +116,11 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     frame_delta.as_secs_f32(),
                     effective_fixed_step,
                     self.fixed_accumulator,
-                    max_catchup_steps(self.fixed_step_cost_seconds, effective_fixed_step),
+                    if self.offline_fps.is_some() {
+                        u32::MAX
+                    } else {
+                        max_catchup_steps(self.fixed_step_cost_seconds, effective_fixed_step)
+                    },
                 );
                 let steps_start = Instant::now();
                 fixed_steps = plan.steps;
@@ -187,6 +213,14 @@ impl<B: GraphicsBackend> RunnerState<B> {
         self.apply_mouse_mode_request();
         self.apply_cursor_icon_request();
         self.apply_window_requests(event_loop);
+        // Script/QA capture starts inside runtime update. Build + arm bridge
+        // before this frame's present so first requested sample reaches sink.
+        self.sync_capture_bridge();
+        self.arm_capture();
+        if self.capture_error.is_some() {
+            self.request_exit(event_loop, AppExitResult::event_loop_exit());
+            return;
+        }
         #[cfg(feature = "profile_heavy")]
         let simulation_duration = simulation_start.elapsed();
         #[cfg(not(feature = "profile_heavy"))]
@@ -212,6 +246,19 @@ impl<B: GraphicsBackend> RunnerState<B> {
             None
         };
         self.apply_surface_resync_request();
+        self.poll_capture_after_present(event_loop);
+        if event_loop.exiting() || self.exit_result.is_some() {
+            return;
+        }
+        if self.capture.is_none() && self.capture_error.is_some() {
+            self.request_exit(event_loop, AppExitResult::event_loop_exit());
+            return;
+        }
+        self.arm_capture();
+        if self.capture_error.is_some() {
+            self.request_exit(event_loop, AppExitResult::event_loop_exit());
+            return;
+        }
         #[cfg(feature = "profile_heavy")]
         self.show_window_after_present(Self::present_reached_swapchain(&present_timing));
         #[cfg(not(feature = "profile_heavy"))]

@@ -18,6 +18,16 @@ impl PerroGraphics {
         }
         self.events
             .push(RenderEvent::HdrStatusChanged(gpu.hdr_status()));
+        if let Some(callback) = self.capture_callback.clone() {
+            gpu.set_capture_callback(Some(callback));
+        }
+        gpu.set_capture_source_node(self.capture_source_node);
+        if let Some([width, height]) = self.capture_target_size {
+            if let Err(error) = gpu.set_capture_target(width, height) {
+                self.capture_error = Some(error);
+            }
+        }
+        gpu.set_capture_alpha(self.capture_alpha);
         self.gpu = Some(gpu);
         self.pending_gpu = None;
         self.redraw_requested = true;

@@ -184,7 +184,9 @@ impl PerroGraphics {
             .gpu
             .as_ref()
             .is_some_and(|gpu| gpu.shared_texture_uploads_deferred());
-        let has_continuous_updates = self.renderer_3d.has_active_sky_animation()
+        let capture_active = self.capture_target_size.is_some() && self.capture_callback.is_some();
+        let has_continuous_updates = capture_active
+            || self.renderer_3d.has_active_sky_animation()
             || has_pending_pipeline_warms
             || has_deferred_texture_uploads
             || self.has_retained_animated_custom_material()

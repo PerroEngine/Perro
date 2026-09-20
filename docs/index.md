@@ -63,6 +63,7 @@ Avoid using history pages as current guidance.
 ### Runtime
 
 - [Runtime API](scripting/contexts/runtime_api.md)
+- [Capture runtime module](scripting/contexts/runtime_modules/capture.md)
 - [Input API](scripting/contexts/input_api.md)
 - [Resource API](scripting/contexts/resource_api.md)
 - [Node runtime module](scripting/contexts/runtime_modules/nodes.md)

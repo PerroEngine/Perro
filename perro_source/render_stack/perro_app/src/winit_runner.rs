@@ -191,7 +191,13 @@ fn plan_fixed_steps(
     accumulator: f32,
     max_steps: u32,
 ) -> FixedStepPlan {
-    let max_steps = max_steps.clamp(MIN_FIXED_STEPS_PER_FRAME, MAX_FIXED_STEPS_PER_FRAME);
+    // Offline rendering supplies `u32::MAX` to keep every fixed tick on the
+    // requested timeline. Live runs retain the bounded catch-up guard.
+    let max_steps = if max_steps == u32::MAX {
+        u32::MAX
+    } else {
+        max_steps.clamp(MIN_FIXED_STEPS_PER_FRAME, MAX_FIXED_STEPS_PER_FRAME)
+    };
     let mut next_accumulator =
         accumulator + frame_delta_seconds.clamp(0.0, MAX_FRAME_DELTA_SECONDS);
     let mut steps = 0u32;
@@ -718,12 +724,16 @@ impl WinitRunner {
                 .exit_result
                 .take()
                 .unwrap_or_else(AppExitResult::event_loop_exit);
+            let capture_error = state.capture_error.take();
             drop(state);
             #[cfg(feature = "steamworks")]
             let _ = perro_steamworks::runtime::shutdown();
             run_result.map_err(|err| AppExitError {
                 message: format!("winit event loop failed: {err}"),
             })?;
+            if let Some(message) = capture_error {
+                return Err(AppExitError { message });
+            }
             Ok(exit_result)
         }
     }
@@ -747,12 +757,16 @@ impl WinitRunner {
             .exit_result
             .take()
             .unwrap_or_else(AppExitResult::event_loop_exit);
+        let capture_error = state.capture_error.take();
         drop(state);
         #[cfg(feature = "steamworks")]
         let _ = perro_steamworks::runtime::shutdown();
         run_result.map_err(|err| AppExitError {
             message: format!("winit event loop failed: {err}"),
         })?;
+        if let Some(message) = capture_error {
+            return Err(AppExitError { message });
+        }
         Ok(exit_result)
     }
 
@@ -964,8 +978,14 @@ struct RunnerState<B: GraphicsBackend> {
     /// frames. Unattended capture only: a kill would drop the buffered
     /// `PERRO_TIMING_CSV` tail, a clean exit drains it.
     exit_after_frames: Option<u64>,
+    /// Deterministic output clock for offline capture. Live runs derive
+    /// delta/time from `Instant`; offline runs derive both from frame index.
+    offline_fps: Option<f64>,
+    capture: Option<capture::RunnerCapture>,
+    capture_error: Option<String>,
 }
 
+mod capture;
 mod frame;
 mod splash;
 mod state;

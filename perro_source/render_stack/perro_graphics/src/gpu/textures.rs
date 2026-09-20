@@ -319,6 +319,7 @@ impl Gpu {
         needs_intermediate: bool,
         needs_tonemap_input: bool,
         needs_post_depth: bool,
+        tone_mapped: bool,
     ) -> Option<&GpuCameraStreamTarget> {
         let resolution = [resolution[0].max(1), resolution[1].max(1)];
         let recreate = self.camera_stream_targets.get(&node).is_none_or(|target| {
@@ -326,6 +327,7 @@ impl Gpu {
                 || target.post_input_view.is_some() != needs_intermediate
                 || target.tonemap_input_view.is_some() != needs_tonemap_input
                 || target.depth_view.is_some() != needs_post_depth
+                || target.tone_mapped != tone_mapped
         });
         if recreate {
             // PERRO_STREAM_LOG=1 prints the target size a stream/sub-view
@@ -431,6 +433,7 @@ impl Gpu {
                     tonemap_input_view,
                     depth_view,
                     resolution,
+                    tone_mapped,
                     post_view_key,
                 },
             );

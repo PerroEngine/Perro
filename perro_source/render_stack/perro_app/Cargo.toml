@@ -19,6 +19,7 @@ perro_asset_formats.workspace = true
 perro_scripting.workspace = true
 perro_input_api.workspace = true
 perro_runtime_api.workspace = true
+perro_capture.workspace = true
 perro_ui.workspace = true
 perro_web.workspace = true
 perro_steamworks = { workspace = true, optional = true }

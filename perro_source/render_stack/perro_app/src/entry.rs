@@ -261,9 +261,13 @@ fn graphics_from_project_config(
     config: &perro_runtime::RuntimeProjectConfig,
     release_mode: bool,
 ) -> PerroGraphics {
+    let offline_capture = std::env::var("PERRO_CAPTURE_MODE")
+        .ok()
+        .is_some_and(|mode| mode.eq_ignore_ascii_case("offline"))
+        || std::env::var("PERRO_OFFLINE_FPS").is_ok();
     let occlusion_culling = effective_occlusion_culling(config.occlusion_culling);
     PerroGraphics::new()
-        .with_vsync(config.vsync)
+        .with_vsync(if offline_capture { false } else { config.vsync })
         .with_hdr_mode(config.hdr)
         .with_anti_alias(graphics_anti_alias(effective_anti_alias(config.anti_alias)))
         .with_msaa_2d(effective_msaa(config.msaa_2d))

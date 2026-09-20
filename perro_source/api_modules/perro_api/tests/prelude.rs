@@ -50,3 +50,16 @@ fn prelude_exports_world_label_and_sprite_nodes() {
     let _node_type = NodeType::Label3D;
     let _data = SceneNodeData::from(Label3D::new());
 }
+
+#[test]
+fn prelude_exports_typed_capture_camera_sources() {
+    let camera = NodeID::from_parts(42, 7);
+    assert_eq!(
+        CaptureSource::camera_2d_node(camera),
+        CaptureSource::camera_2d_node_id(camera.as_u64())
+    );
+    assert_eq!(
+        CaptureSource::camera_3d_node(camera),
+        CaptureSource::camera_3d_node_id(camera.as_u64())
+    );
+}

@@ -2665,6 +2665,8 @@ checksum = "e6506c6c10786659413faa717ceebcb8f70731c0a60cbae39795fdf114519c1a"
 dependencies = [
  "bytemuck",
  "byteorder-lite",
+ "color_quant",
+ "gif",
  "image-webp",
  "moxcms",
  "num-traits",
@@ -4520,6 +4522,7 @@ dependencies = [
  "memory-stats",
  "perro_api",
  "perro_asset_formats",
+ "perro_capture",
  "perro_graphics",
  "perro_graphics_assets",
  "perro_ids",
@@ -4567,12 +4570,21 @@ name = "perro_builtin_meshes"
 version = "0.1.0"
 
 [[package]]
+name = "perro_capture"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "rayon",
+]
+
+[[package]]
 name = "perro_cli"
 version = "0.1.0"
 dependencies = [
  "ctrlc",
  "gltf",
  "perro_animation",
+ "perro_capture",
  "perro_compiler",
  "perro_project",
  "perro_scene",
@@ -4876,6 +4888,7 @@ dependencies = [
  "perro_animation",
  "perro_asset_formats",
  "perro_builtin_meshes",
+ "perro_capture",
  "perro_csv",
  "perro_ids",
  "perro_input_api",
@@ -4911,6 +4924,7 @@ name = "perro_runtime_api"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "perro_capture",
  "perro_ids",
  "perro_nodes",
  "perro_pawdio",

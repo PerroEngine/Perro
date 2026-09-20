@@ -75,6 +75,15 @@ impl GraphicsBackend for PerroGraphics {
                 }
                 self.events
                     .push(RenderEvent::HdrStatusChanged(gpu.hdr_status()));
+                if let Some(callback) = self.capture_callback.clone() {
+                    gpu.set_capture_callback(Some(callback));
+                }
+                if let Some([width, height]) = self.capture_target_size
+                    && let Err(error) = gpu.set_capture_target(width, height)
+                {
+                    self.capture_error = Some(error);
+                }
+                gpu.set_capture_alpha(self.capture_alpha);
                 self.gpu = Some(gpu);
                 self.redraw_requested = true;
             }
@@ -141,6 +150,62 @@ impl GraphicsBackend for PerroGraphics {
         if let Some(gpu) = &mut self.gpu {
             gpu.wait_idle();
         }
+    }
+
+    fn set_capture_target(&mut self, width: u32, height: u32) -> Result<(), String> {
+        self.capture_target_size = Some([width, height]);
+        if let Some(gpu) = self.gpu.as_mut() {
+            gpu.set_capture_target(width, height)?;
+        }
+        Ok(())
+    }
+
+    fn clear_capture_target(&mut self) {
+        self.capture_target_size = None;
+        self.capture_alpha = false;
+        self.capture_source_node = None;
+        if let Some(gpu) = self.gpu.as_mut() {
+            gpu.set_capture_alpha(false);
+            gpu.set_capture_source_node(None);
+            gpu.clear_capture_target();
+        }
+    }
+
+    fn set_capture_alpha(&mut self, enabled: bool) {
+        self.capture_alpha = enabled;
+        if let Some(gpu) = self.gpu.as_mut() {
+            gpu.set_capture_alpha(enabled);
+        }
+    }
+
+    fn set_capture_callback(&mut self, callback: Option<CaptureFrameCallback>) {
+        self.capture_callback = callback.clone();
+        if let Some(gpu) = self.gpu.as_mut() {
+            gpu.set_capture_callback(callback);
+        }
+    }
+
+    fn set_capture_source_node(&mut self, node: Option<NodeID>) {
+        self.capture_source_node = node;
+        if let Some(gpu) = self.gpu.as_mut() {
+            gpu.set_capture_source_node(node);
+        }
+    }
+
+    fn drain_capture(&mut self) -> Result<(), String> {
+        if let Some(gpu) = self.gpu.as_mut() {
+            gpu.drain_capture()?;
+            if let Some(error) = gpu.take_capture_error() {
+                return Err(error);
+            }
+        }
+        self.capture_error.take().map_or(Ok(()), Err)
+    }
+
+    fn take_capture_error(&mut self) -> Option<String> {
+        self.capture_error
+            .take()
+            .or_else(|| self.gpu.as_mut().and_then(Gpu::take_capture_error))
     }
 
     fn set_startup_warm_boost(&mut self, enabled: bool) {

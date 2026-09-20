@@ -11,6 +11,7 @@ pub mod sub_apis;
 
 // ---- Core engine re-exports ----
 
+pub use perro_capture;
 pub use perro_ids;
 #[doc(hidden)]
 pub use perro_ids::string_to_u64 as __perro_string_to_u64;
@@ -26,16 +27,21 @@ pub use api::{RuntimeApiSurface, RuntimeWindow};
 pub mod prelude {
     // Facade traits and module accessors.
     pub use crate::api::{RuntimeAPI, RuntimeApiSurface, RuntimeWindow};
+    pub use perro_capture::{
+        AspectRatio, CaptureConfig, CaptureMode, CaptureProgress, CaptureSessionState,
+        CaptureSource, FinalizedCapture, FrameRate, Framing, OutputFormat, OutputSize, OutputSpec,
+    };
 
     // Runtime domain APIs.
     pub use crate::sub_apis::{
-        AnimPlayerAPI, AnimPlayerModule, AttachedMidiTarget, CameraRay3D, CursorIcon, FrameRateCap,
-        IntoImpulseDirection, IntoNodeCollection, IntoNodeCreateBatch, IntoNodeTag, IntoNodeTags,
-        IntoPreloadedSceneID, IntoPreloadedSceneTarget, IntoSceneLoadSource, IntoScenePath,
-        IntoScriptMemberID, MeshDataSurfaceHit3D, MeshDataSurfaceRegion3D, MeshMaterialRegion3D,
-        MeshQueryModule, MeshSurfaceHit3D, MeshSurfaceRay3D, MidiChannel, MidiNoteHandle,
-        MidiNoteOptions, MidiProgram, MidiSong, MidiSound, NavMeshAPI, NavMeshAreaCost,
-        NavMeshModule, NavMeshObstacle3D, NavMeshPath3D, NavMeshPathOptions, NavMeshPathStatus,
+        AnimPlayerAPI, AnimPlayerModule, AttachedMidiTarget, CameraRay3D, CaptureModule,
+        CaptureSourceNodeExt, CursorIcon, FrameRateCap, IntoImpulseDirection, IntoNodeCollection,
+        IntoNodeCreateBatch, IntoNodeTag, IntoNodeTags, IntoPreloadedSceneID,
+        IntoPreloadedSceneTarget, IntoSceneLoadSource, IntoScenePath, IntoScriptMemberID,
+        MeshDataSurfaceHit3D, MeshDataSurfaceRegion3D, MeshMaterialRegion3D, MeshQueryModule,
+        MeshSurfaceHit3D, MeshSurfaceRay3D, MidiChannel, MidiNoteHandle, MidiNoteOptions,
+        MidiProgram, MidiSong, MidiSound, NavMeshAPI, NavMeshAreaCost, NavMeshModule,
+        NavMeshObstacle3D, NavMeshPath3D, NavMeshPathOptions, NavMeshPathStatus,
         NavMeshQueryOptions, NodeAPI, NodeCollection, NodeCollectionEntry, NodeCreateBatch,
         NodeModule, NodeQuery, NodeQueryModule, NodeQueryView, NodeSceneSpec, NodeScriptSpec,
         NodeScriptVar, NodeSpec, Note, PhysicsAPI, PhysicsBodyPrediction2D,

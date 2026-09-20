@@ -16,8 +16,39 @@ fn background_frame_rate_cap(
 }
 
 impl<B: GraphicsBackend> RunnerState<B> {
+    fn offline_fps_from_env() -> Option<f64> {
+        let mode = std::env::var("PERRO_CAPTURE_MODE").ok();
+        let raw = std::env::var("PERRO_OFFLINE_FPS").ok();
+        let exact = std::env::var("PERRO_OFFLINE_FPS_NUM")
+            .ok()
+            .and_then(|value| value.trim().parse::<u32>().ok())
+            .zip(
+                std::env::var("PERRO_OFFLINE_FPS_DEN")
+                    .ok()
+                    .and_then(|value| value.trim().parse::<u32>().ok()),
+            )
+            .filter(|(numerator, denominator)| *numerator > 0 && *denominator > 0)
+            .map(|(numerator, denominator)| f64::from(numerator) / f64::from(denominator));
+        if mode
+            .as_deref()
+            .is_some_and(|mode| mode.eq_ignore_ascii_case("offline"))
+            || raw.is_some()
+            || exact.is_some()
+        {
+            Some(
+                exact
+                    .or_else(|| raw.and_then(|value| value.trim().parse::<f64>().ok()))
+                    .filter(|fps| fps.is_finite() && *fps > 0.0)
+                    .unwrap_or(60.0)
+                    .clamp(0.001, 1000.0),
+            )
+        } else {
+            None
+        }
+    }
+
     pub(super) fn new(
-        app: App<B>,
+        mut app: App<B>,
         title: &str,
         fixed_timestep: Option<f32>,
         #[cfg(not(target_arch = "wasm32"))] preloaded_images: Option<PreloadedProjectImages>,
@@ -27,10 +58,10 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let preloaded_images =
             preloaded_images.unwrap_or_else(|| preload_project_images(app.runtime.project()));
         #[cfg(not(target_arch = "wasm32"))]
-        let startup_splash =
+        let mut startup_splash =
             StartupSplashState::from_preloaded(preloaded_images.startup_splash.clone(), now);
         #[cfg(target_arch = "wasm32")]
-        let startup_splash = StartupSplashState::from_preloaded(now);
+        let mut startup_splash = StartupSplashState::from_preloaded(now);
         let normalized_fixed_timestep = normalize_fixed_timestep_seconds(fixed_timestep);
         let frame_rate_cap = app
             .runtime
@@ -42,6 +73,31 @@ impl<B: GraphicsBackend> RunnerState<B> {
             .project()
             .map(|project| project.config.vsync)
             .unwrap_or(false);
+        let offline_fps = Self::offline_fps_from_env();
+        // Capture source names resolve against the live scene tree. CLI
+        // capture skips the deferred splash-time load so source validation and
+        // the t=0 sample both happen only after the boot scene is ready.
+        if std::env::var("PERRO_CAPTURE_OUTPUT")
+            .ok()
+            .is_some_and(|output| !output.trim().is_empty())
+        {
+            app.runtime.load_boot_scene_if_pending();
+        }
+        let (capture, capture_error) = match super::capture::RunnerCapture::from_env(&mut app) {
+            Ok(capture) => (capture, None),
+            Err(error) => (None, Some(error)),
+        };
+        if offline_fps.is_some() {
+            // A capture starts at scene time zero; branding splash frames must
+            // not consume output frame slots or alter deterministic state.
+            startup_splash.active = false;
+            startup_splash.fade_started_at = Some(now);
+            startup_splash.first_frame_captured = true;
+            eprintln!(
+                "[perro][capture] offline clock fps={} (vsync/pacer bypass)",
+                offline_fps.unwrap_or(60.0)
+            );
+        }
         let input_config = app
             .runtime
             .project()
@@ -56,7 +112,18 @@ impl<B: GraphicsBackend> RunnerState<B> {
             fixed_timestep: normalized_fixed_timestep,
             fixed_accumulator: 0.0,
             fixed_step_cost_seconds: 0.0,
-            pacer: FramePacer::new(frame_rate_cap, vsync_enabled),
+            pacer: FramePacer::new(
+                if offline_fps.is_some() {
+                    RuntimeFrameRateCap::Unlimited
+                } else {
+                    frame_rate_cap
+                },
+                if offline_fps.is_some() {
+                    false
+                } else {
+                    vsync_enabled
+                },
+            ),
             last_frame_start: now,
             last_frame_end: now,
             run_start: now,
@@ -101,6 +168,9 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 .ok()
                 .and_then(|raw| raw.trim().parse::<u64>().ok())
                 .filter(|frames| *frames > 0),
+            offline_fps,
+            capture,
+            capture_error,
         }
     }
 

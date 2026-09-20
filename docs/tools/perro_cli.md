@@ -10,6 +10,7 @@
 | Quick Map | [Quick Map](#quick-map) |
 | Project Placement | [Project Placement](#project-placement) |
 | Build And Run | [Build And Run](#build-and-run) |
+| Capture & Offline Render | [Capture & Offline Render](#capture--offline-render) |
 | New Projects And Templates | [New Projects And Templates](#new-projects-and-templates) |
 | Health And Maintenance | [Health And Maintenance](#health-and-maintenance) |
 | Profiling | [Profiling](#profiling) |
@@ -69,6 +70,7 @@ Build and run:
 perro check [--path <project_dir>]
 perro test [--path <project_dir>] [-- <cargo_test_args>]
 perro dev [--path <project_dir>] [--scene res://path.scn] [--target native|web|android] [--headless] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--sim <spec>] [--host <addr>] [--port <num>]
+perro capture --output <path> [--path <project_dir>] [--source main|camera2d:<name>|camera3d:<name>|ui:<name>|target:<name>] [--mode offline|realtime] [--width <px>] [--height <px>] [--aspect preserve|W:H] [--fps <fps-or-num/den>] [--duration <sec>] [--supersample <integer-scale>] [--framing fit|crop|expand|stretch] [--format png|gif|webm|mp4|webp] [--transparent]
 perro build [--path <project_dir>] [--target native|web|android] [--triple <rust_target> | --universal-macos] [--headless] [--profile] [--console]
 perro targets [--host windows|linux|macos]
 perro dlc --name <dlc_name> [--path <project_dir>]
@@ -134,6 +136,7 @@ Use these commands for normal compile, run, export, and DLC package workflows.
 | `check` | Compile project scripts only. | `.perro/scripts` build output |
 | `test` | Sync project scripts and run their Rust tests. | `cargo test` result |
 | `dev` | Compile scripts, build dev runner, run project. | running dev app |
+| `capture` | Render exact output frames, then package them. | requested image/video output |
 | `build` | Compile scripts, bake static assets, build release project. | `.output/` executable + packed assets |
 | `targets` | Show ready, setup-required, and unavailable build targets for a development OS. | support matrix |
 | `dlc` | Build one runtime-loadable DLC package. | `.output/dlc/<name>.dlc` |
@@ -236,6 +239,80 @@ Dynamic scene/resource loading is optimized for development.
 Perro CLI handles compiler/setup glue so day-to-day workflow stays simple while project structure stays flexible.
 For release-like asset loading numbers, run `perro build`.
 See [Performance + Flexibility Philosophy](../project/performance_philosophy.md).
+
+## Capture & Offline Render
+
+Command:
+
+```powershell
+perro capture --path <project_dir> --output <file_or_dir> [--source main|camera2d:<name>|camera3d:<name>|ui:<name>|target:<name>] [--mode offline|realtime] [--width <px>] [--height <px>] [--aspect preserve|W:H] [--fps <fps-or-num/den>] [--duration <sec>] [--supersample <integer-scale>] [--framing fit|crop|expand|stretch] [--format png|gif|webm|mp4|webp] [--transparent] [--scene res://path.scn] [--sim <spec>]
+```
+
+`capture` starts the project graphics runner with a capture session. Source syntax uses `main` for the final compositor, or `kind:name` for a scene source:
+
+For script and QA control, see the [Capture Runtime Module](../scripting/contexts/runtime_modules/capture.md).
+
+- `camera2d:<node-name-or-id>`
+- `camera3d:<node-name-or-id>`
+- `ui:<node-name-or-id>` (aliases: `uisubview:<name>`, `ui_sub_view:<name>`)
+- `target:<node-name-or-id>` (alias: `render_target:<name>`)
+
+Source names resolve against live scene nodes. Missing names, empty names, and wrong node types fail before capture output starts. `target:<name>` selects already-rendered pixels; `--framing expand` rejects that source because a raster target cannot reveal extra view. The resolved source, frame timing, dimensions, and output count belong to capture metadata.
+
+Offline mode uses fixed simulation steps and no wall-clock pacing. `--duration * --fps` must resolve to a whole frame count. Frames use timestamps `0, 1/fps, ...`; replay input applies before its target simulation tick. The runner exits after the requested frame count and drains GPU readbacks and encoders before final packaging.
+
+Realtime mode samples elapsed wall time at the requested rational rate. A late render reuses the latest completed frame for missed sample slots; metadata records `realtime_duplicate_frames`. Offline mode never reuses a prior frame to fill its schedule.
+
+Defaults:
+
+- `--mode offline`
+- `--fps 60`
+- `--duration 1`
+- `--supersample 2`
+- `--source main`
+- `--framing fit`
+- `--format png`
+
+`--width` and `--height` set final output dimensions. Set one dimension to derive the other from `--aspect`; omit both to keep source dimensions. `--aspect preserve` keeps source aspect; `W:H` sets an explicit output aspect. Framing modes act when source and output aspects differ: `fit` keeps all source pixels with letterbox, `crop` fills output and crops excess, `stretch` scales each axis, and `expand` widens a camera view to fill output. `expand` works for camera and UI sub-view sources; raster targets reject it. Supersampling renders at `final_width * scale` and `final_height * scale`, then downsamples to exact final dimensions before encode. `--supersample 2` is default; output never exposes the high-resolution staging size.
+
+`--transparent` uses alpha-zero clear pixels for capture targets. World or IBL lighting still shades 3D objects; opaque environment background does not leak into transparent output. Omit the flag for normal opaque output.
+
+PNG frame data acts as the canonical intermediate for every format. The pipeline bounds in-flight GPU readbacks, packs requested formats at finalize, and removes intermediate frames on success. GIF uses the native encoder. WebM, MP4, and animated WebP need `ffmpeg` on `PATH`; API callers can set an explicit executable with `OutputSpec::with_ffmpeg`. The final media and metadata use temporary sibling files plus atomic rename. A failed pack removes its temporary output but keeps the staging directory and returns a nonzero CLI status; successful output cleanup remains automatic.
+
+Examples:
+
+```powershell
+# 360 deterministic 60 FPS frames, 2x render, final 1170px wide
+perro capture --path D:\GameProjects\MyGame --source camera3d:MainCamera --width 1170 --aspect 16:9 --fps 60 --duration 6 --transparent --output .output\capture.webm
+
+# Write canonical PNG sequence at final dimensions
+perro capture --path D:\GameProjects\MyGame --source ui:Hud --format png --width 1920 --height 1080 --output .output\ui-frames
+```
+
+### Perro Capture API
+
+Runtime scripts and QA hosts use `ctx.run.Capture()` for the same session core. Set `config.output` before `start`; the normal API derives source dimensions and staging paths:
+
+```rust
+let output = OutputSpec::new(".output/capture", OutputFormat::PngSequence);
+let mut config = CaptureConfig {
+    output: Some(output),
+    ..CaptureConfig::default()
+};
+let mut capture = ctx.run.Capture();
+capture.start(config)?;
+
+// Optional director/replay event. Offline playback applies it before its tick.
+capture.record_action(
+    Duration::from_secs_f32(0.5),
+    "input:key_down",
+    Some("Space".to_owned()),
+)?;
+
+capture.stop()?;
+```
+
+`state()` returns `Recording`, `Draining`, or `Finalized` while a session exists. `progress()`, `completed_frames()`, `source()`, `source_route()`, and `render_size()` expose queue, route, and size state. `stop()` requests a safe app-boundary stop using `config.output`; the app drains GPU readback and encode before commit. `request_stop(output)` supplies an output override. Renderer hosts that own the full boundary use `start_raw(...)`, `submit_rgba(...)`, `drain()`, and `finish_raw(output)`. Poll `last_output()` after the boundary; it returns `FinalizedCapture` with `output_path`, `metadata_path`, `frame_count`, exact final `output_size`, and pre-downsample `render_size`. Metadata stores the rational rate, timestamps, framing, alpha, supersample, source dimensions, output dimensions, and recorded action timeline for replay. Replay actions use `input:key_down`, `input:key_up`, `input:mouse_down`, `input:mouse_up`, `input:text`, or `signal:<name>` action names.
 
 ### `build`
 

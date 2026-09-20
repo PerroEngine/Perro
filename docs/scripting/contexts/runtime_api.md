@@ -29,6 +29,7 @@ side: the state that changes every frame.
 - Cross-system messaging: announce `signal_emit!(ctx.run, signal!("boss_defeated"), params![])` and let unlocks, music, and UI react (see [Signals](runtime_modules/signals.md)).
 - Character control and hit detection: slide a player with `physics_move_and_slide_3d!` and shoot a line-of-sight ray with `ctx.run.Physics().raycast_3d(...)` (see [Physics](runtime_modules/physics.md)).
 - Playback and feedback: trigger a jump clip with `anim_player_play!`, or attach a footstep sound to the player with `audio_play_attached!` (see [Animations](runtime_modules/animations.md), [Audio](runtime_modules/audio.md)).
+- Capture and replay: start a bounded clip with `ctx.run.Capture()` and commit it after a safe app boundary (see [Capture](runtime_modules/capture.md)).
 
 ## Decision Guide
 
@@ -40,6 +41,7 @@ Use `ctx.run` for live world state and operations: nodes, scripts, scenes, time,
 | --- | --- | --- |
 | Animations | [animations](runtime_modules/animations.md) | `ctx.run.AnimPlayer() / ctx.run.AnimTree()` |
 | Audio | [audio](runtime_modules/audio.md) | `ctx.run.Audio()` |
+| Capture | [capture](runtime_modules/capture.md) | `ctx.run.Capture()` |
 | Helpers | [helpers](runtime_modules/helpers.md) | `helper macros` |
 | Mesh Query | [mesh_query](runtime_modules/mesh_query.md) | `ctx.run.MeshQuery()` |
 | Navmesh | [navmesh](runtime_modules/navmesh.md) | `ctx.run.NavMesh()` |

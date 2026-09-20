@@ -10,6 +10,7 @@
 mod animation;
 mod animation_tree;
 mod audio;
+mod capture;
 mod navmesh;
 mod node;
 mod physics;
@@ -32,6 +33,7 @@ pub use audio::{
     MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound, Note, RuntimeAudio,
     RuntimeAudioAPI, RuntimeAudioModule, RuntimeMidiModule, SpatialAudioOptions, program,
 };
+pub use capture::{CaptureAPI, CaptureModule, CaptureSourceNodeExt, CaptureSourceRoute};
 pub use navmesh::{
     NavMeshAPI, NavMeshAreaCost, NavMeshModule, NavMeshObstacle3D, NavMeshPath3D,
     NavMeshPathOptions, NavMeshPathStatus, NavMeshQueryOptions,

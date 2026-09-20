@@ -567,6 +567,11 @@ impl Gpu {
             camera_image_save_requests: Vec::new(),
             display_image_save_requests: Vec::new(),
             camera_image_save_pending: Vec::new(),
+            capture_target: None,
+            capture_alpha: false,
+            capture_callback: None,
+            capture_source_node: None,
+            capture_error: None,
             last_prepare_particles_revision: u64::MAX,
             last_prepare_water_2d_revision: u64::MAX,
             last_prepare_water_3d_revision: u64::MAX,
@@ -629,6 +634,114 @@ impl Gpu {
         self.set_smoothing_samples(target);
     }
 
+    /// Route final compositing into a size-independent offscreen target.
+    pub fn set_capture_target(&mut self, width: u32, height: u32) -> Result<(), String> {
+        if width == 0 || height == 0 {
+            return Err("capture target dimensions must be > 0".to_owned());
+        }
+        if width > self.device.limits().max_texture_dimension_2d
+            || height > self.device.limits().max_texture_dimension_2d
+        {
+            return Err(format!(
+                "capture target exceeds GPU texture limit {}",
+                self.device.limits().max_texture_dimension_2d
+            ));
+        }
+        if self
+            .capture_target
+            .as_ref()
+            .is_some_and(|target| target.size == [width, height])
+        {
+            return Ok(());
+        }
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("perro_capture_main_target"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.surface_view_format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(self.surface_view_format),
+            ..Default::default()
+        });
+        self.capture_target = Some(CaptureTarget {
+            texture,
+            view,
+            size: [width, height],
+        });
+        self.resize_scene_targets(width, height);
+        self.composite
+            .resize(&self.device, [width, height], &self.present);
+        self.present.set_output_size(width, height);
+        self.invalidate_retained_scene();
+        Ok(())
+    }
+
+    /// Preserve alpha in final capture output and disable opaque-only resolve filters.
+    pub fn set_capture_alpha(&mut self, enabled: bool) {
+        self.capture_alpha = enabled;
+        self.present.set_preserve_alpha(enabled);
+        self.invalidate_retained_scene();
+    }
+
+    /// Drop capture output and restore surface-sized render targets.
+    pub fn clear_capture_target(&mut self) {
+        self.capture_target = None;
+        let (width, height) = (self.config.width.max(1), self.config.height.max(1));
+        let (render_width, render_height) = scaled_render_size(width, height, self.render_scale);
+        let (render_width, render_height) = capped_render_size_with_pixel_limit(
+            render_width,
+            render_height,
+            self.device.limits().max_texture_dimension_2d,
+            self.max_render_pixels,
+        );
+        self.resize_scene_targets(render_width, render_height);
+        self.composite
+            .resize(&self.device, [width, height], &self.present);
+        self.present.set_output_size(width, height);
+        self.invalidate_retained_scene();
+    }
+
+    fn resize_scene_targets(&mut self, render_width: u32, render_height: u32) {
+        if self.render_width == render_width && self.render_height == render_height {
+            return;
+        }
+        if let Some(three_d) = self.three_d.as_mut() {
+            three_d.resize(&self.device, render_width, render_height);
+        }
+        if let (Some(water), Some(three_d)) = (self.water.as_mut(), self.three_d.as_ref()) {
+            water.set_scene_color_size(
+                &self.device,
+                three_d.depth_prepass_view(),
+                render_width,
+                render_height,
+            );
+        }
+        self.post.resize(&self.device, render_width, render_height);
+        self.post_view_generation = next_nonzero_generation(self.post_view_generation);
+        self.msaa_color = create_msaa_color_target(
+            &self.device,
+            self.render_format,
+            render_width,
+            render_height,
+            self.sample_count,
+        );
+        self.render_width = render_width;
+        self.render_height = render_height;
+        self.last_prepare_3d_width = 0;
+        self.last_prepare_3d_height = 0;
+    }
+
     pub fn resize(&mut self, width: u32, height: u32) {
         if width == 0 || height == 0 {
             return;
@@ -665,32 +778,19 @@ impl Gpu {
             .resize(&self.device, [width, height], &self.present);
         self.render_width = render_width;
         self.render_height = render_height;
+        if let Some([capture_width, capture_height]) =
+            self.capture_target.as_ref().map(|target| target.size)
+        {
+            self.resize_scene_targets(capture_width, capture_height);
+            self.composite
+                .resize(&self.device, [capture_width, capture_height], &self.present);
+            self.present.set_output_size(capture_width, capture_height);
+            return;
+        }
         if !render_size_changed {
             return;
         }
-        if let Some(three_d) = self.three_d.as_mut() {
-            three_d.resize(&self.device, render_width, render_height);
-        }
-        if let (Some(water), Some(three_d)) = (self.water.as_mut(), self.three_d.as_ref()) {
-            water.set_scene_color_size(
-                &self.device,
-                three_d.depth_prepass_view(),
-                render_width,
-                render_height,
-            );
-        }
-        self.post.resize(&self.device, render_width, render_height);
-        self.post_view_generation = next_nonzero_generation(self.post_view_generation);
-        self.msaa_color = create_msaa_color_target(
-            &self.device,
-            self.render_format,
-            render_width,
-            render_height,
-            self.sample_count,
-        );
-        // Force next 3D prepare to refresh viewport-dependent GPU state.
-        self.last_prepare_3d_width = 0;
-        self.last_prepare_3d_height = 0;
+        self.resize_scene_targets(render_width, render_height);
     }
 
     pub fn set_smoothing_samples(&mut self, samples: u32) {

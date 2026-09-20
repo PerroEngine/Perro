@@ -8,6 +8,9 @@ impl Gpu {
         // frames instead of paying every write + mip chain in this one.
         self.shared_textures.begin_frame_uploads();
         self.poll_camera_image_saves();
+        if self.capture_pending() {
+            self.wait_for_capture_slot();
+        }
         if let Some(timer) = self.gpu_timer.as_mut() {
             timer.poll(&self.device);
             timing.gpu_timestamp_main = timer.last_main;
@@ -168,12 +171,14 @@ impl Gpu {
             let needs_tonemap_input = has_stream_post && tone_map_stream;
             let needs_post_depth =
                 has_stream_post && !matches!(stream.source, CameraStreamSourceState::ThreeD(_));
+            let tone_mapped = stream.tone_map_output;
             let needs_external_binding =
                 self.camera_stream_targets.get(node).is_none_or(|target| {
                     target.resolution != resolution
                         || target.post_input_view.is_some() != needs_intermediate
                         || target.tonemap_input_view.is_some() != needs_tonemap_input
                         || target.depth_view.is_some() != needs_post_depth
+                        || target.tone_mapped != tone_mapped
                 }) || self.camera_stream_external_bindings.get(node).copied() != Some(resolution);
             let Some(target) = self.ensure_camera_stream_target(
                 *node,
@@ -181,6 +186,7 @@ impl Gpu {
                 needs_intermediate,
                 needs_tonemap_input,
                 needs_post_depth,
+                tone_mapped,
             ) else {
                 continue;
             };
@@ -560,6 +566,8 @@ impl Gpu {
         // Final tonemap owns scene -> surface conversion.
         let msaa_direct_present = false;
         let direct_present = false;
+        let capture_active = self.capture_pending();
+        let capture_transparent = capture_active && self.capture_alpha;
         let depth_prepass_needed = !waters_3d.is_empty()
             || (camera_post_enabled && PostProcessor::uses_depth(camera_post_chain))
             || (global_post_enabled && PostProcessor::uses_depth(global_post_chain))
@@ -569,7 +577,11 @@ impl Gpu {
                 .any(|projection| projection.depth_test);
         let mut frame = None;
         let mut swap_view = None;
-        if direct_present || msaa_direct_present {
+        if capture_active {
+            if let Some(target) = self.capture_target.as_ref() {
+                swap_view = Some(target.view.clone());
+            }
+        } else if direct_present || msaa_direct_present {
             let acquire_start = Instant::now();
             let acquire_surface_start = Instant::now();
             let Some(acquired) = self.acquire_surface_texture() else {
@@ -629,12 +641,16 @@ impl Gpu {
         if gpu_timer_active && let Some(timer) = self.gpu_timer.as_ref() {
             timer.write_start(&mut encoder);
         }
-        let clear_color = sky_clear_color(lighting_3d).unwrap_or(wgpu::Color {
-            r: CLEAR_R,
-            g: CLEAR_G,
-            b: CLEAR_B,
-            a: 1.0,
-        });
+        let clear_color = if capture_transparent {
+            wgpu::Color::TRANSPARENT
+        } else {
+            sky_clear_color(lighting_3d).unwrap_or(wgpu::Color {
+                r: CLEAR_R,
+                g: CLEAR_G,
+                b: CLEAR_B,
+                a: 1.0,
+            })
+        };
         timing.stream_count = camera_streams.len().min(u32::MAX as usize) as u32;
         let stream_loop_start = Instant::now();
         for (node, stream) in camera_streams {
@@ -792,14 +808,17 @@ impl Gpu {
                 }
                 continue;
             } else if let CameraStreamSourceState::TwoD(camera) = &stream.source {
-                let stream_clear_color = stream
-                    .clear_color
-                    .map(premultiplied_clear_color)
-                    .unwrap_or(if stream.transparent_background {
-                        wgpu::Color::TRANSPARENT
-                    } else {
-                        wgpu::Color::BLACK
-                    });
+                // Transparent capture owns the target's empty pixels. Ignore
+                // authored clear colors so a parent UI/world color never leaks
+                // into alpha-zero output.
+                let stream_clear_color = if stream.transparent_background {
+                    wgpu::Color::TRANSPARENT
+                } else {
+                    stream
+                        .clear_color
+                        .map(premultiplied_clear_color)
+                        .unwrap_or(wgpu::Color::BLACK)
+                };
                 let _clear_stream = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("perro_camera_stream_clear_2d"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1010,11 +1029,10 @@ impl Gpu {
                         &mut self.camera_stream_draws_scratch,
                     );
                     let stream_lighting = camera_stream_lighting_3d(&stream.lighting_3d);
+                    // Keep IBL/sky lighting available to material shading, but
+                    // never draw that environment into a transparent capture.
                     let stream_clear_color = if stream.transparent_background {
-                        stream
-                            .clear_color
-                            .map(premultiplied_clear_color)
-                            .unwrap_or(wgpu::Color::TRANSPARENT)
+                        wgpu::Color::TRANSPARENT
                     } else {
                         sky_clear_color(&stream_lighting)
                             .or_else(|| stream.clear_color.map(premultiplied_clear_color))
@@ -1171,13 +1189,14 @@ impl Gpu {
                         stream_post_depth_view = Some(stream_3d.depth_prepass_view().clone());
                     }
                 } else {
-                    let clear = stream.clear_color.map(premultiplied_clear_color).unwrap_or(
-                        if stream.transparent_background {
-                            wgpu::Color::TRANSPARENT
-                        } else {
-                            wgpu::Color::BLACK
-                        },
-                    );
+                    let clear = if stream.transparent_background {
+                        wgpu::Color::TRANSPARENT
+                    } else {
+                        stream
+                            .clear_color
+                            .map(premultiplied_clear_color)
+                            .unwrap_or(wgpu::Color::BLACK)
+                    };
                     let _clear_empty_3d = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                         label: Some("perro_camera_stream_clear_empty_3d"),
                         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1560,7 +1579,7 @@ impl Gpu {
                     clear_color,
                     depth_prepass_needed,
                     &camera_3d,
-                    true,
+                    !capture_transparent,
                     shadow_slots,
                 );
                 shadow_timestamps_written = three_d.shadow_timestamps_written();
@@ -1735,7 +1754,11 @@ impl Gpu {
         // present) reproduces the image already on screen when these hold, so
         // the cheapest correct frame is no frame at all. See
         // `idle_frame_skip_allowed`.
-        let ui_viewport = [self.config.width.max(1), self.config.height.max(1)];
+        let ui_viewport = self
+            .capture_target
+            .as_ref()
+            .map(|target| target.size)
+            .unwrap_or([self.config.width.max(1), self.config.height.max(1)]);
         let ui_idle = ui_textures_delta.is_empty()
             && !ui_primitives.is_empty()
             && self
@@ -1761,13 +1784,14 @@ impl Gpu {
                 .last_present
                 .is_some_and(|at| at.elapsed() < IDLE_FORCE_PRESENT_INTERVAL),
             display_image_save_pending: !self.display_image_save_requests.is_empty(),
+            capture_pending: capture_active,
         };
         if idle_frame_skip_allowed(&idle_signals) {
             timing.idle_frame_skips = 1;
             timing.total = total_start.elapsed();
             return timing;
         }
-        if !direct_present && !msaa_direct_present {
+        if !capture_active && !direct_present && !msaa_direct_present {
             let acquire_start = Instant::now();
             let acquire_surface_start = Instant::now();
             // Acquired before the bind-group borrow: the retry path re-configures
@@ -1791,7 +1815,11 @@ impl Gpu {
         }
         // Rebuild from the clean scene on every presented frame. Never load a
         // previous frame's UI or effects into this composite.
-        let composite_size = [self.config.width.max(1), self.config.height.max(1)];
+        let composite_size = self
+            .capture_target
+            .as_ref()
+            .map(|target| target.size)
+            .unwrap_or([self.config.width.max(1), self.config.height.max(1)]);
         self.composite
             .resize(&self.device, composite_size, &self.present);
         self.present
@@ -1957,7 +1985,7 @@ impl Gpu {
             }
             if let Some(ui) = self.ui.as_mut() {
                 let output_view = display_view.expect("surface acquired before display overlays");
-                let viewport = [self.config.width.max(1), self.config.height.max(1)];
+                let viewport = composite_size;
                 ui.set_max_render_pixels(
                     self.max_render_pixels
                         .max(u64::from(viewport[0]) * u64::from(viewport[1])),
@@ -2055,6 +2083,9 @@ impl Gpu {
         self.encode_camera_image_saves(&mut encoder);
         if let Some(surface_frame) = frame.as_ref() {
             self.encode_display_image_saves(&mut encoder, &surface_frame.texture);
+        }
+        if capture_active {
+            self.encode_capture_frame(&mut encoder);
         }
         let submit_start = Instant::now();
         let submit_finish_start = Instant::now();

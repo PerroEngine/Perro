@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 mod animation_options;
 mod bench;
+mod capture;
 mod doctor;
 mod gltf_animation;
 mod install;
@@ -15,6 +16,7 @@ mod version;
 mod vscode;
 
 use bench::bench_command;
+use capture::capture_command;
 use doctor::doctor_command;
 use gltf_animation::gltf_to_panim_command;
 use install::install_command;
@@ -84,6 +86,7 @@ fn main() {
             "version" => version::version_command(&args),
             "dlc" => dlc_command(&args, &cwd),
             "dev" => dev_command(&args, &cwd),
+            "capture" => capture_command(&args, &cwd),
             "bench" => bench_command(&args, &cwd),
             "doctor" => doctor_command(&args, &cwd),
             "mem-profile" => mem_profile_command(&args, &cwd),
@@ -198,6 +201,26 @@ const DEV: &[FlagSpec] = &[
     switch("--playtest"),
     value("--sim"),
 ];
+const CAPTURE: &[FlagSpec] = &[
+    value("--path"),
+    value("--source"),
+    value("--mode"),
+    value("--width"),
+    value("--height"),
+    value("--aspect"),
+    value("--fps"),
+    value("--duration"),
+    value("--supersample"),
+    value("--framing"),
+    value("--format"),
+    value("--output"),
+    value("--scene"),
+    value("--sim"),
+    switch("--transparent"),
+    switch("--release"),
+    switch("--demo"),
+    switch("--playtest"),
+];
 const BENCH: &[FlagSpec] = &[
     value("--path"),
     value("--script"),
@@ -229,6 +252,7 @@ fn command_schema(command: &str) -> Option<&'static [FlagSpec]> {
         "version" => Some(VERSION),
         "dlc" => Some(DLC),
         "dev" => Some(DEV),
+        "capture" => Some(CAPTURE),
         "bench" => Some(BENCH),
         "mem-profile" => Some(MEM_PROFILE),
         "spec" => Some(SPEC),
@@ -315,6 +339,9 @@ fn print_usage() {
     );
     eprintln!(
         "  perro_cli dev [--path <project_dir>] [--scene res://path.scn] [--target native|web|android] [--headless] [--demo | --playtest] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--sim igpu|low_end|half|potato|cores=N] [--host <addr>] [--port <num>]      # build scripts + run dev runner, web server, or android app"
+    );
+    eprintln!(
+        "  perro_cli capture --output <path> [--path <project_dir>] [--source main|camera2d:<name>|camera3d:<name>|ui:<name>|target:<name>] [--mode offline|realtime] [--width <px>] [--height <px>] [--aspect preserve|W:H] [--fps <fps-or-num/den>] [--duration <sec>] [--supersample <integer-scale>] [--framing fit|crop|expand|stretch] [--format png|gif|webm|mp4|webp] [--transparent] [--scene res://path.scn] [--sim <spec>]      # render deterministic frames + package output"
     );
     eprintln!(
         "  perro_cli bench [--path <project_dir>] [--script <hash>] [--method <name>] [--var <name>] [-- <criterion_args>]    # criterion bench scripts"

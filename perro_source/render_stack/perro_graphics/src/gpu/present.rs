@@ -2,6 +2,7 @@ use super::*;
 
 pub(super) struct SceneBlit {
     format: wgpu::TextureFormat,
+    preserve_alpha: bool,
     layout: wgpu::BindGroupLayout,
     pipeline: wgpu::RenderPipeline,
     input: Option<(u64, u8, wgpu::BindGroup)>,
@@ -23,7 +24,8 @@ impl PresentProcessor {
         taa_frame: Option<&PresentTaaFrame>,
     ) {
         self.scene_composed = true;
-        if self.taa_active
+        if !self.preserve_alpha
+            && self.taa_active
             && let Some(frame) = taa_frame
         {
             self.ensure_taa(dimensions, format, true);
@@ -52,7 +54,7 @@ impl PresentProcessor {
         if self
             .scene_blit
             .as_ref()
-            .is_none_or(|blit| blit.format != format)
+            .is_none_or(|blit| blit.format != format || blit.preserve_alpha != self.preserve_alpha)
         {
             let layout = self
                 .device
@@ -63,12 +65,17 @@ impl PresentProcessor {
             let pipeline = create_smaa_pipeline(
                 &self.device,
                 "perro_scene_composite_pipeline",
-                TAA_BLIT_WGSL,
+                if self.preserve_alpha {
+                    SCENE_BLIT_WGSL
+                } else {
+                    TAA_BLIT_WGSL
+                },
                 &layout,
                 format,
             );
             self.scene_blit = Some(SceneBlit {
                 format,
+                preserve_alpha: self.preserve_alpha,
                 layout,
                 pipeline,
                 input: None,
@@ -619,13 +626,24 @@ fn aces_curve(x: vec3<f32>) -> vec3<f32> {
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    let scene = max(textureSample(input_tex, input_sampler, in.uv).rgb, vec3<f32>(0.0));
+    let sampled = textureSample(input_tex, input_sampler, in.uv);
+    let alpha = clamp(sampled.a, 0.0, 1.0);
+    // Scene/UI color targets use premultiplied alpha. Unpremultiply before
+    // tone mapping, then restore premultiplication for downstream UI blend.
+    let scene = max(
+        select(sampled.rgb, sampled.rgb / max(alpha, 1.0e-6), output_state.value.z > 0.5),
+        vec3<f32>(0.0),
+    );
     let exposed = scene * exp2(exposure_state.value.x);
     if output_state.value.x > 0.5 {
         let headroom = max(output_state.value.y, 1.0);
-        return vec4<f32>(aces_curve(exposed / headroom) * headroom, 1.0);
+        let mapped = aces_curve(exposed / headroom) * headroom;
+        return vec4<f32>(select(mapped, mapped * alpha, output_state.value.z > 0.5),
+            select(1.0, alpha, output_state.value.z > 0.5));
     }
-    return vec4<f32>(clamp(aces_curve(exposed), vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
+    let mapped = clamp(aces_curve(exposed), vec3<f32>(0.0), vec3<f32>(1.0));
+    return vec4<f32>(select(mapped, mapped * alpha, output_state.value.z > 0.5),
+        select(1.0, alpha, output_state.value.z > 0.5));
 }
 "#;
 
@@ -704,6 +722,34 @@ fn vs_main(@builtin(vertex_index) vid: u32) -> VsOut {
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // Alpha carries scene depth for the resolve history; drop it here.
     return vec4<f32>(textureSampleLevel(src_tex, src_sampler, in.uv, 0.0).rgb, 1.0);
+}
+"#;
+
+const SCENE_BLIT_WGSL: &str = r#"
+@group(0) @binding(0) var src_tex: texture_2d<f32>;
+@group(0) @binding(1) var src_sampler: sampler;
+
+struct VsOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) vid: u32) -> VsOut {
+    var pos = array<vec2<f32>, 3>(
+        vec2<f32>(-1.0, -3.0),
+        vec2<f32>(3.0, 1.0),
+        vec2<f32>(-1.0, 1.0),
+    );
+    var out: VsOut;
+    out.pos = vec4<f32>(pos[vid], 0.0, 1.0);
+    out.uv = (out.pos.xy * vec2<f32>(0.5, -0.5)) + vec2<f32>(0.5, 0.5);
+    return out;
+}
+
+@fragment
+fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+    return textureSampleLevel(src_tex, src_sampler, in.uv, 0.0);
 }
 "#;
 
@@ -986,6 +1032,7 @@ impl PresentProcessor {
             scene_blit: None,
             scene_composed: false,
             output_size: [0, 0],
+            preserve_alpha: false,
             last_taa_passes: 0,
         }
     }
@@ -996,6 +1043,15 @@ impl PresentProcessor {
     /// the conservative two-pass path runs.
     pub(super) fn set_output_size(&mut self, width: u32, height: u32) {
         self.output_size = [width.max(1), height.max(1)];
+    }
+
+    pub(super) fn set_preserve_alpha(&mut self, preserve: bool) {
+        self.preserve_alpha = preserve;
+        if preserve {
+            self.taa = None;
+            self.fxaa = None;
+            self.smaa = None;
+        }
     }
 
     /// Turn the FXAA stage on/off. Off drops the lazily allocated target,
@@ -1539,7 +1595,8 @@ impl PresentProcessor {
         // scenes) tonemap straight to the swapchain and drop history validity
         // so the accumulation restarts cleanly when 3D returns.
         let scene_composed = std::mem::take(&mut self.scene_composed);
-        let taa_run = !scene_composed && self.taa_active && taa_frame.is_some();
+        let taa_run =
+            !self.preserve_alpha && !scene_composed && self.taa_active && taa_frame.is_some();
         if taa_run {
             self.ensure_taa(dimensions, self.output_format, false);
         } else if !scene_composed
@@ -1548,15 +1605,15 @@ impl PresentProcessor {
         {
             taa.history_valid = false;
         }
-        if self.smaa_active {
+        if !self.preserve_alpha && self.smaa_active {
             self.ensure_smaa(queue, dimensions);
-        } else if self.fxaa_active {
+        } else if !self.preserve_alpha && self.fxaa_active {
             self.ensure_fxaa(dimensions);
         }
         let output = PresentOutputConfig {
             hdr_active: if hdr_status.active { 1.0 } else { 0.0 },
             headroom: finite_or(hdr_status.headroom, 1.0).max(1.0),
-            _pad: [0.0; 2],
+            _pad: [if self.preserve_alpha { 1.0 } else { 0.0 }, 0.0],
         };
         // HDR status is display state, not frame state: push only on change.
         let output_bits = [
@@ -1626,12 +1683,12 @@ impl PresentProcessor {
         // FXAA/SMAA operate at output resolution. Scene TAA has already resolved;
         // the standalone path can still resolve its own supplied frame.
         let taa = if taa_run { self.taa.as_ref() } else { None };
-        let smaa = if taa.is_none() && self.smaa_active {
+        let smaa = if !self.preserve_alpha && taa.is_none() && self.smaa_active {
             self.smaa.as_ref()
         } else {
             None
         };
-        let fxaa = if taa.is_none() && smaa.is_none() && self.fxaa_active {
+        let fxaa = if !self.preserve_alpha && taa.is_none() && smaa.is_none() && self.fxaa_active {
             self.fxaa.as_ref()
         } else {
             None
@@ -2420,7 +2477,11 @@ mod tests {
 
     #[test]
     fn taa_shaders_parse_and_validate() {
-        for (name, src) in [("resolve", TAA_WGSL), ("blit", TAA_BLIT_WGSL)] {
+        for (name, src) in [
+            ("resolve", TAA_WGSL),
+            ("blit", TAA_BLIT_WGSL),
+            ("scene blit", SCENE_BLIT_WGSL),
+        ] {
             let module = naga::front::wgsl::parse_str(src)
                 .unwrap_or_else(|err| panic!("TAA {name} WGSL parses: {err}"));
             naga::valid::Validator::new(
@@ -2445,7 +2506,7 @@ mod tests {
         assert!(TAA_WGSL.contains("abs(history.a - prev_depth_expected) > cfg.params.y"));
         assert!(TAA_WGSL.contains("clamp(history.rgb, c_min, c_max)"));
         // Output alpha must carry device depth for next frame's reject; the
-        // blit pass must drop it.
+        // blit pass drops history depth alpha.
         assert!(TAA_WGSL.contains("return vec4<f32>(resolved, depth);"));
         assert!(TAA_BLIT_WGSL.contains(".rgb, 1.0);"));
     }

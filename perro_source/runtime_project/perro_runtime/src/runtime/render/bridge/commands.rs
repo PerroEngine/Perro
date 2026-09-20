@@ -231,6 +231,7 @@ impl Runtime {
     }
 
     pub fn drain_render_commands(&mut self, out: &mut Vec<RenderCommand>) {
+        self.refresh_capture_source_stream();
         let mut captures = std::mem::take(&mut self.extraction.pending_camera_capture_removals);
         for (camera, delay) in captures.drain(..) {
             if delay == 0 {

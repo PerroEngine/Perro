@@ -1,8 +1,9 @@
 use crate::sub_apis::{
-    AnimPlayerAPI, AnimPlayerModule, AnimTreeAPI, AnimTreeModule, MeshQueryModule, NavMeshAPI,
-    NavMeshModule, NodeAPI, NodeModule, NodeQueryModule, PhysicsAPI, PhysicsModule,
-    RuntimeAudioAPI, RuntimeAudioModule, SceneAPI, SceneModule, ScriptAPI, ScriptModule, SignalAPI,
-    SignalModule, TimeAPI, TimeModule, TimerAPI, TimerModule, WindowAPI, WindowModule,
+    AnimPlayerAPI, AnimPlayerModule, AnimTreeAPI, AnimTreeModule, CaptureAPI, CaptureModule,
+    MeshQueryModule, NavMeshAPI, NavMeshModule, NodeAPI, NodeModule, NodeQueryModule, PhysicsAPI,
+    PhysicsModule, RuntimeAudioAPI, RuntimeAudioModule, SceneAPI, SceneModule, ScriptAPI,
+    ScriptModule, SignalAPI, SignalModule, TimeAPI, TimeModule, TimerAPI, TimerModule, WindowAPI,
+    WindowModule,
 };
 
 /// Full runtime contract used by script contexts.
@@ -22,6 +23,7 @@ pub trait RuntimeAPI:
     + AnimTreeAPI
     + SceneAPI
     + RuntimeAudioAPI
+    + CaptureAPI
 {
 }
 impl<T> RuntimeAPI for T where
@@ -36,6 +38,7 @@ impl<T> RuntimeAPI for T where
         + AnimTreeAPI
         + SceneAPI
         + RuntimeAudioAPI
+        + CaptureAPI
 {
 }
 
@@ -196,6 +199,15 @@ impl<'rt, RT: ?Sized> RuntimeApiSurface<'rt, RT> {
         RuntimeAudioModule::new(self.rt)
     }
 
+    /// Control capture sessions for QA and offline rendering.
+    #[inline]
+    pub fn Capture(&mut self) -> CaptureModule<'_, RT>
+    where
+        RT: CaptureAPI,
+    {
+        CaptureModule::new(self.rt)
+    }
+
     // ---- Escape hatch ----
 
     /// Return the underlying runtime borrow for code that must call a raw API.
@@ -208,6 +220,8 @@ impl<'rt, RT: ?Sized> RuntimeApiSurface<'rt, RT> {
 #[cfg(test)]
 mod narrow_window_tests {
     use super::*;
+    use crate::prelude::{CaptureConfig, OutputFormat, OutputSpec};
+    use std::path::PathBuf;
     use std::time::Duration;
     struct ClockOnly;
     impl TimeAPI for ClockOnly {
@@ -239,5 +253,21 @@ mod narrow_window_tests {
         let mut window = RuntimeWindow::new(&mut clock);
         assert_eq!(window.runtime_mut().get_delta(), 0.25);
         let _ = window.Time();
+    }
+
+    #[allow(dead_code)]
+    fn public_capture_api_shape<RT: CaptureAPI>(window: &mut RuntimeWindow<'_, RT>) {
+        let config = CaptureConfig {
+            output: Some(OutputSpec::new(
+                PathBuf::from("capture-frames"),
+                OutputFormat::PngSequence,
+            )),
+            ..CaptureConfig::default()
+        };
+        let _ = window.Capture().start(config);
+        let _ = window.Capture().state();
+        let _ = window.Capture().progress();
+        let _ = window.Capture().last_output();
+        let _ = window.Capture().stop();
     }
 }

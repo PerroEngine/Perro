@@ -1,5 +1,8 @@
 use crate::{
-    backend::{OcclusionCullingMode, StaticMeshLookup, StaticShaderLookup, StaticTextureLookup},
+    backend::{
+        CaptureFrameCallback, CapturedRgbaFrame, OcclusionCullingMode, StaticMeshLookup,
+        StaticShaderLookup, StaticTextureLookup,
+    },
     postprocess::{PostProcessChainData, PostProcessContext, PostProcessor},
     resources::ResourceStore,
     shared_textures::SharedTextureStore,
@@ -471,6 +474,8 @@ struct PresentProcessor {
     // swapchain write into the resolve pass only in the equal case. [0, 0]
     // until the lifecycle pushes it (conservative two-pass path).
     output_size: [u32; 2],
+    // Capture target keeps straight alpha only when this mode hold.
+    preserve_alpha: bool,
     // Render passes the last TAA encode emitted (1 = merged MRT resolve,
     // 2 = resolve + upscale blit). Diagnostics/tests only.
     last_taa_passes: u32,
@@ -870,6 +875,11 @@ pub struct Gpu {
     camera_image_save_requests: Vec<CameraImageSaveRequest>,
     display_image_save_requests: Vec<DisplayImageSaveRequest>,
     camera_image_save_pending: Vec<PendingCameraImageSave>,
+    capture_target: Option<CaptureTarget>,
+    capture_alpha: bool,
+    capture_callback: Option<CaptureFrameCallback>,
+    capture_source_node: Option<NodeID>,
+    capture_error: Option<String>,
     last_prepare_particles_revision: u64,
     last_prepare_water_2d_revision: u64,
     last_prepare_water_3d_revision: u64,
@@ -922,6 +932,12 @@ pub struct Gpu {
     virtual_size_2d: [f32; 2],
 }
 
+struct CaptureTarget {
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    size: [u32; 2],
+}
+
 #[derive(Clone, Copy)]
 pub struct GpuConfig {
     /// Initial sample count. Sessions start on the 2D setting; the first
@@ -964,6 +980,8 @@ struct GpuCameraStreamTarget {
     tonemap_input_view: Option<wgpu::TextureView>,
     depth_view: Option<wgpu::TextureView>,
     resolution: [u32; 2],
+    /// Target pixels already pass through stream tone mapping when true.
+    tone_mapped: bool,
     post_view_key: u64,
 }
 
@@ -1261,6 +1279,8 @@ pub(crate) struct IdleFrameSignals {
     pub within_force_interval: bool,
     /// A full-display readback needs a newly composited swapchain image.
     pub display_image_save_pending: bool,
+    /// An offscreen capture requires a fresh final compositor frame every tick.
+    pub capture_pending: bool,
 }
 
 /// Skip the whole frame -- no acquire, no encode, no submit, no present.
@@ -1277,6 +1297,7 @@ pub(crate) fn idle_frame_skip_allowed(signals: &IdleFrameSignals) -> bool {
         && signals.presented_once
         && signals.within_force_interval
         && !signals.display_image_save_pending
+        && !signals.capture_pending
 }
 
 pub(crate) fn scene_fast_path_allowed(signals: &SceneFastPathSignals) -> bool {
@@ -1624,6 +1645,7 @@ mod idle_frame_tests {
             presented_once: true,
             within_force_interval: true,
             display_image_save_pending: false,
+            capture_pending: false,
         }
     }
 
@@ -1706,6 +1728,15 @@ mod idle_frame_tests {
     fn display_save_never_skips_composite() {
         let signals = IdleFrameSignals {
             display_image_save_pending: true,
+            ..all_idle()
+        };
+        assert!(!idle_frame_skip_allowed(&signals));
+    }
+
+    #[test]
+    fn capture_never_skips_composite() {
+        let signals = IdleFrameSignals {
+            capture_pending: true,
             ..all_idle()
         };
         assert!(!idle_frame_skip_allowed(&signals));

@@ -15,6 +15,11 @@ impl PerroGraphics {
             particles_3d: Particles3DRenderer::new(),
             renderer_ui: UiRenderer::new(),
             gpu: None,
+            capture_target_size: None,
+            capture_alpha: false,
+            capture_callback: None,
+            capture_source_node: None,
+            capture_error: None,
             events: Vec::new(),
             #[cfg(all(not(target_arch = "wasm32"), not(test)))]
             async_mesh_load_tx,

@@ -6,7 +6,7 @@ use crate::{
 use ahash::{AHashMap, AHashSet};
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_input_api::InputSnapshot;
-use perro_runtime_api::sub_apis::{PreloadedSceneID, WindowRequest};
+use perro_runtime_api::sub_apis::{CaptureSourceRoute, PreloadedSceneID, WindowRequest};
 use perro_scene::Scene;
 use perro_scripting::{DynamicScriptConstructor, ScriptAPI, ScriptBehavior, ScriptConstructor};
 use std::time::Duration;
@@ -16,6 +16,7 @@ const STARTUP_INPUT_CLEAR_FRAMES: u32 = 100;
 
 // Runtime subsystem leaves. Public API glue stays here; heavy behavior lives in folders.
 mod audio;
+mod capture;
 #[path = "runtime/render/state.rs"]
 mod extraction_state;
 mod input_bridge;
@@ -272,6 +273,14 @@ pub struct Runtime {
     pub(crate) active_runtime_nodes: Vec<NodeID>,
     pub time: Timing,
     pub(crate) input: InputSnapshot,
+    pub(crate) capture_session: Option<perro_capture::CaptureSession>,
+    pub(crate) capture_last_output: Option<perro_capture::FinalizedCapture>,
+    pub(crate) capture_source_route: Option<CaptureSourceRoute>,
+    pub(crate) capture_owned_render_node: Option<NodeID>,
+    pub(crate) capture_stop_requested: bool,
+    pub(crate) capture_stop_output: Option<perro_capture::OutputSpec>,
+    pub(crate) capture_replay_cursor: usize,
+    pub(crate) capture_replay_time: Duration,
 
     pub(crate) timer_runtime: TimerRuntimeState,
     provider_mode: ProviderMode,
@@ -583,6 +592,14 @@ impl Runtime {
             node_api_scratch: NodeApiScratchState::new(),
             resource_api: RuntimeResourceApi::new(None, None, None, None, None, None, None, None),
             input: InputSnapshot::new(),
+            capture_session: None,
+            capture_last_output: None,
+            capture_source_route: None,
+            capture_owned_render_node: None,
+            capture_stop_requested: false,
+            capture_stop_output: None,
+            capture_replay_cursor: 0,
+            capture_replay_time: Duration::ZERO,
             boot_scene_pending: false,
             startup_input_clear_frames_left: 0,
             cursor_icon_request: None,

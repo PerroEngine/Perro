@@ -688,10 +688,19 @@ impl NodeAPI for Runtime {
                                 }
                             }
                             if max_abs_err > 1.0e-3 {
+                                let name = |id: NodeID| {
+                                    self.nodes
+                                        .get(id)
+                                        .map(|n| n.name.to_string())
+                                        .unwrap_or_else(|| "<nil>".into())
+                                };
                                 println!(
-                                    "[runtime][warn] reparent({} -> {}): non-TRS local transform detected (shear/affine), max reconstruction error = {:.6}. Visual distortion may occur; use a uniform-scale attachment parent/socket.",
+                                    "[runtime][warn] reparent({} '{}' from '{}' -> {} '{}'): non-TRS local transform detected (shear/affine), max reconstruction error = {:.6}. Visual distortion may occur; use a uniform-scale attachment parent/socket.",
                                     child_id.as_u64(),
+                                    name(child_id),
+                                    name(old_parent),
                                     parent_id.as_u64(),
+                                    name(parent_id),
                                     max_abs_err
                                 );
                             }

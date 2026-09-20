@@ -78,6 +78,8 @@ impl Runtime {
     #[inline(always)]
     fn fixed_phases<const TIMED: bool>(&mut self, delta: f32) -> RuntimeFixedUpdateTiming {
         let total = start::<TIMED>();
+        // Replay director/input actions before fixed scripts and physics tick.
+        self.apply_capture_actions_before_fixed_tick(delta);
         self.clear_startup_keyboard_mouse();
         self.time.fixed_delta = delta;
         let clock = start::<TIMED>();

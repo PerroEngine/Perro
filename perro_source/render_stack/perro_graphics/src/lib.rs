@@ -1,4 +1,5 @@
 mod backend;
+mod capture_source;
 mod gpu;
 mod gpu_shrink;
 mod pipeline_cache;
@@ -12,9 +13,13 @@ pub mod ui;
 mod visual_accessibility;
 
 pub use backend::{
-    AntiAliasMode, DrawFrameTiming, GraphicsBackend, OcclusionCullingMode, PerroGraphics,
-    PowerPreference, ShaderVariantMode, ShadowQuality, SsaoQuality, StaticFontLookup,
-    StaticMeshLookup, StaticShaderLookup, StaticTextureLookup,
+    AntiAliasMode, CaptureFrameCallback, CapturedRgbaFrame, DrawFrameTiming, GraphicsBackend,
+    OcclusionCullingMode, PerroGraphics, PowerPreference, ShaderVariantMode, ShadowQuality,
+    SsaoQuality, StaticFontLookup, StaticMeshLookup, StaticShaderLookup, StaticTextureLookup,
+};
+pub use capture_source::{
+    CaptureFrameRect, CaptureRenderFraming, CaptureRenderRoute, CaptureRenderSource, frame_rect,
+    frame_rgba, resolve_stream_node,
 };
 pub use resources::{ResourceGcDrops, ResourceStore};
 

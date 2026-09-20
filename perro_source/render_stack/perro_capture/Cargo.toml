@@ -1,0 +1,11 @@
+[package]
+name = "perro_capture"
+version.workspace = true
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+image = { version = "0.25.8", default-features = false, features = ["png", "gif", "webp"] }
+rayon = "1.10"

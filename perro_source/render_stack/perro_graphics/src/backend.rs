@@ -43,6 +43,19 @@ pub type StaticTextureLookup = fn(path_hash: u64) -> &'static [u8];
 pub type StaticFontLookup = fn(path_hash: u64) -> &'static [u8];
 pub type StaticMeshLookup = fn(path_hash: u64) -> &'static [u8];
 pub type StaticShaderLookup = fn(path_hash: u64) -> &'static str;
+
+/// One completed main-view capture frame.
+#[derive(Debug)]
+pub struct CapturedRgbaFrame {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
+}
+
+/// Bounded main-view frame sink. The callback runs on the render thread after
+/// GPU map completion and must return quickly or apply its own bounded queue.
+pub type CaptureFrameCallback =
+    Arc<dyn Fn(CapturedRgbaFrame) -> Result<(), String> + Send + Sync + 'static>;
 const GC_INTERVAL_FRAMES: u32 = 60;
 const GC_MAX_DROPS_PER_KIND: usize = 64;
 // Idle ticks (one per GC interval, ~1s at 60fps) before a decoded texture's
@@ -174,6 +187,33 @@ pub trait GraphicsBackend: RenderBridge {
     }
 
     fn wait_idle(&mut self) {}
+
+    /// Route final main compositing into an offscreen capture target.
+    fn set_capture_target(&mut self, _width: u32, _height: u32) -> Result<(), String> {
+        Ok(())
+    }
+
+    /// Preserve source alpha in the offscreen capture output.
+    fn set_capture_alpha(&mut self, _enabled: bool) {}
+
+    /// Clear the offscreen target and resume ordinary surface output.
+    fn clear_capture_target(&mut self) {}
+
+    /// Install or remove a bounded main-frame callback.
+    fn set_capture_callback(&mut self, _callback: Option<CaptureFrameCallback>) {}
+
+    /// Select a retained camera/sub-view texture for capture readback.
+    fn set_capture_source_node(&mut self, _node: Option<NodeID>) {}
+
+    /// Wait for all mapped capture frames to reach the callback.
+    fn drain_capture(&mut self) -> Result<(), String> {
+        Ok(())
+    }
+
+    /// Return and clear the first capture callback/readback error.
+    fn take_capture_error(&mut self) -> Option<String> {
+        None
+    }
 
     /// Startup-splash warm boost: while true the speculative pipeline warm
     /// queue drains w/ a raised per-frame budget (splash hides the cost).
@@ -580,6 +620,11 @@ pub struct PerroGraphics {
     particles_3d: Particles3DRenderer,
     renderer_ui: UiRenderer,
     gpu: Option<Gpu>,
+    capture_target_size: Option<[u32; 2]>,
+    capture_alpha: bool,
+    capture_callback: Option<CaptureFrameCallback>,
+    capture_source_node: Option<NodeID>,
+    capture_error: Option<String>,
     events: Vec<RenderEvent>,
     #[cfg(all(not(target_arch = "wasm32"), not(test)))]
     async_mesh_load_tx: mpsc::Sender<AsyncMeshLoadResult>,

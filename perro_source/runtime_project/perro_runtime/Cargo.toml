@@ -43,6 +43,7 @@ perro_project.workspace = true
 perro_physics.workspace = true
 perro_runtime_render.workspace = true
 perro_particle_math.workspace = true
+perro_capture.workspace = true
 perro_pawdio.workspace = true
 smallvec.workspace = true
 perro_csv.workspace = true
