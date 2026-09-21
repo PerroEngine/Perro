@@ -54,11 +54,19 @@ impl SyncCache {
     /// executable), which disables caching rather than risking a stale hit.
     #[cfg(test)]
     pub fn probe(project_root: &Path, demo: bool) -> Option<Self> {
-        Self::probe_variant(project_root, demo, false)
+        Self::probe_variant(project_root, demo, false, "runtime")
     }
 
-    pub fn probe_variant(project_root: &Path, demo: bool, playtest: bool) -> Option<Self> {
-        let context = format!("{}\tplaytest={playtest}", cache_context(demo)?);
+    pub fn probe_variant(
+        project_root: &Path,
+        demo: bool,
+        playtest: bool,
+        source_set: &str,
+    ) -> Option<Self> {
+        let context = format!(
+            "{}\tplaytest={playtest}\tsource_set={source_set}",
+            cache_context(demo)?
+        );
         let inputs = collect_input_stats(project_root);
         Some(Self {
             path: project_root
@@ -305,7 +313,7 @@ mod sync_cache_tests {
     }
 
     #[test]
-    fn demo_flag_and_tool_fingerprint_are_part_of_the_key() {
+    fn build_flags_source_set_and_tool_fingerprint_are_part_of_the_key() {
         let root = temp_dir("context");
         write(&root.join("res/scripts/a.rs"), "fn a() {}");
         let copied = vec!["scripts/a.rs".to_string()];
@@ -315,8 +323,14 @@ mod sync_cache_tests {
             .store(&copied);
 
         assert_eq!(
-            SyncCache::probe_variant(&root, false, true)
+            SyncCache::probe_variant(&root, false, true, "runtime")
                 .expect("playtest probe")
+                .hit(&scripts_src),
+            None
+        );
+        assert_eq!(
+            SyncCache::probe_variant(&root, false, false, "tools")
+                .expect("tools probe")
                 .hit(&scripts_src),
             None
         );

@@ -10,9 +10,9 @@ use crate::{
     parse_optional_flag_value, parse_sim_flag, resolve_local_path, workspace_root,
 };
 use perro_compiler::{
-    ProjectBuildOptions, ProjectBuildTarget, ScriptsBuildProfile, WebOutputDir, compile_dlc_bundle,
-    compile_project_bundle, compile_scripts_with_profile, compile_universal_macos_project_bundle,
-    sync_scripts,
+    ProjectBuildOptions, ProjectBuildTarget, ScriptSourceSet, ScriptsBuildProfile, WebOutputDir,
+    compile_dlc_bundle, compile_project_bundle, compile_scripts_with_profile,
+    compile_universal_macos_project_bundle, sync_test_scripts,
 };
 use perro_project::{ensure_source_overrides, load_project_toml_with_variants};
 use perro_scene::Parser;
@@ -273,13 +273,23 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
 
     // Script codegen must land before cargo reads the crate.
     log_step("Syncing Scripts");
-    perro_compiler::sync_scripts_after_overrides_with_variants(&project_dir, demo, playtest)
-        .map_err(|err| {
-            format!(
-                "scripts pipeline failed for {}: {err}",
-                project_dir.display()
-            )
-        })?;
+    let source_set = if tools {
+        ScriptSourceSet::Tools
+    } else {
+        ScriptSourceSet::Runtime
+    };
+    perro_compiler::sync_scripts_after_overrides_with_variants_and_source_set(
+        &project_dir,
+        demo,
+        playtest,
+        source_set,
+    )
+    .map_err(|err| {
+        format!(
+            "scripts pipeline failed for {}: {err}",
+            project_dir.display()
+        )
+    })?;
     phase.mark("sync_scripts (codegen)");
 
     // One invocation for both roots. The runner and the scripts dylib are then
@@ -726,7 +736,7 @@ pub(crate) fn clippy_command(args: &[String], cwd: &Path) -> Result<(), String> 
     log_step("Syncing User Scripts");
     ensure_source_overrides(&project_dir)
         .map_err(|err| format!("failed to refresh source overrides: {err}"))?;
-    sync_scripts(&project_dir).map_err(|err| format!("failed to sync scripts: {err}"))?;
+    sync_test_scripts(&project_dir).map_err(|err| format!("failed to sync scripts: {err}"))?;
     log_done("User Scripts Synced");
 
     log_step("Running Project Doctor");

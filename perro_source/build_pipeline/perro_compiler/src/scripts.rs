@@ -5,18 +5,70 @@ pub enum ScriptsBuildProfile {
     Spec,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ScriptSourceSet {
+    #[default]
+    Runtime,
+    Tools,
+    Tests,
+}
+
+impl ScriptSourceSet {
+    fn includes(self, rel: &str) -> bool {
+        let file = rel.rsplit('/').next().unwrap_or(rel);
+        let tool = file.ends_with(".tool.rs");
+        let test = file.ends_with(".test.rs")
+            || file.ends_with("_test.rs")
+            || file.ends_with("_tests.rs");
+        match self {
+            Self::Runtime => !tool && !test,
+            Self::Tools => !test,
+            Self::Tests => !tool,
+        }
+    }
+
+    fn cache_key(self) -> &'static str {
+        match self {
+            Self::Runtime => "runtime",
+            Self::Tools => "tools",
+            Self::Tests => "tests",
+        }
+    }
+}
+
 fn validate_dlc_name(dlc_name: &str) -> Result<(), CompilerError> {
     perro_io::validate_dlc_name(dlc_name)
         .map_err(|err| CompilerError::SceneParse(format!("invalid dlc name `{dlc_name}`: {err}")))
 }
 
 pub fn sync_scripts(project_root: &Path) -> Result<Vec<String>, CompilerError> {
+    sync_scripts_with_source_set(project_root, ScriptSourceSet::Runtime)
+}
+
+pub fn sync_tool_scripts(project_root: &Path) -> Result<Vec<String>, CompilerError> {
+    sync_scripts_with_source_set(project_root, ScriptSourceSet::Tools)
+}
+
+pub fn sync_test_scripts(project_root: &Path) -> Result<Vec<String>, CompilerError> {
+    sync_scripts_with_source_set(project_root, ScriptSourceSet::Tests)
+}
+
+pub fn sync_scripts_with_source_set(
+    project_root: &Path,
+    source_set: ScriptSourceSet,
+) -> Result<Vec<String>, CompilerError> {
     let res_dir = project_root.join("res");
     let scripts_src = project_root.join(".perro").join("scripts").join("src");
     let t0 = std::time::Instant::now();
     let scene_vars = collect_project_scene_var_index(project_root);
     let t1 = std::time::Instant::now();
-    let out = sync_scripts_from_source(&res_dir, &scripts_src, "res://", &scene_vars);
+    let out = sync_scripts_from_source(
+        &res_dir,
+        &scripts_src,
+        "res://",
+        &scene_vars,
+        source_set,
+    );
     if std::env::var_os("PERRO_DEV_TIMING").is_some() {
         eprintln!(
             "  sync detail: cache miss -- scene_var_index {:.0}ms, transpile+write {:.0}ms",
@@ -38,7 +90,13 @@ pub fn sync_dlc_scripts(project_root: &Path, dlc_name: &str) -> Result<Vec<Strin
         .join("src");
     let prefix = format!("dlc://{dlc_name}/");
     let scene_vars = collect_project_scene_var_index(project_root);
-    sync_scripts_from_source(&dlc_root, &scripts_src, &prefix, &scene_vars)
+    sync_scripts_from_source(
+        &dlc_root,
+        &scripts_src,
+        &prefix,
+        &scene_vars,
+        ScriptSourceSet::Runtime,
+    )
 }
 
 /// project-wide static scene analysis: which script vars authored content
@@ -206,6 +264,7 @@ fn sync_scripts_from_source(
     scripts_src: &Path,
     script_path_prefix: &str,
     scene_vars: &SceneVarIndex,
+    source_set: ScriptSourceSet,
 ) -> Result<Vec<String>, CompilerError> {
     fs::create_dir_all(scripts_src)?;
 
@@ -228,6 +287,9 @@ fn sync_scripts_from_source(
                 )
             })?;
             let rel_norm = rel.to_string_lossy().replace('\\', "/");
+            if !source_set.includes(&rel_norm) {
+                return Ok(());
+            }
             let generated_rel = generated_script_rel(&rel_norm);
             let dst = scripts_src.join(&generated_rel);
             if let Some(parent) = dst.parent() {
@@ -295,6 +357,20 @@ pub fn sync_scripts_after_overrides_with_variants(
     demo: bool,
     playtest: bool,
 ) -> Result<Vec<String>, CompilerError> {
+    sync_scripts_after_overrides_with_variants_and_source_set(
+        project_root,
+        demo,
+        playtest,
+        ScriptSourceSet::Runtime,
+    )
+}
+
+pub fn sync_scripts_after_overrides_with_variants_and_source_set(
+    project_root: &Path,
+    demo: bool,
+    playtest: bool,
+    source_set: ScriptSourceSet,
+) -> Result<Vec<String>, CompilerError> {
     let cfg = perro_project::load_project_toml_with_variants(project_root, demo, playtest)
         .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
     let _exclude_guard = perro_io::walkdir::push_path_exclusions(cfg.build_exclusion_patterns());
@@ -302,7 +378,7 @@ pub fn sync_scripts_after_overrides_with_variants(
     // Cached on input stats plus a fingerprint of this binary, so an engine
     // change always forces a re-sync. See `sync_cache.rs`.
     let scripts_src = project_root.join(".perro").join("scripts").join("src");
-    let cache = SyncCache::probe_variant(project_root, demo, playtest);
+    let cache = SyncCache::probe_variant(project_root, demo, playtest, source_set.cache_key());
     if let Some(cache) = &cache
         && let Some(copied) = cache.hit(&scripts_src)
     {
@@ -312,7 +388,7 @@ pub fn sync_scripts_after_overrides_with_variants(
         return Ok(copied);
     }
 
-    let copied = sync_scripts(project_root)?;
+    let copied = sync_scripts_with_source_set(project_root, source_set)?;
     if let Some(cache) = cache {
         cache.store(&copied);
     }

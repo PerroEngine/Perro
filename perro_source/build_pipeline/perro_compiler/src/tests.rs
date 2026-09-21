@@ -2,7 +2,8 @@
 mod tests {
     use super::{
         ProjectBuildOptions, ProjectBuildTarget, SceneVarUsage, ScriptMethod, ScriptMethodParam,
-        ScriptsBuildProfile, android_apk_artifact_path, append_private_path_remaps,
+        ScriptSourceSet, ScriptsBuildProfile, android_apk_artifact_path,
+        append_private_path_remaps,
         checked_res_relative_path, compile_scripts_with_profile, contains_ascii_case_insensitive,
         contains_utf16le_ascii_case_insensitive, copy_file_overwriting,
         emit_static_steam_app_id_fn, emit_web_route_html_files, export_project_android_bundle,
@@ -11,9 +12,10 @@ mod tests {
         has_nonempty_lifecycle_method, method_returns_variant_convertible,
         module_ident_from_path_part, native_output_artifact_name, native_output_folder_name,
         normalize_cargo_output_paths, steam_runtime_library_name, sweep_unknown_embedded_entries,
-        sync_android_project_manifest, sync_dlc_scripts, sync_scripts, target_binary_name,
-        target_slug_from_triple, transpile_frontend_script,
-        transpile_frontend_script_with_scene_vars, transpiled_exports_script_ctor,
+        sync_android_project_manifest, sync_dlc_scripts, sync_scripts,
+        sync_scripts_with_source_set, target_binary_name, target_slug_from_triple,
+        transpile_frontend_script, transpile_frontend_script_with_scene_vars,
+        transpiled_exports_script_ctor,
         validate_native_target_triple, web_boot_js, web_route_html_path, write_scripts_lib,
         write_steam_manifest,
     };

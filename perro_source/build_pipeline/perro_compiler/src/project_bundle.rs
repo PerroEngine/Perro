@@ -552,20 +552,37 @@ fn export_project_binary(
         .join(".output")
         .join(native_output_folder_name(&output_bin_name, native_target));
     reset_output_dir(&output_dir)?;
-    let output_bin = output_dir.join(target_binary_name(
-        &native_output_artifact_name(
+    let output_artifact_name = target_binary_name(
+        &native_output_artifact_name(&output_bin_name, metadata.version.as_deref(), native_target),
+        native_target,
+    );
+    if is_macos_native_target(native_target) {
+        let app_executable_name = native_output_artifact_name(
             &output_bin_name,
             metadata.version.as_deref(),
             native_target,
-        ),
-        native_target,
-    ));
-    copy_file_overwriting(&built_bin, &output_bin)?;
-    if steam_enabled {
-        let _ = copy_steam_runtime_library(&artifact_dir, &output_dir, native_target)?;
-        write_steam_manifest(&output_dir, project_name, metadata)?;
+        );
+        let app_path = macos_app_bundle_path(&output_dir, &app_executable_name);
+        let app_macos_dir = app_path.join("Contents").join("MacOS");
+        fs::create_dir_all(&app_macos_dir)?;
+        let app_bin = app_macos_dir.join(&app_executable_name);
+        copy_file_overwriting(&built_bin, &app_bin)?;
+        ensure_macos_executable(&app_bin)?;
+        write_macos_info_plist(&app_path, project_name, &app_executable_name)?;
+        if steam_enabled {
+            copy_steam_runtime_library_to(&artifact_dir, &app_macos_dir, native_target)?;
+            write_steam_manifest(&output_dir, project_name, metadata)?;
+        }
+        print_exported_binary(&app_path);
+    } else {
+        let output_bin = output_dir.join(output_artifact_name);
+        copy_file_overwriting(&built_bin, &output_bin)?;
+        if steam_enabled {
+            let _ = copy_steam_runtime_library(&artifact_dir, &output_dir, native_target)?;
+            write_steam_manifest(&output_dir, project_name, metadata)?;
+        }
+        print_exported_binary(&output_bin);
     }
-    print_exported_binary(&output_bin);
     Ok(())
 }
 
@@ -738,6 +755,86 @@ fn file_uri(path: &Path) -> String {
     }
 }
 
+fn is_macos_native_target(native_target: Option<&str>) -> bool {
+    native_target
+        .map(|target| target.contains("apple-darwin"))
+        .unwrap_or_else(|| cfg!(target_os = "macos"))
+}
+
+fn macos_app_bundle_path(output_dir: &Path, executable_name: &str) -> PathBuf {
+    output_dir.join(format!("{}.app", package_name_slug(executable_name)))
+}
+
+fn xml_escape(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            '\'' => escaped.push_str("&apos;"),
+            '\u{0}'..='\u{8}' | '\u{b}' | '\u{c}' | '\u{e}'..='\u{1f}' => {}
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
+}
+
+fn write_macos_info_plist(
+    app_path: &Path,
+    project_name: &str,
+    executable_name: &str,
+) -> Result<(), CompilerError> {
+    let bundle_name = package_name_slug(project_name);
+    let bundle_identifier = macos_bundle_identifier(project_name);
+    let plist = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n\
+<plist version=\"1.0\">\n\
+<dict>\n\
+    <key>CFBundleDisplayName</key>\n\
+    <string>{}</string>\n\
+    <key>CFBundleExecutable</key>\n\
+    <string>{}</string>\n\
+    <key>CFBundleIdentifier</key>\n\
+    <string>{}</string>\n\
+    <key>CFBundleName</key>\n\
+    <string>{}</string>\n\
+    <key>CFBundlePackageType</key>\n\
+    <string>APPL</string>\n\
+</dict>\n\
+</plist>\n",
+        xml_escape(project_name),
+        xml_escape(executable_name),
+        xml_escape(&bundle_identifier),
+        xml_escape(&bundle_name),
+    );
+    fs::write(app_path.join("Contents").join("Info.plist"), plist)?;
+    Ok(())
+}
+
+fn macos_bundle_identifier(bundle_name: &str) -> String {
+    let mut component = String::new();
+    let mut separator = false;
+    for ch in bundle_name.chars() {
+        if ch.is_ascii_alphanumeric() {
+            component.push(ch.to_ascii_lowercase());
+            separator = false;
+        } else if !component.is_empty() && !separator {
+            component.push('-');
+            separator = true;
+        }
+    }
+    if component.ends_with('-') {
+        component.pop();
+    }
+    if component.is_empty() {
+        component.push_str("game");
+    }
+    format!("com.perro.{component}")
+}
+
 fn export_universal_macos_binary(
     project_root: &Path,
     release: bool,
@@ -749,10 +846,10 @@ fn export_universal_macos_binary(
     let package_bin_name = read_project_package_name(project_root)?;
     let output_bin_name =
         read_project_output_binary_name(project_root, &package_bin_name, demo, playtest)?;
-    let artifact_name = format!(
-        "{}-macos-universal-v{}",
-        package_name_slug(&output_bin_name),
-        package_name_slug(cfg.metadata.version.as_deref().unwrap_or("0.1.0"))
+    let app_executable_name = native_output_artifact_name(
+        &output_bin_name,
+        cfg.metadata.version.as_deref(),
+        Some("aarch64-apple-darwin"),
     );
     let output_dir = project_root.join(".output").join(format!(
         "{}-macos-universal",
@@ -771,8 +868,13 @@ fn export_universal_macos_binary(
         cfg.metadata.version.as_deref(),
         "x86_64-apple-darwin",
     );
-    let output_bin = output_dir.join(artifact_name);
+    let app_path = macos_app_bundle_path(&output_dir, &app_executable_name);
+    let app_macos_dir = app_path.join("Contents").join("MacOS");
+    fs::create_dir_all(&app_macos_dir)?;
+    let output_bin = app_macos_dir.join(&app_executable_name);
     run_lipo(&arm_bin, &intel_bin, &output_bin)?;
+    ensure_macos_executable(&output_bin)?;
+    write_macos_info_plist(&app_path, &cfg.name, &app_executable_name)?;
 
     if cfg.steam.enabled {
         let arm_dir = native_artifact_dir(
@@ -780,18 +882,19 @@ fn export_universal_macos_binary(
             if release { "release" } else { "debug" },
             Some("aarch64-apple-darwin"),
         );
-        let steam_lib = find_steam_runtime_library(&arm_dir.join("build"), "libsteam_api.dylib")
+        let steam_arm = find_steam_runtime_library(&arm_dir.join("build"), "libsteam_api.dylib")
             .ok_or_else(|| {
                 CompilerError::SceneParse(
                     "Steam enabled but macOS Steam runtime is missing".to_string(),
                 )
             })?;
-        copy_file_overwriting(&steam_lib, &output_dir.join("libsteam_api.dylib"))?;
+        // Steam's macOS SDK dylib already carries Intel + Apple Silicon slices.
+        copy_file_overwriting(&steam_arm, &app_macos_dir.join("libsteam_api.dylib"))?;
         write_steam_manifest(&output_dir, &cfg.name, &cfg.metadata)?;
     }
     println!(
-        "exported universal macOS project binary: {}",
-        output_bin.display()
+        "exported universal macOS project app: {}",
+        app_path.display()
     );
     Ok(())
 }
@@ -831,13 +934,21 @@ fn exported_native_binary_path(
     version: Option<&str>,
     target: &str,
 ) -> PathBuf {
-    project_root
+    let output_dir = project_root
         .join(".output")
-        .join(native_output_folder_name(output_name, Some(target)))
-        .join(target_binary_name(
+        .join(native_output_folder_name(output_name, Some(target)));
+    if is_macos_native_target(Some(target)) {
+        let artifact_name = native_output_artifact_name(output_name, version, Some(target));
+        macos_app_bundle_path(&output_dir, &artifact_name)
+            .join("Contents")
+            .join("MacOS")
+            .join(artifact_name)
+    } else {
+        output_dir.join(target_binary_name(
             &native_output_artifact_name(output_name, version, Some(target)),
             Some(target),
         ))
+    }
 }
 
 fn run_lipo(first: &Path, second: &Path, output: &Path) -> Result<(), CompilerError> {
@@ -853,6 +964,20 @@ fn run_lipo(first: &Path, second: &Path, output: &Path) -> Result<(), CompilerEr
     } else {
         Err(CompilerError::CargoFailed(status.code().unwrap_or(-1)))
     }
+}
+
+fn ensure_macos_executable(path: &Path) -> Result<(), CompilerError> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut permissions = fs::metadata(path)?.permissions();
+        permissions.set_mode(permissions.mode() | 0o111);
+        fs::set_permissions(path, permissions)?;
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+    Ok(())
 }
 
 fn native_artifact_dir(target_dir: &Path, profile: &str, target: Option<&str>) -> PathBuf {
@@ -871,16 +996,11 @@ fn native_output_folder_name(output_name: &str, target: Option<&str>) -> String 
 }
 
 fn native_output_artifact_name(
-    output_name: &str,
-    version: Option<&str>,
-    target: Option<&str>,
+    _output_name: &str,
+    _version: Option<&str>,
+    _target: Option<&str>,
 ) -> String {
-    format!(
-        "{}-{}-v{}",
-        package_name_slug(output_name),
-        native_system_slug(target),
-        package_name_slug(version.unwrap_or("0.1.0"))
-    )
+    "game".to_string()
 }
 
 fn package_name_slug(name: &str) -> String {
@@ -988,6 +1108,26 @@ fn copy_steam_runtime_library(
     Ok(Some(target))
 }
 
+fn copy_steam_runtime_library_to(
+    artifact_dir: &Path,
+    output_dir: &Path,
+    native_target: Option<&str>,
+) -> Result<PathBuf, CompilerError> {
+    let library_name = steam_runtime_library_name(native_target).ok_or_else(|| {
+        CompilerError::SceneParse("Steam runtime is not available for this native target".into())
+    })?;
+    let build_dir = artifact_dir.join("build");
+    let source = find_steam_runtime_library(&build_dir, library_name).ok_or_else(|| {
+        CompilerError::SceneParse(format!(
+            "Steam enabled but {library_name} was not found under {}",
+            build_dir.display()
+        ))
+    })?;
+    let target = output_dir.join(library_name);
+    copy_file_overwriting(&source, &target)?;
+    Ok(target)
+}
+
 fn steam_runtime_library_name(native_target: Option<&str>) -> Option<&'static str> {
     let target = native_target.unwrap_or_default();
     if target.contains("windows") || (target.is_empty() && cfg!(target_os = "windows")) {
@@ -1088,5 +1228,42 @@ mod project_bundle_tests {
         for physical in path_prefix_spellings(&generated_scripts_root) {
             assert!(flags.contains(&format!("--remap-path-prefix={physical}=s")));
         }
+    }
+
+    #[test]
+    fn macos_app_bundle_writes_standard_layout_and_plist() {
+        let root = std::env::temp_dir().join(format!(
+            "perro-macos-app-bundle-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock after epoch")
+                .as_nanos()
+        ));
+        let app = macos_app_bundle_path(&root, "My Game");
+        let macos_dir = app.join("Contents").join("MacOS");
+        std::fs::create_dir_all(&macos_dir).expect("create app dirs");
+        write_macos_info_plist(&app, "My <Game>", "My_Game").expect("write plist");
+
+        assert_eq!(
+            app.file_name().and_then(|name| name.to_str()),
+            Some("My_Game.app")
+        );
+        assert!(app.join("Contents").join("Info.plist").is_file());
+        let plist =
+            std::fs::read_to_string(app.join("Contents").join("Info.plist")).expect("read plist");
+        assert!(plist.contains("<string>My &lt;Game&gt;</string>"));
+        assert!(plist.contains("<key>CFBundleExecutable</key>"));
+        assert!(plist.contains("<string>My_Game</string>"));
+        assert!(plist.contains("<string>com.perro.my-game</string>"));
+        std::fs::remove_dir_all(root).expect("remove app fixture");
+    }
+
+    #[test]
+    fn macos_target_detection_uses_explicit_triple() {
+        assert!(is_macos_native_target(Some("x86_64-apple-darwin")));
+        assert!(is_macos_native_target(Some("aarch64-apple-darwin")));
+        assert!(!is_macos_native_target(Some("x86_64-unknown-linux-gnu")));
+        assert!(!is_macos_native_target(Some("x86_64-pc-windows-msvc")));
     }
 }

@@ -192,7 +192,7 @@ perro test --path D:\GameProjects\MyGame -- player_state_tests
 Command:
 
 ```powershell
-perro dev --path <project_dir> [--scene res://path.scn] [--target native|web|android] [--headless] [--demo] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--sim <spec>] [--host <addr>] [--port <num>]
+perro dev --path <project_dir> [--scene res://path.scn] [--target native|web|android] [--headless] [--demo] [--tools] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--sim <spec>] [--host <addr>] [--port <num>]
 ```
 
 What it does:
@@ -210,6 +210,7 @@ Flags:
 - `--headless`: runs the native `perro_headless` dev path with no window, input, or GPU render loop. Native only; rejected with `--target web` or `--target android`, and cannot combine with `--timings` or `--ui-profile`.
 - `--playtest`: apply `[playtest]` overrides + exclusions; select Playtest App ID; split `user://` saves under base name + `_Playtest`; enable `playtest_include!` + `playtest_exclude!`. Reject combo with `--demo`.
 - `--demo`: applies `[demo]` config overrides, skips excluded scripts/assets/scenes, strips tagged node trees, and enables `demo_exclude!`.
+- `--tools`: syncs and compiles `*.tool.rs` project modules and enables the `perro-tools` script feature. Off by default and native only. Normal dev/build skips their generated `.perro/scripts` files entirely. Use for QA, capture, perf, and debug drivers that must not compile into normal dev or player builds.
 - `--timings`: prints lightweight native timing averages: sim, gfx, delta, fps.
 - `--profile`: enables profiling feature for the selected dev target.
 - `--ui-profile`: enables native dev runner `ui_profile` feature.
@@ -354,17 +355,21 @@ What it does:
 4. Optimizes supported assets into match tables and preparsed compile-time statics.
 5. Packs unsupported/generic assets into `.perro/project/embedded/assets.perro`.
 6. Builds the generated project crate in release mode from `.perro/project`.
-7. With `--target native` or no `--target`, copies the built executable to `<project>/.output/`.
+7. With `--target native` or no `--target`, copies the built native output to `<project>/.output/`. macOS builds use an unsigned `.app` bundle.
 8. With `--target web`, exports browser bundle files to `<project>/.output/web/`.
 
 Flags:
 
 - `--target native|web|android`: selects native executable, browser wasm bundle, or Android app target. Default `native`.
 - `--demo`: builds only the demo-visible source and applies `[demo]` config overrides.
-- `--triple <rust_target>`: cross-compiles a native build for one Rust target triple. The CLI installs the Rust standard-library target when needed. The host still needs the target linker, SDK, and native libraries.
-- `--universal-macos`: on macOS, builds `aarch64-apple-darwin` and `x86_64-apple-darwin`, then merges the executables with `lipo`. Per-architecture exports are kept beside the universal export.
+- `--triple <rust_target>`: cross-compiles a native build for one Rust target triple. The CLI installs the Rust standard-library target when needed. The host still needs the target linker, SDK, and native libraries. A macOS triple emits an unsigned `.app` bundle.
+- `--universal-macos`: on macOS, builds `aarch64-apple-darwin` and `x86_64-apple-darwin`, then merges both slices into one unsigned `.app` with `lipo`. Per-architecture exports are kept beside the universal export.
 - `--profile`: enables profile build options for the generated project bundle.
 - `--console`: enables console build options for generated native project bundle.
+
+macOS `.app` exports use the standard `Contents/MacOS/<game>` bundle layout. Perro does not code-sign or notarize these bundles; add Apple signing and notarization as a separate release step when required.
+
+Native export directories carry the project name, OS, and CPU architecture, while the launch artifact uses one fixed lowercase name across projects and versions: `game.exe` on Windows, `game` on Linux, and `game.app` on macOS. Map one platform directory to the root of its Steam depot so Steam launch-option paths stay constant.
 
 Web target notes:
 

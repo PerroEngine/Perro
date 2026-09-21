@@ -109,7 +109,7 @@ mod locking_paths {
     }
 
     #[test]
-    fn native_output_names_group_by_host_and_suffix_bin_with_version() {
+    fn native_output_names_group_by_host_and_keep_stable_bin_name() {
         let host = super::super::rustc_default_host_triple()
             .and_then(|triple| target_slug_from_triple(&triple))
             .unwrap_or_else(|| format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH));
@@ -119,11 +119,11 @@ mod locking_paths {
         );
         assert_eq!(
             native_output_artifact_name("My Game", Some("1.0"), None),
-            format!("My_Game-{host}-v1.0")
+            "game"
         );
         assert_eq!(
             native_output_artifact_name("Game", None, None),
-            format!("Game-{host}-v0.1.0")
+            "game"
         );
     }
 
@@ -155,7 +155,7 @@ mod locking_paths {
         );
         assert_eq!(
             native_output_artifact_name("My Game", Some("2.0"), Some("aarch64-apple-darwin")),
-            "My_Game-macos-aarch64-v2.0"
+            "game"
         );
         assert_eq!(
             target_binary_name("game", Some("x86_64-pc-windows-msvc")),
@@ -709,6 +709,76 @@ mod locking_paths {
         assert!(!generated.contains("pub mod script_modules"));
 
         std::fs::remove_dir_all(root).expect("remove nested modules fixture");
+    }
+
+    #[test]
+    fn generated_scripts_lib_gates_tool_and_test_files() {
+        let root = unique_temp_dir("perro_compiler_gated_script_modules");
+        let src = root.join("src");
+        write_scripts_lib(
+            &src,
+            &[
+                "scripts/game.rs".to_string(),
+                "scripts/game/smoke.tool.rs".to_string(),
+                "game/scoring_tests.rs".to_string(),
+                "game/board.test.rs".to_string(),
+            ],
+            &["scripts/game/smoke.tool.rs".to_string()],
+            "res://",
+        )
+        .expect("write gated scripts lib");
+        let generated = std::fs::read_to_string(src.join("lib.rs")).expect("read scripts lib");
+
+        assert!(generated.contains(
+            "pub mod smoke {\n            #[cfg(feature = \"perro-tools\")]\n            include!(\"scripts/game/smoke.tool.gen.rs\");"
+        ));
+        assert!(generated.contains(
+            "pub mod scoring_tests {\n        #[cfg(test)]\n        include!(\"game/scoring_tests.gen.rs\");"
+        ));
+        assert!(generated.contains(
+            "pub mod board {\n        #[cfg(test)]\n        include!(\"game/board.test.gen.rs\");"
+        ));
+        assert!(generated.contains(
+            "#[cfg(feature = \"perro-tools\")]\n    ("
+        ));
+        assert!(!generated.contains("pub mod smoke_tool"));
+
+        std::fs::remove_dir_all(root).expect("remove gated modules fixture");
+    }
+
+    #[test]
+    fn script_source_sets_only_emit_enabled_files_and_remove_stale_output() {
+        let root = unique_temp_dir("perro_compiler_script_source_sets");
+        let source = root.join("res/game");
+        std::fs::create_dir_all(&source).expect("create source dir");
+        std::fs::write(source.join("runtime.rs"), "pub const RUNTIME: bool = true;\n")
+            .expect("write runtime source");
+        std::fs::write(source.join("smoke.tool.rs"), "pub const TOOL: bool = true;\n")
+            .expect("write tool source");
+        std::fs::write(source.join("score_tests.rs"), "#[test] fn score() {}\n")
+            .expect("write test source");
+        let generated = root.join(".perro/scripts/src/game");
+
+        let runtime = sync_scripts_with_source_set(&root, ScriptSourceSet::Runtime)
+            .expect("sync runtime sources");
+        assert_eq!(runtime, vec!["game/runtime.rs"]);
+        assert!(generated.join("runtime.gen.rs").is_file());
+        assert!(!generated.join("smoke.tool.gen.rs").exists());
+        assert!(!generated.join("score_tests.gen.rs").exists());
+
+        let tools = sync_scripts_with_source_set(&root, ScriptSourceSet::Tools)
+            .expect("sync tool sources");
+        assert_eq!(tools, vec!["game/runtime.rs", "game/smoke.tool.rs"]);
+        assert!(generated.join("smoke.tool.gen.rs").is_file());
+        assert!(!generated.join("score_tests.gen.rs").exists());
+
+        let tests = sync_scripts_with_source_set(&root, ScriptSourceSet::Tests)
+            .expect("sync test sources");
+        assert_eq!(tests, vec!["game/runtime.rs", "game/score_tests.rs"]);
+        assert!(!generated.join("smoke.tool.gen.rs").exists());
+        assert!(generated.join("score_tests.gen.rs").is_file());
+
+        std::fs::remove_dir_all(root).expect("remove source-set fixture");
     }
 
     #[test]

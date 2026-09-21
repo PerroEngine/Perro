@@ -6,7 +6,9 @@ struct ScriptModuleNamespace {
 
 fn nested_module_path_from_rel(rel: &str) -> Vec<String> {
     let mut parts = rel
-        .strip_suffix(".rs")
+        .strip_suffix(".tool.rs")
+        .or_else(|| rel.strip_suffix(".test.rs"))
+        .or_else(|| rel.strip_suffix(".rs"))
         .unwrap_or(rel)
         .split('/')
         .filter(|part| !part.is_empty())
@@ -82,6 +84,20 @@ fn nested_module_path_from_rel(rel: &str) -> Vec<String> {
         .collect()
 }
 
+fn script_cfg_attr(rel: &str) -> Option<&'static str> {
+    let file = rel.rsplit('/').next().unwrap_or(rel);
+    if file.ends_with(".tool.rs") {
+        Some("#[cfg(feature = \"perro-tools\")]")
+    } else if file.ends_with(".test.rs")
+        || file.ends_with("_test.rs")
+        || file.ends_with("_tests.rs")
+    {
+        Some("#[cfg(test)]")
+    } else {
+        None
+    }
+}
+
 fn nested_module_path_string(rel: &str) -> String {
     nested_module_path_from_rel(rel).join("::")
 }
@@ -123,6 +139,9 @@ fn write_nested_module_node(
     out.push_str(&format!("{indent}pub mod {name} {{\n"));
     if let Some(rel) = &node.source_rel {
         let generated_rel = escape_str(&generated_script_rel(rel));
+        if let Some(cfg) = script_cfg_attr(rel) {
+            out.push_str(&format!("{indent}    {cfg}\n"));
+        }
         out.push_str(&format!("{indent}    include!(\"{generated_rel}\");\n"));
     }
     for (child_name, child) in &node.children {
@@ -134,6 +153,10 @@ fn write_nested_module_node(
 fn write_nested_module_namespace(out: &mut String, namespace: &ScriptModuleNamespace) {
     if let Some(rel) = &namespace.source_rel {
         let generated_rel = escape_str(&generated_script_rel(rel));
+        if let Some(cfg) = script_cfg_attr(rel) {
+            out.push_str(cfg);
+            out.push('\n');
+        }
         out.push_str(&format!("include!(\"{generated_rel}\");\n\n"));
     }
     for (name, node) in &namespace.children {
@@ -189,6 +212,13 @@ pub static SCRIPT_REGISTRY: &[(u64, ScriptConstructor<RuntimeScriptApi>)] = &[\n
         } else {
             format!("{module}::perro_create_script")
         };
+        let rel = registrable
+            .iter()
+            .find(|rel| nested_module_path_string(rel) == module.as_str())
+            .expect("script registry module comes from registrable source");
+        if let Some(cfg) = script_cfg_attr(rel) {
+            out.push_str(&format!("    {cfg}\n"));
+        }
         out.push_str(&format!(
             "    ({hash}u64, {constructor} as ScriptConstructor<RuntimeScriptApi>),\n"
         ));
@@ -204,6 +234,13 @@ static DYNAMIC_SCRIPT_REGISTRY: &[(u64, DynamicScriptConstructor<RuntimeScriptAp
         } else {
             format!("{module}::perro_create_script_dynamic")
         };
+        let rel = registrable
+            .iter()
+            .find(|rel| nested_module_path_string(rel) == module.as_str())
+            .expect("script registry module comes from registrable source");
+        if let Some(cfg) = script_cfg_attr(rel) {
+            out.push_str(&format!("    {cfg}\n"));
+        }
         out.push_str(&format!(
             "    ({hash}u64, {constructor} as DynamicScriptConstructor<RuntimeScriptApi>),\n"
         ));

@@ -11,7 +11,7 @@
 
 ## Purpose
 
-Every Rust file under `res/**/*.rs` is compiled into your game. Some files are script behaviors attached to nodes; others are plain modules of shared helpers, constants, and types. This page explains which file shape becomes an attachable script versus a shared library, and how a file path maps to a `crate::...` import so game code can be split across files without registration boilerplate.
+Every Rust file under `res/**/*.rs` becomes a project module. Normal `.rs` files compile into every game build. `.tool.rs` files compile only for `perro dev --tools`; test-file suffixes compile only for `perro test`. Some files are script behaviors attached to nodes; others are plain modules of shared helpers, constants, and types. This page explains which file shape becomes an attachable script versus a shared library, and how a file path maps to a `crate::...` import so game code can be split across files without registration boilerplate.
 
 Folder names do not decide whether a file is a script. Every `.rs` file under `res` becomes a project module, no matter which folder contains it. File content decides whether that module is also an attachable script.
 
@@ -25,6 +25,10 @@ Perro manages the Rust module declarations for the whole `res` tree. You normall
 - Share damage tables, tuning constants, or math helpers across many scripts: put free functions and structs in a bare module (no `#[State]`) and import it.
 - Reuse code by importing another project file: `use crate::scripts::math;` for `res/scripts/math.rs`, or use `super::math` from a sibling module.
 - Keep a large system organized across folders: `res/ai/nav/util.rs` becomes `crate::ai::nav::util`.
+- Keep QA, capture, and debug drivers out of normal builds: name the file
+  `smoke.tool.rs`, import it as `smoke`, and run it with `perro dev --tools`.
+- Keep test modules out of dev and player builds: use `*_test.rs`, `*_tests.rs`,
+  or `*.test.rs`; run them with `perro test`.
 
 ## Decision Guide
 
@@ -65,7 +69,23 @@ methods!({
 
 ## Reference
 
-Perro compiles every Rust file under `res/**.rs` into the generated scripts crate.
+Perro discovers every Rust file under `res/**.rs` for the generated scripts crate.
+
+Build gates use file suffixes:
+
+| Source file | Module path | Compiles for |
+| --- | --- | --- |
+| `game.rs` | `game` | all commands |
+| `smoke.tool.rs` | `smoke` | `perro dev --tools` only |
+| `scoring_tests.rs` | `scoring_tests` | `perro test` only |
+| `board.test.rs` | `board` | `perro test` only |
+
+`--tools` is off by default and supported only by native `perro dev`. Tool files
+are not synced into `.perro/scripts`, generated, or compiled by normal dev,
+check, and player builds. Test files are synced only by `perro test` and
+test-aware lint commands. `perro dev --tools` syncs normal and tool files but
+not test files. Keep every reference to a tool-file item behind
+`#[cfg(feature = "perro-tools")]`.
 
 Two valid file shapes:
 
@@ -121,7 +141,7 @@ Use more than one `super` to move through more than one parent. Descend through 
 use super::super::gameplay::player::PlayerState;
 ```
 
-Perro discovers new folders and `.rs` files during script sync and updates the generated module tree. Adding `res/scripts/gameplay/player.rs` is enough to create `crate::scripts::gameplay::player`; no source file needs `mod scripts;`, `mod gameplay;`, or `mod player;`.
+Perro discovers new folders and `.rs` files during script sync and updates the generated module tree. Adding `res/scripts/gameplay/player.rs` is enough to create `crate::scripts::gameplay::player`; no source file needs `mod scripts;`, `mod gameplay;`, or `mod player;`. `.tool` and `.test` are build-gate suffixes, not module-name parts.
 
 A `mod.rs` file is optional. Add one only when the folder module needs its own code. Its items live directly in that folder module:
 

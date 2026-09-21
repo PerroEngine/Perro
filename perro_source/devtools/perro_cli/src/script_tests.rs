@@ -1,7 +1,7 @@
 use crate::{
     find_project_root, log_done, log_note, log_step, parse_flag_value, resolve_local_path,
 };
-use perro_compiler::sync_scripts;
+use perro_compiler::sync_test_scripts;
 use perro_project::{ensure_source_overrides, load_project_toml};
 use std::path::Path;
 use std::process::Command;
@@ -22,7 +22,7 @@ pub(crate) fn test_command(args: &[String], cwd: &Path) -> Result<(), String> {
     log_step("Syncing Test Scripts");
     ensure_source_overrides(&project_dir)
         .map_err(|err| format!("failed to refresh source overrides: {err}"))?;
-    sync_scripts(&project_dir).map_err(|err| format!("failed to sync scripts: {err}"))?;
+    sync_test_scripts(&project_dir).map_err(|err| format!("failed to sync scripts: {err}"))?;
     log_done("Test Scripts Synced");
 
     log_note("Running Script Tests");
