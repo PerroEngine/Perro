@@ -34,7 +34,7 @@ fn native_crash_log_path() -> std::path::PathBuf {
         .join("perro_crash.log")
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", debug_assertions))]
 fn redirect_native_stdio() {
     use std::os::windows::io::{FromRawHandle, IntoRawHandle};
 
@@ -63,7 +63,11 @@ fn redirect_native_stdio() {
     }
 }
 
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "windows")))]
+#[cfg(all(
+    debug_assertions,
+    not(target_arch = "wasm32"),
+    not(target_os = "windows")
+))]
 fn redirect_native_stdio() {}
 
 #[cfg(target_os = "windows")]
@@ -105,6 +109,7 @@ fn show_native_crash_message(_project_name: &str, _log_path: &Path) {}
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn install_native_crash_reporter(project_name: &'static str) {
+    #[cfg(debug_assertions)]
     redirect_native_stdio();
     std::panic::set_hook(Box::new(move |info| {
         let log_path = native_crash_log_path();
