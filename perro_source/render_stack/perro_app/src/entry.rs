@@ -63,13 +63,6 @@ fn redirect_native_stdio() {
     }
 }
 
-#[cfg(all(
-    debug_assertions,
-    not(target_arch = "wasm32"),
-    not(target_os = "windows")
-))]
-fn redirect_native_stdio() {}
-
 #[cfg(target_os = "windows")]
 fn show_native_crash_message(project_name: &str, log_path: &Path) {
     use std::os::windows::ffi::OsStrExt;
@@ -109,7 +102,7 @@ fn show_native_crash_message(_project_name: &str, _log_path: &Path) {}
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn install_native_crash_reporter(project_name: &'static str) {
-    #[cfg(debug_assertions)]
+    #[cfg(all(target_os = "windows", debug_assertions))]
     redirect_native_stdio();
     std::panic::set_hook(Box::new(move |info| {
         let log_path = native_crash_log_path();
