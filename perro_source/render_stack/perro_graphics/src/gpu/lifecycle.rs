@@ -776,8 +776,6 @@ impl Gpu {
         self.present.set_output_size(width, height);
         self.composite
             .resize(&self.device, [width, height], &self.present);
-        self.render_width = render_width;
-        self.render_height = render_height;
         if let Some([capture_width, capture_height]) =
             self.capture_target.as_ref().map(|target| target.size)
         {
