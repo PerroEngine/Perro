@@ -66,7 +66,7 @@ pub fn generate_static_audios(
                         .and_then(|e| e.to_str())
                         .unwrap_or_default();
                     if source_ext::contains(source_ext::AUDIO, ext) {
-                        let (flags, payload) = select_pawdio_payload(&raw)?;
+                        let (flags, payload) = select_pawdio_payload(ext, &raw)?;
 
                         let mut pawdio = Vec::with_capacity(18 + payload.len());
                         pawdio.extend_from_slice(PAWDIO_MAGIC);
@@ -173,7 +173,16 @@ fn escape_str(input: &str) -> String {
     out
 }
 
-fn select_pawdio_payload(raw: &[u8]) -> io::Result<(u32, std::borrow::Cow<'_, [u8]>)> {
+fn select_pawdio_payload<'a>(
+    source_ext: &str,
+    raw: &'a [u8],
+) -> io::Result<(u32, std::borrow::Cow<'a, [u8]>)> {
+    // Encoded audio already uses format-specific compression. Keep it byte-for-byte so
+    // Ogg Vorbis music adds only the PAWDIO header and needs no startup decompression.
+    if !source_ext.eq_ignore_ascii_case("wav") {
+        return Ok((0, std::borrow::Cow::Borrowed(raw)));
+    }
+
     let compressed = compress_zlib_best(raw)?;
     if compressed.len() < raw.len() {
         Ok((FLAG_ZLIB, std::borrow::Cow::Owned(compressed)))
@@ -194,7 +203,8 @@ mod tests {
     #[test]
     fn select_payload_prefers_compressed_when_smaller() {
         let raw = vec![0u8; 8192];
-        let (flags, payload) = select_pawdio_payload(&raw).expect("payload selection should work");
+        let (flags, payload) =
+            select_pawdio_payload("wav", &raw).expect("payload selection should work");
         assert_eq!(flags, FLAG_ZLIB);
         assert!(payload.len() < raw.len());
     }
@@ -202,12 +212,22 @@ mod tests {
     #[test]
     fn select_payload_prefers_raw_when_compressed_not_smaller() {
         let raw = (0..=255u8).cycle().take(1025).collect::<Vec<_>>();
-        let (flags, payload) = select_pawdio_payload(&raw).expect("payload selection should work");
+        let (flags, payload) =
+            select_pawdio_payload("wav", &raw).expect("payload selection should work");
         if flags == FLAG_ZLIB {
             assert!(payload.len() < raw.len());
         } else {
             assert_eq!(flags, 0);
             assert_eq!(payload, raw);
         }
+    }
+
+    #[test]
+    fn ogg_payload_stays_raw() {
+        let raw = vec![0u8; 8192];
+        let (flags, payload) =
+            select_pawdio_payload("ogg", &raw).expect("payload selection should work");
+        assert_eq!(flags, 0);
+        assert_eq!(payload.as_ref(), raw);
     }
 }

@@ -139,7 +139,18 @@ Static pipeline behavior:
 - preserve original `res://...` lookup path
 - write embedded files under `embedded/audios/`
 - emit `static/audios.rs` lookup code
-- choose zlib payload only when smaller than raw bytes
+- pass encoded audio such as Ogg Vorbis through byte-for-byte
+- try zlib only for WAV, and use it only when smaller than the source bytes
+
+Use Ogg Vorbis for long music in shipped builds:
+
+- encode near 160-192 kbps, then A/B check against the WAV master
+- put the `.ogg` in `res/` and update every `res://...wav` reference to `.ogg`
+- keep the WAV source/master outside `res/` so the static build cannot embed it
+- compare executable size and playback after `perro build --fresh`
+
+This reduces executable and download size without changing the runtime cache model.
+Decoded PCM memory may stay close to the WAV-backed version.
 
 `.pawdio` v1 layout:
 
