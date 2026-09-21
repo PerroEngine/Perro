@@ -199,6 +199,7 @@ const DEV: &[FlagSpec] = &[
     switch("--headless"),
     switch("--demo"),
     switch("--playtest"),
+    switch("--tools"),
     value("--sim"),
 ];
 const CAPTURE: &[FlagSpec] = &[
@@ -338,7 +339,7 @@ fn print_usage() {
         "  perro_cli dlc --name <dlc_name> [--path <project_dir>] # build one runtime-loadable DLC package"
     );
     eprintln!(
-        "  perro_cli dev [--path <project_dir>] [--scene res://path.scn] [--target native|web|android] [--headless] [--demo | --playtest] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--sim igpu|low_end|half|potato|cores=N] [--host <addr>] [--port <num>]      # build scripts + run dev runner, web server, or android app"
+        "  perro_cli dev [--path <project_dir>] [--scene res://path.scn] [--target native|web|android] [--headless] [--demo | --playtest] [--tools] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--sim igpu|low_end|half|potato|cores=N] [--host <addr>] [--port <num>]      # build scripts + run dev runner, web server, or android app"
     );
     eprintln!(
         "  perro_cli capture --output <path> [--path <project_dir>] [--source main|camera2d:<name>|camera3d:<name>|ui:<name>|target:<name>] [--mode offline|realtime] [--width <px>] [--height <px>] [--aspect preserve|W:H] [--fps <fps-or-num/den>] [--duration <sec>] [--supersample <integer-scale>] [--framing fit|crop|expand|stretch] [--format png|gif|webm|mp4|webp] [--transparent] [--scene res://path.scn] [--sim <spec>]      # render deterministic frames + package output"
@@ -550,5 +551,10 @@ mod cli_arg_tests {
             validate_command_args("dev", &args(&["perro", "dev", "--demo"])),
             Ok(())
         );
+        assert_eq!(
+            validate_command_args("dev", &args(&["perro", "dev", "--tools"])),
+            Ok(())
+        );
+        assert!(validate_command_args("build", &args(&["perro", "build", "--tools"])).is_err());
     }
 }

@@ -1186,6 +1186,9 @@ app_id = 480
     assert!(project_manifest.contains("perro-playtest"));
     assert!(project_manifest.contains("\"scripts/perro-playtest\""));
     assert!(scripts_manifest.contains("perro-playtest = []"));
+    assert!(project_manifest.contains("perro-tools"));
+    assert!(project_manifest.contains("\"scripts/perro-tools\""));
+    assert!(scripts_manifest.contains("perro-tools = []"));
     assert!(project_manifest.contains("perro-demo"));
     assert!(project_manifest.contains("\"scripts/perro-demo\""));
     assert!(scripts_manifest.contains("perro-demo = []"));
@@ -1482,6 +1485,7 @@ fn ensure_source_overrides_recreates_missing_scripts_manifest() {
     assert!(repaired.contains("dynamic-scripts = []"));
     assert!(repaired.contains("perro-demo = []"));
     assert!(repaired.contains("perro-playtest = []"));
+    assert!(repaired.contains("perro-tools = []"));
     assert!(repaired.contains("perro-spec = [\"perro_api/spec\"]"));
     assert!(manifest_dep_has_path(&repaired, "perro_api"));
     assert!(manifest_dep_has_path(&repaired, "perro_runtime"));

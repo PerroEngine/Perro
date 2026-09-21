@@ -684,7 +684,7 @@ fn write_dlc_scripts_manifest(
             .join("perro_runtime"),
     );
     let mut manifest = format!(
-        "[workspace]\n\n[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\ncrate-type = [\"cdylib\", \"rlib\"]\n\n[dependencies]\nperro_api = {{ path = \"{perro_api_path}\" }}\nperro_runtime = {{ path = \"{perro_runtime_path}\" }}\n\n[features]\ndynamic-scripts = []\nperro-demo = []\nperro-playtest = []\nperro-spec = [\"perro_api/spec\"]\nsteamworks = [\"perro_api/steamworks\", \"perro_runtime/steamworks\"]\n"
+        "[workspace]\n\n[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\ncrate-type = [\"cdylib\", \"rlib\"]\n\n[dependencies]\nperro_api = {{ path = \"{perro_api_path}\" }}\nperro_runtime = {{ path = \"{perro_runtime_path}\" }}\n\n[features]\ndynamic-scripts = []\nperro-demo = []\nperro-playtest = []\nperro-tools = []\nperro-spec = [\"perro_api/spec\"]\nsteamworks = [\"perro_api/steamworks\", \"perro_runtime/steamworks\"]\n"
     );
     let extra_deps = read_extra_script_deps(project_root)?;
     if !extra_deps.is_empty() {

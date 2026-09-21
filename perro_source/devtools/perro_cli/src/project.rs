@@ -208,6 +208,9 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     if headless && target != CliTarget::Native {
         return Err("`--headless` only supports `--target native`".to_string());
     }
+    if args.iter().any(|arg| arg == "--tools") && target != CliTarget::Native {
+        return Err("`--tools` only supports `--target native`".to_string());
+    }
     if target == CliTarget::Web {
         return dev_web_command(args, cwd);
     }
@@ -220,6 +223,7 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let release = args.iter().any(|a| a == "--release");
     let demo = args.iter().any(|a| a == "--demo");
     let playtest = args.iter().any(|a| a == "--playtest");
+    let tools = args.iter().any(|a| a == "--tools");
     let boot_scene = parse_boot_scene_flag(args)?;
     let sim = parse_sim_flag(args)?;
     let csv_profile_name = parse_optional_flag_value(args, "--csv-profile")
@@ -315,6 +319,9 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     }
     if playtest {
         features.push("scripts/perro-playtest".to_string());
+    }
+    if tools {
+        features.push("scripts/perro-tools".to_string());
     }
     if headless {
         features.push("perro_dev_runner/headless".to_string());

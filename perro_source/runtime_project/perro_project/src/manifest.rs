@@ -361,6 +361,7 @@ fn ensure_project_manifest_features(path: &Path) -> std::io::Result<()> {
         "perro-playtest",
         &["scripts/perro-playtest"],
     );
+    changed |= ensure_feature_values(features_table, "perro-tools", &["scripts/perro-tools"]);
     changed |= ensure_feature_values(
         features_table,
         "headless_profile",
@@ -796,6 +797,11 @@ fn ensure_scripts_manifest_features(path: &Path) -> std::io::Result<()> {
     }
     if !features_table.contains_key("perro-playtest") {
         features_table.insert("perro-playtest".to_string(), Value::Array(Vec::new()));
+        changed = true;
+    }
+    if !features_table.contains_key("perro-tools") {
+        features_table.insert("perro-tools".to_string(), Value::Array(Vec::new()));
+        changed = true;
     }
     if !features_table.contains_key("perro-demo") {
         features_table.insert("perro-demo".to_string(), Value::Array(Vec::new()));
