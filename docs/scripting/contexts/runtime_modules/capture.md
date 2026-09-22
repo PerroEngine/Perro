@@ -5,15 +5,15 @@
 | Header | Link |
 | --- | --- |
 | Purpose | [Purpose](#purpose) |
-| Context + imports | [Context + imports](#context--imports) |
+| Context + imports | [Context + imports](#context-imports) |
 | Capture config | [Capture config](#capture-config) |
 | Script example | [Script example](#script-example) |
 | Sources | [Sources](#sources) |
-| Size + framing | [Size + framing](#size--framing) |
+| Size + framing | [Size + framing](#size-framing) |
 | Timing | [Timing](#timing) |
-| Lifecycle + state | [Lifecycle + state](#lifecycle--state) |
+| Lifecycle + state | [Lifecycle + state](#lifecycle-state) |
 | Replay actions | [Replay actions](#replay-actions) |
-| Output + errors | [Output + errors](#output--errors) |
+| Output + errors | [Output + errors](#output-errors) |
 | Host helpers | [Host helpers](#host-helpers) |
 | API reference | [API reference](#api-reference) |
 

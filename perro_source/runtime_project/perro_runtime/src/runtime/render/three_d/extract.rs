@@ -46,8 +46,8 @@ impl Runtime {
             && self.render_3d.retained_mesh_draws.is_empty()
             && self.render_3d.collision_debug_state.is_empty()
             && self.render_3d.last_camera.is_none();
-        let has_extraction_work = self.dirty.has_any_dirty()
-            || self.dirty.has_pending_transform_roots()
+        let dirty_work = self.dirty.has_any_dirty() || self.dirty.has_pending_transform_roots();
+        let has_extraction_work = dirty_work
             || !self.render_3d.removed_nodes.is_empty()
             || self.render_3d.force_full_scan_once
             || bootstrap_scan;
@@ -288,13 +288,16 @@ impl Runtime {
             }));
         }
 
-        let mut saw_3d_node = false;
+        // Defer absence proof while the scene is dirty; the next clean full
+        // pass establishes it without type checks on every moving frame.
+        let need_empty_proof = include_all_nodes && !dirty_work;
+        let mut saw_3d_node = !need_empty_proof;
         for node in traversal_ids.iter().copied() {
             visible_now.remove(&node);
             let effective_visible =
                 self.is_effectively_visible(node) && self.node_world(node) == Some(NodeID::nil());
             let scene_node = self.nodes.get(node);
-            saw_3d_node |= scene_node.is_some_and(|scene_node| scene_node.is_3d());
+            saw_3d_node = saw_3d_node || scene_node.is_some_and(|scene_node| scene_node.is_3d());
             let ambient_light_data = scene_node.and_then(|node| match &node.data {
                 SceneNodeData::AmbientLight3D(light)
                     if light.active
@@ -1577,7 +1580,7 @@ impl Runtime {
         // Cache an empty pass only when its full traversal saw no 3D nodes.
         // A hidden or pending 3D resource can become renderable without an
         // arena mutation, so those scenes must keep the bootstrap retry.
-        let no_3d_nodes = include_all_nodes && !saw_3d_node;
+        let no_3d_nodes = need_empty_proof && !saw_3d_node;
         self.render_3d
             .finish_visible_pass(traversal_ids, visible_now);
         self.render_3d.empty_bootstrap_revision =

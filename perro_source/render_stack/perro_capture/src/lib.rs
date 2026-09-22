@@ -2155,14 +2155,18 @@ mod tests {
             },
             &root,
         )
-        .unwrap();
-        session.ingest_rgba(4, 4, &test_frame()).unwrap();
-        session.ingest_rgba(4, 4, &test_frame()).unwrap();
+        .expect("start metadata rollback capture");
+        session
+            .ingest_rgba(4, 4, &test_frame())
+            .expect("ingest first rollback frame");
+        session
+            .ingest_rgba(4, 4, &test_frame())
+            .expect("ingest second rollback frame");
         let stage = session.staging_dir().to_path_buf();
         let output = root.join("clip.gif");
         let metadata = output.with_extension("json");
-        fs::create_dir(&metadata).unwrap();
-        fs::write(metadata.join("keep"), b"keep").unwrap();
+        fs::create_dir(&metadata).expect("create metadata conflict directory");
+        fs::write(metadata.join("keep"), b"keep").expect("write metadata sentinel");
         assert!(
             session
                 .finalize_to(OutputSpec::new(&output, OutputFormat::Gif))
@@ -2171,15 +2175,24 @@ mod tests {
         assert!(!stage.exists());
         assert!(!output.exists());
         assert!(metadata.join("keep").is_file());
-        assert!(fs::read_dir(&root).unwrap().all(|entry| {
-            entry
-                .unwrap()
-                .path()
-                .extension()
-                .is_none_or(|extension| extension != "partial")
-        }));
-        assert_eq!(fs::read_dir(stage.parent().unwrap()).unwrap().count(), 0);
-        fs::remove_dir_all(root).unwrap();
+        assert!(
+            fs::read_dir(&root)
+                .expect("read capture output directory")
+                .all(|entry| {
+                    entry
+                        .expect("read capture output entry")
+                        .path()
+                        .extension()
+                        .is_none_or(|extension| extension != "partial")
+                })
+        );
+        assert_eq!(
+            fs::read_dir(stage.parent().expect("staging directory has parent"))
+                .expect("read staging parent")
+                .count(),
+            0
+        );
+        fs::remove_dir_all(root).expect("remove capture test directory");
     }
 
     #[test]

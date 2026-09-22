@@ -15,10 +15,14 @@ def main():
     parser.add_argument("candidate", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--nodes", type=int, default=10_000)
+    parser.add_argument("--cases", nargs="+", choices=["frame_idle", "frame_sparse", "frame_all", "empty_2", "empty_3"],
+                        default=["frame_idle", "frame_sparse", "frame_all", "empty_2", "empty_3"])
+    parser.add_argument("--order", choices=["ABBA", "BAAB"], default="ABBA")
+    parser.add_argument("--timing-only", action="store_true", help="Skip separate allocator probes")
     args = parser.parse_args()
     exes = {"baseline": args.baseline.resolve(), "candidate": args.candidate.resolve()}
     result = {
-        "method": "A/B/B/A independent processes; 60 warmup frames; 101 batches of 10 frames; default process priority and all CPUs; allocator probes separate",
+        "method": f"{'/'.join(args.order)} independent processes; A=baseline B=candidate; 60 warmup frames; 101 batches of 10 frames; default process priority and all CPUs; allocator probes separate",
         "scope": "fixed update + update + 2D/3D/UI extraction + command drain + clear_dirty_flags; no GPU submission",
         "nodes": args.nodes,
         "hashes": {label: hashlib.sha256(path.read_bytes()).hexdigest() for label, path in exes.items()},
@@ -43,9 +47,9 @@ def main():
             raise RuntimeError(f"Probe did not produce timings: {raw}")
         return {"label": label, "raw": raw, **values}
 
-    for case in ["frame_idle", "frame_sparse", "frame_all", "empty_2", "empty_3"]:
+    for case in args.cases:
         row = result["cases"][case] = {"runs": []}
-        for label in ["baseline", "candidate", "candidate", "baseline"]:
+        for label in ("baseline" if item == "A" else "candidate" for item in args.order):
             row["runs"].append(run(label, case))
             save()
         baseline = statistics.mean(r["median_ns"] for r in row["runs"] if r["label"] == "baseline")
@@ -54,7 +58,7 @@ def main():
         print(f"{case}: {baseline:.0f} -> {candidate:.0f} ns ({row['mean_process_median_delta_percent']:+.2f}%)", flush=True)
         save()
     # Keep instrumentation out of ordinary timing and retain baseline allocation controls.
-    for case in ["frame_idle", "frame_sparse", "frame_all"]:
+    for case in (case for case in args.cases if case.startswith("frame_") and not args.timing_only):
         result["cases"][case]["memory"] = [run(label, case, memory=True) for label in exes]
         save()
 

@@ -367,7 +367,11 @@ impl Runtime {
         // Only a complete main-world proof can suppress later empty retries.
         // Any UI node, including a pending image or nonrenderable layout,
         // keeps the original bootstrap behavior.
+        // Wait for a stable arena before proving absence. In moving scenes,
+        // every frame changes the revision; a second full member scan there
+        // cannot produce a reusable cache entry.
         let no_ui_nodes = bootstrap_scan
+            && arena_revision == covered_arena_revision
             && !all_ids.iter().any(|&id| {
                 self.nodes
                     .get(id)

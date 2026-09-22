@@ -953,12 +953,15 @@ mod tests {
         let (release, wait) = std::sync::mpsc::channel();
         runtime.capture_finish = Some(CaptureFinish {
             worker: Some(std::thread::spawn(move || {
-                wait.recv().unwrap();
+                wait.recv().expect("release capture finish worker");
                 Err("pack failed".to_owned())
             })),
         });
         assert_eq!(runtime.capture_state(), Some(CaptureSessionState::Draining));
-        assert_eq!(runtime.capture_poll_finish().unwrap(), None);
+        assert_eq!(
+            runtime.capture_poll_finish().expect("poll capture finish"),
+            None
+        );
         assert!(
             runtime
                 .capture_start(
@@ -971,7 +974,7 @@ mod tests {
                 )
                 .is_err()
         );
-        release.send(()).unwrap();
+        release.send(()).expect("release capture finish worker");
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         loop {
             match runtime.capture_poll_finish() {
@@ -996,7 +999,7 @@ mod tests {
             "perro-runtime-async-capture-{}",
             std::process::id()
         ));
-        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&root).expect("create capture test root");
         let mut runtime = Runtime::new();
         let config = CaptureConfig {
             supersample: 1,
@@ -1007,23 +1010,32 @@ mod tests {
             height: 2,
         };
         runtime
-            .capture_start(config.clone(), size, root.to_str().unwrap())
-            .unwrap();
-        runtime.capture_submit_rgba(0, 2, 2, &[255; 16]).unwrap();
+            .capture_start(
+                config.clone(),
+                size,
+                root.to_str().expect("capture test root has UTF-8 path"),
+            )
+            .expect("start async capture");
+        runtime
+            .capture_submit_rgba(0, 2, 2, &[255; 16])
+            .expect("submit capture frame");
         let stage = runtime
             .capture_session
             .as_ref()
-            .unwrap()
+            .expect("capture session exists after start")
             .staging_dir()
             .to_owned();
         let output = root.join("clip.gif");
         runtime
             .capture_stop_async(OutputSpec::new(&output, perro_capture::OutputFormat::Gif))
-            .unwrap();
+            .expect("stop capture asynchronously");
         assert_eq!(runtime.capture_state(), Some(CaptureSessionState::Draining));
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         let result = loop {
-            if let Some(result) = runtime.capture_poll_finish().unwrap() {
+            if let Some(result) = runtime
+                .capture_poll_finish()
+                .expect("poll async capture result")
+            {
                 break result;
             }
             assert!(std::time::Instant::now() < deadline);
@@ -1034,18 +1046,22 @@ mod tests {
         assert!(output.is_file());
         assert!(!stage.exists());
         runtime
-            .capture_start(config, size, root.to_str().unwrap())
-            .unwrap();
+            .capture_start(
+                config,
+                size,
+                root.to_str().expect("capture test root has UTF-8 path"),
+            )
+            .expect("restart capture after async stop");
         let stage = runtime
             .capture_session
             .as_ref()
-            .unwrap()
+            .expect("capture session exists after restart")
             .staging_dir()
             .to_owned();
         runtime.capture_cancel();
         assert_eq!(runtime.capture_state(), None);
         assert!(!stage.exists());
-        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(root).expect("remove capture test root");
     }
 
     #[test]

@@ -10,7 +10,7 @@
 | Quick Map | [Quick Map](#quick-map) |
 | Project Placement | [Project Placement](#project-placement) |
 | Build And Run | [Build And Run](#build-and-run) |
-| Capture & Offline Render | [Capture & Offline Render](#capture--offline-render) |
+| Capture & Offline Render | [Capture & Offline Render](#capture-offline-render) |
 | New Projects And Templates | [New Projects And Templates](#new-projects-and-templates) |
 | Health And Maintenance | [Health And Maintenance](#health-and-maintenance) |
 | Profiling | [Profiling](#profiling) |

@@ -1,0 +1,252 @@
+{
+  "method": "A/B/B/A independent processes; 60 warmup frames; 101 batches of 10 frames; default process priority and all CPUs; allocator probes separate",
+  "scope": "fixed update + update + 2D/3D/UI extraction + command drain + clear_dirty_flags; no GPU submission",
+  "nodes": 10000,
+  "hashes": {
+    "baseline": "ff3a40be106d4163459449b4e7e5adbfa1d670acf03d9997e8251a9dc900a7a2",
+    "candidate": "87d7c728174f2b0a174d15d5b1a126191bd30beafd1326ed1f6aad169dad5adf"
+  },
+  "cases": {
+    "frame_idle": {
+      "runs": [
+        {
+          "label": "baseline",
+          "raw": "architecture/frame_idle/10000: median_ns=2752620 p95_ns=3066190 allocs=0 live_delta=0 runtime_bytes=20784",
+          "median_ns": 2752620,
+          "p95_ns": 3066190,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20784
+        },
+        {
+          "label": "candidate",
+          "raw": "architecture/frame_idle/10000: median_ns=121390 p95_ns=138810 allocs=0 live_delta=0 runtime_bytes=20832",
+          "median_ns": 121390,
+          "p95_ns": 138810,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20832
+        },
+        {
+          "label": "candidate",
+          "raw": "architecture/frame_idle/10000: median_ns=118480 p95_ns=198160 allocs=0 live_delta=0 runtime_bytes=20832",
+          "median_ns": 118480,
+          "p95_ns": 198160,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20832
+        },
+        {
+          "label": "baseline",
+          "raw": "architecture/frame_idle/10000: median_ns=2786240 p95_ns=3410980 allocs=0 live_delta=0 runtime_bytes=20784",
+          "median_ns": 2786240,
+          "p95_ns": 3410980,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20784
+        }
+      ],
+      "mean_process_median_delta_percent": -95.66932545686296,
+      "memory": [
+        {
+          "label": "baseline",
+          "raw": "architecture/frame_idle/10000: median_ns=4084920 p95_ns=8685180 allocs=13130 live_delta=0 runtime_bytes=20784",
+          "median_ns": 4084920,
+          "p95_ns": 8685180,
+          "allocs": 13130,
+          "live_delta": 0,
+          "runtime_bytes": 20784
+        },
+        {
+          "label": "candidate",
+          "raw": "architecture/frame_idle/10000: median_ns=117630 p95_ns=150550 allocs=0 live_delta=0 runtime_bytes=20832",
+          "median_ns": 117630,
+          "p95_ns": 150550,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20832
+        }
+      ]
+    },
+    "frame_sparse": {
+      "runs": [
+        {
+          "label": "baseline",
+          "raw": "architecture/frame_sparse/10000: median_ns=2176730 p95_ns=2450770 allocs=0 live_delta=0 runtime_bytes=20784",
+          "median_ns": 2176730,
+          "p95_ns": 2450770,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20784
+        },
+        {
+          "label": "candidate",
+          "raw": "architecture/frame_sparse/10000: median_ns=2193490 p95_ns=2807410 allocs=0 live_delta=0 runtime_bytes=20832",
+          "median_ns": 2193490,
+          "p95_ns": 2807410,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20832
+        },
+        {
+          "label": "candidate",
+          "raw": "architecture/frame_sparse/10000: median_ns=2403220 p95_ns=2817240 allocs=0 live_delta=0 runtime_bytes=20832",
+          "median_ns": 2403220,
+          "p95_ns": 2817240,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20832
+        },
+        {
+          "label": "baseline",
+          "raw": "architecture/frame_sparse/10000: median_ns=2217610 p95_ns=2581360 allocs=0 live_delta=0 runtime_bytes=20784",
+          "median_ns": 2217610,
+          "p95_ns": 2581360,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20784
+        }
+      ],
+      "mean_process_median_delta_percent": 4.6052421979182245,
+      "memory": [
+        {
+          "label": "baseline",
+          "raw": "architecture/frame_sparse/10000: median_ns=2694100 p95_ns=3897180 allocs=13130 live_delta=0 runtime_bytes=20784",
+          "median_ns": 2694100,
+          "p95_ns": 3897180,
+          "allocs": 13130,
+          "live_delta": 0,
+          "runtime_bytes": 20784
+        },
+        {
+          "label": "candidate",
+          "raw": "architecture/frame_sparse/10000: median_ns=2421530 p95_ns=2995050 allocs=13130 live_delta=0 runtime_bytes=20832",
+          "median_ns": 2421530,
+          "p95_ns": 2995050,
+          "allocs": 13130,
+          "live_delta": 0,
+          "runtime_bytes": 20832
+        }
+      ]
+    },
+    "frame_all": {
+      "runs": [
+        {
+          "label": "baseline",
+          "raw": "architecture/frame_all/10000: median_ns=8517620 p95_ns=9304710 allocs=0 live_delta=0 runtime_bytes=20784",
+          "median_ns": 8517620,
+          "p95_ns": 9304710,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20784
+        },
+        {
+          "label": "candidate",
+          "raw": "architecture/frame_all/10000: median_ns=8769450 p95_ns=10479210 allocs=0 live_delta=0 runtime_bytes=20832",
+          "median_ns": 8769450,
+          "p95_ns": 10479210,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20832
+        },
+        {
+          "label": "candidate",
+          "raw": "architecture/frame_all/10000: median_ns=8900400 p95_ns=11065190 allocs=0 live_delta=0 runtime_bytes=20832",
+          "median_ns": 8900400,
+          "p95_ns": 11065190,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20832
+        },
+        {
+          "label": "baseline",
+          "raw": "architecture/frame_all/10000: median_ns=8843670 p95_ns=9732880 allocs=0 live_delta=0 runtime_bytes=20784",
+          "median_ns": 8843670,
+          "p95_ns": 9732880,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20784
+        }
+      ],
+      "mean_process_median_delta_percent": 1.7772872868317968,
+      "memory": [
+        {
+          "label": "baseline",
+          "raw": "architecture/frame_all/10000: median_ns=9413550 p95_ns=13408970 allocs=13130 live_delta=0 runtime_bytes=20784",
+          "median_ns": 9413550,
+          "p95_ns": 13408970,
+          "allocs": 13130,
+          "live_delta": 0,
+          "runtime_bytes": 20784
+        },
+        {
+          "label": "candidate",
+          "raw": "architecture/frame_all/10000: median_ns=9351040 p95_ns=12467200 allocs=13130 live_delta=0 runtime_bytes=20832",
+          "median_ns": 9351040,
+          "p95_ns": 12467200,
+          "allocs": 13130,
+          "live_delta": 0,
+          "runtime_bytes": 20832
+        }
+      ]
+    },
+    "empty_2": {
+      "runs": [
+        {
+          "label": "baseline",
+          "raw": "empty_extract/2/10000: median_ns=738060 p95_ns=889530",
+          "median_ns": 738060,
+          "p95_ns": 889530
+        },
+        {
+          "label": "candidate",
+          "raw": "empty_extract/2/10000: median_ns=210 p95_ns=270",
+          "median_ns": 210,
+          "p95_ns": 270
+        },
+        {
+          "label": "candidate",
+          "raw": "empty_extract/2/10000: median_ns=200 p95_ns=210",
+          "median_ns": 200,
+          "p95_ns": 210
+        },
+        {
+          "label": "baseline",
+          "raw": "empty_extract/2/10000: median_ns=749430 p95_ns=1028440",
+          "median_ns": 749430,
+          "p95_ns": 1028440
+        }
+      ],
+      "mean_process_median_delta_percent": -99.97243678949103
+    },
+    "empty_3": {
+      "runs": [
+        {
+          "label": "baseline",
+          "raw": "empty_extract/3/10000: median_ns=1383380 p95_ns=1561240",
+          "median_ns": 1383380,
+          "p95_ns": 1561240
+        },
+        {
+          "label": "candidate",
+          "raw": "empty_extract/3/10000: median_ns=190 p95_ns=200",
+          "median_ns": 190,
+          "p95_ns": 200
+        },
+        {
+          "label": "candidate",
+          "raw": "empty_extract/3/10000: median_ns=250 p95_ns=290",
+          "median_ns": 250,
+          "p95_ns": 290
+        },
+        {
+          "label": "baseline",
+          "raw": "empty_extract/3/10000: median_ns=1557780 p95_ns=2196710",
+          "median_ns": 1557780,
+          "p95_ns": 2196710
+        }
+      ],
+      "mean_process_median_delta_percent": -99.98503991622353
+    }
+  }
+}

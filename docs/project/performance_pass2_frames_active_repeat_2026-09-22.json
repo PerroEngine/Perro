@@ -1,0 +1,72 @@
+{
+  "method": "A/B/B/A independent processes; 60 warmup frames; 101 batches of 10 frames; default process priority and all CPUs; allocator probes separate",
+  "scope": "fixed update + update + 2D/3D/UI extraction + command drain + clear_dirty_flags; no GPU submission",
+  "nodes": 10000,
+  "hashes": {
+    "baseline": "ff3a40be106d4163459449b4e7e5adbfa1d670acf03d9997e8251a9dc900a7a2",
+    "candidate": "ee7eedf28a93398c58554a3da0c5bf96fe0ede8b51e3495fe39d062c986dfb64"
+  },
+  "cases": {
+    "frame_all": {
+      "runs": [
+        {
+          "label": "baseline",
+          "raw": "architecture/frame_all/10000: median_ns=10317400 p95_ns=14407530 allocs=0 live_delta=0 runtime_bytes=20784",
+          "median_ns": 10317400,
+          "p95_ns": 14407530,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20784
+        },
+        {
+          "label": "candidate",
+          "raw": "architecture/frame_all/10000: median_ns=10238810 p95_ns=13293510 allocs=0 live_delta=0 runtime_bytes=20832",
+          "median_ns": 10238810,
+          "p95_ns": 13293510,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20832
+        },
+        {
+          "label": "candidate",
+          "raw": "architecture/frame_all/10000: median_ns=9691910 p95_ns=15232690 allocs=0 live_delta=0 runtime_bytes=20832",
+          "median_ns": 9691910,
+          "p95_ns": 15232690,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20832
+        },
+        {
+          "label": "baseline",
+          "raw": "architecture/frame_all/10000: median_ns=10268560 p95_ns=13497390 allocs=0 live_delta=0 runtime_bytes=20784",
+          "median_ns": 10268560,
+          "p95_ns": 13497390,
+          "allocs": 0,
+          "live_delta": 0,
+          "runtime_bytes": 20784
+        }
+      ],
+      "mean_process_median_delta_percent": -3.182946046723112,
+      "memory": [
+        {
+          "label": "baseline",
+          "raw": "architecture/frame_all/10000: median_ns=11837440 p95_ns=35204170 allocs=13130 live_delta=0 runtime_bytes=20784",
+          "median_ns": 11837440,
+          "p95_ns": 35204170,
+          "allocs": 13130,
+          "live_delta": 0,
+          "runtime_bytes": 20784
+        },
+        {
+          "label": "candidate",
+          "raw": "architecture/frame_all/10000: median_ns=9480830 p95_ns=12768050 allocs=13130 live_delta=0 runtime_bytes=20832",
+          "median_ns": 9480830,
+          "p95_ns": 12768050,
+          "allocs": 13130,
+          "live_delta": 0,
+          "runtime_bytes": 20832
+        }
+      ]
+    }
+  }
+}

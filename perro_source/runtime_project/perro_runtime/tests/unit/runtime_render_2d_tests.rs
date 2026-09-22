@@ -37,6 +37,12 @@ fn empty_2d_pass_skips_clean_3d_scene_and_wakes_on_direct_mutation() {
     let node = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    for _ in 0..3 {
+        runtime.mark_needs_rerender(node);
+        runtime.extract_render_2d_commands();
+        assert_eq!(runtime.render_2d.empty_bootstrap_revision, None);
+        runtime.clear_dirty_flags();
+    }
     runtime.extract_render_2d_commands();
     assert_eq!(
         runtime.render_2d.empty_bootstrap_revision,
@@ -51,9 +57,11 @@ fn empty_2d_pass_skips_clean_3d_scene_and_wakes_on_direct_mutation() {
     runtime.extract_render_2d_commands();
     assert_eq!(runtime.render_2d.traversal_ids, [perro_ids::NodeID::nil()]);
 
-    let mut camera = Camera2D::default();
-    camera.active = true;
-    runtime.nodes.get_mut(node).unwrap().data = SceneNodeData::Camera2D(camera);
+    let camera = Camera2D {
+        active: true,
+        ..Default::default()
+    };
+    runtime.nodes.get_mut(node).expect("inserted node").data = SceneNodeData::Camera2D(camera);
     runtime.render_2d.traversal_ids.clear();
     runtime.extract_render_2d_commands();
     assert!(

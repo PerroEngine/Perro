@@ -8,8 +8,8 @@ impl Runtime {
             && self.render_2d.retained_sprites.is_empty()
             && self.render_2d.last_camera.is_none();
         let button_input_changed = self.button_2d_input_changed();
-        let has_extraction_work = self.dirty.has_any_dirty()
-            || self.dirty.has_pending_transform_roots()
+        let dirty_work = self.dirty.has_any_dirty() || self.dirty.has_pending_transform_roots();
+        let has_extraction_work = dirty_work
             || !self.render_2d.removed_nodes.is_empty()
             || self.render_2d.force_full_scan_once
             || button_input_changed
@@ -98,7 +98,10 @@ impl Runtime {
         }
 
         let mut visible_now = self.render_2d.begin_visible_pass();
-        let mut saw_2d_node = false;
+        // Dirty scenes will invalidate absence again next frame. Prove it on
+        // a clean full pass instead, with no type checks on moving frames.
+        let need_empty_proof = full_traversal && !dirty_work;
+        let mut saw_2d_node = !need_empty_proof;
 
         for node in traversal_ids.iter().copied() {
             visible_now.remove(&node);
@@ -107,7 +110,7 @@ impl Runtime {
             let sprite_data = self
                 .nodes
                 .get(node)
-                .inspect(|scene_node| saw_2d_node |= scene_node.is_2d())
+                .inspect(|scene_node| saw_2d_node = saw_2d_node || scene_node.is_2d())
                 .and_then(|scene_node| match &scene_node.data {
                     SceneNodeData::Sprite2D(sprite) => Some((
                         effective_visible
@@ -1031,7 +1034,7 @@ impl Runtime {
         // Cache an empty pass only when its full traversal saw no 2D nodes.
         // A hidden or pending 2D resource can become renderable without an
         // arena mutation, so those scenes must keep the bootstrap retry.
-        let no_2d_nodes = full_traversal && !saw_2d_node;
+        let no_2d_nodes = need_empty_proof && !saw_2d_node;
         self.render_2d
             .finish_visible_pass(traversal_ids, visible_now);
         self.render_2d.empty_bootstrap_revision =

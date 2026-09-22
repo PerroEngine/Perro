@@ -135,6 +135,9 @@ fn empty_ui_pass_skips_clean_scene_and_wakes_on_raw_node_change() {
         .nodes
         .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
     runtime.extract_render_ui_commands();
+    assert_eq!(runtime.render_ui.empty_bootstrap_revision, None);
+    runtime.clear_dirty_flags();
+    runtime.extract_render_ui_commands();
     assert_eq!(
         runtime.render_ui.empty_bootstrap_revision,
         Some(runtime.nodes.mutation_revision())
@@ -145,7 +148,8 @@ fn empty_ui_pass_skips_clean_scene_and_wakes_on_raw_node_change() {
     runtime.extract_render_ui_commands();
     assert_eq!(runtime.render_ui.traversal_ids, [NodeID::nil()]);
 
-    runtime.nodes.get_mut(node).unwrap().data = SceneNodeData::UiPanel(Box::new(UiPanel::new()));
+    runtime.nodes.get_mut(node).expect("inserted node").data =
+        SceneNodeData::UiPanel(Box::new(UiPanel::new()));
     runtime.render_ui.traversal_ids.clear();
     runtime.extract_render_ui_commands();
     let mut commands = Vec::new();
@@ -156,6 +160,31 @@ fn empty_ui_pass_skips_clean_scene_and_wakes_on_raw_node_change() {
             if matches!(command.as_ref(), UiCommand::UpsertPanel { node: id, .. } if *id == node)
     )));
     assert_eq!(runtime.render_ui.empty_bootstrap_revision, None);
+}
+
+#[test]
+fn empty_ui_pass_defers_absence_proof_while_arena_changes() {
+    let mut runtime = Runtime::new();
+    let node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    runtime.extract_render_ui_commands();
+    assert_eq!(runtime.render_ui.empty_bootstrap_revision, None);
+
+    for _ in 0..3 {
+        runtime.clear_dirty_flags();
+        runtime.nodes.get_mut(node).expect("inserted node").data =
+            SceneNodeData::Node3D(Node3D::new());
+        runtime.extract_render_ui_commands();
+        assert_eq!(runtime.render_ui.empty_bootstrap_revision, None);
+    }
+
+    runtime.clear_dirty_flags();
+    runtime.extract_render_ui_commands();
+    assert_eq!(
+        runtime.render_ui.empty_bootstrap_revision,
+        Some(runtime.nodes.mutation_revision())
+    );
 }
 
 #[test]
