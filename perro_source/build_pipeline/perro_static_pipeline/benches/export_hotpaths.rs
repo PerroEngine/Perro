@@ -1,6 +1,6 @@
 //! Baseline-compatible export probes. Copy this file, tests/support/mod.rs and
 //! its Cargo target/dev dependency into the baseline checkout unchanged.
-//! --case=material|archive|textures|shader|codegen|codegen_small
+//! --case=material|archive|archive_rebuild|textures|shader|codegen|codegen_small|csv_cold
 //! --samples=10 --threads=4 [--memory] [--first-call]
 //! Time includes generation, output writes and temporary result destruction;
 //! excludes input creation, cold-cache reset, output verification and fixture drop.
@@ -88,6 +88,13 @@ fn main() {
         .expect("worker pool");
     let fixture = Fixture::new();
     match case {
+        "csv_cold" => {
+            let mut csv = "key,value\n".to_string();
+            for i in 0..25_000 {
+                csv.push_str(&format!("key{i},value{i}\n"));
+            }
+            fixture.write("data.csv", csv.as_bytes());
+        }
         "codegen" | "codegen_small" => {
             let small = case == "codegen_small";
             let mut scene =
@@ -118,7 +125,7 @@ fn main() {
                 fixture.model(&format!("mesh{i}.gltf"), "texture.png");
             }
         }
-        "archive" => {
+        "archive" | "archive_rebuild" => {
             let mut data = vec![0u8; 4 * 1024 * 1024];
             let mut state = 0x1234_5678u32;
             for word in data.chunks_exact_mut(4) {
@@ -149,13 +156,14 @@ fn main() {
     let tree = fixture.tree();
     let archive = fixture.0.join("assets.perro");
     let run = || match case {
+        "csv_cold" => generate_static_csvs(&fixture.0).expect("CSV export"),
         "codegen" | "codegen_small" => {
             generate_static_scenes(&fixture.0, &tree).expect("scene export");
             generate_static_animations(&fixture.0, &tree).expect("animation export");
             generate_static_csvs(&fixture.0).expect("CSV export");
         }
         "material" => generate_static_materials(&fixture.0, &tree).expect("material export"),
-        "archive" => perro_assets::packer::build_perro_assets_archive(
+        "archive" | "archive_rebuild" => perro_assets::packer::build_perro_assets_archive(
             &archive,
             &fixture.0.join("res"),
             &fixture.0,
@@ -172,9 +180,14 @@ fn main() {
     }
     let mut nanos = Vec::with_capacity(samples);
     let mut peak_bytes = Vec::with_capacity(samples);
-    for _ in 0..samples {
-        if matches!(case, "textures" | "shader") {
+    for sample in 0..samples {
+        if matches!(case, "textures" | "shader" | "csv_cold") {
             fixture.clear_outputs();
+        }
+        if case == "archive_rebuild" {
+            // Change a tiny entry outside timing; reuse the large payloads but
+            // force archive assembly. Alternating sizes also defeats stat reuse.
+            fixture.write("marker.bin", &vec![b'x'; 1 + sample % 2]);
         }
         let base = LIVE.load(Ordering::Relaxed);
         PEAK.store(base, Ordering::Relaxed);
@@ -186,7 +199,7 @@ fn main() {
         peak_bytes.push(peak);
     }
     let mut checksum = 0xcbf29ce484222325u64;
-    let data = if case == "archive" {
+    let data = if matches!(case, "archive" | "archive_rebuild") {
         std::collections::BTreeMap::from([(
             "assets.perro".to_string(),
             std::fs::read(archive).expect("verify archive"),

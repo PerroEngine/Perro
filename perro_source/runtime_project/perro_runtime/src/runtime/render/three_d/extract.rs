@@ -34,7 +34,9 @@ impl Runtime {
     }
 
     pub fn extract_render_3d_commands(&mut self) {
-        let bootstrap_scan = self.render_3d.prev_visible.is_empty()
+        let bootstrap_scan = self.render_3d.empty_bootstrap_revision
+            != Some(self.nodes.mutation_revision())
+            && self.render_3d.prev_visible.is_empty()
             && self.render_3d.retained_ambient_lights.is_empty()
             && self.render_3d.retained_skies.is_empty()
             && self.render_3d.retained_ray_lights.is_empty()
@@ -286,11 +288,14 @@ impl Runtime {
             }));
         }
 
+        let mut saw_3d_node = false;
         for node in traversal_ids.iter().copied() {
             visible_now.remove(&node);
             let effective_visible =
                 self.is_effectively_visible(node) && self.node_world(node) == Some(NodeID::nil());
-            let ambient_light_data = self.nodes.get(node).and_then(|node| match &node.data {
+            let scene_node = self.nodes.get(node);
+            saw_3d_node |= scene_node.is_some_and(|scene_node| scene_node.is_3d());
+            let ambient_light_data = scene_node.and_then(|node| match &node.data {
                 SceneNodeData::AmbientLight3D(light)
                     if light.active
                         && light.visible
@@ -1569,8 +1574,14 @@ impl Runtime {
         traversal_seen.clear();
         self.render_3d.traversal_seen = traversal_seen;
         self.render_3d.overlay_occluders_scratch = overlay_occluders;
+        // Cache an empty pass only when its full traversal saw no 3D nodes.
+        // A hidden or pending 3D resource can become renderable without an
+        // arena mutation, so those scenes must keep the bootstrap retry.
+        let no_3d_nodes = include_all_nodes && !saw_3d_node;
         self.render_3d
             .finish_visible_pass(traversal_ids, visible_now);
+        self.render_3d.empty_bootstrap_revision =
+            no_3d_nodes.then(|| self.nodes.mutation_revision());
         skeleton_cache.clear();
         self.render_3d.skeleton_cache_scratch = skeleton_cache;
         skeleton_global_scratch.clear();

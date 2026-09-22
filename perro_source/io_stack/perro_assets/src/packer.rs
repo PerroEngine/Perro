@@ -303,7 +303,12 @@ pub fn build_perro_assets_archive(
         return write_stat_manifest(&stat_path, &processed_files);
     }
 
-    let mut archive = Cursor::new(Vec::<u8>::new());
+    let capacity = archive_capacity(
+        processed_files
+            .iter()
+            .map(|file| (file.rel_path.len() + "res/".len(), file.data.len())),
+    )?;
+    let mut archive = Cursor::new(Vec::with_capacity(capacity));
     let header = PerroAssetsHeader {
         magic: PERRO_ASSETS_MAGIC,
         version: archive::VERSION,
@@ -312,7 +317,7 @@ pub fn build_perro_assets_archive(
     };
     write_header(&mut archive, &header)?;
 
-    let mut entries = Vec::new();
+    let mut entries = Vec::with_capacity(processed_files.len());
     for processed in &processed_files {
         let offset = archive.stream_position()?;
         archive.write_all(&processed.data)?;
@@ -363,7 +368,7 @@ pub fn build_perro_archive_from_entries(
     entries: &[(String, std::path::PathBuf)],
 ) -> io::Result<()> {
     let read = read_archive_entries(entries)?;
-    let mut archive = Cursor::new(Vec::<u8>::new());
+    let mut archive = Cursor::new(Vec::with_capacity(read_archive_capacity(&read, true)?));
     write_perro_archive_from_bytes(&mut archive, &read, true)?;
     write_output_if_changed(output, &archive.into_inner())
 }
@@ -380,11 +385,11 @@ pub fn build_compressed_perro_archive_from_entries(
 ) -> io::Result<()> {
     let read = read_archive_entries(entries)?;
 
-    let mut raw = Cursor::new(Vec::<u8>::new());
+    let mut raw = Cursor::new(Vec::with_capacity(read_archive_capacity(&read, false)?));
     write_perro_archive_from_bytes(&mut raw, &read, false)?;
     let raw_wrapped = wrap_compressed_archive(&raw.into_inner())?;
 
-    let mut entry_compressed = Cursor::new(Vec::<u8>::new());
+    let mut entry_compressed = Cursor::new(Vec::with_capacity(read_archive_capacity(&read, true)?));
     write_perro_archive_from_bytes(&mut entry_compressed, &read, true)?;
     let entry_compressed = entry_compressed.into_inner();
 
@@ -401,6 +406,35 @@ struct ReadArchiveEntry<'a> {
     raw: Vec<u8>,
     // Present only when zlib actually shrank the payload.
     compressed: Option<Vec<u8>>,
+}
+
+// The writer knows every payload size before assembly. Reserve header, payloads,
+// and index together so the final index cannot double a large archive buffer.
+fn archive_capacity(entries: impl IntoIterator<Item = (usize, usize)>) -> io::Result<usize> {
+    const HEADER_BYTES: usize = 4 + 4 + 4 + 8;
+    const INDEX_META_BYTES: usize = 2 + 8 + 8 + 8 + 4;
+    entries
+        .into_iter()
+        .try_fold(HEADER_BYTES, |size, (path_len, data_len)| {
+            if path_len > u16::MAX as usize {
+                return Err(io::Error::new(io::ErrorKind::InvalidInput, "Path too long"));
+            }
+            size.checked_add(INDEX_META_BYTES)
+                .and_then(|size| size.checked_add(path_len))
+                .and_then(|size| size.checked_add(data_len))
+                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Archive too large"))
+        })
+}
+
+fn read_archive_capacity(entries: &[ReadArchiveEntry<'_>], compress: bool) -> io::Result<usize> {
+    archive_capacity(entries.iter().map(|entry| {
+        let data = if compress {
+            entry.compressed.as_deref().unwrap_or(&entry.raw)
+        } else {
+            &entry.raw
+        };
+        (entry.virtual_path.len(), data.len())
+    }))
 }
 
 /// Read and per-entry-compress every source exactly once, sorted by path.

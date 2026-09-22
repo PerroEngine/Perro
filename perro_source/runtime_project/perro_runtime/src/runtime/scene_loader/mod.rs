@@ -877,6 +877,7 @@ impl Runtime {
         self.render_2d.texture_sources.clear();
         self.render_2d.last_camera = None;
         self.render_2d.removed_nodes.clear();
+        self.render_2d.empty_bootstrap_revision = None;
         self.render_3d.traversal_ids.clear();
         self.render_3d.traversal_child_scratch.clear();
         self.render_3d.visible_now.clear();
@@ -901,12 +902,14 @@ impl Runtime {
         self.render_3d.collision_debug_state.clear();
         self.render_3d.camera_activation_order.clear();
         self.render_3d.removed_nodes.clear();
+        self.render_3d.empty_bootstrap_revision = None;
         self.render_ui.traversal_ids.clear();
         self.render_ui.traversal_seen.clear();
         self.render_ui.command_ids.clear();
         self.render_ui.command_seen.clear();
         self.render_ui.visible_now.clear();
         self.render_ui.prev_visible.clear();
+        self.render_ui.empty_bootstrap_revision = None;
         self.render_ui.computed_rects.clear();
         self.render_ui.size_clamp_baselines.borrow_mut().clear();
         self.render_ui.computed_scales.clear();

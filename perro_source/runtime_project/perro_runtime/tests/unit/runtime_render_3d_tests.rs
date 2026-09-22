@@ -11,6 +11,7 @@ use perro_nodes::{
     mesh_instance_3d::MeshInstance3D,
     mesh_instance_3d::MeshSurfaceBinding,
     multi_mesh_instance_3d::MultiMeshInstance3D,
+    node_2d::Node2D,
     node_3d::Node3D,
     physics_3d::RigidBody3D,
     physics_3d::Shape3D,
@@ -35,6 +36,71 @@ fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {
     let mut out = Vec::new();
     runtime.drain_render_commands(&mut out);
     out
+}
+
+#[test]
+fn empty_3d_pass_skips_clean_2d_scene_and_wakes_on_direct_mutation() {
+    let mut runtime = Runtime::new();
+    let node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node2D(Node2D::new())));
+    runtime.extract_render_3d_commands();
+    assert_eq!(
+        runtime.render_3d.empty_bootstrap_revision,
+        Some(runtime.nodes.mutation_revision())
+    );
+
+    runtime.clear_dirty_flags();
+    runtime
+        .render_3d
+        .traversal_ids
+        .push(perro_ids::NodeID::nil());
+    runtime.extract_render_3d_commands();
+    assert_eq!(runtime.render_3d.traversal_ids, [perro_ids::NodeID::nil()]);
+
+    let mut camera = Camera3D::default();
+    camera.active = true;
+    runtime.nodes.get_mut(node).unwrap().data = SceneNodeData::Camera3D(Box::new(camera));
+    runtime.render_3d.traversal_ids.clear();
+    runtime.extract_render_3d_commands();
+    assert!(
+        collect_commands(&mut runtime)
+            .iter()
+            .any(|command| matches!(
+                command,
+                RenderCommand::ThreeD(cmd) if matches!(cmd.as_ref(), Command3D::SetCamera { .. })
+            ))
+    );
+    assert_eq!(runtime.render_3d.empty_bootstrap_revision, None);
+
+    assert!(NodeAPI::remove_node(&mut runtime, node));
+    runtime.extract_render_3d_commands();
+    runtime.clear_dirty_flags();
+    runtime.extract_render_3d_commands();
+    assert_eq!(
+        runtime.render_3d.empty_bootstrap_revision,
+        Some(runtime.nodes.mutation_revision())
+    );
+}
+
+#[test]
+fn empty_3d_pass_keeps_retry_when_3d_resource_is_pending() {
+    let mut runtime = Runtime::new();
+    let mesh = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MeshInstance3D(Box::new(
+            MeshInstance3D::new(),
+        ))));
+    runtime.extract_render_3d_commands();
+    assert_eq!(runtime.render_3d.empty_bootstrap_revision, None);
+    assert!(runtime.nodes.get(mesh).is_some());
+    runtime.clear_dirty_flags();
+    runtime
+        .render_3d
+        .traversal_ids
+        .push(perro_ids::NodeID::nil());
+    runtime.extract_render_3d_commands();
+    assert!(runtime.render_3d.traversal_ids.is_empty());
 }
 
 fn collect_resource_texture_request(

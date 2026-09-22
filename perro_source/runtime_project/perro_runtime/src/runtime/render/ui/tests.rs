@@ -128,6 +128,80 @@ fn insert_ui_node(runtime: &mut Runtime, data: SceneNodeData) -> NodeID {
     node
 }
 
+#[test]
+fn empty_ui_pass_skips_clean_scene_and_wakes_on_raw_node_change() {
+    let mut runtime = Runtime::new();
+    let node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    runtime.extract_render_ui_commands();
+    assert_eq!(
+        runtime.render_ui.empty_bootstrap_revision,
+        Some(runtime.nodes.mutation_revision())
+    );
+
+    runtime.clear_dirty_flags();
+    runtime.render_ui.traversal_ids.push(NodeID::nil());
+    runtime.extract_render_ui_commands();
+    assert_eq!(runtime.render_ui.traversal_ids, [NodeID::nil()]);
+
+    runtime.nodes.get_mut(node).unwrap().data = SceneNodeData::UiPanel(Box::new(UiPanel::new()));
+    runtime.render_ui.traversal_ids.clear();
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(command)
+            if matches!(command.as_ref(), UiCommand::UpsertPanel { node: id, .. } if *id == node)
+    )));
+    assert_eq!(runtime.render_ui.empty_bootstrap_revision, None);
+}
+
+#[test]
+fn empty_ui_pass_wakes_on_insert_and_reaches_empty_after_remove() {
+    let mut runtime = Runtime::new();
+    runtime.extract_render_ui_commands();
+    runtime.clear_dirty_flags();
+    assert_eq!(
+        runtime.render_ui.empty_bootstrap_revision,
+        Some(runtime.nodes.mutation_revision())
+    );
+
+    let panel = insert_panel(&mut runtime, [48.0, 24.0], Color::WHITE);
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(command)
+            if matches!(command.as_ref(), UiCommand::UpsertPanel { node, .. } if *node == panel)
+    )));
+
+    assert!(NodeAPI::remove_node(&mut runtime, panel));
+    runtime.extract_render_ui_commands();
+    runtime.clear_dirty_flags();
+    runtime.extract_render_ui_commands();
+    assert_eq!(
+        runtime.render_ui.empty_bootstrap_revision,
+        Some(runtime.nodes.mutation_revision())
+    );
+}
+
+#[test]
+fn empty_ui_pass_keeps_pending_image_retry() {
+    let mut runtime = Runtime::new();
+    let texture = runtime
+        .resource_api
+        .load_texture("res://textures/pending_ui.png");
+    let mut image = perro_ui::UiImage::new();
+    image.texture = texture;
+    insert_ui_node(&mut runtime, SceneNodeData::UiImage(Box::new(image)));
+    runtime.extract_render_ui_commands();
+    assert_eq!(runtime.render_ui.empty_bootstrap_revision, None);
+    assert!(runtime.resource_api.is_texture_id_pending(texture));
+}
+
 fn attach_child(runtime: &mut Runtime, parent: NodeID, child: NodeID) {
     runtime
         .nodes

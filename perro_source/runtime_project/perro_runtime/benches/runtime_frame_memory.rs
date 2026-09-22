@@ -71,9 +71,13 @@ fn frame(runtime: &mut Runtime, commands: &mut Vec<RenderCommand>) {
     runtime.fixed_update(1.0 / 60.0);
     runtime.update(1.0 / 60.0);
     runtime.extract_render_2d_commands();
+    runtime.extract_render_3d_commands();
+    runtime.extract_render_ui_commands();
     runtime.drain_render_commands(commands);
     black_box(commands.len());
     commands.clear();
+    // Match App::present: dirty marks persist through extraction, then reset.
+    runtime.clear_dirty_flags();
 }
 
 fn timing(c: &mut Criterion) {
@@ -344,6 +348,14 @@ fn internal_times() {
 }
 
 fn main() {
+    if std::env::args().any(|arg| arg == "--empty-extract") {
+        empty_extract();
+        return;
+    }
+    if std::env::args().any(|arg| arg == "--frame-times") {
+        frame_times();
+        return;
+    }
     if std::env::args().any(|arg| arg == "--architecture-probe") {
         architecture_probe();
         return;
@@ -370,6 +382,98 @@ fn main() {
     let mut c = Criterion::default().configure_from_args();
     timing(&mut c);
     c.final_summary();
+}
+
+// Coarse clocks keep per-script instrumentation out of this diagnostic.
+fn frame_times() {
+    TRACKING.store(false, Ordering::Relaxed);
+    let count = probe_arg("--nodes=", 10_000);
+    let stride = probe_arg("--stride=", 0);
+    let (mut runtime, _ids, mut commands) = runtime_fixture(count, stride);
+    for _ in 0..60 {
+        frame(&mut runtime, &mut commands);
+    }
+    let mut samples: [Vec<u128>; 6] = std::array::from_fn(|_| Vec::with_capacity(120));
+    for _ in 0..120 {
+        let start = std::time::Instant::now();
+        runtime.fixed_update(1.0 / 60.0);
+        samples[0].push(start.elapsed().as_nanos());
+        let start = std::time::Instant::now();
+        runtime.update(1.0 / 60.0);
+        samples[1].push(start.elapsed().as_nanos());
+        let start = std::time::Instant::now();
+        runtime.extract_render_2d_commands();
+        samples[2].push(start.elapsed().as_nanos());
+        let start = std::time::Instant::now();
+        runtime.extract_render_3d_commands();
+        samples[3].push(start.elapsed().as_nanos());
+        let start = std::time::Instant::now();
+        runtime.extract_render_ui_commands();
+        samples[4].push(start.elapsed().as_nanos());
+        let start = std::time::Instant::now();
+        runtime.drain_render_commands(&mut commands);
+        black_box(commands.len());
+        commands.clear();
+        runtime.clear_dirty_flags();
+        samples[5].push(start.elapsed().as_nanos());
+    }
+    for (name, values) in [
+        "fixed",
+        "update",
+        "extract_2d",
+        "extract_3d",
+        "extract_ui",
+        "drain_and_clear",
+    ]
+    .into_iter()
+    .zip(&mut samples)
+    {
+        values.sort_unstable();
+        println!(
+            "frame_phase/{stride}/{count}/{name}: median_ns={} p95_ns={}",
+            values[60], values[114]
+        );
+    }
+}
+
+fn empty_extract() {
+    TRACKING.store(false, Ordering::Relaxed);
+    let count = probe_arg("--nodes=", 10_000);
+    let dimension = probe_arg("--dimension=", 2);
+    let mut runtime = Runtime::new();
+    let specs = if dimension == 2 {
+        vec![NodeSpec::new(Node3D::new()); count]
+    } else {
+        vec![NodeSpec::new(perro_nodes::Node2D::new()); count]
+    };
+    NodeAPI::create_nodes(&mut runtime, &specs, NodeID::nil());
+    let mut commands = Vec::new();
+    let tick = |runtime: &mut Runtime, commands: &mut Vec<RenderCommand>| {
+        if dimension == 2 {
+            runtime.extract_render_2d_commands();
+        } else {
+            runtime.extract_render_3d_commands();
+        }
+        runtime.drain_render_commands(commands);
+        commands.clear();
+        runtime.clear_dirty_flags();
+    };
+    for _ in 0..60 {
+        tick(&mut runtime, &mut commands);
+    }
+    let mut samples = Vec::with_capacity(101);
+    for _ in 0..101 {
+        let start = std::time::Instant::now();
+        for _ in 0..10 {
+            tick(&mut runtime, &mut commands);
+        }
+        samples.push(start.elapsed().as_nanos() / 10);
+    }
+    samples.sort_unstable();
+    println!(
+        "empty_extract/{dimension}/{count}: median_ns={} p95_ns={}",
+        samples[50], samples[95]
+    );
 }
 
 // Same fixture is copied into the preserved baseline for architecture A/B runs.

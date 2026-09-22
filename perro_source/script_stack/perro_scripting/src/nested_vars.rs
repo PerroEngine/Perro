@@ -155,7 +155,7 @@ pub fn apply_nested_object(
         return false;
     }
     let mut changed = false;
-    let mut path = member_path(prefix);
+    let mut path = None;
     for (key, value) in obj {
         // Scene/editor patches almost always name a direct member. Avoid a
         // complete hash walk of the target for those common one-level writes.
@@ -167,11 +167,12 @@ pub fn apply_nested_object(
             }
             Err(value) => value,
         };
-        push_member(&mut path, key.as_ref());
-        let member = ScriptMemberID::from_string(&path);
+        let path = path.get_or_insert_with(|| member_path(prefix));
+        push_member(path, key.as_ref());
+        let member = ScriptMemberID::from_string(path);
         path.truncate(prefix.len());
         let mut value = Some(value);
-        changed |= set_nested(&mut path, target, member, &mut value, field_names);
+        changed |= set_nested(path, target, member, &mut value, field_names);
     }
     changed
 }

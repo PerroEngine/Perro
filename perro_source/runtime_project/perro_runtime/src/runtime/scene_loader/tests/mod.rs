@@ -777,12 +777,18 @@ fn static_boot_root_of_loads_dlc_scene_from_mount() {
     let mut runtime = Runtime::new();
     runtime.project = Some(std::rc::Rc::new(project));
     runtime.provider_mode = ProviderMode::Static;
+    runtime.render_2d.empty_bootstrap_revision = Some(7);
+    runtime.render_3d.empty_bootstrap_revision = Some(7);
+    runtime.render_ui.empty_bootstrap_revision = Some(7);
 
     let result = runtime.load_boot_scene();
     let _ = fs::remove_dir_all(&test_root);
 
     assert_eq!(result, Ok(()));
     assert_eq!(runtime.nodes.len(), 2);
+    assert_eq!(runtime.render_2d.empty_bootstrap_revision, None);
+    assert_eq!(runtime.render_3d.empty_bootstrap_revision, None);
+    assert_eq!(runtime.render_ui.empty_bootstrap_revision, None);
 }
 
 #[test]

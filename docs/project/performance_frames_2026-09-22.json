@@ -1,0 +1,128 @@
+{
+  "kind": "final-only characterization; no baseline comparison",
+  "scope": "10000 sprite nodes with shared scripts; fixed_update + update + extract_render_2d_commands + drain_render_commands; no GPU submission",
+  "method": "60 warmup frames; 101 samples of 10 frames; all CPUs available; ordinary priority; timing and allocator passes separate",
+  "sha256": "85bc53ccd9af00db989801308570d3d47de167f3c03fff29b2a0fa72e4eeac2c",
+  "runs": [
+    {
+      "case": "frame_idle",
+      "repeat": 1,
+      "allocator_instrumentation": false,
+      "median_ns": 3028900,
+      "p95_ns": 3369900,
+      "allocs": 0,
+      "live_delta": 0,
+      "runtime_bytes": 20784
+    },
+    {
+      "case": "frame_sparse",
+      "repeat": 1,
+      "allocator_instrumentation": false,
+      "median_ns": 3075500,
+      "p95_ns": 3279310,
+      "allocs": 0,
+      "live_delta": 0,
+      "runtime_bytes": 20784
+    },
+    {
+      "case": "frame_all",
+      "repeat": 1,
+      "allocator_instrumentation": false,
+      "median_ns": 5022990,
+      "p95_ns": 5265280,
+      "allocs": 0,
+      "live_delta": 0,
+      "runtime_bytes": 20784
+    },
+    {
+      "case": "frame_idle",
+      "repeat": 2,
+      "allocator_instrumentation": false,
+      "median_ns": 2826490,
+      "p95_ns": 3067470,
+      "allocs": 0,
+      "live_delta": 0,
+      "runtime_bytes": 20784
+    },
+    {
+      "case": "frame_sparse",
+      "repeat": 2,
+      "allocator_instrumentation": false,
+      "median_ns": 3168590,
+      "p95_ns": 3431750,
+      "allocs": 0,
+      "live_delta": 0,
+      "runtime_bytes": 20784
+    },
+    {
+      "case": "frame_all",
+      "repeat": 2,
+      "allocator_instrumentation": false,
+      "median_ns": 5072720,
+      "p95_ns": 5411190,
+      "allocs": 0,
+      "live_delta": 0,
+      "runtime_bytes": 20784
+    },
+    {
+      "case": "frame_idle",
+      "repeat": 3,
+      "allocator_instrumentation": false,
+      "median_ns": 2928510,
+      "p95_ns": 3114380,
+      "allocs": 0,
+      "live_delta": 0,
+      "runtime_bytes": 20784
+    },
+    {
+      "case": "frame_sparse",
+      "repeat": 3,
+      "allocator_instrumentation": false,
+      "median_ns": 3355000,
+      "p95_ns": 4489990,
+      "allocs": 0,
+      "live_delta": 0,
+      "runtime_bytes": 20784
+    },
+    {
+      "case": "frame_all",
+      "repeat": 3,
+      "allocator_instrumentation": false,
+      "median_ns": 4950420,
+      "p95_ns": 5283930,
+      "allocs": 0,
+      "live_delta": 0,
+      "runtime_bytes": 20784
+    },
+    {
+      "case": "frame_idle",
+      "repeat": 1,
+      "allocator_instrumentation": true,
+      "median_ns": 2964460,
+      "p95_ns": 3223870,
+      "allocs": 0,
+      "live_delta": 0,
+      "runtime_bytes": 20784
+    },
+    {
+      "case": "frame_sparse",
+      "repeat": 1,
+      "allocator_instrumentation": true,
+      "median_ns": 3243020,
+      "p95_ns": 3884750,
+      "allocs": 0,
+      "live_delta": 0,
+      "runtime_bytes": 20784
+    },
+    {
+      "case": "frame_all",
+      "repeat": 1,
+      "allocator_instrumentation": true,
+      "median_ns": 5037590,
+      "p95_ns": 5355900,
+      "allocs": 0,
+      "live_delta": 0,
+      "runtime_bytes": 20784
+    }
+  ]
+}

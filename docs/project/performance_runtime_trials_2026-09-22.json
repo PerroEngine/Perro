@@ -1,0 +1,841 @@
+{
+  "method": {
+    "criterion": "0.5; --bench --sample-size 10 --warm-up-time 0.3 --measurement-time 2 --noplot",
+    "affinity": "Windows logical CPU 15",
+    "priority": "AboveNormal",
+    "note": "Independent executable runs; Criterion change sections ignored. Suites named provisional used rejected prototypes in dependencies; final suites use rebuilt final binaries."
+  },
+  "suites": {
+    "query": {
+      "executables": {
+        "query_hotpaths_baseline.exe": "49c1c60b03a29869323b785939a2c30e7224022fefa9bac9ea55dfb2fc1a7a18",
+        "query_hotpaths_candidate.exe": "485a88a47c32267679621c81806573c070751f49219eec594e528a09b6afe648"
+      },
+      "runs": [
+        {
+          "label": "baseline-1",
+          "log": "query-baseline-1.log",
+          "cases": [
+            {
+              "case": "query/compile_repr/selective_mask/10000",
+              "ci95_ns": [
+                62177.0,
+                66495.0
+              ],
+              "estimate_ns": 63509.0
+            },
+            {
+              "case": "query/compile_repr/rare_tag_name/10000",
+              "ci95_ns": [
+                188860.0,
+                229970.0
+              ],
+              "estimate_ns": 207900.0
+            },
+            {
+              "case": "query/compile_repr/broad_any/10000",
+              "ci95_ns": [
+                183980.0,
+                213340.0
+              ],
+              "estimate_ns": 202460.0
+            }
+          ]
+        },
+        {
+          "label": "candidate-1",
+          "log": "query-candidate-1.log",
+          "cases": [
+            {
+              "case": "query/compile_repr/selective_mask/10000",
+              "ci95_ns": [
+                60287.0,
+                60740.0
+              ],
+              "estimate_ns": 60442.0
+            },
+            {
+              "case": "query/compile_repr/rare_tag_name/10000",
+              "ci95_ns": [
+                147750.0,
+                157410.0
+              ],
+              "estimate_ns": 151000.0
+            },
+            {
+              "case": "query/compile_repr/broad_any/10000",
+              "ci95_ns": [
+                147200.0,
+                148400.0
+              ],
+              "estimate_ns": 147720.0
+            }
+          ]
+        },
+        {
+          "label": "candidate-2",
+          "log": "query-candidate-2.log",
+          "cases": [
+            {
+              "case": "query/compile_repr/selective_mask/10000",
+              "ci95_ns": [
+                60300.0,
+                60659.0
+              ],
+              "estimate_ns": 60480.0
+            },
+            {
+              "case": "query/compile_repr/rare_tag_name/10000",
+              "ci95_ns": [
+                149990.0,
+                152670.0
+              ],
+              "estimate_ns": 151560.0
+            },
+            {
+              "case": "query/compile_repr/broad_any/10000",
+              "ci95_ns": [
+                167930.0,
+                186720.0
+              ],
+              "estimate_ns": 177700.0
+            }
+          ]
+        },
+        {
+          "label": "baseline-2",
+          "log": "query-baseline-2.log",
+          "cases": [
+            {
+              "case": "query/compile_repr/selective_mask/10000",
+              "ci95_ns": [
+                60441.0,
+                61972.0
+              ],
+              "estimate_ns": 61138.0
+            },
+            {
+              "case": "query/compile_repr/rare_tag_name/10000",
+              "ci95_ns": [
+                166560.0,
+                176500.0
+              ],
+              "estimate_ns": 171470.0
+            },
+            {
+              "case": "query/compile_repr/broad_any/10000",
+              "ci95_ns": [
+                159320.0,
+                170310.0
+              ],
+              "estimate_ns": 166650.0
+            }
+          ]
+        },
+        {
+          "label": "baseline-3",
+          "log": "query-baseline-3.log",
+          "cases": [
+            {
+              "case": "query/compile_repr/broad_any/10000",
+              "ci95_ns": [
+                147690.0,
+                149090.0
+              ],
+              "estimate_ns": 148240.0
+            }
+          ]
+        },
+        {
+          "label": "candidate-3",
+          "log": "query-candidate-3.log",
+          "cases": [
+            {
+              "case": "query/compile_repr/broad_any/10000",
+              "ci95_ns": [
+                147250.0,
+                148950.0
+              ],
+              "estimate_ns": 148220.0
+            }
+          ]
+        },
+        {
+          "label": "candidate-4",
+          "log": "query-candidate-4.log",
+          "cases": [
+            {
+              "case": "query/compile_repr/broad_any/10000",
+              "ci95_ns": [
+                145680.0,
+                147630.0
+              ],
+              "estimate_ns": 146490.0
+            }
+          ]
+        },
+        {
+          "label": "baseline-4",
+          "log": "query-baseline-4.log",
+          "cases": [
+            {
+              "case": "query/compile_repr/broad_any/10000",
+              "ci95_ns": [
+                145760.0,
+                146710.0
+              ],
+              "estimate_ns": 146260.0
+            }
+          ]
+        }
+      ]
+    },
+    "signal_provisional": {
+      "executables": {
+        "signal_hotpaths_baseline.exe": "2a1069228b22aaffe89ac653e60101efc49d91bbcdb4110b9e62b616a316bb10",
+        "signal_hotpaths_candidate.exe": "363dd066dfa5534f7563e20fbded011c8f36a8428880ff47b071d4f3cb29ca57"
+      },
+      "runs": [
+        {
+          "label": "baseline-1",
+          "log": "signal-baseline-1.log",
+          "cases": [
+            {
+              "case": "signal/connect/new_signal_empty_params",
+              "ci95_ns": [
+                1485.5,
+                1530.3
+              ],
+              "estimate_ns": 1502.6999999999998
+            },
+            {
+              "case": "signal/emit_matrix/hit_1_no_params",
+              "ci95_ns": [
+                27.703,
+                28.538
+              ],
+              "estimate_ns": 27.944
+            },
+            {
+              "case": "signal/connect_disconnect_churn",
+              "ci95_ns": [
+                35.352,
+                36.733
+              ],
+              "estimate_ns": 36.195
+            },
+            {
+              "case": "internal_schedule/full_pass/update_stable_10000",
+              "ci95_ns": [
+                164170.0,
+                170040.0
+              ],
+              "estimate_ns": 167130.0
+            },
+            {
+              "case": "internal_schedule/full_pass/update_churn_10000",
+              "ci95_ns": [
+                167000.0,
+                172400.0
+              ],
+              "estimate_ns": 169440.0
+            }
+          ]
+        },
+        {
+          "label": "candidate-1",
+          "log": "signal-candidate-1.log",
+          "cases": [
+            {
+              "case": "signal/connect/new_signal_empty_params",
+              "ci95_ns": [
+                1503.5,
+                1613.6
+              ],
+              "estimate_ns": 1560.0
+            },
+            {
+              "case": "signal/emit_matrix/hit_1_no_params",
+              "ci95_ns": [
+                28.297,
+                31.479
+              ],
+              "estimate_ns": 29.448
+            },
+            {
+              "case": "signal/connect_disconnect_churn",
+              "ci95_ns": [
+                36.948,
+                37.142
+              ],
+              "estimate_ns": 37.019
+            },
+            {
+              "case": "internal_schedule/full_pass/update_stable_10000",
+              "ci95_ns": [
+                158020.0,
+                159330.0
+              ],
+              "estimate_ns": 158660.0
+            },
+            {
+              "case": "internal_schedule/full_pass/update_churn_10000",
+              "ci95_ns": [
+                164270.0,
+                165670.0
+              ],
+              "estimate_ns": 164890.0
+            }
+          ]
+        },
+        {
+          "label": "candidate-2",
+          "log": "signal-candidate-2.log",
+          "cases": [
+            {
+              "case": "signal/connect/new_signal_empty_params",
+              "ci95_ns": [
+                1484.6,
+                1541.0
+              ],
+              "estimate_ns": 1513.8
+            },
+            {
+              "case": "signal/emit_matrix/hit_1_no_params",
+              "ci95_ns": [
+                28.147,
+                29.625
+              ],
+              "estimate_ns": 29.015
+            },
+            {
+              "case": "signal/connect_disconnect_churn",
+              "ci95_ns": [
+                36.944,
+                37.264
+              ],
+              "estimate_ns": 37.031
+            },
+            {
+              "case": "internal_schedule/full_pass/update_stable_10000",
+              "ci95_ns": [
+                159500.0,
+                163000.0
+              ],
+              "estimate_ns": 161080.0
+            },
+            {
+              "case": "internal_schedule/full_pass/update_churn_10000",
+              "ci95_ns": [
+                167500.0,
+                172850.0
+              ],
+              "estimate_ns": 169830.0
+            }
+          ]
+        },
+        {
+          "label": "baseline-2",
+          "log": "signal-baseline-2.log",
+          "cases": [
+            {
+              "case": "signal/connect/new_signal_empty_params",
+              "ci95_ns": [
+                1558.3,
+                1747.6000000000001
+              ],
+              "estimate_ns": 1626.5
+            },
+            {
+              "case": "signal/emit_matrix/hit_1_no_params",
+              "ci95_ns": [
+                27.704,
+                28.842
+              ],
+              "estimate_ns": 28.197
+            },
+            {
+              "case": "signal/connect_disconnect_churn",
+              "ci95_ns": [
+                35.011,
+                35.649
+              ],
+              "estimate_ns": 35.3
+            },
+            {
+              "case": "internal_schedule/full_pass/update_stable_10000",
+              "ci95_ns": [
+                161550.0,
+                166060.0
+              ],
+              "estimate_ns": 163460.0
+            },
+            {
+              "case": "internal_schedule/full_pass/update_churn_10000",
+              "ci95_ns": [
+                167570.0,
+                168300.0
+              ],
+              "estimate_ns": 167920.0
+            }
+          ]
+        }
+      ]
+    },
+    "scripts_provisional": {
+      "executables": {
+        "node_state_hotpaths_candidate.exe": "5a55a71fccb15e460c3a3c94cb7e13709382aa28c32dab469fb5fd5f8cd8f906"
+      },
+      "runs": [
+        {
+          "label": "final",
+          "log": "scripts-final.log",
+          "cases": [
+            {
+              "case": "node_state/script_state/get_set_var_cross/10000",
+              "ci95_ns": [
+                335880.0,
+                338690.0
+              ],
+              "estimate_ns": 337410.0
+            },
+            {
+              "case": "node_state/script_state/call_method_cross/10000",
+              "ci95_ns": [
+                285120.0,
+                287050.0
+              ],
+              "estimate_ns": 286120.0
+            },
+            {
+              "case": "node_state/script_state/call_method_cross_state/10000",
+              "ci95_ns": [
+                375130.0,
+                376050.0
+              ],
+              "estimate_ns": 375710.0
+            }
+          ]
+        }
+      ]
+    },
+    "query_final": {
+      "executables": {
+        "query_hotpaths_baseline.exe": "49c1c60b03a29869323b785939a2c30e7224022fefa9bac9ea55dfb2fc1a7a18",
+        "query_hotpaths_final.exe": "b70410b4addab6622e709cd8ab4cb084f7e7e15d1b57fd6ed3c6a5637644610b"
+      },
+      "runs": [
+        {
+          "label": "baseline-final-1",
+          "log": "query-baseline-final-1.log",
+          "cases": [
+            {
+              "case": "query/compile_repr/rare_tag_name/10000",
+              "ci95_ns": [
+                149580.0,
+                152680.0
+              ],
+              "estimate_ns": 151350.0
+            },
+            {
+              "case": "query/compile_repr/broad_any/10000",
+              "ci95_ns": [
+                153210.0,
+                154130.0
+              ],
+              "estimate_ns": 153540.0
+            }
+          ]
+        },
+        {
+          "label": "final-1",
+          "log": "query-final-1.log",
+          "cases": [
+            {
+              "case": "query/compile_repr/rare_tag_name/10000",
+              "ci95_ns": [
+                151510.0,
+                154190.0
+              ],
+              "estimate_ns": 152540.0
+            },
+            {
+              "case": "query/compile_repr/broad_any/10000",
+              "ci95_ns": [
+                152040.0,
+                153200.0
+              ],
+              "estimate_ns": 152580.0
+            }
+          ]
+        },
+        {
+          "label": "final-2",
+          "log": "query-final-2.log",
+          "cases": [
+            {
+              "case": "query/compile_repr/rare_tag_name/10000",
+              "ci95_ns": [
+                152870.0,
+                154420.0
+              ],
+              "estimate_ns": 153650.0
+            },
+            {
+              "case": "query/compile_repr/broad_any/10000",
+              "ci95_ns": [
+                152040.0,
+                158490.0
+              ],
+              "estimate_ns": 155200.0
+            }
+          ]
+        },
+        {
+          "label": "baseline-final-2",
+          "log": "query-baseline-final-2.log",
+          "cases": [
+            {
+              "case": "query/compile_repr/rare_tag_name/10000",
+              "ci95_ns": [
+                151000.0,
+                152030.0
+              ],
+              "estimate_ns": 151470.0
+            },
+            {
+              "case": "query/compile_repr/broad_any/10000",
+              "ci95_ns": [
+                148760.0,
+                149830.0
+              ],
+              "estimate_ns": 149280.0
+            }
+          ]
+        }
+      ]
+    },
+    "signal_final": {
+      "executables": {
+        "signal_hotpaths_baseline.exe": "2a1069228b22aaffe89ac653e60101efc49d91bbcdb4110b9e62b616a316bb10",
+        "signal_hotpaths_final.exe": "e54e075742094e912cb07eb2844d0b8b108e733b85d4c44c91162fd3dac3bc47"
+      },
+      "runs": [
+        {
+          "label": "baseline-final-1",
+          "log": "signal-baseline-final-1.log",
+          "cases": [
+            {
+              "case": "signal/connect/new_signal_empty_params",
+              "ci95_ns": [
+                1538.4,
+                1602.7
+              ],
+              "estimate_ns": 1576.5
+            },
+            {
+              "case": "signal/emit_matrix/hit_1_no_params",
+              "ci95_ns": [
+                36.061,
+                37.423
+              ],
+              "estimate_ns": 36.762
+            },
+            {
+              "case": "signal/connect_disconnect_churn",
+              "ci95_ns": [
+                39.782,
+                39.986
+              ],
+              "estimate_ns": 39.88
+            },
+            {
+              "case": "internal_schedule/full_pass/update_stable_10000",
+              "ci95_ns": [
+                167580.0,
+                186290.0
+              ],
+              "estimate_ns": 174700.0
+            },
+            {
+              "case": "internal_schedule/full_pass/update_churn_10000",
+              "ci95_ns": [
+                171140.0,
+                178450.0
+              ],
+              "estimate_ns": 174020.0
+            }
+          ]
+        },
+        {
+          "label": "final-1",
+          "log": "signal-final-1.log",
+          "cases": [
+            {
+              "case": "signal/connect/new_signal_empty_params",
+              "ci95_ns": [
+                1536.3,
+                1765.9
+              ],
+              "estimate_ns": 1645.2
+            },
+            {
+              "case": "signal/emit_matrix/hit_1_no_params",
+              "ci95_ns": [
+                28.333,
+                30.052
+              ],
+              "estimate_ns": 29.149
+            },
+            {
+              "case": "signal/connect_disconnect_churn",
+              "ci95_ns": [
+                37.721,
+                39.981
+              ],
+              "estimate_ns": 38.471
+            },
+            {
+              "case": "internal_schedule/full_pass/update_stable_10000",
+              "ci95_ns": [
+                165660.0,
+                167540.0
+              ],
+              "estimate_ns": 166660.0
+            },
+            {
+              "case": "internal_schedule/full_pass/update_churn_10000",
+              "ci95_ns": [
+                166070.0,
+                167520.0
+              ],
+              "estimate_ns": 166990.0
+            }
+          ]
+        },
+        {
+          "label": "final-2",
+          "log": "signal-final-2.log",
+          "cases": [
+            {
+              "case": "signal/connect/new_signal_empty_params",
+              "ci95_ns": [
+                1532.0,
+                1617.6
+              ],
+              "estimate_ns": 1570.8999999999999
+            },
+            {
+              "case": "signal/emit_matrix/hit_1_no_params",
+              "ci95_ns": [
+                28.488,
+                31.822
+              ],
+              "estimate_ns": 30.187
+            },
+            {
+              "case": "signal/connect_disconnect_churn",
+              "ci95_ns": [
+                35.212,
+                35.357
+              ],
+              "estimate_ns": 35.276
+            },
+            {
+              "case": "internal_schedule/full_pass/update_stable_10000",
+              "ci95_ns": [
+                165350.0,
+                170750.0
+              ],
+              "estimate_ns": 167540.0
+            },
+            {
+              "case": "internal_schedule/full_pass/update_churn_10000",
+              "ci95_ns": [
+                166560.0,
+                169910.0
+              ],
+              "estimate_ns": 168080.0
+            }
+          ]
+        },
+        {
+          "label": "baseline-final-2",
+          "log": "signal-baseline-final-2.log",
+          "cases": [
+            {
+              "case": "signal/connect/new_signal_empty_params",
+              "ci95_ns": [
+                1564.1000000000001,
+                1662.7
+              ],
+              "estimate_ns": 1599.0
+            },
+            {
+              "case": "signal/emit_matrix/hit_1_no_params",
+              "ci95_ns": [
+                27.758,
+                29.192
+              ],
+              "estimate_ns": 28.325
+            },
+            {
+              "case": "signal/connect_disconnect_churn",
+              "ci95_ns": [
+                36.338,
+                36.71
+              ],
+              "estimate_ns": 36.512
+            },
+            {
+              "case": "internal_schedule/full_pass/update_stable_10000",
+              "ci95_ns": [
+                161760.0,
+                164420.0
+              ],
+              "estimate_ns": 162930.0
+            },
+            {
+              "case": "internal_schedule/full_pass/update_churn_10000",
+              "ci95_ns": [
+                170810.0,
+                173220.0
+              ],
+              "estimate_ns": 171980.0
+            }
+          ]
+        },
+        {
+          "label": "baseline-final-3",
+          "log": "signal-baseline-final-3.log",
+          "cases": [
+            {
+              "case": "signal/connect/new_signal_empty_params",
+              "ci95_ns": [
+                1499.2,
+                1596.0
+              ],
+              "estimate_ns": 1547.0
+            },
+            {
+              "case": "signal/emit_matrix/hit_1_no_params",
+              "ci95_ns": [
+                27.728,
+                29.25
+              ],
+              "estimate_ns": 28.353
+            },
+            {
+              "case": "signal/connect_disconnect_churn",
+              "ci95_ns": [
+                35.101,
+                35.8
+              ],
+              "estimate_ns": 35.437
+            },
+            {
+              "case": "internal_schedule/full_pass/update_stable_10000",
+              "ci95_ns": [
+                164070.0,
+                170790.0
+              ],
+              "estimate_ns": 166120.0
+            },
+            {
+              "case": "internal_schedule/full_pass/update_churn_10000",
+              "ci95_ns": [
+                171260.0,
+                173230.0
+              ],
+              "estimate_ns": 172330.0
+            }
+          ]
+        },
+        {
+          "label": "final-3",
+          "log": "signal-final-3.log",
+          "cases": [
+            {
+              "case": "signal/connect/new_signal_empty_params",
+              "ci95_ns": [
+                1521.0,
+                1701.2
+              ],
+              "estimate_ns": 1592.1000000000001
+            },
+            {
+              "case": "signal/emit_matrix/hit_1_no_params",
+              "ci95_ns": [
+                28.252,
+                29.915
+              ],
+              "estimate_ns": 29.071
+            },
+            {
+              "case": "signal/connect_disconnect_churn",
+              "ci95_ns": [
+                37.094,
+                38.245
+              ],
+              "estimate_ns": 37.435
+            },
+            {
+              "case": "internal_schedule/full_pass/update_stable_10000",
+              "ci95_ns": [
+                163230.0,
+                166050.0
+              ],
+              "estimate_ns": 164140.0
+            },
+            {
+              "case": "internal_schedule/full_pass/update_churn_10000",
+              "ci95_ns": [
+                169120.0,
+                169930.0
+              ],
+              "estimate_ns": 169480.0
+            }
+          ]
+        }
+      ]
+    },
+    "scripts_final": {
+      "executables": {
+        "node_state_hotpaths_final.exe": "254a00751de75808d1d120b74690d1a814adec0e28af5e9385f86608e6f0c1ed"
+      },
+      "runs": [
+        {
+          "label": "final-1",
+          "log": "scripts-final-1.log",
+          "cases": [
+            {
+              "case": "node_state/script_state/get_set_var_cross/10000",
+              "ci95_ns": [
+                336940.0,
+                338930.0
+              ],
+              "estimate_ns": 337740.0
+            },
+            {
+              "case": "node_state/script_state/call_method_cross/10000",
+              "ci95_ns": [
+                283740.0,
+                287130.0
+              ],
+              "estimate_ns": 285550.0
+            },
+            {
+              "case": "node_state/script_state/call_method_cross_state/10000",
+              "ci95_ns": [
+                379950.0,
+                381770.0
+              ],
+              "estimate_ns": 380550.0
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "disposition": "Query optimization rejected and reverted. Final labels inside this file identify the last query-trial build, not the retained production source. See performance_runtime_final_2026-09-22.json for controls after the revert."
+}

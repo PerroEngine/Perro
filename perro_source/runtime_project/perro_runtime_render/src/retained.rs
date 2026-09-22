@@ -189,6 +189,9 @@ pub struct Render2DState {
     pub last_button_pointer: Option<(Vector2, bool)>,
     pub removed_nodes: Vec<NodeID>,
     pub force_full_scan_once: bool,
+    /// Last arena mutation seen by an empty-state bootstrap pass. Prevents
+    /// repeated full traversal of an unchanged scene with no 2D renderables.
+    pub empty_bootstrap_revision: Option<u64>,
     /// Per-node tilemap render cache. Rebuilding an NxM map emitted W*H
     /// sprite commands (plus shadow casters) per dirty visit / stream
     /// refresh; the signature covers everything the output depends on, so a
@@ -231,6 +234,7 @@ impl Render2DState {
             last_button_pointer: None,
             removed_nodes: Vec::new(),
             force_full_scan_once: false,
+            empty_bootstrap_revision: None,
             tilemap_render_cache: AHashMap::default(),
             stream_sprites_scratch: Vec::new(),
             stream_lights_scratch: Vec::new(),
@@ -380,6 +384,8 @@ pub struct RenderUiState {
     pub all_ids_scratch: Vec<NodeID>,
     /// Arena revision covered by retained UI state.
     pub arena_mutation_revision: u64,
+    /// Full pass that proved the main world had no UI nodes.
+    pub empty_bootstrap_revision: Option<u64>,
     /// dirty node -> its auto-layout ui parent; siblings resolve through
     /// `layout_children_memo_scratch` so no per-node Vec clones happen.
     pub layout_parent_scratch: AHashMap<NodeID, NodeID>,
@@ -479,6 +485,7 @@ impl RenderUiState {
             dirty_entries_scratch: Vec::new(),
             all_ids_scratch: Vec::new(),
             arena_mutation_revision: 0,
+            empty_bootstrap_revision: None,
             layout_parent_scratch: AHashMap::default(),
             layout_children_memo_scratch: AHashMap::default(),
             layout_children_flat_scratch: Vec::new(),
@@ -785,6 +792,9 @@ pub struct Render3DState {
     pub overlay_occluders_scratch: Vec<NodeID>,
     pub removed_nodes: Vec<NodeID>,
     pub force_full_scan_once: bool,
+    /// Last arena mutation seen by an empty-state bootstrap pass. Prevents
+    /// repeated full traversal of an unchanged scene with no 3D renderables.
+    pub empty_bootstrap_revision: Option<u64>,
     // take-pattern scratch for the per-stream 3D collectors (see the 2D
     // equivalents on `Render2DState`).
     pub stream_draws_scratch: Vec<CameraStreamDraw3DState>,
@@ -839,6 +849,7 @@ impl Render3DState {
             overlay_occluders_scratch: Vec::new(),
             removed_nodes: Vec::new(),
             force_full_scan_once: false,
+            empty_bootstrap_revision: None,
             stream_draws_scratch: Vec::new(),
             stream_ray_lights_scratch: Vec::new(),
             stream_point_lights_scratch: Vec::new(),

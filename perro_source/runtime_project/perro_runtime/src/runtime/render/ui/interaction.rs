@@ -258,13 +258,16 @@ impl Runtime {
         self.render_ui.pointer_screen_point = None;
         let total_start = timing.as_ref().map(|_| Instant::now());
         let dropdown_animation_changed = self.update_dropdown_open_animations();
-        let bootstrap_scan = self.render_ui.prev_visible.is_empty()
+        let arena_revision = self.nodes.mutation_revision();
+        let empty_state = self.render_ui.prev_visible.is_empty()
             && self.render_ui.retained_commands.is_empty()
             && self.render_ui.computed_rects.is_empty();
+        let cached_no_ui =
+            empty_state && self.render_ui.empty_bootstrap_revision == Some(arena_revision);
+        let bootstrap_scan = empty_state && !cached_no_ui;
         // Raw field edits may bypass runtime dirty hooks. Check only retained UI
         // nodes + their parent chains, not every changed game node. The global
         // revision makes mouse-only frames skip this walk entirely.
-        let arena_revision = self.nodes.mutation_revision();
         let covered_arena_revision = self.render_ui.arena_mutation_revision;
         let mut arena_changed_ids = std::mem::take(&mut self.render_ui.all_ids_scratch);
         arena_changed_ids.clear();
@@ -309,7 +312,7 @@ impl Runtime {
             || text_input_changed
             || dropdown_animation_changed
             || !self.render_ui.button_motions.is_empty()
-            || self.has_active_scroll_container_animation();
+            || (!cached_no_ui && self.has_active_scroll_container_animation());
         if !has_extraction_work {
             arena_changed_ids.clear();
             self.render_ui.all_ids_scratch = arena_changed_ids;
@@ -361,6 +364,15 @@ impl Runtime {
         let dirty_node_count = dirty_entries.len();
         // shared member view: refcount clone, no per-pass Vec copy.
         let all_ids = self.world_members_arc(NodeID::nil());
+        // Only a complete main-world proof can suppress later empty retries.
+        // Any UI node, including a pending image or nonrenderable layout,
+        // keeps the original bootstrap behavior.
+        let no_ui_nodes = bootstrap_scan
+            && !all_ids.iter().any(|&id| {
+                self.nodes
+                    .get(id)
+                    .is_some_and(|node| ui_root_from_data(&node.data).is_some())
+            });
         let mut layout_parents = std::mem::take(&mut self.render_ui.layout_parent_scratch);
         layout_parents.clear();
         // dedup the layout-children DFS per ui_parent: when a container changes,
@@ -901,6 +913,11 @@ impl Runtime {
         self.render_ui
             .restore_extraction_plan(traversal_ids, command_ids, command_seen);
         self.render_ui.arena_mutation_revision = self.nodes.mutation_revision();
+        if bootstrap_scan {
+            self.render_ui.empty_bootstrap_revision = (no_ui_nodes
+                && self.nodes.mutation_revision() == arena_revision)
+                .then_some(arena_revision);
+        }
 
         if let (Some(timing), Some(total_start)) = (timing, total_start) {
             timing.total = total_start.elapsed();

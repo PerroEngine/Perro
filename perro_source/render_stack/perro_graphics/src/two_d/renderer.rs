@@ -799,19 +799,24 @@ fn coalesce_ranges(mut ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
     if ranges.len() <= 1 {
         return ranges;
     }
-    ranges.sort_by_key(|r| r.start);
-    let mut merged = Vec::with_capacity(ranges.len());
-    let mut current = ranges.remove(0);
-    for range in ranges {
-        if range.start <= current.end {
-            current.end = current.end.max(range.end);
+    // Draw updates usually arrive in retained order. Keep that order and
+    // merge inside the input allocation; sort only for reordered packets.
+    if ranges.windows(2).any(|pair| pair[0].start > pair[1].start) {
+        ranges.sort_unstable_by_key(|r| r.start);
+    }
+    let mut write = 0;
+    for read in 1..ranges.len() {
+        if ranges[read].start <= ranges[write].end {
+            ranges[write].end = ranges[write].end.max(ranges[read].end);
         } else {
-            merged.push(current);
-            current = range;
+            write += 1;
+            if write != read {
+                ranges[write] = ranges[read].clone();
+            }
         }
     }
-    merged.push(current);
-    merged
+    ranges.truncate(write + 1);
+    ranges
 }
 
 /// Drop processed packets, retain packet-buffer capacity, and preserve any

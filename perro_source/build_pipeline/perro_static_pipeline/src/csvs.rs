@@ -20,19 +20,19 @@ struct StaticCsvTable {
 }
 
 #[derive(Default)]
-struct CsvStringPool {
-    values: Vec<String>,
-    by_value: HashMap<String, usize>,
+struct CsvStringPool<'a> {
+    values: Vec<&'a str>,
+    by_value: HashMap<&'a str, usize>,
 }
 
-impl CsvStringPool {
-    fn intern(&mut self, value: &str) -> usize {
+impl<'a> CsvStringPool<'a> {
+    fn intern(&mut self, value: &'a str) -> usize {
         if let Some(existing) = self.by_value.get(value) {
             return *existing;
         }
         let index = self.values.len();
-        self.by_value.insert(value.to_string(), index);
-        self.values.push(value.to_string());
+        self.by_value.insert(value, index);
+        self.values.push(value);
         index
     }
 }
@@ -201,7 +201,7 @@ fn emit_csv_table(
     // Keyed by reference into `table.rows`: dedupe never clones a row.
     let mut unique_rows = Vec::<&Vec<String>>::new();
     let mut unique_row_by_values = HashMap::<&Vec<String>, usize>::new();
-    let mut primary_index = Vec::<(u64, usize, String)>::new();
+    let mut primary_index = Vec::<(u64, usize)>::new();
     let mut seen_primary = std::collections::HashSet::<&str>::new();
     for values in &table.rows {
         let row_count = row_cell_refs.len();
@@ -217,7 +217,7 @@ fn emit_csv_table(
         if let Some(first) = values.first() {
             let hash = string_to_u64(first);
             if seen_primary.insert(first) {
-                primary_index.push((hash, row_count, first.clone()));
+                primary_index.push((hash, row_count));
             }
         }
     }
@@ -250,7 +250,7 @@ fn emit_csv_table(
         "static CSV_{table_index}_PRIMARY_INDEX: [CsvRowIndex; {}] = [",
         primary_index.len()
     );
-    for (hash, row, _key) in primary_index {
+    for (hash, row) in primary_index {
         let _ = writeln!(out, "    CsvRowIndex::new({hash}, {row}),");
     }
     out.push_str("];\n\n");
@@ -283,7 +283,7 @@ fn emit_cells(out: &mut String, name: &str, values: &[String], string_pool: &Csv
     for value in values {
         let string_index = string_pool
             .by_value
-            .get(value)
+            .get(value.as_str())
             .expect("csv string must be interned before emit");
         let hash = string_to_u64(value);
         let _ = writeln!(
@@ -390,7 +390,7 @@ mod tests {
         );
     }
 
-    fn intern_table_strings(string_pool: &mut CsvStringPool, table: &StaticCsvTable) {
+    fn intern_table_strings<'a>(string_pool: &mut CsvStringPool<'a>, table: &'a StaticCsvTable) {
         for value in &table.headers {
             string_pool.intern(value);
         }

@@ -398,6 +398,59 @@ fn gc_drop_budget_batches_expired_candidates() {
 }
 
 #[test]
+fn gc_candidate_scan_keeps_vec_capacity() {
+    let mut store = ResourceStore::new();
+    for i in 0..32 {
+        let texture = store.create_texture(&format!("__tmp_gc_capacity_texture_{i}__"), false);
+        let mesh = store.create_mesh(&format!("res://meshes/gc_capacity_{i}.glb"), false);
+        let material = store.create_material(
+            Material3D::default(),
+            Some(&format!("res://materials/gc_capacity_{i}.pmat")),
+            false,
+        );
+        store.mark_texture_used(texture);
+        store.mark_mesh_used(mesh);
+        store.mark_material_used(material);
+    }
+    store.reset_ref_counts();
+    let capacities = (
+        store.texture_gc_candidates.capacity(),
+        store.mesh_gc_candidates.capacity(),
+        store.material_gc_candidates.capacity(),
+    );
+    let buffers = (
+        store.texture_gc_candidates.as_ptr(),
+        store.mesh_gc_candidates.as_ptr(),
+        store.material_gc_candidates.as_ptr(),
+    );
+    for _ in 0..3 {
+        let drops = store.gc_unused(u32::MAX);
+        assert!(drops.textures.is_empty());
+        assert!(drops.meshes.is_empty());
+        assert!(drops.materials.is_empty());
+        assert_eq!(store.texture_gc_candidates.len(), 32);
+        assert_eq!(store.mesh_gc_candidates.len(), 32);
+        assert_eq!(store.material_gc_candidates.len(), 32);
+        assert_eq!(
+            (
+                store.texture_gc_candidates.capacity(),
+                store.mesh_gc_candidates.capacity(),
+                store.material_gc_candidates.capacity(),
+            ),
+            capacities
+        );
+        assert_eq!(
+            (
+                store.texture_gc_candidates.as_ptr(),
+                store.mesh_gc_candidates.as_ptr(),
+                store.material_gc_candidates.as_ptr(),
+            ),
+            buffers
+        );
+    }
+}
+
+#[test]
 fn resource_store_handles_10k_load_mark_and_gc_budget() {
     let mut store = ResourceStore::new();
     let mut textures = Vec::with_capacity(10_000);

@@ -149,6 +149,10 @@ fn bench_compile_repr_queries(c: &mut Criterion) {
         ])),
         scope: QueryScope::Root,
     };
+    let broad_any = NodeQuery {
+        expr: Some(QueryExpr::Any(vec![QueryExpr::Tags(vec![enemy, alive])])),
+        scope: QueryScope::Root,
+    };
 
     let mut group = c.benchmark_group("query/compile_repr");
     for count in [100usize, 2_500, 10_000, 50_000, 100_000] {
@@ -205,6 +209,10 @@ fn bench_compile_repr_queries(c: &mut Criterion) {
                 b.iter(|| black_box(NodeAPI::query_nodes(&mut runtime, rare_tag_name.as_view())))
             },
         );
+        group.bench_with_input(BenchmarkId::new("broad_any", count), &count, |b, &count| {
+            let mut runtime = build_query_runtime(count);
+            b.iter(|| black_box(NodeAPI::query_nodes(&mut runtime, broad_any.as_view())))
+        });
     }
     group.finish();
 }

@@ -1347,8 +1347,9 @@ impl ResourceStore {
         let elapsed_frames = elapsed_frames.max(1);
         let mut drops = ResourceGcDrops::default();
 
-        let texture_candidates = std::mem::take(&mut self.texture_gc_candidates);
-        for id in texture_candidates {
+        let mut texture_write = 0;
+        for read in 0..self.texture_gc_candidates.len() {
+            let id = self.texture_gc_candidates[read];
             let Some(meta) = self.texture_meta_mut(id) else {
                 continue;
             };
@@ -1358,7 +1359,8 @@ impl ResourceStore {
                     *meta
                 };
                 self.texture_meta_by.insert(id, updated);
-                self.texture_gc_candidates.push(id);
+                self.texture_gc_candidates[texture_write] = id;
+                texture_write += 1;
                 continue;
             }
             if meta.reserved || !meta.used_once || !meta.gc_queued {
@@ -1372,9 +1374,11 @@ impl ResourceStore {
             if updated.zero_ref_frames >= ttl_frames && drops.textures.len() < max_drops_per_kind {
                 drops.textures.push(id);
             } else {
-                self.texture_gc_candidates.push(id);
+                self.texture_gc_candidates[texture_write] = id;
+                texture_write += 1;
             }
         }
+        self.texture_gc_candidates.truncate(texture_write);
         let mut write = 0usize;
         for read in 0..drops.textures.len() {
             let id = drops.textures[read];
@@ -1390,8 +1394,9 @@ impl ResourceStore {
             }
         }
         drops.textures.truncate(write);
-        let mesh_candidates = std::mem::take(&mut self.mesh_gc_candidates);
-        for id in mesh_candidates {
+        let mut mesh_write = 0;
+        for read in 0..self.mesh_gc_candidates.len() {
+            let id = self.mesh_gc_candidates[read];
             let Some(meta) = self.mesh_meta_mut(id) else {
                 continue;
             };
@@ -1401,7 +1406,8 @@ impl ResourceStore {
                     *meta
                 };
                 self.mesh_meta_by.insert(id, updated);
-                self.mesh_gc_candidates.push(id);
+                self.mesh_gc_candidates[mesh_write] = id;
+                mesh_write += 1;
                 continue;
             }
             if meta.reserved || !meta.used_once || !meta.gc_queued {
@@ -1415,9 +1421,11 @@ impl ResourceStore {
             if updated.zero_ref_frames >= ttl_frames && drops.meshes.len() < max_drops_per_kind {
                 drops.meshes.push(id);
             } else {
-                self.mesh_gc_candidates.push(id);
+                self.mesh_gc_candidates[mesh_write] = id;
+                mesh_write += 1;
             }
         }
+        self.mesh_gc_candidates.truncate(mesh_write);
         let mut write = 0usize;
         for read in 0..drops.meshes.len() {
             let id = drops.meshes[read];
@@ -1433,8 +1441,9 @@ impl ResourceStore {
             }
         }
         drops.meshes.truncate(write);
-        let material_candidates = std::mem::take(&mut self.material_gc_candidates);
-        for id in material_candidates {
+        let mut material_write = 0;
+        for read in 0..self.material_gc_candidates.len() {
+            let id = self.material_gc_candidates[read];
             let Some(meta) = self.material_meta_mut(id) else {
                 continue;
             };
@@ -1444,7 +1453,8 @@ impl ResourceStore {
                     *meta
                 };
                 self.material_meta_by.insert(id, updated);
-                self.material_gc_candidates.push(id);
+                self.material_gc_candidates[material_write] = id;
+                material_write += 1;
                 continue;
             }
             if meta.reserved || !meta.used_once || !meta.gc_queued {
@@ -1458,9 +1468,11 @@ impl ResourceStore {
             if updated.zero_ref_frames >= ttl_frames && drops.materials.len() < max_drops_per_kind {
                 drops.materials.push(id);
             } else {
-                self.material_gc_candidates.push(id);
+                self.material_gc_candidates[material_write] = id;
+                material_write += 1;
             }
         }
+        self.material_gc_candidates.truncate(material_write);
         let mut write = 0usize;
         for read in 0..drops.materials.len() {
             let id = drops.materials[read];

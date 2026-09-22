@@ -18,6 +18,17 @@ fn coalesce_ranges_sorts_and_merges_without_gaps() {
 }
 
 #[test]
+fn coalesce_ranges_reuses_ordered_input_capacity() {
+    let ranges = vec![0..1, 1..2, 4..5, 7..9];
+    let capacity = ranges.capacity();
+    let buffer = ranges.as_ptr();
+    let merged = coalesce_ranges(ranges);
+    assert_eq!(merged, vec![0..2, 4..5, 7..9]);
+    assert_eq!(merged.capacity(), capacity);
+    assert_eq!(merged.as_ptr(), buffer);
+}
+
+#[test]
 fn texture_upsert_requires_existing_resource() {
     let mut renderer = Renderer2D::new();
     let mut resources = ResourceStore::new();

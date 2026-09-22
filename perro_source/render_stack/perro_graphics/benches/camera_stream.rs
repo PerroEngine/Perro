@@ -37,6 +37,7 @@ struct TimingSum {
     prepare_cpu: Duration,
     gpu_prepare_2d: Duration,
     gpu_prepare_3d: Duration,
+    gpu_stream_encode: Duration,
     encode: Duration,
     submit: Duration,
     post: Duration,
@@ -61,6 +62,7 @@ impl TimingSum {
         self.prepare_cpu += timing.prepare_cpu;
         self.gpu_prepare_2d += timing.gpu_prepare_2d;
         self.gpu_prepare_3d += timing.gpu_prepare_3d;
+        self.gpu_stream_encode += timing.gpu_stream_encode;
         self.encode += timing.gpu_encode_main;
         self.submit += timing.gpu_submit_main;
         self.post += timing.gpu_post_process;
@@ -88,7 +90,7 @@ impl TimingSum {
     fn print(&self, name: &str) {
         let frames = self.frames.max(1);
         println!(
-            "{name:34} total={:>6}us wait={:>6}us gpuq={:>6}us water={:>5}us cpu={:>5}us gpu2d={:>5}us gpu3d={:>5}us encode={:>5}us submit={:>5}us post={:>5}us dc2d={:>3} dc3d={:>3} inst3d={:>6}",
+            "{name:34} total={:>6}us wait={:>6}us gpuq={:>6}us water={:>5}us cpu={:>5}us gpu2d={:>5}us gpu3d={:>5}us stream={:>5}us encode={:>5}us submit={:>5}us post={:>5}us dc2d={:>3} dc3d={:>3} inst3d={:>6}",
             Self::avg_us(self.total, frames),
             Self::avg_us(self.wait_idle, frames),
             Self::avg_us(self.gpu_main, frames),
@@ -96,6 +98,7 @@ impl TimingSum {
             Self::avg_us(self.prepare_cpu, frames),
             Self::avg_us(self.gpu_prepare_2d, frames),
             Self::avg_us(self.gpu_prepare_3d, frames),
+            Self::avg_us(self.gpu_stream_encode, frames),
             Self::avg_us(self.encode, frames),
             Self::avg_us(self.submit, frames),
             Self::avg_us(self.post, frames),
@@ -131,7 +134,7 @@ impl ApplicationHandler for App {
             let attrs = WindowAttributes::default()
                 .with_title("perro camera stream bench")
                 .with_inner_size(PhysicalSize::new(WIDTH, HEIGHT))
-                .with_visible(true);
+                .with_visible(env::var_os("PERRO_CAMERA_STREAM_BENCH_HIDDEN").is_none());
             self.window = Some(Arc::new(event_loop.create_window(attrs).expect("window")));
         }
 

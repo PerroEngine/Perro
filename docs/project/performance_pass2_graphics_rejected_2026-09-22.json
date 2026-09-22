@@ -1,0 +1,132 @@
+{
+  "hashes": {
+    "baseline": "1449E816CA21590F08B0E43157759E056CCAAB129DC3F331183FCD21ADB5A966",
+    "candidate": "9731F01AD47364C9AED5749CA62B893776C03F6912A365403EB730BA8AF51FED"
+  },
+  "start_rustc": [],
+  "end_rustc": [
+    47664
+  ],
+  "results": [
+    {
+      "case": "equal_draw_10000",
+      "phase": "A",
+      "run": 1,
+      "mean_ns": 4267346.578042329,
+      "low_ns": 4109567.186706349,
+      "high_ns": 4467417.833333334,
+      "median_ns": 4211528.472222222,
+      "raw": "Gnuplot not found, using plotters backend\r\nBenchmarking graphics_3d_draw_prepare/10000\r\nBenchmarking graphics_3d_draw_prepare/10000: Warming up for 200.00 ms\r\nBenchmarking graphics_3d_draw_prepare/10000: Collecting 10 samples in estimated 1.1534 s (165 iterations)\r\nBenchmarking graphics_3d_draw_prepare/10000: Analyzing\r\ngraphics_3d_draw_prepare/10000\r\n                        time:   [4.0523 ms 4.1824 ms 4.3498 ms]\r\nFound 1 outliers among 10 measurements (10.00%)\r\n  1 (10.00%) high mild\r\n\r\n"
+    },
+    {
+      "case": "one_changed_10000",
+      "phase": "A",
+      "run": 1,
+      "mean_ns": 1725.9901675174065,
+      "low_ns": 1710.6695896858978,
+      "high_ns": 1742.9129754628696,
+      "median_ns": 1717.2416157342109,
+      "raw": "Gnuplot not found, using plotters backend\r\nBenchmarking graphics_3d_retained_updates/one/10000\r\nBenchmarking graphics_3d_retained_updates/one/10000: Warming up for 200.00 ms\r\nBenchmarking graphics_3d_retained_updates/one/10000: Collecting 10 samples in estimated 1.0001 s (468k iterations)\r\nBenchmarking graphics_3d_retained_updates/one/10000: Analyzing\r\ngraphics_3d_retained_updates/one/10000\r\n                        time:   [1.7019 µs 1.7117 µs 1.7283 µs]\r\n\r\n"
+    },
+    {
+      "case": "all_changed_10000",
+      "phase": "A",
+      "run": 1,
+      "mean_ns": 5271446.084656084,
+      "low_ns": 5129357.195767196,
+      "high_ns": 5405817.566137567,
+      "median_ns": 5261011.904761905,
+      "raw": "Gnuplot not found, using plotters backend\r\nBenchmarking graphics_3d_retained_updates/all/10000\r\nBenchmarking graphics_3d_retained_updates/all/10000: Warming up for 200.00 ms\r\nBenchmarking graphics_3d_retained_updates/all/10000: Collecting 10 samples in estimated 1.2925 s (165 iterations)\r\nBenchmarking graphics_3d_retained_updates/all/10000: Analyzing\r\ngraphics_3d_retained_updates/all/10000\r\n                        time:   [5.0186 ms 5.1948 ms 5.3395 ms]\r\n\r\n"
+    },
+    {
+      "case": "equal_draw_10000",
+      "phase": "B",
+      "run": 2,
+      "mean_ns": 4392589.005291006,
+      "low_ns": 4200079.759259259,
+      "high_ns": 4604329.19047619,
+      "median_ns": 4329437.5,
+      "raw": "Gnuplot not found, using plotters backend\r\nBenchmarking graphics_3d_draw_prepare/10000\r\nBenchmarking graphics_3d_draw_prepare/10000: Warming up for 200.00 ms\r\nBenchmarking graphics_3d_draw_prepare/10000: Collecting 10 samples in estimated 1.1887 s (165 iterations)\r\nBenchmarking graphics_3d_draw_prepare/10000: Analyzing\r\ngraphics_3d_draw_prepare/10000\r\n                        time:   [4.1529 ms 4.2505 ms 4.3626 ms]\r\n                        change: [-3.4990% +2.9349% +9.1647%] (p = 0.40 > 0.05)\r\n                        No change in performance detected.\r\n\r\n"
+    },
+    {
+      "case": "one_changed_10000",
+      "phase": "B",
+      "run": 2,
+      "mean_ns": 1718.3608338249446,
+      "low_ns": 1709.5439850032603,
+      "high_ns": 1730.1455726498382,
+      "median_ns": 1713.3403970151417,
+      "raw": "Gnuplot not found, using plotters backend\r\nBenchmarking graphics_3d_retained_updates/one/10000\r\nBenchmarking graphics_3d_retained_updates/one/10000: Warming up for 200.00 ms\r\nBenchmarking graphics_3d_retained_updates/one/10000: Collecting 10 samples in estimated 1.0000 s (506k iterations)\r\nBenchmarking graphics_3d_retained_updates/one/10000: Analyzing\r\ngraphics_3d_retained_updates/one/10000\r\n                        time:   [1.7080 µs 1.7161 µs 1.7294 µs]\r\n                        change: [-1.5446% -0.4420% +0.6834%] (p = 0.48 > 0.05)\r\n                        No change in performance detected.\r\nFound 1 outliers among 10 measurements (10.00%)\r\n  1 (10.00%) high severe\r\n\r\n"
+    },
+    {
+      "case": "all_changed_10000",
+      "phase": "B",
+      "run": 2,
+      "mean_ns": 5268217.415343915,
+      "low_ns": 5088369.57473545,
+      "high_ns": 5477990.044444445,
+      "median_ns": 5139268.095238095,
+      "raw": "Gnuplot not found, using plotters backend\r\nBenchmarking graphics_3d_retained_updates/all/10000\r\nBenchmarking graphics_3d_retained_updates/all/10000: Warming up for 200.00 ms\r\nBenchmarking graphics_3d_retained_updates/all/10000: Collecting 10 samples in estimated 1.2684 s (165 iterations)\r\nBenchmarking graphics_3d_retained_updates/all/10000: Analyzing\r\ngraphics_3d_retained_updates/all/10000\r\n                        time:   [5.0574 ms 5.3466 ms 5.6848 ms]\r\n                        change: [-4.1280% -0.0612% +5.1687%] (p = 0.98 > 0.05)\r\n                        No change in performance detected.\r\n\r\n"
+    },
+    {
+      "case": "equal_draw_10000",
+      "phase": "B",
+      "run": 3,
+      "mean_ns": 4300735.403439154,
+      "low_ns": 4047321.0793650798,
+      "high_ns": 4640159.444444444,
+      "median_ns": 4044419.8412698414,
+      "raw": "Gnuplot not found, using plotters backend\r\nBenchmarking graphics_3d_draw_prepare/10000\r\nBenchmarking graphics_3d_draw_prepare/10000: Warming up for 200.00 ms\r\nBenchmarking graphics_3d_draw_prepare/10000: Collecting 10 samples in estimated 1.2481 s (165 iterations)\r\nBenchmarking graphics_3d_draw_prepare/10000: Analyzing\r\ngraphics_3d_draw_prepare/10000\r\n                        time:   [4.0043 ms 4.2267 ms 4.4428 ms]\r\n                        change: [-9.3991% -2.0911% +8.1523%] (p = 0.65 > 0.05)\r\n                        No change in performance detected.\r\nFound 1 outliers among 10 measurements (10.00%)\r\n  1 (10.00%) high severe\r\n\r\n"
+    },
+    {
+      "case": "one_changed_10000",
+      "phase": "B",
+      "run": 3,
+      "mean_ns": 1866.0227077561206,
+      "low_ns": 1814.6958122026176,
+      "high_ns": 1921.0342142074019,
+      "median_ns": 1812.1729127173157,
+      "raw": "Gnuplot not found, using plotters backend\r\nBenchmarking graphics_3d_retained_updates/one/10000\r\nBenchmarking graphics_3d_retained_updates/one/10000: Warming up for 200.00 ms\r\nBenchmarking graphics_3d_retained_updates/one/10000: Collecting 10 samples in estimated 1.0001 s (485k iterations)\r\nBenchmarking graphics_3d_retained_updates/one/10000: Analyzing\r\ngraphics_3d_retained_updates/one/10000\r\n                        time:   [1.8005 µs 1.8538 µs 1.9121 µs]\r\n                        change: [+5.4437% +8.5932% +11.958%] (p = 0.00 < 0.05)\r\n                        Performance has regressed.\r\n\r\n"
+    },
+    {
+      "case": "all_changed_10000",
+      "phase": "B",
+      "run": 3,
+      "mean_ns": 6279892.346560847,
+      "low_ns": 5897414.944444445,
+      "high_ns": 6672166.4637566125,
+      "median_ns": 6319958.333333334,
+      "raw": "Gnuplot not found, using plotters backend\r\nBenchmarking graphics_3d_retained_updates/all/10000\r\nBenchmarking graphics_3d_retained_updates/all/10000: Warming up for 200.00 ms\r\nBenchmarking graphics_3d_retained_updates/all/10000: Collecting 10 samples in estimated 1.3761 s (165 iterations)\r\nBenchmarking graphics_3d_retained_updates/all/10000: Analyzing\r\ngraphics_3d_retained_updates/all/10000\r\n                        time:   [5.8768 ms 6.4614 ms 7.0033 ms]\r\n                        change: [+10.436% +19.203% +27.503%] (p = 0.00 < 0.05)\r\n                        Performance has regressed.\r\n\r\n"
+    },
+    {
+      "case": "equal_draw_10000",
+      "phase": "A",
+      "run": 4,
+      "mean_ns": 5222634.07010582,
+      "low_ns": 4868665.296296297,
+      "high_ns": 5626453.222222222,
+      "median_ns": 5124896.666666666,
+      "raw": "Gnuplot not found, using plotters backend\r\nBenchmarking graphics_3d_draw_prepare/10000\r\nBenchmarking graphics_3d_draw_prepare/10000: Warming up for 200.00 ms\r\nBenchmarking graphics_3d_draw_prepare/10000: Collecting 10 samples in estimated 1.3352 s (165 iterations)\r\nBenchmarking graphics_3d_draw_prepare/10000: Analyzing\r\ngraphics_3d_draw_prepare/10000\r\n                        time:   [4.6688 ms 4.9203 ms 5.4383 ms]\r\n                        change: [+9.3276% +21.436% +33.606%] (p = 0.00 < 0.05)\r\n                        Performance has regressed.\r\nFound 1 outliers among 10 measurements (10.00%)\r\n  1 (10.00%) high mild\r\n\r\n"
+    },
+    {
+      "case": "one_changed_10000",
+      "phase": "A",
+      "run": 4,
+      "mean_ns": 3766.7511444210695,
+      "low_ns": 2842.716767960106,
+      "high_ns": 4965.989068709093,
+      "median_ns": 2881.1667251051895,
+      "raw": "Gnuplot not found, using plotters backend\r\nBenchmarking graphics_3d_retained_updates/one/10000\r\nBenchmarking graphics_3d_retained_updates/one/10000: Warming up for 200.00 ms\r\nBenchmarking graphics_3d_retained_updates/one/10000: Collecting 10 samples in estimated 1.0000 s (314k iterations)\r\nBenchmarking graphics_3d_retained_updates/one/10000: Analyzing\r\ngraphics_3d_retained_updates/one/10000\r\n                        time:   [2.8958 µs 4.3854 µs 6.0899 µs]\r\n                        change: [+49.225% +101.86% +165.22%] (p = 0.00 < 0.05)\r\n                        Performance has regressed.\r\nFound 1 outliers among 10 measurements (10.00%)\r\n  1 (10.00%) high severe\r\n\r\n"
+    },
+    {
+      "case": "all_changed_10000",
+      "phase": "A",
+      "run": 4,
+      "mean_ns": 9746589.72222222,
+      "low_ns": 7813736.347222223,
+      "high_ns": 12171123.333333332,
+      "median_ns": 8015600.0,
+      "raw": "Gnuplot not found, using plotters backend\r\nBenchmarking graphics_3d_retained_updates/all/10000\r\nBenchmarking graphics_3d_retained_updates/all/10000: Warming up for 200.00 ms\r\n\r\nWarning: Unable to complete 10 samples in 1.0s. You may wish to increase target time to 1.3s or enable flat sampling.\r\nBenchmarking graphics_3d_retained_updates/all/10000: Collecting 10 samples in estimated 1.3188 s (55 iterations)\r\nBenchmarking graphics_3d_retained_updates/all/10000: Analyzing\r\ngraphics_3d_retained_updates/all/10000\r\n                        time:   [7.2369 ms 7.6903 ms 8.6429 ms]\r\n                        change: [+23.825% +55.203% +96.568%] (p = 0.00 < 0.05)\r\n                        Performance has regressed.\r\nFound 1 outliers among 10 measurements (10.00%)\r\n  1 (10.00%) high mild\r\n\r\n"
+    }
+  ]
+}

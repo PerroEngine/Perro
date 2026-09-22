@@ -9,6 +9,43 @@ use std::fs;
 use std::time::{Duration, Instant};
 
 #[test]
+fn archive_capacity_matches_writer_for_raw_compressed_and_empty_entries() {
+    use super::{ReadArchiveEntry, read_archive_capacity, write_perro_archive_from_bytes};
+    let entries = [
+        ReadArchiveEntry {
+            virtual_path: "res/empty",
+            raw: vec![],
+            compressed: None,
+        },
+        ReadArchiveEntry {
+            virtual_path: "res/é.bin",
+            raw: vec![3; 512],
+            compressed: Some(vec![3; 16]),
+        },
+        ReadArchiveEntry {
+            virtual_path: "res/raw",
+            raw: vec![4; 37],
+            compressed: None,
+        },
+    ];
+    for compress in [false, true] {
+        for slice in [&entries[..0], &entries[..]] {
+            let capacity = read_archive_capacity(slice, compress).expect("capacity");
+            let mut writer = std::io::Cursor::new(Vec::with_capacity(capacity));
+            write_perro_archive_from_bytes(&mut writer, slice, compress).expect("archive");
+            assert_eq!(writer.get_ref().len(), capacity);
+            assert_eq!(
+                writer.get_ref().capacity(),
+                capacity,
+                "assembly never grows buffer"
+            );
+        }
+    }
+    assert!(super::archive_capacity([(usize::from(u16::MAX) + 1, 0)]).is_err());
+    assert!(super::archive_capacity([(1, usize::MAX)]).is_err());
+}
+
+#[test]
 fn pmat_is_skipped_as_compiled_resource() {
     let extra = HashSet::new();
     assert!(should_skip("materials/mat.pmat", &extra));

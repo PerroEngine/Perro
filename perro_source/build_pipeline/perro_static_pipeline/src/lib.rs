@@ -387,7 +387,13 @@ pub(crate) fn write_static_lookup_fn(
     out.push_str("}\n");
 }
 
-pub(crate) fn escape_rust_str(input: &str) -> String {
+pub(crate) fn escape_rust_str(input: &str) -> std::borrow::Cow<'_, str> {
+    if !input
+        .bytes()
+        .any(|ch| matches!(ch, b'\\' | b'"' | b'\n' | b'\r' | b'\t'))
+    {
+        return std::borrow::Cow::Borrowed(input);
+    }
     let mut out = String::with_capacity(input.len());
     for ch in input.chars() {
         match ch {
@@ -399,7 +405,7 @@ pub(crate) fn escape_rust_str(input: &str) -> String {
             _ => out.push(ch),
         }
     }
-    out
+    std::borrow::Cow::Owned(out)
 }
 
 pub fn write_static_mod_rs(project_root: &Path) -> Result<(), StaticPipelineError> {
@@ -435,6 +441,14 @@ mod tests {
         sync::OnceLock,
         time::{Duration, Instant},
     };
+
+    #[test]
+    fn rust_string_escape_preserves_plain_unicode_and_escapes_specials() {
+        for text in ["", "asset/path.csv", "日本語/é"] {
+            assert!(matches!(super::escape_rust_str(text), Cow::Borrowed(value) if value == text));
+        }
+        assert_eq!(super::escape_rust_str("é\\\"\n\r\t"), "é\\\\\\\"\\n\\r\\t");
+    }
 
     #[test]
     fn build_modes_stay_local_to_calling_thread() {

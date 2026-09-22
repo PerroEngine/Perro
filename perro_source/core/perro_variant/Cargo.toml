@@ -10,3 +10,14 @@ workspace = true
 perro_structs.workspace = true
 perro_ids.workspace = true
 serde_json = "1.0.149"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "hashmap_variant"
+harness = false
+
+[[bench]]
+name = "hashmap_variant_alloc"
+harness = false

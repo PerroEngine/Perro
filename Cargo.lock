@@ -5052,6 +5052,7 @@ dependencies = [
 name = "perro_variant"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "perro_ids",
  "perro_structs",
  "serde_json",

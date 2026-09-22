@@ -1,0 +1,1303 @@
+{
+  "repeats": 5,
+  "samples": 7,
+  "threads": 4,
+  "hashes": {
+    "baseline": "1ef0a70d22183eab264cb0248277d2543797a6cd43bd0eaeb3b311f75cb87093",
+    "candidate": "2d4f601fe2299e5b5d7d35d1b68eee3e83eda79229d6a9366fa49fbd9603df89"
+  },
+  "rows": [
+    {
+      "case": "csv_cold",
+      "baseline": [
+        {
+          "case": "csv_cold",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            75501200,
+            76692900,
+            80559000,
+            80558500,
+            104376600,
+            96981500,
+            91449200
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "1c861734205ac8a3"
+        },
+        {
+          "case": "csv_cold",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            66019400,
+            65871700,
+            75304300,
+            71900200,
+            83352100,
+            76777600,
+            79831800
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "1c861734205ac8a3"
+        },
+        {
+          "case": "csv_cold",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            67540400,
+            73800200,
+            80918000,
+            74056400,
+            83079200,
+            73578800,
+            82890600
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "1c861734205ac8a3"
+        },
+        {
+          "case": "csv_cold",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            68334200,
+            68058600,
+            80725700,
+            79833500,
+            85338300,
+            93030300,
+            80317400
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "1c861734205ac8a3"
+        },
+        {
+          "case": "csv_cold",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            74980300,
+            69273200,
+            67939700,
+            75963300,
+            75321500,
+            84173500,
+            76294600
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "1c861734205ac8a3"
+        }
+      ],
+      "candidate": [
+        {
+          "case": "csv_cold",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            58774100,
+            56182000,
+            61952800,
+            68756900,
+            73054600,
+            77651900,
+            81538100
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "1c861734205ac8a3"
+        },
+        {
+          "case": "csv_cold",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            50439200,
+            50091300,
+            63166900,
+            53669900,
+            58057600,
+            68400400,
+            74650200
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "1c861734205ac8a3"
+        },
+        {
+          "case": "csv_cold",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            51417300,
+            49325600,
+            50223800,
+            65369800,
+            51147800,
+            72778800,
+            64308200
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "1c861734205ac8a3"
+        },
+        {
+          "case": "csv_cold",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            52149300,
+            62836100,
+            68945700,
+            50889100,
+            61459900,
+            52808800,
+            72476100
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "1c861734205ac8a3"
+        },
+        {
+          "case": "csv_cold",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            48664500,
+            49961300,
+            48660400,
+            50761800,
+            67207200,
+            68531200,
+            82448800
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "1c861734205ac8a3"
+        }
+      ],
+      "paired_delta_percent": -23.478723165839533,
+      "slower_pairs": 0,
+      "memory": {
+        "baseline": {
+          "case": "csv_cold",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": true,
+          "samples_ns": [
+            72581600,
+            72044300,
+            79099900,
+            91451400,
+            85975500,
+            88920900,
+            78017900
+          ],
+          "peak_requested_bytes": [
+            19554160,
+            19554160,
+            19554160,
+            19554160,
+            19554160,
+            19554160,
+            19554160
+          ],
+          "output_files": 1,
+          "output_checksum": "1c861734205ac8a3"
+        },
+        "candidate": {
+          "case": "csv_cold",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": true,
+          "samples_ns": [
+            54294800,
+            54869400,
+            70375700,
+            68757400,
+            56209200,
+            64454500,
+            66435600
+          ],
+          "peak_requested_bytes": [
+            16074690,
+            16074690,
+            16074690,
+            16074690,
+            16074690,
+            16074690,
+            16074690
+          ],
+          "output_files": 1,
+          "output_checksum": "1c861734205ac8a3"
+        }
+      }
+    },
+    {
+      "case": "archive_rebuild",
+      "baseline": [
+        {
+          "case": "archive_rebuild",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            47921600,
+            53839200,
+            61447200,
+            47522300,
+            47764100,
+            50112000,
+            51220500
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "e2384cef18a4b5c9"
+        },
+        {
+          "case": "archive_rebuild",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            60675300,
+            57286200,
+            57169200,
+            56621300,
+            50153400,
+            50403200,
+            50699400
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "e2384cef18a4b5c9"
+        },
+        {
+          "case": "archive_rebuild",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            53755900,
+            53916300,
+            53171000,
+            53002200,
+            53289900,
+            52918200,
+            58442200
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "e2384cef18a4b5c9"
+        },
+        {
+          "case": "archive_rebuild",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            54995600,
+            56774800,
+            55383200,
+            55892900,
+            55436900,
+            54003200,
+            60951800
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "e2384cef18a4b5c9"
+        },
+        {
+          "case": "archive_rebuild",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            48789100,
+            48515700,
+            49530600,
+            49938300,
+            53899700,
+            54164700,
+            57624600
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "e2384cef18a4b5c9"
+        }
+      ],
+      "candidate": [
+        {
+          "case": "archive_rebuild",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            43025700,
+            39339000,
+            42126200,
+            39511200,
+            39178700,
+            39986200,
+            40522500
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "e2384cef18a4b5c9"
+        },
+        {
+          "case": "archive_rebuild",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            39922100,
+            36518400,
+            35778700,
+            36090600,
+            36166000,
+            36396600,
+            40507000
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "e2384cef18a4b5c9"
+        },
+        {
+          "case": "archive_rebuild",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            36779300,
+            35774100,
+            35332900,
+            35603500,
+            35794200,
+            36476200,
+            38211200
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "e2384cef18a4b5c9"
+        },
+        {
+          "case": "archive_rebuild",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            39026300,
+            41545000,
+            39934400,
+            39307400,
+            38548400,
+            38301700,
+            38388300
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "e2384cef18a4b5c9"
+        },
+        {
+          "case": "archive_rebuild",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            37648600,
+            35541500,
+            35307700,
+            38420200,
+            36976600,
+            35354400,
+            37907300
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "e2384cef18a4b5c9"
+        }
+      ],
+      "paired_delta_percent": -29.602304602169315,
+      "slower_pairs": 0,
+      "memory": {
+        "baseline": {
+          "case": "archive_rebuild",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": true,
+          "samples_ns": [
+            53865100,
+            54547400,
+            57743500,
+            55749500,
+            54196100,
+            55609600,
+            53811500
+          ],
+          "peak_requested_bytes": [
+            100669247,
+            100669484,
+            100669484,
+            100669484,
+            100669484,
+            100669484,
+            100669484
+          ],
+          "output_files": 1,
+          "output_checksum": "e2384cef18a4b5c9"
+        },
+        "candidate": {
+          "case": "archive_rebuild",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": true,
+          "samples_ns": [
+            39159200,
+            38658700,
+            39165400,
+            38763700,
+            41486000,
+            39762900,
+            39395000
+          ],
+          "peak_requested_bytes": [
+            67114506,
+            67114746,
+            67114745,
+            67114746,
+            67114745,
+            67114746,
+            67114745
+          ],
+          "output_files": 1,
+          "output_checksum": "e2384cef18a4b5c9"
+        }
+      }
+    },
+    {
+      "case": "archive",
+      "baseline": [
+        {
+          "case": "archive",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            15680800,
+            15549800,
+            14157300,
+            13353800,
+            12253800,
+            12301400,
+            12266800
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "62adfdc9dbfdb1a9"
+        },
+        {
+          "case": "archive",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            12042600,
+            12676200,
+            12578600,
+            12894900,
+            12689400,
+            12221200,
+            11744200
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "62adfdc9dbfdb1a9"
+        },
+        {
+          "case": "archive",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            13742800,
+            13373900,
+            13582700,
+            13594000,
+            13491400,
+            13552800,
+            13547400
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "62adfdc9dbfdb1a9"
+        },
+        {
+          "case": "archive",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            13017800,
+            12203600,
+            12102900,
+            12275500,
+            12132400,
+            12029800,
+            12227300
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "62adfdc9dbfdb1a9"
+        },
+        {
+          "case": "archive",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            13718800,
+            13482700,
+            13376400,
+            13550700,
+            13743300,
+            14271800,
+            13594100
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "62adfdc9dbfdb1a9"
+        }
+      ],
+      "candidate": [
+        {
+          "case": "archive",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            12329400,
+            12091600,
+            12019400,
+            12024300,
+            12862600,
+            12231300,
+            12023400
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "62adfdc9dbfdb1a9"
+        },
+        {
+          "case": "archive",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            13521800,
+            13620200,
+            13297100,
+            13192400,
+            13336000,
+            14238300,
+            14715700
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "62adfdc9dbfdb1a9"
+        },
+        {
+          "case": "archive",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            13668800,
+            13378700,
+            13438400,
+            17591300,
+            13730500,
+            13437800,
+            13454200
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "62adfdc9dbfdb1a9"
+        },
+        {
+          "case": "archive",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            13787100,
+            13325900,
+            13439500,
+            13597400,
+            13414100,
+            13402600,
+            13480100
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "62adfdc9dbfdb1a9"
+        },
+        {
+          "case": "archive",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            12999500,
+            12920300,
+            12649300,
+            12751800,
+            12941800,
+            12818400,
+            12761100
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 1,
+          "output_checksum": "62adfdc9dbfdb1a9"
+        }
+      ],
+      "paired_delta_percent": -0.7275249394958938,
+      "slower_pairs": 2,
+      "memory": {
+        "baseline": {
+          "case": "archive",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": true,
+          "samples_ns": [
+            15040900,
+            13543100,
+            13537500,
+            13671900,
+            13763900,
+            14825900,
+            15229600
+          ],
+          "peak_requested_bytes": [
+            33562142,
+            33562142,
+            33562142,
+            33562142,
+            33562142,
+            33562142,
+            33562142
+          ],
+          "output_files": 1,
+          "output_checksum": "62adfdc9dbfdb1a9"
+        },
+        "candidate": {
+          "case": "archive",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": true,
+          "samples_ns": [
+            14725500,
+            16565400,
+            15946200,
+            14408400,
+            19038100,
+            15176700,
+            14912600
+          ],
+          "peak_requested_bytes": [
+            33562138,
+            33562138,
+            33562138,
+            33562138,
+            33562138,
+            33562138,
+            33562138
+          ],
+          "output_files": 1,
+          "output_checksum": "62adfdc9dbfdb1a9"
+        }
+      }
+    },
+    {
+      "case": "codegen_small",
+      "baseline": [
+        {
+          "case": "codegen_small",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            9704900,
+            1231200,
+            1180800,
+            1172000,
+            1179300,
+            1181800,
+            1176500
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 3,
+          "output_checksum": "492656c621a527df"
+        },
+        {
+          "case": "codegen_small",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            1271600,
+            1261100,
+            1275800,
+            1257700,
+            1204800,
+            1211900,
+            1217300
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 3,
+          "output_checksum": "492656c621a527df"
+        },
+        {
+          "case": "codegen_small",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            1306000,
+            1214500,
+            1192100,
+            1200000,
+            1216100,
+            1182700,
+            1193400
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 3,
+          "output_checksum": "492656c621a527df"
+        },
+        {
+          "case": "codegen_small",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            1419500,
+            1355500,
+            1261800,
+            1257600,
+            1232500,
+            1248700,
+            1223700
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 3,
+          "output_checksum": "492656c621a527df"
+        },
+        {
+          "case": "codegen_small",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            1269100,
+            1198800,
+            1165400,
+            1152600,
+            1220200,
+            1156300,
+            1257600
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 3,
+          "output_checksum": "492656c621a527df"
+        }
+      ],
+      "candidate": [
+        {
+          "case": "codegen_small",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            1270700,
+            1236800,
+            1195900,
+            1191900,
+            1358000,
+            1275000,
+            1242800
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 3,
+          "output_checksum": "492656c621a527df"
+        },
+        {
+          "case": "codegen_small",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            1299000,
+            1235500,
+            1199900,
+            1235400,
+            1233700,
+            1195700,
+            1182500
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 3,
+          "output_checksum": "492656c621a527df"
+        },
+        {
+          "case": "codegen_small",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            1237200,
+            1273600,
+            1242500,
+            1163200,
+            1167700,
+            1181000,
+            1186300
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 3,
+          "output_checksum": "492656c621a527df"
+        },
+        {
+          "case": "codegen_small",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            1264800,
+            1187400,
+            1170100,
+            1211200,
+            1186300,
+            1186700,
+            1160300
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 3,
+          "output_checksum": "492656c621a527df"
+        },
+        {
+          "case": "codegen_small",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": false,
+          "samples_ns": [
+            1299400,
+            1213800,
+            1205400,
+            1185100,
+            1166500,
+            1277900,
+            1156100
+          ],
+          "peak_requested_bytes": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "output_files": 3,
+          "output_checksum": "492656c621a527df"
+        }
+      ],
+      "paired_delta_percent": -1.141666666666663,
+      "slower_pairs": 2,
+      "memory": {
+        "baseline": {
+          "case": "codegen_small",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": true,
+          "samples_ns": [
+            1263500,
+            1232700,
+            1216200,
+            1243100,
+            1303900,
+            1181600,
+            1177700
+          ],
+          "peak_requested_bytes": [
+            10669,
+            10669,
+            10669,
+            10669,
+            10669,
+            10669,
+            10669
+          ],
+          "output_files": 3,
+          "output_checksum": "492656c621a527df"
+        },
+        "candidate": {
+          "case": "codegen_small",
+          "threads": 4,
+          "first_call": false,
+          "memory_instrumented": true,
+          "samples_ns": [
+            1296100,
+            1213600,
+            1192500,
+            1209300,
+            1226200,
+            1253300,
+            1198100
+          ],
+          "peak_requested_bytes": [
+            10678,
+            10678,
+            10678,
+            10678,
+            10678,
+            10678,
+            10678
+          ],
+          "output_files": 3,
+          "output_checksum": "492656c621a527df"
+        }
+      }
+    }
+  ]
+}

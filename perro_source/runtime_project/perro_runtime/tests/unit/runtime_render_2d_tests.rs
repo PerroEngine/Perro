@@ -7,6 +7,7 @@ use perro_nodes::{
     SpotLight2D, StaticBody2D, TileMap2D, WaterBody2D, Webcam,
     camera_2d::Camera2D,
     node_2d::Node2D,
+    node_3d::Node3D,
     particle_emitter_2d::ParticleEmitter2D,
     physics_2d::RigidBody2D,
     sprite_2d::{AnimatedSprite, AnimatedSprite2D, Sprite2D},
@@ -28,6 +29,66 @@ fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {
     let mut out = Vec::new();
     runtime.drain_render_commands(&mut out);
     out
+}
+
+#[test]
+fn empty_2d_pass_skips_clean_3d_scene_and_wakes_on_direct_mutation() {
+    let mut runtime = Runtime::new();
+    let node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    runtime.extract_render_2d_commands();
+    assert_eq!(
+        runtime.render_2d.empty_bootstrap_revision,
+        Some(runtime.nodes.mutation_revision())
+    );
+
+    runtime.clear_dirty_flags();
+    runtime
+        .render_2d
+        .traversal_ids
+        .push(perro_ids::NodeID::nil());
+    runtime.extract_render_2d_commands();
+    assert_eq!(runtime.render_2d.traversal_ids, [perro_ids::NodeID::nil()]);
+
+    let mut camera = Camera2D::default();
+    camera.active = true;
+    runtime.nodes.get_mut(node).unwrap().data = SceneNodeData::Camera2D(camera);
+    runtime.render_2d.traversal_ids.clear();
+    runtime.extract_render_2d_commands();
+    assert!(
+        collect_commands(&mut runtime)
+            .iter()
+            .any(|command| matches!(command, RenderCommand::TwoD(Command2D::SetCamera { .. })))
+    );
+    assert_eq!(runtime.render_2d.empty_bootstrap_revision, None);
+
+    assert!(NodeAPI::remove_node(&mut runtime, node));
+    runtime.extract_render_2d_commands();
+    runtime.clear_dirty_flags();
+    runtime.extract_render_2d_commands();
+    assert_eq!(
+        runtime.render_2d.empty_bootstrap_revision,
+        Some(runtime.nodes.mutation_revision())
+    );
+}
+
+#[test]
+fn empty_2d_pass_keeps_retry_when_2d_resource_is_pending() {
+    let mut runtime = Runtime::new();
+    let sprite = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Sprite2D(Sprite2D::new())));
+    runtime.extract_render_2d_commands();
+    assert_eq!(runtime.render_2d.empty_bootstrap_revision, None);
+    assert!(runtime.nodes.get(sprite).is_some());
+    runtime.clear_dirty_flags();
+    runtime
+        .render_2d
+        .traversal_ids
+        .push(perro_ids::NodeID::nil());
+    runtime.extract_render_2d_commands();
+    assert!(runtime.render_2d.traversal_ids.is_empty());
 }
 
 fn water_2d_command(

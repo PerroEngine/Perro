@@ -1,0 +1,118 @@
+{
+  "state": "final source after rejected query prototype reverted",
+  "method": "Criterion 0.5; --bench; 10 samples; warmup 0.3s; measurement target 2s; Windows CPU 15; AboveNormal priority; independent executable estimates",
+  "executables": {
+    "signal_hotpaths_baseline.exe": "2a1069228b22aaffe89ac653e60101efc49d91bbcdb4110b9e62b616a316bb10",
+    "signal_hotpaths_final.exe": "ec698faf77f4425a78bb929c1c29c744ebdf2a937dbf656e8438f4a8252fb89d",
+    "node_state_hotpaths_final.exe": "a41f600ff1d099f809e54915c9955e29f6fcb0ba16f227df3dc7c423d99ab3e5"
+  },
+  "order": [
+    {
+      "log": "signal-baseline-final-4.log",
+      "cases": [
+        {
+          "case": "signal/emit_matrix/hit_1_no_params",
+          "ci95_ns": [
+            27.785,
+            28.096
+          ],
+          "estimate_ns": 27.903
+        }
+      ]
+    },
+    {
+      "log": "signal-final-4.log",
+      "cases": [
+        {
+          "case": "signal/emit_matrix/hit_1_no_params",
+          "ci95_ns": [
+            28.123,
+            30.958
+          ],
+          "estimate_ns": 29.143
+        }
+      ]
+    },
+    {
+      "log": "signal-final-5.log",
+      "cases": [
+        {
+          "case": "signal/emit_matrix/hit_1_no_params",
+          "ci95_ns": [
+            27.927,
+            28.241
+          ],
+          "estimate_ns": 28.045
+        }
+      ]
+    },
+    {
+      "log": "signal-baseline-final-5.log",
+      "cases": [
+        {
+          "case": "signal/emit_matrix/hit_1_no_params",
+          "ci95_ns": [
+            27.768,
+            28.328
+          ],
+          "estimate_ns": 27.981
+        }
+      ]
+    },
+    {
+      "log": "signal-baseline-final-6.log",
+      "cases": [
+        {
+          "case": "signal/emit_matrix/hit_1_no_params",
+          "ci95_ns": [
+            27.752,
+            27.897
+          ],
+          "estimate_ns": 27.807
+        }
+      ]
+    },
+    {
+      "log": "signal-final-6.log",
+      "cases": [
+        {
+          "case": "signal/emit_matrix/hit_1_no_params",
+          "ci95_ns": [
+            27.799,
+            27.94
+          ],
+          "estimate_ns": 27.86
+        }
+      ]
+    },
+    {
+      "log": "scripts-final-4.log",
+      "cases": [
+        {
+          "case": "node_state/script_state/get_set_var_cross/10000",
+          "ci95_ns": [
+            337520.0,
+            341200.0
+          ],
+          "estimate_ns": 339430.0
+        },
+        {
+          "case": "node_state/script_state/call_method_cross/10000",
+          "ci95_ns": [
+            285570.0,
+            288740.0
+          ],
+          "estimate_ns": 286940.0
+        },
+        {
+          "case": "node_state/script_state/call_method_cross_state/10000",
+          "ci95_ns": [
+            377850.0,
+            382940.0
+          ],
+          "estimate_ns": 380330.0
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,116 @@
+{
+  "hashes": {
+    "baseline": "5D0534C00AF4BF793621E5A4CF91DB0BE916C9361F711ECB1CDF9AB8F1E0B3D8",
+    "candidate": "DD228645E44C305C66CE473D7A3DAC246C55423894CF9EF1F1BE89964A4915CF"
+  },
+  "start_rustc": [
+    48272
+  ],
+  "end_rustc": [],
+  "results": [
+    {
+      "run": 1,
+      "phase": "A",
+      "case": "stream3d_1_1024_meshes10k",
+      "kind": "target",
+      "total_us": 3713,
+      "stream_encode_us": 2199,
+      "gpuq_us": 243,
+      "adapter": "[perro][gfx] adapter=(AMD Radeon RX 7800 XT) type=(DiscreteGpu) backend=(Vulkan)",
+      "raw": "stream3d_1_1024_meshes10k          total=  3713us wait=   610us gpuq=   243us water=    2us cpu=    5us gpu2d=    0us gpu3d=   15us stream= 2199us encode= 2215us submit=  472us post=    0us dc2d=  0 dc3d=  1 inst3d=     1",
+      "stdout": "target\\perf-pass2-2026-09-22\\camera_run_1_stdout.txt",
+      "stderr": "target\\perf-pass2-2026-09-22\\camera_run_1_stderr.txt"
+    },
+    {
+      "run": 2,
+      "phase": "A",
+      "case": "stream2d_1_1024_sprites10k",
+      "kind": "control",
+      "total_us": 1555,
+      "stream_encode_us": 429,
+      "gpuq_us": 178,
+      "adapter": "[perro][gfx] adapter=(AMD Radeon RX 7800 XT) type=(DiscreteGpu) backend=(Vulkan)",
+      "raw": "stream2d_1_1024_sprites10k         total=  1555us wait=   770us gpuq=   178us water=    2us cpu=    7us gpu2d=    0us gpu3d=    0us stream=  429us encode=  443us submit=  433us post=    0us dc2d=  1 dc3d=  0 inst3d=     0",
+      "stdout": "target\\perf-pass2-2026-09-22\\camera_run_2_stdout.txt",
+      "stderr": "target\\perf-pass2-2026-09-22\\camera_run_2_stderr.txt"
+    },
+    {
+      "run": 3,
+      "phase": "B",
+      "case": "stream3d_1_1024_meshes10k",
+      "kind": "target",
+      "total_us": 4137,
+      "stream_encode_us": 2505,
+      "gpuq_us": 232,
+      "adapter": "[perro][gfx] adapter=(AMD Radeon RX 7800 XT) type=(DiscreteGpu) backend=(Vulkan)",
+      "raw": "stream3d_1_1024_meshes10k          total=  4137us wait=   642us gpuq=   232us water=    3us cpu=    6us gpu2d=    0us gpu3d=   18us stream= 2505us encode= 2522us submit=  524us post=    0us dc2d=  0 dc3d=  1 inst3d=     1",
+      "stdout": "target\\perf-pass2-2026-09-22\\camera_run_3_stdout.txt",
+      "stderr": "target\\perf-pass2-2026-09-22\\camera_run_3_stderr.txt"
+    },
+    {
+      "run": 4,
+      "phase": "B",
+      "case": "stream2d_1_1024_sprites10k",
+      "kind": "control",
+      "total_us": 821,
+      "stream_encode_us": 270,
+      "gpuq_us": 182,
+      "adapter": "[perro][gfx] adapter=(AMD Radeon RX 7800 XT) type=(DiscreteGpu) backend=(Vulkan)",
+      "raw": "stream2d_1_1024_sprites10k         total=   821us wait=   394us gpuq=   182us water=    2us cpu=    3us gpu2d=    0us gpu3d=    0us stream=  270us encode=  278us submit=  224us post=    0us dc2d=  1 dc3d=  0 inst3d=     0",
+      "stdout": "target\\perf-pass2-2026-09-22\\camera_run_4_stdout.txt",
+      "stderr": "target\\perf-pass2-2026-09-22\\camera_run_4_stderr.txt"
+    },
+    {
+      "run": 5,
+      "phase": "B",
+      "case": "stream3d_1_1024_meshes10k",
+      "kind": "target",
+      "total_us": 3243,
+      "stream_encode_us": 1945,
+      "gpuq_us": 233,
+      "adapter": "[perro][gfx] adapter=(AMD Radeon RX 7800 XT) type=(DiscreteGpu) backend=(Vulkan)",
+      "raw": "stream3d_1_1024_meshes10k          total=  3243us wait=   562us gpuq=   233us water=    2us cpu=    4us gpu2d=    0us gpu3d=   12us stream= 1945us encode= 1959us submit=  424us post=    0us dc2d=  0 dc3d=  1 inst3d=     1",
+      "stdout": "target\\perf-pass2-2026-09-22\\camera_run_5_stdout.txt",
+      "stderr": "target\\perf-pass2-2026-09-22\\camera_run_5_stderr.txt"
+    },
+    {
+      "run": 6,
+      "phase": "B",
+      "case": "stream2d_1_1024_sprites10k",
+      "kind": "control",
+      "total_us": 1822,
+      "stream_encode_us": 340,
+      "gpuq_us": 168,
+      "adapter": "[perro][gfx] adapter=(AMD Radeon RX 7800 XT) type=(DiscreteGpu) backend=(Vulkan)",
+      "raw": "stream2d_1_1024_sprites10k         total=  1822us wait=   996us gpuq=   168us water=    2us cpu=    7us gpu2d=    0us gpu3d=    0us stream=  340us encode=  354us submit=  365us post=    0us dc2d=  1 dc3d=  0 inst3d=     0",
+      "stdout": "target\\perf-pass2-2026-09-22\\camera_run_6_stdout.txt",
+      "stderr": "target\\perf-pass2-2026-09-22\\camera_run_6_stderr.txt"
+    },
+    {
+      "run": 7,
+      "phase": "A",
+      "case": "stream3d_1_1024_meshes10k",
+      "kind": "target",
+      "total_us": 4106,
+      "stream_encode_us": 2242,
+      "gpuq_us": 245,
+      "adapter": "[perro][gfx] adapter=(AMD Radeon RX 7800 XT) type=(DiscreteGpu) backend=(Vulkan)",
+      "raw": "stream3d_1_1024_meshes10k          total=  4106us wait=  1520us gpuq=   245us water=    2us cpu=    5us gpu2d=    0us gpu3d=   16us stream= 2242us encode= 2258us submit=  460us post=    0us dc2d=  0 dc3d=  1 inst3d=     1",
+      "stdout": "target\\perf-pass2-2026-09-22\\camera_run_7_stdout.txt",
+      "stderr": "target\\perf-pass2-2026-09-22\\camera_run_7_stderr.txt"
+    },
+    {
+      "run": 8,
+      "phase": "A",
+      "case": "stream2d_1_1024_sprites10k",
+      "kind": "control",
+      "total_us": 1349,
+      "stream_encode_us": 253,
+      "gpuq_us": 169,
+      "adapter": "[perro][gfx] adapter=(AMD Radeon RX 7800 XT) type=(DiscreteGpu) backend=(Vulkan)",
+      "raw": "stream2d_1_1024_sprites10k         total=  1349us wait=  1118us gpuq=   169us water=    2us cpu=    4us gpu2d=    0us gpu3d=    0us stream=  253us encode=  263us submit=  253us post=    0us dc2d=  1 dc3d=  0 inst3d=     0",
+      "stdout": "target\\perf-pass2-2026-09-22\\camera_run_8_stdout.txt",
+      "stderr": "target\\perf-pass2-2026-09-22\\camera_run_8_stderr.txt"
+    }
+  ]
+}

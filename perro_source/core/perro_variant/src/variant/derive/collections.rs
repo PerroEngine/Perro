@@ -178,6 +178,14 @@ where
 
     #[inline]
     fn to_variant(&self) -> Variant {
+        // Bulk build pays for a scratch Vec, so keep small maps on direct insert.
+        if self.len() >= 128 {
+            return Variant::Object(
+                self.iter()
+                    .map(|(k, v)| (k.to_arc_key(), v.to_variant()))
+                    .collect(),
+            );
+        }
         let mut out = BTreeMap::new();
         for (k, v) in self {
             out.insert(k.to_arc_key(), v.to_variant());
@@ -187,6 +195,13 @@ where
 
     #[inline]
     fn into_variant(self) -> Variant {
+        if self.len() >= 128 {
+            return Variant::Object(
+                self.into_iter()
+                    .map(|(k, v)| (k.into_arc_key(), v.into_variant()))
+                    .collect(),
+            );
+        }
         let mut out = BTreeMap::new();
         for (k, v) in self {
             out.insert(k.into_arc_key(), v.into_variant());
@@ -450,5 +465,59 @@ impl DeriveVariant for SystemTime {
         self.duration_since(UNIX_EPOCH)
             .map(|duration| duration.to_variant())
             .unwrap_or(Variant::Null)
+    }
+}
+
+#[cfg(test)]
+mod hashmap_bulk_tests {
+    use super::*;
+
+    #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+    struct AliasKey(u32);
+
+    impl VariantObjectKey for AliasKey {
+        fn from_arc_key(_: Arc<str>) -> Self {
+            Self(0)
+        }
+
+        fn to_arc_key(&self) -> Arc<str> {
+            Arc::from("alias")
+        }
+
+        fn into_arc_key(self) -> Arc<str> {
+            Arc::from("alias")
+        }
+    }
+
+    #[test]
+    fn hashmap_bulk_encode_matches_insert_and_roundtrips() {
+        for count in [8, 128] {
+            let source: HashMap<String, i32> = (0..count)
+                .map(|index| (format!("field_{index:04}"), index))
+                .collect();
+            let encoded = source.to_variant();
+            assert_eq!(
+                HashMap::<String, i32>::from_variant(&encoded),
+                Some(source.clone())
+            );
+            assert_eq!(source.into_variant(), encoded);
+        }
+    }
+
+    #[test]
+    fn hashmap_bulk_encode_keeps_last_value_for_colliding_keys() {
+        for count in [8, 128] {
+            let source: HashMap<AliasKey, i32> = (0..count)
+                .map(|index| (AliasKey(index as u32), index))
+                .collect();
+            let expected = *source.values().last().expect("nonempty map");
+            let encoded = source.to_variant();
+            assert_eq!(encoded.as_object().expect("object").len(), 1);
+            assert_eq!(
+                encoded.as_object().expect("object")["alias"].as_i32(),
+                Some(expected)
+            );
+            assert_eq!(source.into_variant(), encoded);
+        }
     }
 }

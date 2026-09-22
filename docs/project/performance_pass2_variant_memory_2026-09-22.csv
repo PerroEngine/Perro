@@ -1,0 +1,13 @@
+path,count,peak_live_requested_bytes,retained_output_bytes,total_requested_bytes
+borrowed_insert,8,800,800,800
+borrowed_collect,8,1184,800,1184
+owned_insert,8,1354,800,1424
+owned_collect,8,1194,800,1808
+borrowed_insert,128,13632,13632,13632
+borrowed_collect,128,16864,10720,23008
+owned_insert,128,22106,13632,23376
+owned_collect,128,18714,10720,32752
+borrowed_insert,4096,439072,439072,439072
+borrowed_collect,4096,534848,338240,731456
+owned_insert,4096,709434,439072,750384
+owned_collect,4096,598042,338240,1042768

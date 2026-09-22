@@ -2,7 +2,9 @@ use super::*;
 
 impl Runtime {
     pub fn extract_render_2d_commands(&mut self) {
-        let bootstrap_scan = self.render_2d.prev_visible.is_empty()
+        let bootstrap_scan = self.render_2d.empty_bootstrap_revision
+            != Some(self.nodes.mutation_revision())
+            && self.render_2d.prev_visible.is_empty()
             && self.render_2d.retained_sprites.is_empty()
             && self.render_2d.last_camera.is_none();
         let button_input_changed = self.button_2d_input_changed();
@@ -96,6 +98,7 @@ impl Runtime {
         }
 
         let mut visible_now = self.render_2d.begin_visible_pass();
+        let mut saw_2d_node = false;
 
         for node in traversal_ids.iter().copied() {
             visible_now.remove(&node);
@@ -104,6 +107,7 @@ impl Runtime {
             let sprite_data = self
                 .nodes
                 .get(node)
+                .inspect(|scene_node| saw_2d_node |= scene_node.is_2d())
                 .and_then(|scene_node| match &scene_node.data {
                     SceneNodeData::Sprite2D(sprite) => Some((
                         effective_visible
@@ -1024,8 +1028,14 @@ impl Runtime {
             self.queue_render_command(RenderCommand::Ui(Box::new(UiCommand::RemoveNode { node })));
             self.render_2d.retained_sprites.remove(&node);
         }
+        // Cache an empty pass only when its full traversal saw no 2D nodes.
+        // A hidden or pending 2D resource can become renderable without an
+        // arena mutation, so those scenes must keep the bootstrap retry.
+        let no_2d_nodes = full_traversal && !saw_2d_node;
         self.render_2d
             .finish_visible_pass(traversal_ids, visible_now);
+        self.render_2d.empty_bootstrap_revision =
+            no_2d_nodes.then(|| self.nodes.mutation_revision());
     }
 
     /// Scene camera for restoring render state after an app-level overlay.
