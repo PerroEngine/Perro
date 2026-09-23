@@ -748,6 +748,24 @@ fn webcam_camera_stream_does_not_overwrite_webcam_texture() {
 }
 
 #[test]
+fn removing_stream_does_not_drop_reserved_picture_with_matching_id() {
+    let mut graphics = PerroGraphics::new();
+    let picture = graphics
+        .resources
+        .create_texture("res://pictures/reserved.png", true);
+    let node = NodeID::from_parts(picture.index(), picture.generation());
+    graphics.submit(RenderCommand::CameraStream(
+        perro_render_bridge::CameraStreamCommand::RemoveNode { node },
+    ));
+    graphics.draw_frame();
+    assert!(graphics.resources.has_texture(picture));
+    assert_eq!(
+        graphics.resources.texture_source(picture),
+        Some("res://pictures/reserved.png")
+    );
+}
+
+#[test]
 fn render_target_camera_stream_registers_dims_without_cpu_pixels() {
     let mut graphics = PerroGraphics::new();
     let node = NodeID::from_parts(93, 0);

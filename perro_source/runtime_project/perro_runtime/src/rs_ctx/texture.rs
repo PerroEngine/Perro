@@ -325,11 +325,10 @@ impl RuntimeResourceApi {
     }
 
     pub(crate) fn release_camera_capture_texture(&self, camera: perro_ids::NodeID) {
-        self.state
-            .lock()
-            .expect("resource api mutex poisoned")
-            .camera_capture_texture_by_node
-            .remove(&camera);
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        if let Some(texture) = state.camera_capture_texture_by_node.remove(&camera) {
+            let _ = state.free_texture_id(texture);
+        }
     }
 
     pub(crate) fn is_texture_id_pending(&self, texture: TextureID) -> bool {
@@ -402,5 +401,25 @@ impl super::state::RuntimeResourceState {
             self.texture_reserve_pending.remove(&source_hash);
             self.texture_drop_pending.remove(&source_hash);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stream_texture_id_does_not_reuse_reserved_picture_id() {
+        let api = RuntimeResourceApi::new(None, None, None, None, None, None, None, None);
+        let picture = api.reserve_texture("res://pictures/reserved.png");
+        let node = perro_ids::NodeID::from_parts(picture.index(), picture.generation());
+        let preview = api.camera_capture_texture(node);
+        assert_ne!(preview, picture);
+        assert_eq!(api.camera_capture_texture(node), preview);
+        api.release_camera_capture_texture(node);
+        let next = api.camera_capture_texture(node);
+        assert_ne!(next, preview);
+        assert_ne!(next, picture);
+        assert!(api.reserve_texture_id(picture));
     }
 }

@@ -188,7 +188,7 @@ impl Runtime {
                 .to_mat4()
                 .to_cols_array_2d();
             out.draws.push(CameraStreamDraw3DState::CameraStreamQuad {
-                texture: Self::camera_stream_texture_id(node),
+                texture: self.camera_stream_texture_id(node),
                 tint: Runtime::color_modulate(tint, self.effective_self_modulate(node)),
                 node,
                 model,
@@ -213,7 +213,7 @@ impl Runtime {
                 .to_mat4()
                 .to_cols_array_2d();
             out.draws.push(CameraStreamDraw3DState::CameraStreamQuad {
-                texture: Self::camera_stream_texture_id(node),
+                texture: self.camera_stream_texture_id(node),
                 tint: Runtime::color_modulate(tint, self.effective_self_modulate(node)),
                 node,
                 model,

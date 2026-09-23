@@ -210,7 +210,7 @@ mod streams {
                 node,
                 texture,
                 ..
-            } if *node == inner && *texture == Runtime::camera_stream_texture_id(inner)
+            } if *node == inner && *texture == runtime.camera_stream_texture_id(inner)
         )));
     }
 
@@ -242,7 +242,7 @@ mod streams {
             })
             .expect("outer ui stream");
         assert!(outer_state.sprites_2d.iter().any(|sprite| {
-            sprite.texture == Runtime::camera_stream_texture_id(inner)
+            sprite.texture == runtime.camera_stream_texture_id(inner)
                 && sprite.size[0] > 0.0
                 && sprite.size[1] > 0.0
         }));
@@ -446,7 +446,7 @@ mod streams {
         runtime.drain_render_commands(&mut commands);
 
         assert!(has_external_texture_create(&commands));
-        let stream_texture = Runtime::camera_stream_texture_id(stream);
+        let stream_texture = runtime.camera_stream_texture_id(stream);
         assert!(commands.iter().any(|command| {
             matches!(
                 command,
@@ -475,7 +475,7 @@ mod streams {
         runtime.extract_render_ui_commands();
         let mut commands = Vec::new();
         runtime.drain_render_commands(&mut commands);
-        let output_texture = Runtime::camera_stream_texture_id(stream);
+        let output_texture = runtime.camera_stream_texture_id(stream);
 
         assert!(commands.iter().any(|command| matches!(
             command,

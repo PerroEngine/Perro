@@ -304,6 +304,7 @@ impl Runtime {
             self.queue_render_command(RenderCommand::CameraStream(
                 CameraStreamCommand::RemoveNode { node },
             ));
+            self.resource_api.release_camera_capture_texture(node);
         }
     }
 

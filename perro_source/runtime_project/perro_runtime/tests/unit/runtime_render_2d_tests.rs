@@ -138,7 +138,7 @@ fn camera_stream_2d_emits_stream_and_sprite_commands() {
         command,
         RenderCommand::TwoD(Command2D::UpsertCameraStream { node, sprite, .. })
             if *node == stream
-                && sprite.texture == Runtime::camera_stream_texture_id(stream)
+                && sprite.texture == runtime.camera_stream_texture_id(stream)
                 && sprite.uv_max == [320.0, 180.0]
     )));
 }

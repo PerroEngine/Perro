@@ -465,8 +465,8 @@ impl Runtime {
         (camera_2d, camera_3d)
     }
 
-    pub(crate) fn camera_stream_texture_id(node: NodeID) -> TextureID {
-        TextureID::from_parts(node.index(), node.generation())
+    pub(crate) fn camera_stream_texture_id(&self, node: NodeID) -> TextureID {
+        self.resource_api.camera_capture_texture(node)
     }
 
     /// Retained post-processing lane 4 a stream node (see `retained_arc_lane`).
@@ -598,7 +598,7 @@ impl Runtime {
                 .iter()
                 .any(|effect| !matches!(effect, perro_structs::PostProcessEffect::Exposure { .. }));
             let output_texture = if has_image_effect {
-                Self::camera_stream_texture_id(stream_node)
+                self.camera_stream_texture_id(stream_node)
             } else {
                 *texture
             };
@@ -650,7 +650,7 @@ impl Runtime {
         let lanes = self.collect_camera_stream_lanes(stream_node, two_d, three_d, true);
         let output_texture = match &source {
             CameraStreamSourceState::Webcam { texture, .. } => *texture,
-            _ => Self::camera_stream_texture_id(stream_node),
+            _ => self.camera_stream_texture_id(stream_node),
         };
         Some(CameraStreamState {
             ui_commands: empty_arc_slice(),
@@ -846,7 +846,7 @@ impl Runtime {
             resolution,
             aspect_ratio: view.aspect_ratio.max(0.0),
             post_processing,
-            output_texture: Self::camera_stream_texture_id(view_node),
+            output_texture: self.camera_stream_texture_id(view_node),
             sprites_2d: lanes.sprites_2d,
             lights_2d: lanes.lights_2d,
             point_particles_2d: lanes.point_particles_2d,
@@ -1616,7 +1616,7 @@ mod stream_retention_tests {
             draw,
             CameraStreamDraw3DState::CameraStreamQuad { node, texture, .. }
                 if *node == stream_node
-                    && *texture == Runtime::camera_stream_texture_id(stream_node)
+                    && *texture == runtime.camera_stream_texture_id(stream_node)
         )));
         let mut commands = Vec::new();
         runtime.drain_render_commands(&mut commands);
@@ -1665,7 +1665,7 @@ mod stream_retention_tests {
                 outer
                     .sprites_2d
                     .iter()
-                    .any(|sprite| sprite.texture == Runtime::camera_stream_texture_id(stream))
+                    .any(|sprite| sprite.texture == runtime.camera_stream_texture_id(stream))
             );
         }
         let mut commands = Vec::new();

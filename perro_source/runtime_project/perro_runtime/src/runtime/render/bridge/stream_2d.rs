@@ -134,7 +134,7 @@ impl Runtime {
                 .to_mat3()
                 .to_cols_array_2d();
                 out.sprites.push(Sprite2DCommand {
-                    texture: Self::camera_stream_texture_id(node),
+                    texture: self.camera_stream_texture_id(node),
                     model,
                     tint: Runtime::color_modulate(stream.tint, self.effective_self_modulate(node)),
                     uv_min: [0.0, 0.0],
@@ -155,7 +155,7 @@ impl Runtime {
                             && stream_render_mask_matches(camera_mask, stream.render_layers) =>
                     {
                         Some((
-                            Self::camera_stream_texture_id(node),
+                            self.camera_stream_texture_id(node),
                             stream.transform,
                             stream.tint,
                             if stream.stream.aspect_ratio > 0.0 {
@@ -214,7 +214,7 @@ impl Runtime {
             .to_mat3()
             .to_cols_array_2d();
             out.sprites.push(Sprite2DCommand {
-                texture: Self::camera_stream_texture_id(node),
+                texture: self.camera_stream_texture_id(node),
                 model,
                 tint: Runtime::color_modulate(view.tint, self.effective_self_modulate(node)),
                 uv_min: [0.0, 0.0],
@@ -242,7 +242,7 @@ impl Runtime {
                 .to_mat3()
                 .to_cols_array_2d();
             out.sprites.push(Sprite2DCommand {
-                texture: Self::camera_stream_texture_id(node),
+                texture: self.camera_stream_texture_id(node),
                 model,
                 tint: Runtime::color_modulate(tint, self.effective_self_modulate(node)),
                 uv_min: [0.0, 0.0],

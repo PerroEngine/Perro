@@ -36,8 +36,18 @@ impl PerroGraphics {
                             .iter()
                             .find_map(|(id, stream)| (*id == node).then_some(stream.output_texture))
                             .unwrap_or_else(|| camera_stream_texture_id(node));
+                        let stream_source = format!("__camera_stream__:{}", node.as_u64());
+                        let owns_texture = self.resources.texture_source(output_texture)
+                            == Some(stream_source.as_str());
                         if let Some(gpu) = self.gpu.as_mut() {
-                            gpu.remove_camera_stream(node, output_texture);
+                            gpu.remove_camera_stream(
+                                node,
+                                if owns_texture {
+                                    output_texture
+                                } else {
+                                    TextureID::nil()
+                                },
+                            );
                         }
                         self.camera_stream_targets.remove(&node);
                         // Direct drop: the frame-loop fallback in assets.rs only
@@ -46,9 +56,7 @@ impl PerroGraphics {
                         // this row behind until the counts happen to diverge.
                         self.animated_stream_memo.remove(&node);
                         self.retained_camera_streams.retain(|(id, _)| *id != node);
-                        if self.resources.drop_texture(output_texture)
-                            && output_texture != camera_stream_texture_id(node)
-                        {
+                        if owns_texture && self.resources.drop_texture(output_texture) {
                             self.events
                                 .push(RenderEvent::TextureDropped { id: output_texture });
                         }

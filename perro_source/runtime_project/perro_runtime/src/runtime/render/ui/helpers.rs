@@ -892,8 +892,7 @@ pub(super) fn ui_command_from_node(
                 node,
                 rect,
                 clip_rect,
-                texture: camera_stream_texture
-                    .unwrap_or_else(|| Runtime::camera_stream_texture_id(node)),
+                texture: camera_stream_texture.unwrap_or_else(TextureID::nil),
                 tint: Runtime::color_modulate(stream.tint, modulate),
                 uv_min: [0.0, 0.0],
                 uv_max: [1.0, 1.0],
@@ -919,8 +918,7 @@ pub(super) fn ui_command_from_node(
                 node,
                 rect,
                 clip_rect,
-                texture: camera_stream_texture
-                    .unwrap_or_else(|| Runtime::camera_stream_texture_id(node)),
+                texture: camera_stream_texture.unwrap_or_else(TextureID::nil),
                 tint: Runtime::color_modulate(viewport.tint, modulate),
                 uv_min: [0.0, 0.0],
                 uv_max: [1.0, 1.0],
