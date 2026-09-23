@@ -127,6 +127,10 @@ Perro init Steam from project cfg.
 Perro pump Steam callbacks each runtime update.
 Perro store dirty stats/achs after callback pump.
 
+Run leaderboard + Workshop completion handlers after Steam releases its callback locks.
+Allow follow-up requests from handlers, such as find board -> upload score.
+Keep handlers on the runtime thread; keep heavy work out of callbacks.
+
 Do not call init.
 Do not call callback pump.
 Do not call stat store.

@@ -923,9 +923,11 @@ impl Runtime {
             return;
         }
         self.boot_scene_pending = false;
+        perro_structs::structs::boot_log::mark("runtime_boot_scene_load_start");
         if let Err(err) = self.load_boot_scene() {
             panic!("failed to load boot scene: {err}");
         }
+        perro_structs::structs::boot_log::mark("runtime_boot_scene_loaded");
     }
 
     fn from_project_inner(

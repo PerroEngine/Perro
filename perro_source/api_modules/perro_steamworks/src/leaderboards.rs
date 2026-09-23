@@ -119,7 +119,8 @@ pub fn find(
 ) -> Result<(), SteamError> {
     app::with_client(|client| {
         client.user_stats().find_leaderboard(name, move |result| {
-            cb(map_find_result(result, "user_stats.find_leaderboard"));
+            let result = map_find_result(result, "user_stats.find_leaderboard");
+            app::defer_callback(move || cb(result));
         });
         Ok(())
     })
@@ -137,10 +138,8 @@ pub fn find_or_create(
             sort.into(),
             display.into(),
             move |result| {
-                cb(map_find_result(
-                    result,
-                    "user_stats.find_or_create_leaderboard",
-                ));
+                let result = map_find_result(result, "user_stats.find_or_create_leaderboard");
+                app::defer_callback(move || cb(result));
             },
         );
         Ok(())
@@ -177,12 +176,13 @@ pub fn upload_score_with_details(
             score,
             details,
             move |result| {
-                cb(match result {
+                let result = match result {
                     Ok(upload) => Ok(upload.map(Into::into)),
                     Err(_) => Err(SteamError::CallFailed(
                         "user_stats.upload_leaderboard_score",
                     )),
-                });
+                };
+                app::defer_callback(move || cb(result));
             },
         );
         Ok(())
@@ -244,12 +244,13 @@ pub fn entries(
             end,
             max_details_len,
             move |result| {
-                cb(match result {
+                let result = match result {
                     Ok(entries) => Ok(entries.into_iter().map(Into::into).collect()),
                     Err(_) => Err(SteamError::CallFailed(
                         "user_stats.download_leaderboard_entries",
                     )),
-                });
+                };
+                app::defer_callback(move || cb(result));
             },
         );
         Ok(())

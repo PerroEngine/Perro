@@ -289,12 +289,13 @@ impl Update {
         cb: impl FnOnce(Result<CreateItemResult, SteamError>) + Send + 'static,
     ) -> UpdateWatch {
         let inner = self.inner.submit(change_note, move |result| {
-            cb(result
+            let result = result
                 .map(|(file, accepted_legal_agreement)| CreateItemResult {
                     file: file.into(),
                     accepted_legal_agreement,
                 })
-                .map_err(|_| SteamError::CallFailed("ugc.submit_item_update")));
+                .map_err(|_| SteamError::CallFailed("ugc.submit_item_update"));
+            app::defer_callback(move || cb(result));
         });
         UpdateWatch { inner }
     }
@@ -397,23 +398,34 @@ impl Query {
 
     pub fn fetch(self, cb: impl FnOnce(Result<QueryPage, SteamError>) + Send + 'static) {
         self.inner.fetch(move |result| {
-            cb(result
+            let result = result
                 .map(query_page)
-                .map_err(|_| SteamError::CallFailed("ugc.send_query")));
+                .map_err(|_| SteamError::CallFailed("ugc.send_query"));
+            app::defer_callback(move || cb(result));
         });
     }
 
     pub fn fetch_total(self, cb: impl Fn(Result<u32, SteamError>) + Send + 'static) {
+        // Steam call results complete once, though the dependency asks for
+        // `Fn`. Take the user closure before deferring so no lock spans it.
+        let cb = std::sync::Mutex::new(Some(cb));
         self.inner.fetch_total(move |result| {
-            cb(result.map_err(|_| SteamError::CallFailed("ugc.send_query_total")));
+            let result = result.map_err(|_| SteamError::CallFailed("ugc.send_query_total"));
+            if let Some(cb) = cb.lock().ok().and_then(|mut cb| cb.take()) {
+                app::defer_callback(move || cb(result));
+            }
         });
     }
 
     pub fn fetch_ids(self, cb: impl Fn(Result<Vec<WorkshopFileID>, SteamError>) + Send + 'static) {
+        let cb = std::sync::Mutex::new(Some(cb));
         self.inner.fetch_ids(move |result| {
-            cb(result
+            let result = result
                 .map(|files| files.into_iter().map(Into::into).collect())
-                .map_err(|_| SteamError::CallFailed("ugc.send_query_ids")));
+                .map_err(|_| SteamError::CallFailed("ugc.send_query_ids"));
+            if let Some(cb) = cb.lock().ok().and_then(|mut cb| cb.take()) {
+                app::defer_callback(move || cb(result));
+            }
         });
     }
 }
@@ -500,7 +512,8 @@ pub fn subscribe(
 ) -> Result<(), SteamError> {
     app::with_client(|client| {
         client.ugc().subscribe_item(file.into(), move |result| {
-            cb(result.map_err(|_| SteamError::CallFailed("ugc.subscribe_item")));
+            let result = result.map_err(|_| SteamError::CallFailed("ugc.subscribe_item"));
+            app::defer_callback(move || cb(result));
         });
         Ok(())
     })
@@ -512,7 +525,8 @@ pub fn unsubscribe(
 ) -> Result<(), SteamError> {
     app::with_client(|client| {
         client.ugc().unsubscribe_item(file.into(), move |result| {
-            cb(result.map_err(|_| SteamError::CallFailed("ugc.unsubscribe_item")));
+            let result = result.map_err(|_| SteamError::CallFailed("ugc.unsubscribe_item"));
+            app::defer_callback(move || cb(result));
         });
         Ok(())
     })
@@ -558,13 +572,14 @@ pub fn create(
         client
             .ugc()
             .create_item(app_id.into(), file_type.into(), move |result| {
-                cb(match result {
+                let result = match result {
                     Ok((file, accepted_legal_agreement)) => Ok(CreateItemResult {
                         file: file.into(),
                         accepted_legal_agreement,
                     }),
                     Err(_) => Err(SteamError::CallFailed("ugc.create_item")),
-                });
+                };
+                app::defer_callback(move || cb(result));
             });
         Ok(())
     })
@@ -640,7 +655,8 @@ pub fn delete(
 ) -> Result<(), SteamError> {
     app::with_client(|client| {
         client.ugc().delete_item(file.into(), move |result| {
-            cb(result.map_err(|_| SteamError::CallFailed("ugc.delete_item")));
+            let result = result.map_err(|_| SteamError::CallFailed("ugc.delete_item"));
+            app::defer_callback(move || cb(result));
         });
         Ok(())
     })
@@ -653,7 +669,8 @@ pub fn start_playtime_tracking(
     app::with_client(|client| {
         let files: Vec<_> = files.iter().copied().map(Into::into).collect();
         client.ugc().start_playtime_tracking(&files, move |result| {
-            cb(result.map_err(|_| SteamError::CallFailed("ugc.start_playtime_tracking")));
+            let result = result.map_err(|_| SteamError::CallFailed("ugc.start_playtime_tracking"));
+            app::defer_callback(move || cb(result));
         });
         Ok(())
     })
@@ -666,7 +683,8 @@ pub fn stop_playtime_tracking(
     app::with_client(|client| {
         let files: Vec<_> = files.iter().copied().map(Into::into).collect();
         client.ugc().stop_playtime_tracking(&files, move |result| {
-            cb(result.map_err(|_| SteamError::CallFailed("ugc.stop_playtime_tracking")));
+            let result = result.map_err(|_| SteamError::CallFailed("ugc.stop_playtime_tracking"));
+            app::defer_callback(move || cb(result));
         });
         Ok(())
     })
@@ -679,9 +697,10 @@ pub fn stop_all_playtime_tracking(
         client
             .ugc()
             .stop_playtime_tracking_for_all_items(move |result| {
-                cb(result.map_err(|_| {
+                let result = result.map_err(|_| {
                     SteamError::CallFailed("ugc.stop_playtime_tracking_for_all_items")
-                }));
+                });
+                app::defer_callback(move || cb(result));
             });
         Ok(())
     })

@@ -1,5 +1,60 @@
 use crate::{error::SteamError, input::SteamInputMode};
-use std::sync::{Mutex, OnceLock};
+use std::{
+    cell::Cell,
+    collections::VecDeque,
+    sync::{Mutex, OnceLock},
+};
+
+thread_local! {
+    static DRAINING_CALLBACKS: Cell<bool> = const { Cell::new(false) };
+}
+
+struct DrainGuard;
+
+impl DrainGuard {
+    fn enter() -> Option<Self> {
+        DRAINING_CALLBACKS.with(|draining| (!draining.replace(true)).then_some(Self))
+    }
+}
+
+impl Drop for DrainGuard {
+    fn drop(&mut self) {
+        DRAINING_CALLBACKS.with(|draining| draining.set(false));
+    }
+}
+
+type DeferredCallback = Box<dyn FnOnce() + Send>;
+
+fn deferred_callbacks() -> &'static Mutex<VecDeque<DeferredCallback>> {
+    static CALLBACKS: OnceLock<Mutex<VecDeque<DeferredCallback>>> = OnceLock::new();
+    CALLBACKS.get_or_init(|| Mutex::new(VecDeque::new()))
+}
+
+/// Steamworks invokes call-result closures while it holds its internal
+/// call-results mutex. User closures may start another async Steam call, which
+/// tries to lock the same mutex. Run them after `process_callbacks` returns.
+pub(crate) fn defer_callback(callback: impl FnOnce() + Send + 'static) {
+    deferred_callbacks()
+        .lock()
+        .expect("Steam callback queue poisoned")
+        .push_back(Box::new(callback));
+}
+
+fn drain_deferred_callbacks() {
+    drain_callback_queue(deferred_callbacks());
+}
+
+fn drain_callback_queue(queue: &Mutex<VecDeque<DeferredCallback>>) {
+    // A user callback may call `run_callbacks` again. Keep newly completed
+    // calls queued until the outer callback returns.
+    let Some(_guard) = DrainGuard::enter() else {
+        return;
+    };
+    let callbacks = std::mem::take(&mut *queue.lock().expect("Steam callback queue poisoned"));
+    for callback in callbacks {
+        callback();
+    }
+}
 
 const STEAM_APP_ID_ENV: &str = "SteamAppId";
 
@@ -133,7 +188,9 @@ fn init_client(app_id: u32) -> Result<steamworks::Client, SteamError> {
 
 pub fn run_callbacks() -> Result<(), SteamError> {
     if crate::game_server::is_ready_internal() {
-        return crate::game_server::run_callbacks();
+        crate::game_server::run_callbacks()?;
+        drain_deferred_callbacks();
+        return Ok(());
     }
     let client = {
         let mut state = state().lock().map_err(|_| SteamError::NotReady)?;
@@ -142,6 +199,7 @@ pub fn run_callbacks() -> Result<(), SteamError> {
     };
     if let Some(client) = client {
         client.process_callbacks(crate::events::enqueue_callback);
+        drain_deferred_callbacks();
         flush_stats_store(&client)?;
     }
     Ok(())
@@ -163,6 +221,9 @@ pub fn shutdown() -> Result<(), SteamError> {
         state.client.take()
     };
     let _ = crate::events::clear();
+    if let Ok(mut callbacks) = deferred_callbacks().lock() {
+        callbacks.clear();
+    }
     drop(client);
     Ok(())
 }
@@ -249,4 +310,52 @@ fn ensure_client_from_process_env(state: &mut SteamState) -> Result<(), SteamErr
     state.app_id = Some(app_id);
     state.client = Some(client);
     Ok(())
+}
+
+#[cfg(test)]
+mod callback_queue_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn user_callback_runs_after_registration_lock_releases() {
+        let registration = std::sync::Arc::new(Mutex::new(()));
+        let called = std::sync::Arc::new(AtomicUsize::new(0));
+        let queue = Mutex::new(VecDeque::<DeferredCallback>::new());
+        let held = registration.lock().unwrap();
+        let registration_for_callback = std::sync::Arc::clone(&registration);
+        let called_for_callback = std::sync::Arc::clone(&called);
+        queue.lock().unwrap().push_back(Box::new(move || {
+            assert!(registration_for_callback.try_lock().is_ok());
+            called_for_callback.fetch_add(1, Ordering::SeqCst);
+        }));
+        assert_eq!(called.load(Ordering::SeqCst), 0);
+        drop(held);
+        drain_callback_queue(&queue);
+        assert_eq!(called.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn callback_enqueued_during_drain_waits_for_next_pump() {
+        let queue = std::sync::Arc::new(Mutex::new(VecDeque::<DeferredCallback>::new()));
+        let called = std::sync::Arc::new(AtomicUsize::new(0));
+        let queue_for_callback = std::sync::Arc::clone(&queue);
+        let called_for_callback = std::sync::Arc::clone(&called);
+        queue.lock().unwrap().push_back(Box::new(move || {
+            called_for_callback.fetch_add(1, Ordering::SeqCst);
+            let called_again = std::sync::Arc::clone(&called_for_callback);
+            queue_for_callback
+                .lock()
+                .unwrap()
+                .push_back(Box::new(move || {
+                    called_again.fetch_add(1, Ordering::SeqCst);
+                }));
+            drain_callback_queue(&queue_for_callback);
+            assert_eq!(called_for_callback.load(Ordering::SeqCst), 1);
+        }));
+        drain_callback_queue(&queue);
+        assert_eq!(called.load(Ordering::SeqCst), 1);
+        drain_callback_queue(&queue);
+        assert_eq!(called.load(Ordering::SeqCst), 2);
+    }
 }
