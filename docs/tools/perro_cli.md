@@ -361,7 +361,7 @@ What it does:
 Flags:
 
 - `--target native|web|android`: selects native executable, browser wasm bundle, or Android app target. Default `native`.
-- `--demo`: builds only the demo-visible source and applies `[demo]` config overrides.
+- `--demo`: builds only the demo-visible source and applies `[demo]` config overrides. Output goes to a separate `<project>/.output/demo/` tree (native, `web/`, `android/`) so demo exports never overwrite the full build.
 - `--triple <rust_target>`: cross-compiles a native build for one Rust target triple. The CLI installs the Rust standard-library target when needed. The host still needs the target linker, SDK, and native libraries. A macOS triple emits an unsigned `.app` bundle.
 - `--universal-macos`: on macOS, builds `aarch64-apple-darwin` and `x86_64-apple-darwin`, then merges both slices into one unsigned `.app` with `lipo`. Per-architecture exports are kept beside the universal export.
 - `--profile`: enables profile build options for the generated project bundle.

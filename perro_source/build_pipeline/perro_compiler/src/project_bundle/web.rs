@@ -27,10 +27,12 @@ pub(super) fn export_project_web_bundle(
         )));
     }
 
-    let output_dir = match options.web_output_dir {
-        WebOutputDir::Build => project_root.join(".output").join("web"),
-        WebOutputDir::Dev => project_root.join(".output").join("web-dev"),
-    };
+    let output_dir = bundle_output_root(project_root, options.demo).join(match options
+        .web_output_dir
+    {
+        WebOutputDir::Build => "web",
+        WebOutputDir::Dev => "web-dev",
+    });
     if output_dir.exists() {
         fs::remove_dir_all(&output_dir)?;
     }

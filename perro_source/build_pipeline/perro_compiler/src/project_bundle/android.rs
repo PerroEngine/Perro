@@ -28,7 +28,7 @@ pub(super) fn export_project_android_bundle(
         )));
     }
 
-    let output_dir = project_root.join(".output").join("android");
+    let output_dir = bundle_output_root(project_root, demo).join("android");
     reset_output_dir(&output_dir)?;
     let output_apk = output_dir.join(format!("{output_name}.apk"));
     copy_file_overwriting(built_apk, &output_apk)?;

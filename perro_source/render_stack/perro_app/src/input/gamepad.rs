@@ -170,11 +170,13 @@ mod backend {
         }
 
         pub(super) fn disable<S: GamepadSink>(&mut self, app: &mut S) {
-            let mut indices: Vec<_> = self
+            let indices: Vec<_> = self
                 .uuid_in_use
                 .iter()
                 .filter_map(|uuid| self.uuid_to_index.get(uuid).copied())
                 .collect();
+            #[cfg(target_os = "windows")]
+            let mut indices = indices;
             #[cfg(target_os = "windows")]
             for slot in 0..self.xinput_connected.len() {
                 if self.xinput_connected[slot] {

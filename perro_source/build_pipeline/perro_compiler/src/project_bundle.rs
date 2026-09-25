@@ -248,8 +248,13 @@ fn build_project_crate(
     steam_enabled: bool,
     metadata: &perro_project::ProjectMetadata,
 ) -> Result<(), CompilerError> {
-    let project_crate = project_root.join(".perro").join("project");
-    let target_dir = project_root.join("target");
+    let cargo_project_root = windows_command_path(project_root);
+    let project_crate = cargo_project_root.join(".perro").join("project");
+    let target_dir = cargo_project_root.join("target");
+    let windows_linux_cross = cfg!(windows)
+        && options
+            .native_target
+            .is_some_and(is_linux_gnu_target);
     let mut cmd = Command::new("cargo");
     cmd.env("CARGO_TARGET_DIR", &target_dir)
         .current_dir(&project_crate);
@@ -271,10 +276,24 @@ fn build_project_crate(
             .arg("--target")
             .arg("aarch64-linux-android");
     } else {
-        cmd.arg("build");
+        if windows_linux_cross {
+            configure_windows_linux_cross_build(
+                &mut cmd,
+                options.native_target.expect("checked Linux target"),
+            )?;
+            cmd.arg("zigbuild");
+            // zig's lld drops rustc's default `-Wl,-O1` w/ a harmless warning.
+            rustflags.push("-Alinker_messages".to_string());
+        } else {
+            cmd.arg("build");
+        }
         if let Some(target) = options.native_target {
             validate_native_target_triple(target)?;
-            cmd.arg("--target").arg(target);
+            cmd.arg("--target").arg(if windows_linux_cross {
+                format!("{target}.2.34")
+            } else {
+                target.to_string()
+            });
         }
     }
     if options.release {
@@ -366,6 +385,139 @@ fn build_project_crate(
         )?,
     }
     Ok(())
+}
+
+fn windows_command_path(path: &Path) -> PathBuf {
+    let raw = path.to_string_lossy();
+    raw.strip_prefix(r"\\?\")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| path.to_path_buf())
+}
+
+fn is_linux_gnu_target(target: &str) -> bool {
+    target.ends_with("-unknown-linux-gnu")
+}
+
+fn configure_windows_linux_cross_build(
+    cmd: &mut Command,
+    target: &str,
+) -> Result<(), CompilerError> {
+    let linux_lib_arch = match target {
+        "x86_64-unknown-linux-gnu" => "x86_64-linux-gnu",
+        "i686-unknown-linux-gnu" => "i386-linux-gnu",
+        "aarch64-unknown-linux-gnu" => "aarch64-linux-gnu",
+        _ => {
+            return Err(CompilerError::SceneParse(format!(
+                "Windows Linux cross-build does not support target `{target}`"
+            )));
+        }
+    };
+    let sysroot = env::var_os("PERRO_LINUX_SYSROOT")
+        .map(PathBuf::from)
+        .or_else(|| {
+            env::var_os("LOCALAPPDATA").map(|root| {
+                PathBuf::from(root)
+                    .join("Perro")
+                    .join("sysroots")
+                    .join(target)
+            })
+        })
+        .ok_or_else(|| {
+            CompilerError::SceneParse(
+                "Linux cross sysroot not found: set PERRO_LINUX_SYSROOT".to_string(),
+            )
+        })?;
+    let pkgconfig_dir = sysroot
+        .join("usr")
+        .join("lib")
+        .join(linux_lib_arch)
+        .join("pkgconfig");
+    let alsa_pc = pkgconfig_dir.join("alsa.pc");
+    let alsa_lib = sysroot
+        .join("usr")
+        .join("lib")
+        .join(linux_lib_arch)
+        .join("libasound.so");
+    if !alsa_pc.is_file() || !alsa_lib.is_file() {
+        return Err(CompilerError::SceneParse(format!(
+            "Linux cross sysroot lacks ALSA dev files under {}",
+            sysroot.display()
+        )));
+    }
+
+    let pkgconfig_env = pkgconfig_dir.to_string_lossy().replace('\\', "/");
+    let sysroot_env = sysroot.to_string_lossy().replace('\\', "/");
+    cmd.env("PKG_CONFIG_ALLOW_CROSS", "1")
+        .env("PKG_CONFIG_LIBDIR", pkgconfig_env)
+        .env("PKG_CONFIG_SYSROOT_DIR", &sysroot_env)
+        .env_remove("PKG_CONFIG_PATH");
+    let openssl_include = sysroot.join("usr").join("include");
+    let openssl_lib = sysroot
+        .join("usr")
+        .join("lib")
+        .join(linux_lib_arch);
+    if openssl_include.join("openssl").join("opensslv.h").is_file()
+        && openssl_lib.join("libssl.so").is_file()
+    {
+        cmd.env("OPENSSL_INCLUDE_DIR", openssl_include)
+            .env("OPENSSL_LIB_DIR", openssl_lib);
+    }
+    if env::var_os("LIBCLANG_PATH").is_none()
+        && let Some(libclang_dir) = find_python_libclang_dir()
+    {
+        cmd.env("LIBCLANG_PATH", libclang_dir);
+    }
+    if env::var_os("BINDGEN_EXTRA_CLANG_ARGS").is_none() {
+        cmd.env(
+            "BINDGEN_EXTRA_CLANG_ARGS",
+            format!("--target={target} --sysroot={sysroot_env}"),
+        );
+    }
+    let cflags_key = format!("CFLAGS_{}", target.replace('-', "_"));
+    if env::var_os(&cflags_key).is_none() {
+        cmd.env(
+            cflags_key,
+            format!(
+                "-I{sysroot_env}/usr/include/{linux_lib_arch} -I{sysroot_env}/usr/include"
+            ),
+        );
+    }
+    if env::var_os("CARGO_ZIGBUILD_ZIG_COMMAND").is_none()
+        && let Some(python_zig) = find_python_zig_command()
+    {
+        cmd.env("CARGO_ZIGBUILD_ZIG_COMMAND", python_zig);
+    }
+    Ok(())
+}
+
+fn find_python_zig_command() -> Option<PathBuf> {
+    let python_root = PathBuf::from(env::var_os("APPDATA")?).join("Python");
+    let mut commands = fs::read_dir(python_root)
+        .ok()?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path().join("Scripts").join("python-zig.exe"))
+        .filter(|path| path.is_file())
+        .collect::<Vec<_>>();
+    commands.sort();
+    commands.pop()
+}
+
+fn find_python_libclang_dir() -> Option<PathBuf> {
+    let python_root = PathBuf::from(env::var_os("APPDATA")?).join("Python");
+    let mut dirs = fs::read_dir(python_root)
+        .ok()?
+        .filter_map(Result::ok)
+        .map(|entry| {
+            entry
+                .path()
+                .join("site-packages")
+                .join("clang")
+                .join("native")
+        })
+        .filter(|path| path.join("libclang.dll").is_file())
+        .collect::<Vec<_>>();
+    dirs.sort();
+    dirs.pop()
 }
 
 fn validate_native_target_triple(target: &str) -> Result<(), CompilerError> {
@@ -549,8 +701,7 @@ fn export_project_binary(
         verify_no_private_build_paths(&built_bin, project_root, project_name)?;
     }
 
-    let output_dir = project_root
-        .join(".output")
+    let output_dir = bundle_output_root(project_root, options.demo)
         .join(native_output_folder_name(&output_bin_name, native_target));
     reset_output_dir(&output_dir)?;
     let output_artifact_name = target_binary_name(
@@ -857,19 +1008,21 @@ fn export_universal_macos_binary(
         cfg.metadata.version.as_deref(),
         Some("aarch64-apple-darwin"),
     );
-    let output_dir = project_root.join(".output").join(format!(
+    let output_dir = bundle_output_root(project_root, demo).join(format!(
         "{}-macos-universal",
         package_name_slug(&output_bin_name)
     ));
     reset_output_dir(&output_dir)?;
     let arm_bin = exported_native_binary_path(
         project_root,
+        demo,
         &output_bin_name,
         cfg.metadata.version.as_deref(),
         "aarch64-apple-darwin",
     );
     let intel_bin = exported_native_binary_path(
         project_root,
+        demo,
         &output_bin_name,
         cfg.metadata.version.as_deref(),
         "x86_64-apple-darwin",
@@ -905,6 +1058,13 @@ fn export_universal_macos_binary(
     Ok(())
 }
 
+/// Root for exported bundles. Demo builds live under their own `demo/` dir so
+/// a demo export never overwrites or mixes with the full game's output.
+pub fn bundle_output_root(project_root: &Path, demo: bool) -> PathBuf {
+    let root = project_root.join(".output");
+    if demo { root.join("demo") } else { root }
+}
+
 fn reset_output_dir(path: &Path) -> Result<(), CompilerError> {
     if path.exists() {
         fs::remove_dir_all(path)?;
@@ -936,12 +1096,12 @@ fn copy_file_overwriting(source: &Path, target: &Path) -> Result<(), CompilerErr
 
 fn exported_native_binary_path(
     project_root: &Path,
+    demo: bool,
     output_name: &str,
     version: Option<&str>,
     target: &str,
 ) -> PathBuf {
-    let output_dir = project_root
-        .join(".output")
+    let output_dir = bundle_output_root(project_root, demo)
         .join(native_output_folder_name(output_name, Some(target)));
     if is_macos_native_target(Some(target)) {
         let artifact_name = native_output_artifact_name(output_name, version, Some(target));
@@ -1271,5 +1431,26 @@ mod project_bundle_tests {
         assert!(is_macos_native_target(Some("aarch64-apple-darwin")));
         assert!(!is_macos_native_target(Some("x86_64-unknown-linux-gnu")));
         assert!(!is_macos_native_target(Some("x86_64-pc-windows-msvc")));
+    }
+
+    #[test]
+    fn linux_gnu_target_detection_excludes_other_abis() {
+        assert!(is_linux_gnu_target("x86_64-unknown-linux-gnu"));
+        assert!(is_linux_gnu_target("i686-unknown-linux-gnu"));
+        assert!(is_linux_gnu_target("aarch64-unknown-linux-gnu"));
+        assert!(!is_linux_gnu_target("x86_64-unknown-linux-musl"));
+        assert!(!is_linux_gnu_target("aarch64-linux-android"));
+    }
+
+    #[test]
+    fn windows_command_path_strips_verbatim_prefix() {
+        assert_eq!(
+            windows_command_path(Path::new(r"\\?\D:\Games\Project")),
+            PathBuf::from(r"D:\Games\Project")
+        );
+        assert_eq!(
+            windows_command_path(Path::new(r"D:\Games\Project")),
+            PathBuf::from(r"D:\Games\Project")
+        );
     }
 }
