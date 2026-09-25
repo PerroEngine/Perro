@@ -818,14 +818,14 @@ mod styling {
         runtime.drain_render_commands(&mut commands);
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::RemoveNode { node } if *node == label))));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::SetVisible { node, visible: false } if *node == label))));
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::RemoveNode { node } if *node == button))));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::SetVisible { node, visible: false } if *node == button))));
     }
 
     #[test]
-    fn non_ui_parent_visibility_change_removes_retained_ui_descendants() {
+    fn non_ui_parent_visibility_change_hides_retained_ui_descendants() {
         let mut runtime = Runtime::new();
         runtime.set_viewport_size(800, 600);
 
@@ -851,10 +851,10 @@ mod styling {
         runtime.drain_render_commands(&mut commands);
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::RemoveNode { node } if *node == button))));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::SetVisible { node, visible: false } if *node == button))));
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::RemoveNode { node } if *node == label))));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::SetVisible { node, visible: false } if *node == label))));
         assert!(!runtime.render_ui.prev_visible.contains(&button));
         assert!(!runtime.render_ui.prev_visible.contains(&label));
     }
@@ -881,7 +881,20 @@ mod styling {
             panel.visible = false;
         });
         runtime.extract_render_ui_commands();
-        runtime.drain_render_commands(&mut Vec::new());
+        let mut hidden_commands = Vec::new();
+        runtime.drain_render_commands(&mut hidden_commands);
+        for node in [parent, button, label] {
+            assert!(hidden_commands.iter().any(|cmd| matches!(
+                cmd,
+                RenderCommand::Ui(command)
+                    if matches!(command.as_ref(), UiCommand::SetVisible { node: hidden, visible: false } if *hidden == node)
+            )));
+            assert!(runtime.render_ui.retained_commands.contains_key(&node));
+        }
+        assert!(!hidden_commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(command) if matches!(command.as_ref(), UiCommand::RemoveNode { .. })
+        )));
         runtime.clear_dirty_flags();
 
         let _ = runtime.with_node_mut::<UiPanel, _, _>(parent, |panel| {
@@ -893,10 +906,16 @@ mod styling {
         runtime.drain_render_commands(&mut commands);
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertButton { node: n, .. } if *n == button))));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::SetVisible { node: n, visible: true } if *n == button))));
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertLabel { node: n, .. } if *n == label))));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::SetVisible { node: n, visible: true } if *n == label))));
+        assert!(!commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(command)
+                if matches!(command.as_ref(), UiCommand::UpsertButton { node, .. } if *node == button)
+                    || matches!(command.as_ref(), UiCommand::UpsertLabel { node, .. } if *node == label)
+        )));
     }
 
     #[test]
@@ -967,10 +986,10 @@ mod styling {
         runtime.drain_render_commands(&mut commands);
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertButton { node: n, .. } if *n == button))));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::SetVisible { node: n, visible: true } if *n == button))));
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertLabel { node: n, .. } if *n == label))));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::SetVisible { node: n, visible: true } if *n == label))));
     }
 
     #[test]
@@ -1088,12 +1107,12 @@ mod styling {
         for button in buttons {
             assert!(commands.iter().any(|cmd| matches!(
                 cmd,
-                RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertButton { node: n, .. } if *n == button))));
+                RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::SetVisible { node: n, visible: true } if *n == button))));
         }
         for label in labels {
             assert!(commands.iter().any(|cmd| matches!(
                 cmd,
-                RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertLabel { node: n, .. } if *n == label))));
+                RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::SetVisible { node: n, visible: true } if *n == label))));
         }
     }
 

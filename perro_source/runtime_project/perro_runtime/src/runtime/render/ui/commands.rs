@@ -1244,6 +1244,11 @@ impl Runtime {
                 self.remove_retained_color_wheel(wheel_node);
                 continue;
             }
+            if !self.is_effectively_visible_for_ui(picker_id) {
+                self.set_retained_ui_visibility(wheel_node, false);
+                continue;
+            }
+            self.set_retained_ui_visibility(wheel_node, true);
             let Some(popup_rect) = computed.get(&popup_id).copied().or_else(|| {
                 self.render_ui
                     .retained_rects
@@ -1292,12 +1297,13 @@ impl Runtime {
     /// `retained_commands` under [`color_picker_wheel_render_node`] and never
     /// enters `visible_now` / `prev_visible`.
     pub(super) fn remove_retained_color_wheel(&mut self, wheel_node: NodeID) {
-        if self
+        let had_command = self
             .render_ui
             .retained_commands
             .remove(&wheel_node)
-            .is_some()
-        {
+            .is_some();
+        let was_hidden = self.render_ui.hidden_render_nodes.remove(&wheel_node);
+        if had_command || was_hidden {
             self.queue_render_command(RenderCommand::Ui(Box::new(UiCommand::RemoveNode {
                 node: wheel_node,
             })));

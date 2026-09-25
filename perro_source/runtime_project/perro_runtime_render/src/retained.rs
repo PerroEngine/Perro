@@ -409,6 +409,10 @@ pub struct RenderUiState {
     pub computed_scales: AHashMap<NodeID, Vector2>,
     pub auto_layout_computed: AHashSet<NodeID>,
     pub retained_commands: AHashMap<NodeID, UiCommand>,
+    /// Spawn-order rank already sent to the renderer per node.
+    pub sent_draw_orders: AHashMap<NodeID, u64>,
+    /// Retained draws suppressed in the renderer but kept hot for fast show.
+    pub hidden_render_nodes: AHashSet<NodeID>,
     pub retained_rects: AHashMap<NodeID, UiRectState>,
     pub button_states: AHashMap<NodeID, UiButtonVisualState>,
     pub button_motions: AHashMap<NodeID, UiButtonMotion>,
@@ -502,6 +506,8 @@ impl RenderUiState {
             computed_scales: AHashMap::default(),
             auto_layout_computed: AHashSet::default(),
             retained_commands: AHashMap::default(),
+            sent_draw_orders: AHashMap::default(),
+            hidden_render_nodes: AHashSet::default(),
             retained_rects: AHashMap::default(),
             button_states: AHashMap::default(),
             button_motions: AHashMap::default(),

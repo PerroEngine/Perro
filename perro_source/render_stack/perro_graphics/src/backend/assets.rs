@@ -1,5 +1,7 @@
 use super::*;
 
+const CAMERA_STREAM_RESUMES_PER_FRAME: usize = 4;
+
 // load a custom shader source (static pack, else asset io) + probe 4 frame
 // globals. `perro_time` prefix also covers `perro_time_phase`.
 fn custom_shader_reads_frame_globals(
@@ -160,6 +162,9 @@ impl PerroGraphics {
         };
         let material_revision = self.resources.material_revision();
         let stream_continuous = self.retained_camera_streams.iter().any(|(node, stream)| {
+            if self.suspended_camera_streams.contains(node) {
+                return false;
+            }
             let dynamic_source = matches!(stream.source, CameraStreamSourceState::Webcam { .. })
                 || !stream.waters_2d.is_empty()
                 || !stream.waters_3d.is_empty()
@@ -186,6 +191,7 @@ impl PerroGraphics {
             .is_some_and(|gpu| gpu.shared_texture_uploads_deferred());
         let capture_active = self.capture_target_size.is_some() && self.capture_callback.is_some();
         let has_continuous_updates = capture_active
+            || !self.pending_camera_stream_resumes.is_empty()
             || self.renderer_3d.has_active_sky_animation()
             || has_pending_pipeline_warms
             || has_deferred_texture_uploads
@@ -278,6 +284,18 @@ impl PerroGraphics {
         pending.truncate(write);
         self.process_commands(camera_commands.drain(..));
         self.process_commands(pending.drain(..));
+        let resume_count = self
+            .pending_camera_stream_resumes
+            .len()
+            .min(CAMERA_STREAM_RESUMES_PER_FRAME);
+        for _ in 0..resume_count {
+            if let Some(node) = self.pending_camera_stream_resumes.pop() {
+                self.suspended_camera_streams.remove(&node);
+            }
+        }
+        if !self.pending_camera_stream_resumes.is_empty() {
+            self.redraw_requested = true;
+        }
         self.frame.scratch_camera_commands = camera_commands;
         self.process_late_overlay_commands(late_overlay_pending.drain(..));
         self.frame.scratch_late_overlay_commands = late_overlay_pending;
@@ -681,6 +699,9 @@ impl PerroGraphics {
             let lookup = self.static_shader_lookup;
             let material_revision = self.resources.material_revision();
             for (node, stream) in &self.retained_camera_streams {
+                if self.suspended_camera_streams.contains(node) {
+                    continue;
+                }
                 // Arc ptr identity: an unchanged retained state means unchanged
                 // draws + surfaces, so the probe result cannot have moved.
                 let stream_key = Arc::as_ptr(stream) as usize;
@@ -787,6 +808,7 @@ impl PerroGraphics {
                 decals_3d: &self.retained_decals_3d_cache,
                 decals_3d_revision: self.retained_decals_3d_cache_revision,
                 camera_streams: &self.retained_camera_streams,
+                suspended_camera_streams: &self.suspended_camera_streams,
                 camera_2d,
                 post_processing_2d: camera_2d_state.post_processing,
                 post_processing_global: self.global_post_processing_cache.clone(),

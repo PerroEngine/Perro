@@ -660,6 +660,7 @@ impl Runtime {
             // never enter the active set, and removal must always clear any
             // gpu-side state for the slot.
             self.extraction.camera_stream_active.remove(&node);
+            self.extraction.camera_stream_suspended.remove(&node);
             self.extraction.ui_stream_render_info.remove(&node);
             self.queue_render_command(RenderCommand::CameraStream(
                 CameraStreamCommand::RemoveNode { node },

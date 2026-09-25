@@ -524,12 +524,26 @@ impl UiRenderer {
                     multiline,
                 }),
             ),
+            UiCommand::SetDrawOrder { node, order } => {
+                if self.painter.set_draw_order(node, order) {
+                    self.bump_revision();
+                }
+            }
+            UiCommand::SetVisible { node, visible } => {
+                if self.painter.set_visible(node, visible) {
+                    self.bump_revision();
+                }
+            }
             UiCommand::RemoveNode { node } => {
-                if self.nodes.remove(&node).is_some() {
+                let order_removed = self.painter.remove_draw_order(node);
+                let visibility_removed = self.painter.remove_visibility(node);
+                if self.nodes.remove(&node).is_some() || order_removed || visibility_removed {
                     self.bump_revision();
                 }
             }
             UiCommand::Clear => {
+                self.painter.clear_draw_orders();
+                self.painter.clear_visibility();
                 if !self.nodes.is_empty() {
                     self.nodes.clear();
                     self.bump_revision();
@@ -638,6 +652,72 @@ mod tests {
         let paint = renderer.prepare_paint([800.0, 600.0]);
 
         assert!(!paint.primitives.is_empty());
+    }
+
+    #[test]
+    fn visibility_toggle_keeps_retained_mesh_hot() {
+        let mut renderer = UiRenderer::new();
+        let node = NodeID::from_parts(11, 0);
+        renderer.submit(UiCommand::UpsertPanel {
+            node,
+            rect: UiRectState {
+                center: [100.0, 100.0],
+                size: [160.0, 80.0],
+                pivot: [0.5, 0.5],
+                rotation_radians: 0.0,
+                z_index: 0,
+            },
+            clip_rect: [0.0, 0.0, 800.0, 600.0],
+            fill: [0.2, 0.3, 0.4, 1.0],
+            fill_kind: UiFillKindState::Solid,
+            gradient: UiLinearGradientState::none(),
+            stroke: [0.0; 4],
+            stroke_width: 0.0,
+            corner_radii: UiCornerRadiiState::default(),
+            outer_shadow: UiDepthEffectState::none(),
+            inner_shadow: UiDepthEffectState::none(),
+            outer_highlight: UiDepthEffectState::none(),
+            inner_highlight: UiDepthEffectState::none(),
+        });
+
+        let original = renderer
+            .prepare_paint([800.0, 600.0])
+            .primitives
+            .iter()
+            .map(Arc::as_ptr)
+            .collect::<Vec<_>>();
+        assert!(!original.is_empty());
+
+        renderer.submit(UiCommand::SetVisible {
+            node,
+            visible: false,
+        });
+        let hidden_revision = renderer.revision();
+        renderer.submit(UiCommand::SetVisible {
+            node,
+            visible: false,
+        });
+        assert_eq!(renderer.revision(), hidden_revision);
+        assert!(renderer.prepare_paint([800.0, 600.0]).primitives.is_empty());
+        assert_eq!(renderer.retained_count(), 1);
+
+        renderer.submit(UiCommand::SetVisible {
+            node,
+            visible: true,
+        });
+        let visible_revision = renderer.revision();
+        renderer.submit(UiCommand::SetVisible {
+            node,
+            visible: true,
+        });
+        assert_eq!(renderer.revision(), visible_revision);
+        let restored = renderer
+            .prepare_paint([800.0, 600.0])
+            .primitives
+            .iter()
+            .map(Arc::as_ptr)
+            .collect::<Vec<_>>();
+        assert_eq!(restored, original);
     }
 
     #[test]

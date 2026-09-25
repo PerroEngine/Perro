@@ -723,6 +723,8 @@ pub struct PerroGraphics {
     // a first write or resolution change falls back to the full reload path.
     stream_texture_dims: AHashMap<TextureID, [u32; 2]>,
     retained_camera_streams: Vec<(NodeID, Arc<CameraStreamState>)>,
+    suspended_camera_streams: ahash::AHashSet<NodeID>,
+    pending_camera_stream_resumes: Vec<NodeID>,
     // streams whose retained state changed since the last presented frame;
     // feeds the gpu-side per-stream idle skip (no per-frame deep compare).
     camera_stream_states_changed: ahash::AHashSet<NodeID>,

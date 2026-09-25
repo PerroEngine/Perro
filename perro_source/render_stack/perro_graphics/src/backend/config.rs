@@ -90,6 +90,8 @@ impl PerroGraphics {
             camera_stream_targets: AHashMap::new(),
             stream_texture_dims: AHashMap::new(),
             retained_camera_streams: Vec::new(),
+            suspended_camera_streams: ahash::AHashSet::new(),
+            pending_camera_stream_resumes: Vec::new(),
             camera_stream_states_changed: ahash::AHashSet::new(),
             frame_rects_cache: Vec::new(),
             late_overlay_sprites_cache: Vec::new(),

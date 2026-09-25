@@ -1075,6 +1075,7 @@ pub struct RenderFrame<'a> {
     pub decals_3d: &'a [(NodeID, Decal3DState)],
     pub decals_3d_revision: u64,
     pub camera_streams: &'a [(NodeID, Arc<CameraStreamState>)],
+    pub suspended_camera_streams: &'a ahash::AHashSet<NodeID>,
     pub camera_2d: Camera2DUniform,
     pub post_processing_2d: Arc<[perro_structs::PostProcessEffect]>,
     pub post_processing_global: Arc<[perro_structs::PostProcessEffect]>,

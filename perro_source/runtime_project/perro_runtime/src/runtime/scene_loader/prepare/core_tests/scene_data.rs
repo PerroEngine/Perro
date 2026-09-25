@@ -826,6 +826,40 @@ mod scene_data {
     }
 
     #[test]
+    fn scene_loader_applies_ui_own_tint_once() {
+        let scene = Parser::new(
+            r##"
+            $root = @panel
+            [panel]
+            [UiNineSlice]
+                texture = "res://ui/panel.png"
+                tint = "#80404080"
+            [/UiNineSlice]
+            [/panel]
+            "##,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+        let panel = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "panel")
+            .expect("panel node");
+        match &panel.node.data {
+            SceneNodeData::UiNineSlice(node) => {
+                // `tint` sets the slice's own tint only; the base modulate
+                // stays default so the colour is not multiplied by itself.
+                assert_ne!(node.tint, perro_ui::UiNineSlice::new().tint);
+                assert_eq!(node.base.modulate.modulate, perro_ui::UiNineSlice::new().base.modulate.modulate);
+            }
+            other => panic!("expected UiNineSlice node, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn scene_loader_accepts_layer_arrays_for_bitmasks() {
         let scene = Parser::new(
             r#"

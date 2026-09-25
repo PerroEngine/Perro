@@ -1,20 +1,44 @@
 use super::*;
 
 pub(super) fn apply_ui_root_data(target: &mut UiNode, data: &SceneDefNodeData) {
+    apply_ui_root_data_with(target, data, false);
+}
+
+/// Base data for nodes with their own tint (images, nine-slices, video):
+/// bare `tint` belongs to the node's tint, not the base modulate.
+pub(super) fn apply_ui_root_data_owning_tint(target: &mut UiNode, data: &SceneDefNodeData) {
+    apply_ui_root_data_with(target, data, true);
+}
+
+fn apply_ui_root_data_with(target: &mut UiNode, data: &SceneDefNodeData, owns_tint: bool) {
     if let Some(base) = data.base_ref() {
-        apply_ui_root_data(target, base);
+        apply_ui_root_data_with(target, base, owns_tint);
     }
-    apply_ui_root_fields(target, &data.fields);
+    apply_ui_root_fields_with(target, &data.fields, owns_tint);
 }
 
 pub(super) fn apply_ui_root_fields(node: &mut UiNode, fields: &[SceneObjectField]) {
+    apply_ui_root_fields_with(node, fields, false);
+}
+
+/// Root fields for nodes with their own tint; see `apply_ui_root_data_owning_tint`.
+pub(super) fn apply_ui_root_fields_owning_tint(node: &mut UiNode, fields: &[SceneObjectField]) {
+    apply_ui_root_fields_with(node, fields, true);
+}
+
+fn apply_ui_root_fields_with(node: &mut UiNode, fields: &[SceneObjectField], owns_tint: bool) {
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
         "visible" => {
             if let Some(v) = as_bool(value) {
                 node.visible = v;
             }
         }
-        "modulate" | "tint" => {
+        "modulate" => {
+            if let Some(v) = as_scene_color(value) {
+                node.modulate.modulate = v;
+            }
+        }
+        "tint" if !owns_tint => {
             if let Some(v) = as_scene_color(value) {
                 node.modulate.modulate = v;
             }
@@ -494,7 +518,7 @@ pub(super) fn apply_ui_image_button_state_fields(
         };
         let mut base = node.base.clone();
         let size_override = ui_state_has_explicit_size_override(entries.as_ref());
-        apply_ui_root_fields(&mut base, entries.as_ref());
+        apply_ui_root_fields_owning_tint(&mut base, entries.as_ref());
         match state_name {
             "hover" => {
                 if let Some(tint) = ui_state_tint(entries.as_ref()) {
@@ -517,7 +541,7 @@ pub(super) fn apply_ui_image_button_state_fields(
 
 pub(super) fn ui_state_tint(fields: &[SceneObjectField]) -> Option<Color> {
     fields.iter().find_map(|(name, value)| match name.as_ref() {
-        name if scene_key_in(name, COLOR_MODULATE_KEYS) => as_scene_color(value),
+        name if scene_key_in(name, UI_OWN_TINT_KEYS) => as_scene_color(value),
         _ => None,
     })
 }

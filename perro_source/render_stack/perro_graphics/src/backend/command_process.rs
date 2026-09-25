@@ -30,6 +30,8 @@ impl PerroGraphics {
                         }
                     }
                     CameraStreamCommand::RemoveNode { node } => {
+                        self.suspended_camera_streams.remove(&node);
+                        self.pending_camera_stream_resumes.retain(|id| *id != node);
                         self.camera_stream_states_changed.remove(&node);
                         let output_texture = self
                             .retained_camera_streams
@@ -60,6 +62,19 @@ impl PerroGraphics {
                             self.events
                                 .push(RenderEvent::TextureDropped { id: output_texture });
                         }
+                    }
+                    CameraStreamCommand::SuspendNode { node } => {
+                        self.pending_camera_stream_resumes.retain(|id| *id != node);
+                        self.suspended_camera_streams.insert(node);
+                        self.redraw_requested = true;
+                    }
+                    CameraStreamCommand::ResumeNode { node } => {
+                        if self.suspended_camera_streams.contains(&node)
+                            && !self.pending_camera_stream_resumes.contains(&node)
+                        {
+                            self.pending_camera_stream_resumes.push(node);
+                        }
+                        self.redraw_requested = true;
                     }
                 },
                 RenderCommand::Resource(resource_cmd) => match *resource_cmd {

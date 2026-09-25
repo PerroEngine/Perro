@@ -452,6 +452,12 @@ pub enum CameraStreamCommand {
     RemoveNode {
         node: NodeID,
     },
+    SuspendNode {
+        node: NodeID,
+    },
+    ResumeNode {
+        node: NodeID,
+    },
 }
 
 pub trait RenderBridge {

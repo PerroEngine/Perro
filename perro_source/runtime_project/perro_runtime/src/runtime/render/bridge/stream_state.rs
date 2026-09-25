@@ -347,9 +347,10 @@ impl Runtime {
                 _ => continue,
             };
             if !self.is_effectively_visible(node) {
-                self.queue_camera_stream_remove(node);
+                self.queue_camera_stream_suspend(node);
                 continue;
             }
+            self.queue_camera_stream_resume(node);
             if let Some(state) = self.sub_view_state(node, &view, auto_size) {
                 self.queue_camera_stream_upsert(node, Arc::new(state));
             } else {

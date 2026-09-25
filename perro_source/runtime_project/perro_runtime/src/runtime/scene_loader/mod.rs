@@ -915,6 +915,8 @@ impl Runtime {
         self.render_ui.computed_scales.clear();
         self.render_ui.auto_layout_computed.clear();
         self.render_ui.retained_commands.clear();
+        self.render_ui.sent_draw_orders.clear();
+        self.render_ui.hidden_render_nodes.clear();
         self.render_ui.retained_rects.clear();
         self.render_ui.button_states.clear();
         self.render_ui.focused_ui_node = None;

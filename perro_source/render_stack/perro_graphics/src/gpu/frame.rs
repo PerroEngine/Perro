@@ -34,6 +34,7 @@ impl Gpu {
             decals_3d,
             decals_3d_revision,
             camera_streams,
+            suspended_camera_streams,
             camera_2d,
             post_processing_2d,
             post_processing_global,
@@ -651,9 +652,16 @@ impl Gpu {
                 a: 1.0,
             })
         };
-        timing.stream_count = camera_streams.len().min(u32::MAX as usize) as u32;
+        timing.stream_count = camera_streams
+            .iter()
+            .filter(|(node, _)| !suspended_camera_streams.contains(node))
+            .count()
+            .min(u32::MAX as usize) as u32;
         let stream_loop_start = Instant::now();
         for (node, stream) in camera_streams {
+            if suspended_camera_streams.contains(node) {
+                continue;
+            }
             let stream_reentered = !self.camera_stream_content_revisions.contains_key(node);
             // per-stream idle skip: unchanged state + nothing animating inside
             // => keep last rendered target texture, encode no passes. main

@@ -412,7 +412,14 @@ pub(crate) struct EpaintUiPainter {
     // from. Reused when the structure (id set / z-order) is unchanged, so a
     // content-only edit skips the re-sort.
     ordered_nodes: Vec<NodeID>,
-    order_signature: Vec<(NodeID, i32)>,
+    order_signature: Vec<(NodeID, i32, u64)>,
+    // Spawn-order rank per node (from `UiCommand::SetDrawOrder`). Breaks
+    // equal-z ties so siblings draw in creation order; node ids are
+    // recycled slots and would reorder siblings after any despawn.
+    draw_orders: AHashMap<NodeID, u64>,
+    // Hidden draws stay cached so a visibility toggle only rebuilds the
+    // primitive list; showing them again does not re-tessellate their mesh.
+    hidden_nodes: ahash::AHashSet<NodeID>,
     // Font-atlas size the node cache was tessellated against; any size change
     // (growth or epaint's fill-triggered recreation) invalidates every cached
     // primitive's glyph UVs.
@@ -452,6 +459,8 @@ impl EpaintUiPainter {
             node_cache: AHashMap::new(),
             ordered_nodes: Vec::new(),
             order_signature: Vec::new(),
+            draw_orders: AHashMap::new(),
+            hidden_nodes: ahash::AHashSet::default(),
             node_cache_atlas_size: [0, 0],
             node_cache_harfbuzz_epoch: (0, [0, 0]),
             textures_delta: TexturesDelta::default(),
@@ -566,16 +575,58 @@ impl EpaintUiPainter {
             .extend((shape_start..self.shapes.len()).map(|_| (rotation, origin)));
     }
 
-    /// True when the cached sorted order is still valid: same node set and same
-    /// per-node z_index (insertion order tiebreak is stable under id equality).
+    /// Returns true when the stored rank changed.
+    pub(crate) fn set_draw_order(&mut self, node: NodeID, order: u64) -> bool {
+        self.draw_orders.insert(node, order) != Some(order)
+    }
+
+    pub(crate) fn remove_draw_order(&mut self, node: NodeID) -> bool {
+        self.draw_orders.remove(&node).is_some()
+    }
+
+    pub(crate) fn clear_draw_orders(&mut self) {
+        self.draw_orders.clear();
+    }
+
+    /// Returns true when retained visibility changed.
+    pub(crate) fn set_visible(&mut self, node: NodeID, visible: bool) -> bool {
+        if visible {
+            self.hidden_nodes.remove(&node)
+        } else {
+            self.hidden_nodes.insert(node)
+        }
+    }
+
+    pub(crate) fn remove_visibility(&mut self, node: NodeID) -> bool {
+        self.hidden_nodes.remove(&node)
+    }
+
+    pub(crate) fn clear_visibility(&mut self) {
+        self.hidden_nodes.clear();
+    }
+
+    /// Unranked nodes (engine-internal draws) sort after ranked ones at the
+    /// same z, then by id.
+    fn draw_order(&self, node: NodeID) -> u64 {
+        self.draw_orders.get(&node).copied().unwrap_or(u64::MAX)
+    }
+
+    /// True when the cached sorted order is still valid: same node set, same
+    /// per-node z_index and same spawn rank.
     fn order_matches(&self, nodes: &AHashMap<NodeID, UiDraw>) -> bool {
-        if self.order_signature.len() != nodes.len() {
+        let visible_count = nodes
+            .keys()
+            .filter(|node| !self.hidden_nodes.contains(node))
+            .count();
+        if self.order_signature.len() != visible_count {
             return false;
         }
-        self.order_signature.iter().all(|(node, z)| {
-            nodes
-                .get(node)
-                .is_some_and(|draw| ui_rect(draw).z_index == *z)
+        self.order_signature.iter().all(|(node, z, order)| {
+            !self.hidden_nodes.contains(node)
+                && nodes
+                    .get(node)
+                    .is_some_and(|draw| ui_rect(draw).z_index == *z)
+                && self.draw_order(*node) == *order
         })
     }
 
@@ -606,11 +657,20 @@ impl EpaintUiPainter {
         // content edit (e.g. color, text) leaves the order signature intact.
         if !self.order_matches(nodes) {
             self.ordered_nodes.clear();
-            self.ordered_nodes.extend(nodes.keys().copied());
+            self.ordered_nodes.extend(
+                nodes
+                    .keys()
+                    .filter(|node| !self.hidden_nodes.contains(node))
+                    .copied(),
+            );
+            let draw_orders = &self.draw_orders;
+            let rank = |node: &NodeID| draw_orders.get(node).copied().unwrap_or(u64::MAX);
             self.ordered_nodes.sort_unstable_by(|a, b| {
                 let za = nodes.get(a).map(|d| ui_rect(d).z_index).unwrap_or(0);
                 let zb = nodes.get(b).map(|d| ui_rect(d).z_index).unwrap_or(0);
-                za.cmp(&zb).then_with(|| a.as_u64().cmp(&b.as_u64()))
+                za.cmp(&zb)
+                    .then_with(|| rank(a).cmp(&rank(b)))
+                    .then_with(|| a.as_u64().cmp(&b.as_u64()))
             });
             self.order_signature.clear();
             self.order_signature
@@ -618,6 +678,7 @@ impl EpaintUiPainter {
                     (
                         *node,
                         nodes.get(node).map(|d| ui_rect(d).z_index).unwrap_or(0),
+                        rank(node),
                     )
                 }));
         }
@@ -1359,6 +1420,53 @@ mod tests {
         assert_eq!(first.pos.x, second.pos.x);
         let width_ratio = second.galley.mesh_bounds.width() / first.galley.mesh_bounds.width();
         assert!((width_ratio - 12.2 / 12.0).abs() < 1.0e-3);
+    }
+
+    #[test]
+    fn equal_z_nodes_draw_in_spawn_order_not_slot_order() {
+        let label = |text: &str| {
+            UiDraw::Label(UiLabelDraw {
+                rect: UiRectState {
+                    center: [0.0, 0.0],
+                    size: [240.0, 80.0],
+                    pivot: [0.5, 0.5],
+                    rotation_radians: 0.0,
+                    z_index: 0,
+                },
+                clip_rect: [0.0, 0.0, 800.0, 600.0],
+                text: Arc::from(text),
+                color: perro_structs::Color::WHITE,
+                font_size: 12.0,
+                raster_font_size: None,
+                font: UiFont::Default,
+                wrap_width: None,
+                h_align: UiTextAlignState::Center,
+                v_align: UiTextAlignState::Center,
+                backdrop_color: perro_structs::Color::TRANSPARENT,
+                corner_radii: UiCornerRadiiState::default(),
+                padding: [0.0; 4],
+                projected_quad: None,
+                depth_test: false,
+                fit_content: false,
+            })
+        };
+        // Recycled slots: the older node sits in a higher slot, the newer
+        // one in a lower slot. Id order would draw them backwards.
+        let older = NodeID::from_parts(9, 0);
+        let newer = NodeID::from_parts(3, 1);
+        let mut nodes = AHashMap::new();
+        nodes.insert(older, label("back"));
+        nodes.insert(newer, label("front"));
+        let mut painter = EpaintUiPainter::new();
+        painter.set_draw_order(older, 10);
+        painter.set_draw_order(newer, 11);
+        painter.paint(&nodes, 1, [800.0, 600.0]);
+        assert_eq!(painter.ordered_nodes, vec![older, newer]);
+
+        // A rank change alone must invalidate the cached order.
+        painter.set_draw_order(older, 12);
+        painter.paint(&nodes, 2, [800.0, 600.0]);
+        assert_eq!(painter.ordered_nodes, vec![newer, older]);
     }
 
     #[test]

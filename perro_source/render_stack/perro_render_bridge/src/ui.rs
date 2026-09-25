@@ -242,6 +242,17 @@ pub enum UiCommand {
         focused: bool,
         multiline: bool,
     },
+    /// Spawn-order rank for `node`. Breaks ties between equal-z nodes so
+    /// siblings draw in creation order instead of recycled-slot id order.
+    SetDrawOrder {
+        node: NodeID,
+        order: u64,
+    },
+    /// Toggle one retained draw without dropping its cached geometry.
+    SetVisible {
+        node: NodeID,
+        visible: bool,
+    },
     RemoveNode {
         node: NodeID,
     },

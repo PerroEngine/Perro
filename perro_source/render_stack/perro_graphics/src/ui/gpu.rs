@@ -639,38 +639,90 @@ impl GpuUi {
         render_viewport: [u32; 2],
         render_scale: [f32; 2],
     ) -> Option<Vec<[u32; 4]>> {
-        if self.signature_pins.len() != primitives.len()
-            || self.prepared_primitive_bounds.len() != primitives.len()
-        {
+        if self.signature_pins.len() != self.prepared_primitive_bounds.len() {
             return None;
         }
         let mut origins = AHashSet::new();
         let mut changed = false;
-        for (index, (old, new)) in self.signature_pins.iter().zip(primitives).enumerate() {
-            if Arc::ptr_eq(old, new) {
-                continue;
+        let mut add_bounds = |bounds: [u32; 4]| {
+            let max_x = bounds[0].saturating_add(bounds[2]).min(render_viewport[0]);
+            let max_y = bounds[1].saturating_add(bounds[3]).min(render_viewport[1]);
+            if max_x <= bounds[0] || max_y <= bounds[1] {
+                return;
             }
-            changed = true;
-            let old_bounds = self.prepared_primitive_bounds[index]?;
-            let new_bounds = primitive_render_bounds(new, render_viewport, render_scale)?;
-            let min_x = old_bounds[0].min(new_bounds[0]);
-            let min_y = old_bounds[1].min(new_bounds[1]);
-            let old_max_x = old_bounds[0].saturating_add(old_bounds[2]);
-            let old_max_y = old_bounds[1].saturating_add(old_bounds[3]);
-            let new_max_x = new_bounds[0].saturating_add(new_bounds[2]);
-            let new_max_y = new_bounds[1].saturating_add(new_bounds[3]);
-            let max_x = old_max_x.max(new_max_x).min(render_viewport[0]);
-            let max_y = old_max_y.max(new_max_y).min(render_viewport[1]);
-            if max_x <= min_x || max_y <= min_y {
-                return None;
-            }
-            let tile_x0 = min_x / UI_DIRTY_TILE_SIZE;
-            let tile_y0 = min_y / UI_DIRTY_TILE_SIZE;
+            let tile_x0 = bounds[0] / UI_DIRTY_TILE_SIZE;
+            let tile_y0 = bounds[1] / UI_DIRTY_TILE_SIZE;
             let tile_x1 = (max_x.saturating_sub(1)) / UI_DIRTY_TILE_SIZE;
             let tile_y1 = (max_y.saturating_sub(1)) / UI_DIRTY_TILE_SIZE;
             for tile_y in tile_y0..=tile_y1 {
                 for tile_x in tile_x0..=tile_x1 {
                     origins.insert((tile_x, tile_y));
+                }
+            }
+        };
+        if self.signature_pins.len() == primitives.len() {
+            for (index, (old, new)) in self.signature_pins.iter().zip(primitives).enumerate() {
+                if Arc::ptr_eq(old, new) {
+                    continue;
+                }
+                changed = true;
+                let old_bounds = self.prepared_primitive_bounds[index]?;
+                let new_bounds = primitive_render_bounds(new, render_viewport, render_scale)?;
+                let min_x = old_bounds[0].min(new_bounds[0]);
+                let min_y = old_bounds[1].min(new_bounds[1]);
+                let old_max_x = old_bounds[0].saturating_add(old_bounds[2]);
+                let old_max_y = old_bounds[1].saturating_add(old_bounds[3]);
+                let new_max_x = new_bounds[0].saturating_add(new_bounds[2]);
+                let new_max_y = new_bounds[1].saturating_add(new_bounds[3]);
+                add_bounds([
+                    min_x,
+                    min_y,
+                    old_max_x.max(new_max_x).saturating_sub(min_x),
+                    old_max_y.max(new_max_y).saturating_sub(min_y),
+                ]);
+            }
+        } else {
+            // Visibility toggles add/remove cached primitives while preserving
+            // the relative order of survivors. Dirty only the disappeared or
+            // restored coverage instead of forcing a full-target raster.
+            let old_ptrs: Vec<usize> = self
+                .signature_pins
+                .iter()
+                .map(|primitive| Arc::as_ptr(primitive) as usize)
+                .collect();
+            let new_ptrs: Vec<usize> = primitives
+                .iter()
+                .map(|primitive| Arc::as_ptr(primitive) as usize)
+                .collect();
+            let old_set: AHashSet<usize> = old_ptrs.iter().copied().collect();
+            let new_set: AHashSet<usize> = new_ptrs.iter().copied().collect();
+            let old_common: Vec<usize> = old_ptrs
+                .iter()
+                .copied()
+                .filter(|ptr| new_set.contains(ptr))
+                .collect();
+            let new_common: Vec<usize> = new_ptrs
+                .iter()
+                .copied()
+                .filter(|ptr| old_set.contains(ptr))
+                .collect();
+            if old_common != new_common {
+                return None;
+            }
+            for (index, ptr) in old_ptrs.iter().copied().enumerate() {
+                if !new_set.contains(&ptr) {
+                    changed = true;
+                    add_bounds(self.prepared_primitive_bounds[index]?);
+                }
+            }
+            for (primitive, ptr) in primitives.iter().zip(new_ptrs) {
+                if !old_set.contains(&ptr) {
+                    changed = true;
+                    add_bounds(primitive_render_bounds(
+                        primitive,
+                        render_viewport,
+                        render_scale,
+                    )?);
                 }
             }
         }

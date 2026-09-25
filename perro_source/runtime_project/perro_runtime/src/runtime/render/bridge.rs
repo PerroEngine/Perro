@@ -301,10 +301,29 @@ impl Runtime {
 
     pub(crate) fn queue_camera_stream_remove(&mut self, node: NodeID) {
         if self.extraction.camera_stream_active.remove(&node) {
+            self.extraction.camera_stream_suspended.remove(&node);
             self.queue_render_command(RenderCommand::CameraStream(
                 CameraStreamCommand::RemoveNode { node },
             ));
             self.resource_api.release_camera_capture_texture(node);
+        }
+    }
+
+    pub(crate) fn queue_camera_stream_suspend(&mut self, node: NodeID) {
+        if self.extraction.camera_stream_active.contains(&node)
+            && self.extraction.camera_stream_suspended.insert(node)
+        {
+            self.queue_render_command(RenderCommand::CameraStream(
+                CameraStreamCommand::SuspendNode { node },
+            ));
+        }
+    }
+
+    pub(crate) fn queue_camera_stream_resume(&mut self, node: NodeID) {
+        if self.extraction.camera_stream_suspended.remove(&node) {
+            self.queue_render_command(RenderCommand::CameraStream(
+                CameraStreamCommand::ResumeNode { node },
+            ));
         }
     }
 

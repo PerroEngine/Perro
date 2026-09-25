@@ -330,7 +330,7 @@ mod layout {
         runtime.drain_render_commands(&mut commands);
         assert!(commands.iter().any(|cmd| matches!(
             cmd,
-            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::RemoveNode { node } if *node == button))));
+            RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::SetVisible { node, visible: false } if *node == button))));
     }
 
     #[test]

@@ -1,6 +1,22 @@
 use super::*;
 
 impl Runtime {
+    pub(super) fn set_retained_ui_visibility(&mut self, node: NodeID, visible: bool) {
+        let changed = if visible {
+            self.render_ui.hidden_render_nodes.remove(&node)
+        } else if self.render_ui.retained_commands.contains_key(&node) {
+            self.render_ui.hidden_render_nodes.insert(node)
+        } else {
+            false
+        };
+        if changed {
+            self.queue_render_command(RenderCommand::Ui(Box::new(UiCommand::SetVisible {
+                node,
+                visible,
+            })));
+        }
+    }
+
     pub(super) fn ui_pixel_snapping_enabled(&self) -> bool {
         self.project()
             .map(|project| project.config.rendering.ui.pixel_snapping)
@@ -297,7 +313,9 @@ impl Runtime {
             self.render_ui.active_scrollbar = None;
             self.render_ui.scrollbar_drag_offset = 0.0;
         }
-        if self.render_ui.retained_commands.remove(&node).is_some() {
+        let had_order = self.render_ui.sent_draw_orders.remove(&node).is_some();
+        let was_hidden = self.render_ui.hidden_render_nodes.remove(&node);
+        if self.render_ui.retained_commands.remove(&node).is_some() || had_order || was_hidden {
             self.queue_render_command(RenderCommand::Ui(Box::new(UiCommand::RemoveNode { node })));
         }
         // A deleted color picker never reaches the wheel emit pass again, so its
@@ -321,7 +339,16 @@ impl Runtime {
             }
         }
         for node in to_remove.iter().copied() {
-            self.remove_retained_ui_node(node);
+            let keep_hot = self
+                .nodes
+                .get(node)
+                .is_some_and(|scene_node| ui_root_from_data(&scene_node.data).is_some())
+                && !self.is_effectively_visible_for_ui(node);
+            if keep_hot {
+                self.set_retained_ui_visibility(node, false);
+            } else {
+                self.remove_retained_ui_node(node);
+            }
         }
         to_remove.clear();
         self.render_ui.removed_visible_scratch = to_remove;

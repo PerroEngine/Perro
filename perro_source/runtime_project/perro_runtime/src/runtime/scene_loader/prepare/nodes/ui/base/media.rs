@@ -56,7 +56,7 @@ pub(super) fn apply_ui_label_fields(node: &mut UiLabel, fields: &[SceneObjectFie
 
 pub(super) fn apply_ui_image_fields(node: &mut UiImage, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
-        name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
+        name if scene_key_in(name, UI_OWN_TINT_KEYS) => {
             if let Some(v) = as_scene_color(value) {
                 node.tint = v;
             }
@@ -122,7 +122,7 @@ pub(super) fn apply_ui_image_fields(node: &mut UiImage, fields: &[SceneObjectFie
 
 pub(super) fn apply_ui_nine_slice_fields(node: &mut UiNineSlice, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
-        name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
+        name if scene_key_in(name, UI_OWN_TINT_KEYS) => {
             if let Some(v) = as_scene_color(value) {
                 node.tint = v;
             }
@@ -170,7 +170,7 @@ pub(super) fn apply_ui_nine_slice_button_fields(
                 node.cursor_icon = v;
             }
         }
-        name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
+        name if scene_key_in(name, UI_OWN_TINT_KEYS) => {
             if let Some(v) = as_scene_color(value) {
                 node.tint = v;
             }
@@ -223,7 +223,7 @@ pub(super) fn apply_ui_nine_slice_button_state_fields(
         };
         let mut base = node.base.clone();
         let size_override = ui_state_has_explicit_size_override(entries.as_ref());
-        apply_ui_root_fields(&mut base, entries.as_ref());
+        apply_ui_root_fields_owning_tint(&mut base, entries.as_ref());
         let tint = ui_state_tint(entries.as_ref());
         match state_name {
             "hover" => {
@@ -255,7 +255,7 @@ pub(super) fn apply_ui_image_button_image_fields(
             return;
         };
         match field {
-            name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
+            name if scene_key_in(name, UI_OWN_TINT_KEYS) => {
                 if let Some(v) = as_scene_color(value) {
                     match prefix {
                         "hover_" => node.hover_tint = v,
@@ -373,7 +373,7 @@ pub(super) fn apply_ui_animated_image_fields(
                 }
             }
             _ => match name {
-                name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
+                name if scene_key_in(name, UI_OWN_TINT_KEYS) => {
                     if let Some(v) = as_scene_color(value) {
                         node.tint = v;
                     }

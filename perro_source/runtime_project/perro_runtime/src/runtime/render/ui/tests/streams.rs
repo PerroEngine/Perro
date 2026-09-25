@@ -764,6 +764,87 @@ mod streams {
     }
 
     #[test]
+    fn hidden_ui_sub_view_keeps_its_retained_stream_target() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+        let viewport = NodeAPI::create::<UiSubView>(&mut runtime);
+        let local_mesh = NodeAPI::create::<MeshInstance3D>(&mut runtime);
+        assert!(runtime.reparent(viewport, local_mesh));
+        if let Some(mut node) = runtime.nodes.get_mut(viewport)
+            && let SceneNodeData::UiSubView(data) = &mut node.data
+        {
+            data.layout.size = UiVector2::pixels(320.0, 180.0);
+        }
+
+        runtime.extract_render_ui_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, .. })
+                if *node == viewport
+        )));
+
+        runtime.clear_dirty_flags();
+        if let Some(mut node) = runtime.nodes.get_mut(viewport)
+            && let SceneNodeData::UiSubView(data) = &mut node.data
+        {
+            data.visible = false;
+        }
+        runtime.mark_ui_dirty(
+            viewport,
+            Runtime::UI_DIRTY_LAYOUT_SELF | Runtime::UI_DIRTY_COMMANDS,
+        );
+        runtime.extract_render_ui_commands();
+        commands.clear();
+        runtime.drain_render_commands(&mut commands);
+        assert!(!commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::CameraStream(CameraStreamCommand::RemoveNode { node })
+                if *node == viewport
+        )));
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::CameraStream(CameraStreamCommand::SuspendNode { node })
+                if *node == viewport
+        )));
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::Ui(command)
+                if matches!(command.as_ref(), UiCommand::SetVisible { node, visible: false } if *node == viewport)
+        )));
+
+        runtime.clear_dirty_flags();
+        if let Some(mut node) = runtime.nodes.get_mut(viewport)
+            && let SceneNodeData::UiSubView(data) = &mut node.data
+        {
+            data.visible = true;
+        }
+        runtime.mark_ui_dirty(
+            viewport,
+            Runtime::UI_DIRTY_LAYOUT_SELF | Runtime::UI_DIRTY_COMMANDS,
+        );
+        runtime.extract_render_ui_commands();
+        commands.clear();
+        runtime.drain_render_commands(&mut commands);
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::Ui(command)
+                if matches!(command.as_ref(), UiCommand::SetVisible { node, visible: true } if *node == viewport)
+        )));
+        assert!(!commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::CameraStream(CameraStreamCommand::RemoveNode { node })
+                if *node == viewport
+        )));
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::CameraStream(CameraStreamCommand::ResumeNode { node })
+                if *node == viewport
+        )));
+    }
+
+    #[test]
     fn ui_viewport_rebuilds_draws_after_mesh_resource_event() {
         let mut runtime = Runtime::new();
         runtime.set_viewport_size(800, 600);

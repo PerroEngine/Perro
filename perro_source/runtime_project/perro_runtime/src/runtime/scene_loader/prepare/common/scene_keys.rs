@@ -1,4 +1,7 @@
 const COLOR_MODULATE_KEYS: &[&str] = &["tint", "color", "modulate"];
+/// Keys for a UI node's own tint. `modulate` stays on the node base, so a
+/// scene `tint`/`color` is applied once instead of multiplied by itself.
+const UI_OWN_TINT_KEYS: &[&str] = &["tint", "color"];
 const TEXT_COLOR_KEYS: &[&str] = &["color", "text_color", "modulate", "tint"];
 const TEXTURE_REGION_KEYS: &[&str] = &["texture_region", "region", "atlas_region"];
 const FLIP_X_KEYS: &[&str] = &["flip_x", "flip_h", "mirror_x"];

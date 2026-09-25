@@ -932,6 +932,84 @@ fn dirty_tile_pixels_match_full_raster_with_interleaved_z() {
 }
 
 #[test]
+fn hide_show_topology_uses_dirty_tiles_and_matches_full_raster() {
+    pollster::block_on(async {
+        let Some((device, queue)) = test_device().await else {
+            eprintln!("skip UI visibility dirty tile test: no wgpu adapter");
+            return;
+        };
+        let viewport = [1024, 768];
+        let mut atlas = TexturesDelta::default();
+        atlas.set.push((
+            TextureId::default(),
+            epaint::ImageDelta::full(
+                epaint::ColorImage::new([1, 1], vec![Color32::WHITE]),
+                epaint::textures::TextureOptions::NEAREST,
+            ),
+        ));
+        let visible = vec![
+            colored_rect(
+                0.0,
+                700.0,
+                TextureId::default(),
+                Color32::from_rgb(20, 30, 80),
+            ),
+            colored_rect(12.0, 44.0, TextureId::default(), Color32::RED),
+            colored_rect(32.0, 64.0, TextureId::default(), Color32::GREEN),
+        ];
+        let hidden = vec![visible[0].clone(), visible[2].clone()];
+
+        let mut partial = GpuUi::new(&device, OUTPUT_FORMAT, TextureFilterMode::Linear);
+        render_ui_pixels_at(&mut partial, &device, &queue, &visible, &atlas, 1, viewport);
+        let hidden_pixels = render_ui_pixels_at(
+            &mut partial,
+            &device,
+            &queue,
+            &hidden,
+            &TexturesDelta::default(),
+            2,
+            viewport,
+        );
+        assert_eq!(partial.ui_partial_redraws(), 1);
+
+        let mut hidden_full = GpuUi::new(&device, OUTPUT_FORMAT, TextureFilterMode::Linear);
+        let hidden_full_pixels = render_ui_pixels_at(
+            &mut hidden_full,
+            &device,
+            &queue,
+            &hidden,
+            &atlas,
+            2,
+            viewport,
+        );
+        assert_eq!(hidden_pixels, hidden_full_pixels);
+
+        let shown_pixels = render_ui_pixels_at(
+            &mut partial,
+            &device,
+            &queue,
+            &visible,
+            &TexturesDelta::default(),
+            3,
+            viewport,
+        );
+        assert_eq!(partial.ui_partial_redraws(), 2);
+
+        let mut shown_full = GpuUi::new(&device, OUTPUT_FORMAT, TextureFilterMode::Linear);
+        let shown_full_pixels = render_ui_pixels_at(
+            &mut shown_full,
+            &device,
+            &queue,
+            &visible,
+            &atlas,
+            3,
+            viewport,
+        );
+        assert_eq!(shown_pixels, shown_full_pixels);
+    });
+}
+
+#[test]
 fn shrink_tick_decays_buffers_and_releases_the_target() {
     pollster::block_on(async {
         let Some((device, queue)) = test_device().await else {

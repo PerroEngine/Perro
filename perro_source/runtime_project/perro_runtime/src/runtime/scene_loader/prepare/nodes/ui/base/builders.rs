@@ -145,9 +145,9 @@ pub(super) fn build_ui_label(data: &SceneDefNodeData) -> UiLabel {
 pub(super) fn build_ui_image(data: &SceneDefNodeData) -> UiImage {
     let mut node = UiImage::new();
     if let Some(base) = data.base_ref() {
-        apply_ui_root_data(&mut node.base, base);
+        apply_ui_root_data_owning_tint(&mut node.base, base);
     }
-    apply_ui_root_fields(&mut node.base, &data.fields);
+    apply_ui_root_fields_owning_tint(&mut node.base, &data.fields);
     apply_ui_image_fields(&mut node, &data.fields);
     node
 }
@@ -155,12 +155,12 @@ pub(super) fn build_ui_image(data: &SceneDefNodeData) -> UiImage {
 pub(super) fn build_ui_video_player(data: &SceneDefNodeData) -> UiVideoPlayer {
     let mut node = UiVideoPlayer::new();
     if let Some(base) = data.base_ref() {
-        apply_ui_root_data(&mut node.base, base);
+        apply_ui_root_data_owning_tint(&mut node.base, base);
     }
-    apply_ui_root_fields(&mut node.base, &data.fields);
+    apply_ui_root_fields_owning_tint(&mut node.base, &data.fields);
     apply_video_player_fields(&mut node.video, &data.fields);
     SceneFieldIterRef::new(&data.fields).for_each(|name, value| match name {
-        name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
+        name if scene_key_in(name, UI_OWN_TINT_KEYS) => {
             if let Some(v) = as_scene_color(value) {
                 node.tint = v;
             }
@@ -188,9 +188,9 @@ pub(super) fn build_ui_video_player(data: &SceneDefNodeData) -> UiVideoPlayer {
 pub(super) fn build_ui_image_button(data: &SceneDefNodeData) -> UiImageButton {
     let mut node = UiImageButton::new();
     if let Some(base) = data.base_ref() {
-        apply_ui_root_data(&mut node.base, base);
+        apply_ui_root_data_owning_tint(&mut node.base, base);
     }
-    apply_ui_root_fields(&mut node.base, &data.fields);
+    apply_ui_root_fields_owning_tint(&mut node.base, &data.fields);
     apply_ui_image_button_fields(&mut node, &data.fields);
     node
 }
@@ -198,9 +198,9 @@ pub(super) fn build_ui_image_button(data: &SceneDefNodeData) -> UiImageButton {
 pub(super) fn build_ui_nine_slice_button(data: &SceneDefNodeData) -> UiNineSliceButton {
     let mut node = UiNineSliceButton::new();
     if let Some(base) = data.base_ref() {
-        apply_ui_root_data(&mut node.base, base);
+        apply_ui_root_data_owning_tint(&mut node.base, base);
     }
-    apply_ui_root_fields(&mut node.base, &data.fields);
+    apply_ui_root_fields_owning_tint(&mut node.base, &data.fields);
     apply_ui_nine_slice_button_fields(&mut node, &data.fields);
     node
 }
@@ -208,9 +208,9 @@ pub(super) fn build_ui_nine_slice_button(data: &SceneDefNodeData) -> UiNineSlice
 pub(super) fn build_ui_nine_slice(data: &SceneDefNodeData) -> UiNineSlice {
     let mut node = UiNineSlice::new();
     if let Some(base) = data.base_ref() {
-        apply_ui_root_data(&mut node.base, base);
+        apply_ui_root_data_owning_tint(&mut node.base, base);
     }
-    apply_ui_root_fields(&mut node.base, &data.fields);
+    apply_ui_root_fields_owning_tint(&mut node.base, &data.fields);
     apply_ui_nine_slice_fields(&mut node, &data.fields);
     node
 }
@@ -218,12 +218,12 @@ pub(super) fn build_ui_nine_slice(data: &SceneDefNodeData) -> UiNineSlice {
 pub(super) fn build_ui_camera_stream(data: &SceneDefNodeData) -> UiCameraStream {
     let mut node = UiCameraStream::default();
     if let Some(base) = data.base_ref() {
-        apply_ui_root_data(&mut node.base, base);
+        apply_ui_root_data_owning_tint(&mut node.base, base);
     }
-    apply_ui_root_fields(&mut node.base, &data.fields);
+    apply_ui_root_fields_owning_tint(&mut node.base, &data.fields);
     apply_camera_stream_fields(&mut node.stream, &data.fields);
     SceneFieldIterRef::new(&data.fields).for_each(|name, value| match name {
-        name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
+        name if scene_key_in(name, UI_OWN_TINT_KEYS) => {
             if let Some(v) = as_scene_color(value) {
                 node.tint = v;
             }
@@ -241,9 +241,9 @@ pub(super) fn build_ui_camera_stream(data: &SceneDefNodeData) -> UiCameraStream 
 pub(super) fn build_ui_sub_view(data: &SceneDefNodeData) -> UiSubView {
     let mut node = UiSubView::default();
     if let Some(base) = data.base_ref() {
-        apply_ui_root_data(&mut node.base, base);
+        apply_ui_root_data_owning_tint(&mut node.base, base);
     }
-    apply_ui_root_fields(&mut node.base, &data.fields);
+    apply_ui_root_fields_owning_tint(&mut node.base, &data.fields);
 
     let mut camera = Camera3D {
         projection: node.projection.clone(),
@@ -312,7 +312,7 @@ pub(super) fn build_ui_sub_view(data: &SceneDefNodeData) -> UiSubView {
                 node.view_2d_zoom = v.max(0.001);
             }
         }
-        name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
+        name if scene_key_in(name, UI_OWN_TINT_KEYS) => {
             if let Some(v) = as_scene_color(value) {
                 node.tint = v;
             }
@@ -345,9 +345,9 @@ pub(super) fn build_ui_sub_view(data: &SceneDefNodeData) -> UiSubView {
 pub(super) fn build_ui_animated_image(data: &SceneDefNodeData) -> UiAnimatedImage {
     let mut node = UiAnimatedImage::new();
     if let Some(base) = data.base_ref() {
-        apply_ui_root_data(&mut node.base, base);
+        apply_ui_root_data_owning_tint(&mut node.base, base);
     }
-    apply_ui_root_fields(&mut node.base, &data.fields);
+    apply_ui_root_fields_owning_tint(&mut node.base, &data.fields);
     apply_ui_animated_image_fields(&mut node, &data.fields);
     node
 }

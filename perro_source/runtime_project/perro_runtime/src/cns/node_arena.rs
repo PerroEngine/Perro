@@ -63,6 +63,13 @@ pub struct NodeArena {
     /// stamp no observer has ever seen, and per-node snapshot caches survive
     /// unrelated nodes' writes. Read via [`Self::node_change_stamp`].
     node_stamps: Vec<u64>,
+    /// Slot-indexed creation sequence. Set once on insert from
+    /// `next_created_seq` and never touched by later writes, so it orders
+    /// nodes by spawn time even when freed slots are reused out of order.
+    /// UI draw order uses it to break equal-z ties. Read via
+    /// [`Self::created_seq`].
+    created_seqs: Vec<u64>,
+    next_created_seq: u64,
     /// Packed read cache for child traversal. `packed_child_offsets[i]..[i+1]`
     /// indexes `packed_child_ids` for slot `i`. Writes keep `SceneNode.children`
     /// authoritative; stale caches fall back to that source until rebuilt.
@@ -310,6 +317,8 @@ impl NodeArena {
             node_types: vec![NodeType::Node],
             parents: vec![NodeID::nil()],
             node_stamps: vec![0],
+            created_seqs: vec![0],
+            next_created_seq: 1,
             packed_child_offsets: vec![0, 0],
             packed_child_ids: Vec::new(),
             packed_children_revision: 0,
@@ -344,12 +353,16 @@ impl NodeArena {
         parents.push(NodeID::nil());
         let mut node_stamps = Vec::with_capacity(capacity.saturating_add(1));
         node_stamps.push(0);
+        let mut created_seqs = Vec::with_capacity(capacity.saturating_add(1));
+        created_seqs.push(0);
         Self {
             nodes,
             generations,
             node_types,
             parents,
             node_stamps,
+            created_seqs,
+            next_created_seq: 1,
             packed_child_offsets: vec![0, 0],
             packed_child_ids: Vec::with_capacity(capacity.saturating_sub(1)),
             packed_children_revision: 0,
@@ -496,6 +509,14 @@ impl NodeArena {
         self.node_stamps.get(index).copied()
     }
 
+    /// Creation sequence of a live node: strictly increasing in spawn order
+    /// and never changed by later writes. `None` for dead ids.
+    #[inline]
+    pub fn created_seq(&self, id: NodeID) -> Option<u64> {
+        let index = self.valid_slot(id)?;
+        self.created_seqs.get(index).copied()
+    }
+
     /// Stamp one slot with the already-bumped global revision. Must run AFTER
     /// the revision bump so the value is fresh (never handed out before).
     #[inline]
@@ -539,6 +560,7 @@ impl NodeArena {
         self.node_types.reserve(additional);
         self.parents.reserve(additional);
         self.node_stamps.reserve(additional);
+        self.created_seqs.reserve(additional);
     }
 
     /// Insert a node and return its current slot/generation id.
@@ -567,6 +589,8 @@ impl NodeArena {
             // Reused slot: overwrite the previous occupant's stamp with the
             // fresh structural revision so no cache entry can match it.
             self.node_stamps[index] = self.mutation_revision;
+            self.created_seqs[index] = self.next_created_seq;
+            self.next_created_seq += 1;
             self.active_len = self.active_len.saturating_add(1);
             let generation = self.generations[index];
             NodeID::from_parts(index as u32, generation)
@@ -583,6 +607,8 @@ impl NodeArena {
             self.node_types.push(node_type);
             self.parents.push(parent);
             self.node_stamps.push(self.mutation_revision);
+            self.created_seqs.push(self.next_created_seq);
+            self.next_created_seq += 1;
             self.active_len = self.active_len.saturating_add(1);
             NodeID::from_parts(index as u32, generation)
         };
@@ -1013,6 +1039,7 @@ impl NodeArena {
         self.node_types.truncate(1);
         self.parents.truncate(1);
         self.node_stamps.truncate(1);
+        self.created_seqs.truncate(1);
         self.packed_child_offsets.clear();
         self.packed_child_offsets.extend_from_slice(&[0, 0]);
         self.packed_child_ids.clear();
@@ -1169,6 +1196,7 @@ impl NodeArena {
         debug_assert_eq!(self.node_types.len(), self.nodes.len());
         debug_assert_eq!(self.parents.len(), self.nodes.len());
         debug_assert_eq!(self.node_stamps.len(), self.nodes.len());
+        debug_assert_eq!(self.created_seqs.len(), self.nodes.len());
     }
 
     // ---- Slot validation ----

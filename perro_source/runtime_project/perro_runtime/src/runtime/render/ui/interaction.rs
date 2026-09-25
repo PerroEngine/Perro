@@ -549,7 +549,9 @@ impl Runtime {
             self.render_ui.visible_buttons.retain(|id| *id != node);
             self.render_ui.visible_text_edits.retain(|id| *id != node);
             self.render_ui.focusable_nodes.retain(|id| *id != node);
-            if self.render_ui.retained_commands.remove(&node).is_some() {
+            let had_order = self.render_ui.sent_draw_orders.remove(&node).is_some();
+            let was_hidden = self.render_ui.hidden_render_nodes.remove(&node);
+            if self.render_ui.retained_commands.remove(&node).is_some() || had_order || was_hidden {
                 self.queue_render_command(RenderCommand::Ui(Box::new(UiCommand::RemoveNode {
                     node,
                 })));
@@ -567,6 +569,12 @@ impl Runtime {
         auto_layout_computed.clear();
         let layout_start = timing.as_ref().map(|_| Instant::now());
         for node in traversal_ids.iter().copied() {
+            // Hidden subtrees reuse their retained rects and renderer meshes.
+            // Layout them only when shown again; hide becomes a cheap cached
+            // visibility pass instead of recalculating every descendant.
+            if !self.is_effectively_visible_for_ui(node) {
+                continue;
+            }
             let was_cached = computed.contains_key(&node);
             let before_len = computed.len();
             self.compute_ui_rect(
@@ -634,6 +642,9 @@ impl Runtime {
             }
             visible_now.remove(&node);
             let effective_visible = self.is_effectively_visible_for_ui(node);
+            if effective_visible {
+                self.set_retained_ui_visibility(node, true);
+            }
             if let Some(texture) = self.resolve_ui_image_texture(node)
                 && let Some(scene_node) = self.nodes.get_mut_untracked(node)
             {
@@ -686,21 +697,27 @@ impl Runtime {
                 self.render_ui.retained_rects.get(&node).copied()
             };
             let Some(rect_state) = rect_state else {
-                self.remove_retained_ui_node(node);
+                if effective_visible {
+                    self.remove_retained_ui_node(node);
+                } else {
+                    self.set_retained_ui_visibility(node, false);
+                }
                 if let Some(timing) = timing.as_deref_mut() {
                     timing.removed_nodes = timing.removed_nodes.saturating_add(1);
                 }
                 continue;
             };
             if !effective_visible {
-                if matches!(
-                    scene_node.data,
-                    SceneNodeData::UiCameraStream(_) | SceneNodeData::UiSubView(_)
-                ) {
+                if matches!(scene_node.data, SceneNodeData::UiCameraStream(_)) {
                     self.extraction.ui_stream_render_info.remove(&node);
                     self.queue_camera_stream_remove(node);
+                } else if matches!(scene_node.data, SceneNodeData::UiSubView(_)) {
+                    self.queue_camera_stream_suspend(node);
                 }
-                self.remove_retained_ui_node(node);
+                // UiSubView hide = suspend, not destroy. Keep stream info,
+                // backend state, texture, and GPU target while removing only
+                // its UI composite. Node removal still frees every resource.
+                self.set_retained_ui_visibility(node, false);
                 if let Some(timing) = timing.as_deref_mut() {
                     timing.removed_nodes = timing.removed_nodes.saturating_add(1);
                 }
@@ -754,6 +771,13 @@ impl Runtime {
                 }
             }
             // Re-borrow: the camera-stream rebuild above may call `&mut self`.
+            if self
+                .nodes
+                .get(node)
+                .is_some_and(|scene_node| matches!(scene_node.data, SceneNodeData::UiSubView(_)))
+            {
+                self.queue_camera_stream_resume(node);
+            }
             if let Some(SceneNodeData::UiSubView(viewport)) =
                 self.nodes.get(node).map(|scene_node| &scene_node.data)
             {
@@ -802,6 +826,17 @@ impl Runtime {
                     camera_stream_texture = Some(*texture);
                     camera_stream_resolution = Some(*resolution);
                 }
+            }
+            // Equal-z siblings draw in spawn order. Sent once per node: the
+            // rank never changes for a live id, and a recycled slot is a new id.
+            if !self.render_ui.sent_draw_orders.contains_key(&node)
+                && let Some(order) = self.nodes.created_seq(node)
+            {
+                self.render_ui.sent_draw_orders.insert(node, order);
+                self.queue_render_command(RenderCommand::Ui(Box::new(UiCommand::SetDrawOrder {
+                    node,
+                    order,
+                })));
             }
             let Some(scene_node) = self.nodes.get(node) else {
                 self.remove_retained_ui_node(node);
