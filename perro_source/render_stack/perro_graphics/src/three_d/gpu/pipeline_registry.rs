@@ -31,9 +31,12 @@
 //!
 //! Per-instance state intentionally NOT in the registry: custom-shader and
 //! builtin-variant pipeline maps (content-dependent, LRU-evicted per instance),
-//! compute pipelines (frustum/hi-z/multimesh cull - small, and their bind
-//! groups are per-instance), and every buffer/texture/bind group.
+//! and every buffer/texture/bind group. Core compute pipelines and their BGLs
+//! are device-wide; each instance keeps only its own bind groups and buffers.
 
+use super::init::{
+    frustum_cull_bgl_entries, indirect_compact_bgl_entries, multimesh_cull_bgl_entries,
+};
 use super::*;
 use std::sync::{Mutex, OnceLock};
 
@@ -105,6 +108,14 @@ pub struct SharedBindGroupLayouts3D {
     pub(crate) sky: wgpu::BindGroupLayout,
     pub(crate) mesh_blend_mask_id: wgpu::BindGroupLayout,
     pub(crate) mesh_blend_seam: wgpu::BindGroupLayout,
+    pub(crate) frustum_cull: wgpu::BindGroupLayout,
+    pub(crate) indirect_compact: wgpu::BindGroupLayout,
+    pub(crate) multimesh_cull: wgpu::BindGroupLayout,
+    pub(crate) frustum_cull_pipeline: wgpu::ComputePipeline,
+    pub(crate) indirect_compact_pipeline: wgpu::ComputePipeline,
+    pub(crate) multimesh_cull_pipeline: wgpu::ComputePipeline,
+    pub(crate) multimesh_cull_finalize_pipeline: wgpu::ComputePipeline,
+    pub(crate) multimesh_cull_hiz_pipeline: wgpu::ComputePipeline,
     /// Group 1 of the multiview shadow depth pipelines: the view-proj of every
     /// layer the pass covers, indexed by `@builtin(view_index)`. Group 0 stays
     /// the ordinary camera layout, so a multiview pass reuses the existing
@@ -370,6 +381,69 @@ impl SharedBindGroupLayouts3D {
                 count: None,
             }],
         });
+        let frustum_cull = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("perro_frustum_cull_bgl"),
+            entries: &frustum_cull_bgl_entries(),
+        });
+        let indirect_compact = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("perro_indirect_compact_bgl"),
+            entries: &indirect_compact_bgl_entries(),
+        });
+        let multimesh_cull = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("perro_multimesh_cull_bgl"),
+            entries: &multimesh_cull_bgl_entries(),
+        });
+        let compute_pipeline = |label, bgl: &wgpu::BindGroupLayout, module, entry_point| {
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label,
+                bind_group_layouts: &[Some(bgl)],
+                immediate_size: 0,
+            });
+            crate::pipeline_cache::create_compute_pipeline(
+                device,
+                wgpu::ComputePipelineDescriptor {
+                    label,
+                    layout: Some(&layout),
+                    module,
+                    entry_point: Some(entry_point),
+                    compilation_options: Default::default(),
+                    cache: None,
+                },
+            )
+        };
+        let frustum_shader = create_frustum_cull_shader_module(device);
+        let frustum_cull_pipeline = compute_pipeline(
+            Some("perro_frustum_cull_pipeline"),
+            &frustum_cull,
+            &frustum_shader,
+            "cs_main",
+        );
+        let indirect_shader = create_indirect_compact_shader_module(device);
+        let indirect_compact_pipeline = compute_pipeline(
+            Some("perro_indirect_compact_pipeline"),
+            &indirect_compact,
+            &indirect_shader,
+            "cs_compact",
+        );
+        let multimesh_shader = create_multimesh_cull_shader_module(device);
+        let multimesh_cull_pipeline = compute_pipeline(
+            Some("perro_multimesh_cull_pipeline"),
+            &multimesh_cull,
+            &multimesh_shader,
+            "cs_main",
+        );
+        let multimesh_cull_finalize_pipeline = compute_pipeline(
+            Some("perro_multimesh_cull_finalize_pipeline"),
+            &multimesh_cull,
+            &multimesh_shader,
+            "cs_finalize",
+        );
+        let multimesh_cull_hiz_pipeline = compute_pipeline(
+            Some("perro_multimesh_cull_hiz_pipeline"),
+            &multimesh_cull,
+            &multimesh_shader,
+            "cs_main_hiz",
+        );
         Self {
             camera,
             water_camera,
@@ -381,6 +455,14 @@ impl SharedBindGroupLayouts3D {
             sky,
             mesh_blend_mask_id,
             mesh_blend_seam,
+            frustum_cull,
+            indirect_compact,
+            multimesh_cull,
+            frustum_cull_pipeline,
+            indirect_compact_pipeline,
+            multimesh_cull_pipeline,
+            multimesh_cull_finalize_pipeline,
+            multimesh_cull_hiz_pipeline,
             shadow_multiview,
         }
     }

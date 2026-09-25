@@ -1028,6 +1028,8 @@ mod scene_data {
                 background = (0.1, 0.2, 0.3, 0.4)
                 corner_radius = 0.2
                 suspend_when_hidden = false
+                shadows = false
+                ssao = false
             [/UiViewport]
             [/preview]
             "#,
@@ -1052,6 +1054,10 @@ mod scene_data {
         assert_eq!(viewport.background, Color::new(0.1, 0.2, 0.3, 0.4));
         assert_eq!(viewport.corner_radius, 0.2);
         assert!(!viewport.suspend_when_hidden);
+        assert!(!viewport.shadows);
+        assert!(!viewport.ssao);
+        // unset field keeps default (no behavior chg).
+        assert!(viewport.occlusion_culling);
         assert!(matches!(
             viewport.projection,
             CameraProjection::Orthographic { size, .. } if size == 4.0

@@ -461,7 +461,7 @@ impl Runtime {
         self.render_ui.layout_parent_scratch = layout_parents;
         self.render_ui.layout_children_memo_scratch = layout_children_memo;
         self.render_ui.layout_children_flat_scratch = layout_children_flat;
-        let traversal_ids = plan.traversal_ids;
+        let mut traversal_ids = plan.traversal_ids;
         let mut command_ids = plan.command_ids;
         let mut command_seen = plan.command_seen;
         // Stream/sub-view rebuild is dirty-world gated: a full state rebuild
@@ -495,9 +495,16 @@ impl Runtime {
                 }
                 _ => continue,
             };
-            if rebuild && self.node_world(node) == Some(NodeID::nil()) && command_seen.insert(node)
-            {
-                command_ids.push(node);
+            if rebuild && self.node_world(node) == Some(NodeID::nil()) {
+                let hidden_cold_sub_view = matches!(scene_node.data, SceneNodeData::UiSubView(_))
+                    && !self.is_effectively_visible_for_ui(node)
+                    && !self.extraction.ui_stream_render_info.contains_key(&node);
+                if hidden_cold_sub_view && !traversal_ids.contains(&node) {
+                    traversal_ids.push(node);
+                }
+                if command_seen.insert(node) {
+                    command_ids.push(node);
+                }
             }
         }
         self.extraction.stream_node_scratch = stream_nodes;
@@ -572,18 +579,33 @@ impl Runtime {
             // Hidden subtrees reuse their retained rects and renderer meshes.
             // Layout them only when shown again; hide becomes a cheap cached
             // visibility pass instead of recalculating every descendant.
-            if !self.is_effectively_visible_for_ui(node) {
+            let hidden_cold_sub_view = !self.is_effectively_visible_for_ui(node)
+                && self.extraction.ui_stream_render_info.get(&node).is_none()
+                && self.nodes.get(node).is_some_and(|scene_node| {
+                    matches!(scene_node.data, SceneNodeData::UiSubView(_))
+                });
+            if !self.is_effectively_visible_for_ui(node) && !hidden_cold_sub_view {
                 continue;
             }
             let was_cached = computed.contains_key(&node);
             let before_len = computed.len();
-            self.compute_ui_rect(
-                node,
-                root_rect,
-                &mut computed,
-                &mut computed_scales,
-                &mut auto_layout_computed,
-            );
+            if hidden_cold_sub_view {
+                self.compute_hidden_ui_rect(
+                    node,
+                    root_rect,
+                    &mut computed,
+                    &mut computed_scales,
+                    &mut auto_layout_computed,
+                );
+            } else {
+                self.compute_ui_rect(
+                    node,
+                    root_rect,
+                    &mut computed,
+                    &mut computed_scales,
+                    &mut auto_layout_computed,
+                );
+            }
             if let Some(timing) = timing.as_deref_mut() {
                 if was_cached {
                     timing.cached_rects = timing.cached_rects.saturating_add(1);
@@ -711,8 +733,54 @@ impl Runtime {
                 if matches!(scene_node.data, SceneNodeData::UiCameraStream(_)) {
                     self.extraction.ui_stream_render_info.remove(&node);
                     self.queue_camera_stream_remove(node);
-                } else if matches!(scene_node.data, SceneNodeData::UiSubView(_)) {
-                    self.queue_camera_stream_suspend(node);
+                } else if let SceneNodeData::UiSubView(viewport) = &scene_node.data {
+                    if self.extraction.ui_stream_render_info.contains_key(&node) {
+                        self.queue_camera_stream_suspend(node);
+                    } else {
+                        // A parked sub-view still needs one GPU realization.
+                        // Build it while its UI composite stays hidden, then
+                        // later hidden passes suspend it without freeing state.
+                        let sub_view = perro_nodes::SubView::from(viewport.as_ref());
+                        // The stream collectors honor effective visibility.
+                        // Temporarily expose the UI owner chain so this warm
+                        // state contains the same local draws as a real show.
+                        let mut hidden_chain = Vec::new();
+                        let mut current = Some(node);
+                        while let Some(id) = current {
+                            let Some(item) = self.nodes.get(id) else {
+                                break;
+                            };
+                            if ui_root_from_data(&item.data).is_some_and(|ui| !ui.visible) {
+                                hidden_chain.push(id);
+                            }
+                            current = (!item.parent.is_nil()).then_some(item.parent);
+                        }
+                        for id in hidden_chain.iter().copied() {
+                            if let Some(item) = self.nodes.get_mut_untracked(id)
+                                && let Some(ui) = ui_root_mut_from_data(&mut item.data)
+                            {
+                                ui.visible = true;
+                            }
+                        }
+                        let state = self.sub_view_state(node, &sub_view, Some(rect_state.size));
+                        for id in hidden_chain {
+                            if let Some(item) = self.nodes.get_mut_untracked(id)
+                                && let Some(ui) = ui_root_mut_from_data(&mut item.data)
+                            {
+                                ui.visible = false;
+                            }
+                        }
+                        if let Some(state) = state {
+                            self.extraction.ui_stream_render_info.insert(
+                                node,
+                                (state.output_texture, state.resolution, rect_state.size),
+                            );
+                            self.queue_camera_stream_upsert(node, std::sync::Arc::new(state));
+                            self.queue_camera_stream_warm_then_suspend(node);
+                        } else {
+                            self.queue_camera_stream_remove(node);
+                        }
+                    }
                 }
                 // UiSubView hide = suspend, not destroy. Keep stream info,
                 // backend state, texture, and GPU target while removing only

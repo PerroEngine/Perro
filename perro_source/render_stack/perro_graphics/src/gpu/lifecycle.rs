@@ -558,6 +558,7 @@ impl Gpu {
             camera_stream_3d_bindings: AHashMap::new(),
             camera_stream_2d: AHashMap::new(),
             camera_stream_3d: AHashMap::new(),
+            camera_stream_passes_3d: AHashMap::new(),
             camera_stream_particles_3d: AHashMap::new(),
             camera_stream_water: AHashMap::new(),
             camera_stream_post: AHashMap::new(),
@@ -870,7 +871,8 @@ fn gpu_timestamp_queries_requested() -> bool {
     let profiling = cfg!(feature = "gpu_timestamps")
         || std::env::var_os("PERRO_TIMING_CSV").is_some()
         || std::env::var_os("PERRO_PROFILE_CSV").is_some()
-        || std::env::var_os("PERRO_GPU_BENCH").is_some();
+        || std::env::var_os("PERRO_GPU_BENCH").is_some()
+        || crate::spike_counters::spike_log_enabled();
     gpu_timestamp_query_policy(explicit.as_deref(), profiling)
 }
 

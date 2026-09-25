@@ -605,6 +605,7 @@ impl Runtime {
             };
             let post_processing = self.retained_post_fx(stream_node, &post_processing);
             return Some(CameraStreamState {
+                passes_3d: Default::default(),
                 ui_commands: empty_arc_slice(),
                 source,
                 tone_map_output: matches!(
@@ -654,6 +655,7 @@ impl Runtime {
             _ => self.camera_stream_texture_id(stream_node),
         };
         Some(CameraStreamState {
+            passes_3d: Default::default(),
             ui_commands: empty_arc_slice(),
             source,
             tone_map_output: matches!(
@@ -708,6 +710,7 @@ impl Runtime {
         // one-shot capture: no retention entry (always paired upsert/remove).
         let lanes = self.collect_camera_stream_lanes(camera_node, two_d, three_d, false);
         Some(CameraStreamState {
+            passes_3d: Default::default(),
             ui_commands: empty_arc_slice(),
             source,
             tone_map_output: true,
@@ -835,6 +838,11 @@ impl Runtime {
         );
 
         Some(CameraStreamState {
+            passes_3d: perro_render_bridge::CameraStreamPasses3D {
+                shadows: view.shadows,
+                ssao: view.ssao,
+                occlusion_culling: view.occlusion_culling,
+            },
             ui_commands,
             source,
             // Keep owned sub-view output scene-linear. The UI composite writes
@@ -1157,6 +1165,32 @@ mod stream_retention_tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn sub_view_pass_opt_outs_reach_stream_state() {
+        let mut runtime = Runtime::new();
+        let (view, _, _) = retention_scene(&mut runtime);
+        let cfg = sub_view_of(&runtime, view);
+        let full = runtime
+            .sub_view_state(view, &cfg, None)
+            .expect("test setup must succeed");
+        assert_eq!(
+            full.passes_3d,
+            perro_render_bridge::CameraStreamPasses3D::ALL
+        );
+        let mut cheap = cfg.clone();
+        cheap.shadows = false;
+        cheap.ssao = false;
+        cheap.occlusion_culling = false;
+        let lean = runtime
+            .sub_view_state(view, &cheap, None)
+            .expect("test setup must succeed");
+        assert!(!lean.passes_3d.shadows);
+        assert!(!lean.passes_3d.ssao);
+        assert!(!lean.passes_3d.occlusion_culling);
+        // flip must re-upsert, not idle on the retained state.
+        assert!(!camera_stream_state_matches(&full, &lean));
     }
 
     #[test]

@@ -835,8 +835,9 @@ impl Gpu3D {
         has_casters: bool,
     ) {
         static SHADOWS_DISABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let shadows_disabled =
-            *SHADOWS_DISABLED.get_or_init(|| std::env::var_os("PERRO_DISABLE_SHADOWS").is_some());
+        let shadows_disabled = !self.shadows_allowed
+            || *SHADOWS_DISABLED
+                .get_or_init(|| std::env::var_os("PERRO_DISABLE_SHADOWS").is_some());
         // Input memo: identical camera/lights/caster-state/target-sizes with no
         // caster movement produce identical shadow state -- skip the whole
         // setup (focus fitting is O(draw_batches) per call).

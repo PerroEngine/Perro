@@ -734,6 +734,15 @@ impl SharedMeshArena {
             new_index_len,
         );
 
+        crate::spike_counters::mesh_upload(
+            vertex_count as u64
+                * if skinned {
+                    SKINNED_VERTEX_STRIDE as u64
+                } else {
+                    RIGID_VERTEX_STRIDE as u64
+                }
+                + added_indices.len() as u64 * 4,
+        );
         let index_offset = self.mesh_index_len as u64 * std::mem::size_of::<u32>() as u64;
         if skinned {
             let added_vertices: Vec<SkinnedMeshVertex> = decoded_vertices
@@ -883,6 +892,15 @@ impl SharedMeshArena {
                 idx.checked_add(base_vertex)
             })
             .collect::<Option<_>>()?;
+        crate::spike_counters::mesh_upload(
+            mesh.vertices.len() as u64
+                * if skinned {
+                    SKINNED_VERTEX_STRIDE as u64
+                } else {
+                    RIGID_VERTEX_STRIDE as u64
+                }
+                + indices.len() as u64 * 4,
+        );
 
         if skinned {
             let vertices: Vec<SkinnedMeshVertex> =

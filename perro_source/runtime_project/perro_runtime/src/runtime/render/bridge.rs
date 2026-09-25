@@ -140,6 +140,7 @@ fn camera_stream_state_matches(prev: &CameraStreamState, next: &CameraStreamStat
         Arc::ptr_eq(a, b) || a == b
     }
     let CameraStreamState {
+        passes_3d,
         ui_commands,
         source,
         tone_map_output,
@@ -159,7 +160,8 @@ fn camera_stream_state_matches(prev: &CameraStreamState, next: &CameraStreamStat
         point_particles_3d,
         waters_3d,
     } = prev;
-    lane_eq(ui_commands, &next.ui_commands)
+    *passes_3d == next.passes_3d
+        && lane_eq(ui_commands, &next.ui_commands)
         && *tone_map_output == next.tone_map_output
         && *transparent_background == next.transparent_background
         && *clear_color == next.clear_color
@@ -315,6 +317,16 @@ impl Runtime {
         {
             self.queue_render_command(RenderCommand::CameraStream(
                 CameraStreamCommand::SuspendNode { node },
+            ));
+        }
+    }
+
+    pub(crate) fn queue_camera_stream_warm_then_suspend(&mut self, node: NodeID) {
+        if self.extraction.camera_stream_active.contains(&node)
+            && self.extraction.camera_stream_suspended.insert(node)
+        {
+            self.queue_render_command(RenderCommand::CameraStream(
+                CameraStreamCommand::WarmThenSuspendNode { node },
             ));
         }
     }

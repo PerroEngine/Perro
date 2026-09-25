@@ -26,6 +26,12 @@ pub struct SubView {
     pub background: Color,
     pub enabled: bool,
     pub suspend_when_hidden: bool,
+    /// Render shadow maps 4 this view. Off = no shadow passes/atlases.
+    pub shadows: bool,
+    /// Run SSAO 4 this view (when project ssao on). Off = no SSAO targets.
+    pub ssao: bool,
+    /// HiZ/CPU occlusion culling 4 this view (when project mode on).
+    pub occlusion_culling: bool,
 }
 
 impl Default for SubView {
@@ -44,6 +50,9 @@ impl Default for SubView {
             background: Color::TRANSPARENT,
             enabled: true,
             suspend_when_hidden: true,
+            shadows: true,
+            ssao: true,
+            occlusion_culling: true,
         }
     }
 }
@@ -68,6 +77,12 @@ pub struct UiSubView {
     pub corner_radius: f32,
     pub enabled: bool,
     pub suspend_when_hidden: bool,
+    /// Render shadow maps 4 this view. Off = no shadow passes/atlases.
+    pub shadows: bool,
+    /// Run SSAO 4 this view (when project ssao on). Off = no SSAO targets.
+    pub ssao: bool,
+    /// HiZ/CPU occlusion culling 4 this view (when project mode on).
+    pub occlusion_culling: bool,
 }
 
 impl Default for UiSubView {
@@ -90,6 +105,9 @@ impl Default for UiSubView {
             corner_radius: 0.0,
             enabled: sub_view.enabled,
             suspend_when_hidden: sub_view.suspend_when_hidden,
+            shadows: sub_view.shadows,
+            ssao: sub_view.ssao,
+            occlusion_culling: sub_view.occlusion_culling,
         }
     }
 }
@@ -134,6 +152,9 @@ impl From<&UiSubView> for SubView {
             background: value.background,
             enabled: value.enabled,
             suspend_when_hidden: value.suspend_when_hidden,
+            shadows: value.shadows,
+            ssao: value.ssao,
+            occlusion_culling: value.occlusion_culling,
         }
     }
 }

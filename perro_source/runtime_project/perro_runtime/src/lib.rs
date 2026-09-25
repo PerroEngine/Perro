@@ -11,6 +11,8 @@ mod rs_ctx;
 mod runtime;
 mod runtime_project;
 
+pub mod spike_counters;
+
 pub mod rt_ctx;
 pub use rt_ctx as api;
 

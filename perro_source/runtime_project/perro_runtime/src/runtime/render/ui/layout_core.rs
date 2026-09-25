@@ -126,6 +126,49 @@ impl Runtime {
         Some(rect)
     }
 
+    pub(super) fn compute_hidden_ui_rect(
+        &mut self,
+        node: NodeID,
+        root_rect: ComputedUiRect,
+        computed: &mut AHashMap<NodeID, ComputedUiRect>,
+        computed_scales: &mut AHashMap<NodeID, Vector2>,
+        auto_layout_computed: &mut ahash::AHashSet<NodeID>,
+    ) -> Option<ComputedUiRect> {
+        let mut hidden = Vec::new();
+        let mut current = Some(node);
+        while let Some(id) = current {
+            let Some(scene_node) = self.nodes.get(id) else {
+                break;
+            };
+            if ui_root_from_data(&scene_node.data).is_some_and(|ui| !ui.visible) {
+                hidden.push(id);
+            }
+            current = (!scene_node.parent.is_nil()).then_some(scene_node.parent);
+        }
+        for id in hidden.iter().copied() {
+            if let Some(scene_node) = self.nodes.get_mut_untracked(id)
+                && let Some(ui) = ui_root_mut_from_data(&mut scene_node.data)
+            {
+                ui.visible = true;
+            }
+        }
+        let rect = self.compute_ui_rect(
+            node,
+            root_rect,
+            computed,
+            computed_scales,
+            auto_layout_computed,
+        );
+        for id in hidden {
+            if let Some(scene_node) = self.nodes.get_mut_untracked(id)
+                && let Some(ui) = ui_root_mut_from_data(&mut scene_node.data)
+            {
+                ui.visible = false;
+            }
+        }
+        rect
+    }
+
     /// Uniform content scale: min(viewport / project virtual canvas). 1.0 at
     /// the design resolution (and when no project config is loaded). Used for
     /// every absolute-px UI quantity (fonts, margins, strokes, min/max sizes)

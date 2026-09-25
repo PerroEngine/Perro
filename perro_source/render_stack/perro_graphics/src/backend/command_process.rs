@@ -18,11 +18,13 @@ impl PerroGraphics {
                         let uses_render_target = camera_stream_uses_render_target(&state);
                         let output_texture = state.output_texture;
                         let resolution = state.resolution;
-                        if upsert_camera_stream_state(
+                        let changed = upsert_camera_stream_state(
                             &mut self.retained_camera_streams,
                             node,
                             state,
-                        ) {
+                        );
+                        crate::spike_counters::stream_upsert(changed);
+                        if changed {
                             self.camera_stream_states_changed.insert(node);
                         }
                         if uses_render_target {
@@ -30,7 +32,9 @@ impl PerroGraphics {
                         }
                     }
                     CameraStreamCommand::RemoveNode { node } => {
+                        crate::spike_counters::stream_remove();
                         self.suspended_camera_streams.remove(&node);
+                        self.warm_then_suspend_camera_streams.remove(&node);
                         self.pending_camera_stream_resumes.retain(|id| *id != node);
                         self.camera_stream_states_changed.remove(&node);
                         let output_texture = self
@@ -64,11 +68,20 @@ impl PerroGraphics {
                         }
                     }
                     CameraStreamCommand::SuspendNode { node } => {
+                        crate::spike_counters::stream_suspend();
                         self.pending_camera_stream_resumes.retain(|id| *id != node);
                         self.suspended_camera_streams.insert(node);
                         self.redraw_requested = true;
                     }
+                    CameraStreamCommand::WarmThenSuspendNode { node } => {
+                        crate::spike_counters::stream_suspend();
+                        self.suspended_camera_streams.remove(&node);
+                        self.pending_camera_stream_resumes.retain(|id| *id != node);
+                        self.warm_then_suspend_camera_streams.insert(node);
+                        self.redraw_requested = true;
+                    }
                     CameraStreamCommand::ResumeNode { node } => {
+                        self.warm_then_suspend_camera_streams.remove(&node);
                         if self.suspended_camera_streams.contains(&node)
                             && !self.pending_camera_stream_resumes.contains(&node)
                         {
@@ -927,6 +940,7 @@ impl PerroGraphics {
             return;
         }
         self.camera_stream_targets.insert(node, resolution);
+        crate::spike_counters::stream_tex_resize();
         // Dims-only row: every caller here is render-target-backed, so the
         // pixels come from the offscreen pass and every consumer binds the
         // target view (2D/UI external textures, 3D external material slot) or

@@ -287,6 +287,7 @@ impl Gpu {
                         shader_variant_mode: self.shader_variant_mode,
                         shadow_pcf_high: self.shadow_pcf_high,
                         shadow_scale_to_target: false,
+                        shadows: true,
                     },
                     self.pipeline_registries.get_or_create(
                         &self.device,
@@ -382,6 +383,7 @@ impl Gpu {
                         shader_variant_mode: self.shader_variant_mode,
                         shadow_pcf_high: self.shadow_pcf_high,
                         shadow_scale_to_target: false,
+                        shadows: true,
                     },
                     self.pipeline_registries.get_or_create(
                         &self.device,
@@ -662,6 +664,17 @@ impl Gpu {
             if suspended_camera_streams.contains(node) {
                 continue;
             }
+            // Pass opt-outs are baked into the stream's Gpu3D at creation
+            // (SSAO targets, occlusion mode, shadow gate): a flip drops the
+            // cached world + its dependents so the next create honors it.
+            sync_camera_stream_passes_3d(
+                &mut self.camera_stream_passes_3d,
+                &mut self.camera_stream_3d,
+                &mut self.camera_stream_water,
+                &mut self.camera_stream_content_revisions,
+                *node,
+                stream.passes_3d,
+            );
             let stream_reentered = !self.camera_stream_content_revisions.contains_key(node);
             // per-stream idle skip: unchanged state + nothing animating inside
             // => keep last rendered target texture, encode no passes. main
@@ -702,6 +715,9 @@ impl Gpu {
                     &stream.draws_3d,
                     &stream.sprites_2d,
                 );
+            // Built up front: the lazy Gpu3D creators below run while other
+            // per-stream caches hold &mut borrows of self.
+            let stream_3d_config = self.camera_stream_gpu3d_config(stream);
             let has_stream_post = PostProcessor::has_effects(stream.post_processing.as_ref());
             // UI composites after the main present pass, so an engine-rendered
             // stream needs its own single scene-linear -> display conversion.
@@ -916,26 +932,7 @@ impl Gpu {
                                     &self.device,
                                     &self.queue,
                                     self.render_format,
-                                    Gpu3DConfig {
-                                        sample_count: 1,
-                                        width: stream.resolution[0].max(1),
-                                        height: stream.resolution[1].max(1),
-                                        meshlets_enabled: self.meshlets_enabled,
-                                        dev_meshlets: self.dev_meshlets,
-                                        meshlet_debug_view: self.meshlet_debug_view,
-                                        occlusion_culling: self.occlusion_culling,
-                                        ssao: self.ssao,
-                                        indirect_first_instance_enabled: self
-                                            .indirect_first_instance_enabled,
-                                        multi_draw_indirect_enabled: self
-                                            .multi_draw_indirect_enabled,
-                                        multi_draw_indirect_count_enabled: self
-                                            .multi_draw_indirect_count_enabled,
-                                        texture_filter: self.texture_filter,
-                                        shader_variant_mode: self.shader_variant_mode,
-                                        shadow_pcf_high: self.shadow_pcf_high,
-                                        shadow_scale_to_target: true,
-                                    },
+                                    stream_3d_config,
                                     self.pipeline_registries.get_or_create(
                                         &self.device,
                                         self.render_format,
@@ -999,25 +996,7 @@ impl Gpu {
                                 &self.device,
                                 &self.queue,
                                 self.render_format,
-                                Gpu3DConfig {
-                                    sample_count: 1,
-                                    width: stream.resolution[0].max(1),
-                                    height: stream.resolution[1].max(1),
-                                    meshlets_enabled: self.meshlets_enabled,
-                                    dev_meshlets: self.dev_meshlets,
-                                    meshlet_debug_view: self.meshlet_debug_view,
-                                    occlusion_culling: self.occlusion_culling,
-                                    ssao: self.ssao,
-                                    indirect_first_instance_enabled: self
-                                        .indirect_first_instance_enabled,
-                                    multi_draw_indirect_enabled: self.multi_draw_indirect_enabled,
-                                    multi_draw_indirect_count_enabled: self
-                                        .multi_draw_indirect_count_enabled,
-                                    texture_filter: self.texture_filter,
-                                    shader_variant_mode: self.shader_variant_mode,
-                                    shadow_pcf_high: self.shadow_pcf_high,
-                                    shadow_scale_to_target: true,
-                                },
+                                stream_3d_config,
                                 self.pipeline_registries.get_or_create(
                                     &self.device,
                                     self.render_format,

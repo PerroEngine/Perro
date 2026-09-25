@@ -122,8 +122,36 @@ pub enum CameraStreamSourceState {
     },
 }
 
+/// Per-stream opt-outs 4 costly 3D passes. Default = all on (project cfg
+/// decides). Off = pass skipped + its per-stream resources never allocated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CameraStreamPasses3D {
+    /// Shadow maps (ray cascades, spot, point atlases + depth passes).
+    pub shadows: bool,
+    /// Screen-space ambient occlusion (only when project `ssao` != off).
+    pub ssao: bool,
+    /// HiZ / CPU occlusion culling (only when project mode != off).
+    pub occlusion_culling: bool,
+}
+
+impl CameraStreamPasses3D {
+    pub const ALL: Self = Self {
+        shadows: true,
+        ssao: true,
+        occlusion_culling: true,
+    };
+}
+
+impl Default for CameraStreamPasses3D {
+    fn default() -> Self {
+        Self::ALL
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct CameraStreamState {
+    /// Per-stream 3D pass opt-outs (sub-views); camera streams keep ALL.
+    pub passes_3d: CameraStreamPasses3D,
     /// World labels projected into this target.
     pub ui_commands: Arc<[crate::UiCommand]>,
     pub source: CameraStreamSourceState,

@@ -540,6 +540,7 @@ fn upsert_camera_stream_state(
         }
         *existing = state;
     } else {
+        crate::spike_counters::stream_new();
         streams.push((node, state));
     }
     true
@@ -724,6 +725,7 @@ pub struct PerroGraphics {
     stream_texture_dims: AHashMap<TextureID, [u32; 2]>,
     retained_camera_streams: Vec<(NodeID, Arc<CameraStreamState>)>,
     suspended_camera_streams: ahash::AHashSet<NodeID>,
+    warm_then_suspend_camera_streams: ahash::AHashSet<NodeID>,
     pending_camera_stream_resumes: Vec<NodeID>,
     // streams whose retained state changed since the last presented frame;
     // feeds the gpu-side per-stream idle skip (no per-frame deep compare).

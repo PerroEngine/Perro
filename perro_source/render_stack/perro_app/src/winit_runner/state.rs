@@ -104,6 +104,8 @@ impl<B: GraphicsBackend> RunnerState<B> {
             .map(|project| project.config.input)
             .unwrap_or_default();
         eprintln!("[perro][runtime] frame_rate_cap=({frame_rate_cap:?})");
+        let spike_log = spike_log::SpikeLog::from_env();
+        app.set_detail_timing(spike_log.is_some());
         Self {
             app,
             title: title.to_owned(),
@@ -128,6 +130,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             last_frame_end: now,
             run_start: now,
             timing_csv: TimingCsvWriter::from_env(),
+            spike_log,
             #[cfg(feature = "profile_heavy")]
             profile_csv: ProfileCsvWriter::from_env(),
             #[cfg(any(feature = "profile_heavy", feature = "mem_profile"))]
@@ -534,6 +537,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             // whose timing columns are all zero, which is useless to a profiling
             // run. Runtime-gated, so a normal run keeps the 1-in-20 stride.
             self.timing_csv.is_some()
+                || self.spike_log.is_some()
                 || self.frame_index == 1
                 || self
                     .frame_index

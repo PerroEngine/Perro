@@ -15,6 +15,7 @@ fn write_rgba_mip_level(
     width: u32,
     height: u32,
 ) {
+    crate::spike_counters::tex_upload(mip_level == 0, rgba.len() as u64);
     queue.write_texture(
         wgpu::TexelCopyTextureInfo {
             texture,
@@ -234,6 +235,7 @@ pub(crate) fn write_texture_base_level(
     if !stream_dedupe_admit(texture) {
         return;
     }
+    crate::spike_counters::tex_upload(true, rgba.len() as u64);
     queue.write_texture(
         wgpu::TexelCopyTextureInfo {
             texture,

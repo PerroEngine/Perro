@@ -43,8 +43,8 @@ use winit::{
 };
 
 pub(crate) mod image_helpers;
+mod spike_log;
 mod startup_splash;
-
 use startup_splash::{
     STARTUP_SPLASH_BG_COLOR, STARTUP_SPLASH_BG_NODE, STARTUP_SPLASH_BG_Z,
     STARTUP_SPLASH_HARD_TIMEOUT, STARTUP_SPLASH_IMAGE_NODE, STARTUP_SPLASH_IMAGE_Z,
@@ -948,6 +948,8 @@ struct RunnerState<B: GraphicsBackend> {
     fps_window_start: Instant,
     fps_window_frames: u32,
     timing_csv: Option<TimingCsvWriter>,
+    // PERRO_SPIKE_LOG: per-frame hitch breakdown; None = off.
+    spike_log: Option<spike_log::SpikeLog>,
     #[cfg(feature = "profile_heavy")]
     profile_csv: Option<ProfileCsvWriter>,
     #[cfg(any(feature = "profile_heavy", feature = "mem_profile"))]

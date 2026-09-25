@@ -313,6 +313,14 @@ define_scene_node_specs! { fields, node_type;
                 "suspend_when_hidden",
                 NodeFieldType::Bool,
             );
+            push(fields, "Sub View", "shadows", NodeFieldType::Bool);
+            push(fields, "Sub View", "ssao", NodeFieldType::Bool);
+            push(
+                fields,
+                "Sub View",
+                "occlusion_culling",
+                NodeFieldType::Bool,
+            );
         }
         NodeType::CameraStream2D | NodeType::CameraStream3D | NodeType::UiCameraStream => {
             push(

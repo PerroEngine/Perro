@@ -294,6 +294,7 @@ impl PerroGraphics {
             .min(CAMERA_STREAM_RESUMES_PER_FRAME);
         for _ in 0..resume_count {
             if let Some(node) = self.pending_camera_stream_resumes.pop() {
+                crate::spike_counters::stream_resume();
                 self.suspended_camera_streams.remove(&node);
             }
         }
@@ -867,8 +868,6 @@ impl PerroGraphics {
                     samples: Arc::from(water_body_samples.into_boxed_slice()),
                 });
             }
-            // Read after render so lazy first-draw compiles land in the same
-            // frame's count as the warm-queue ones.
             let compiles_now = gpu.pipeline_compiles_3d();
             pipeline_compiles = compiles_now
                 .wrapping_sub(self.last_pipeline_compiles_3d)
@@ -876,6 +875,8 @@ impl PerroGraphics {
             self.last_pipeline_compiles_3d = compiles_now;
             self.redraw_requested = !gpu_timing.presented;
             if gpu_timing.presented {
+                self.suspended_camera_streams
+                    .extend(self.warm_then_suspend_camera_streams.drain());
                 // changed streams re-rendered this frame; next frame they can
                 // idle-skip again. kept on non-present so nothing is lost.
                 self.camera_stream_states_changed.clear();

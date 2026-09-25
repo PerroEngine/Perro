@@ -6,6 +6,7 @@ mod pipeline_cache;
 mod postprocess;
 mod resources;
 mod shared_textures;
+pub mod spike_counters;
 mod texture_mips;
 pub mod three_d;
 pub mod two_d;

@@ -111,6 +111,9 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let fixed_start = should_sample_timing.then(Instant::now);
 
         let fixed_accumulator_before = self.fixed_accumulator;
+        // Spike-log split of fixed work; zero unless detail timing is on.
+        let mut spike_fixed_scripts = Duration::ZERO;
+        let mut spike_fixed_physics = Duration::ZERO;
         let mut fixed_steps = 1u32;
         let mut fixed_step_seconds = frame_delta.as_secs_f32();
         let mut fixed_catchup_dropped = false;
@@ -135,6 +138,8 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     {
                         let timing = self.app.fixed_update_runtime_timed(effective_fixed_step);
                         runtime_update_duration += timing.total;
+                        spike_fixed_scripts += timing.script_fixed_update;
+                        spike_fixed_physics += timing.physics;
                         self.batch_heavy.fixed_snapshot_update += timing.snapshot_update;
                         self.batch_heavy.fixed_script_update += timing.script_fixed_update;
                         self.batch_heavy.fixed_physics_update += timing.physics;
@@ -154,8 +159,11 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     #[cfg(not(feature = "profile_heavy"))]
                     {
                         let update_start = Instant::now();
-                        self.app.fixed_update_runtime(effective_fixed_step);
+                        // Untimed unless detail timing (spike log) is on.
+                        let timing = self.app.fixed_update_runtime_timed(effective_fixed_step);
                         runtime_update_duration += update_start.elapsed();
+                        spike_fixed_scripts += timing.script_fixed_update;
+                        spike_fixed_physics += timing.physics;
                     }
                 }
                 // Rolling cost per step. Smoothed so one hitchy frame does not
@@ -180,6 +188,8 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 {
                     let timing = self.app.fixed_update_runtime_timed(variable_step);
                     runtime_update_duration += timing.total;
+                    spike_fixed_scripts += timing.script_fixed_update;
+                    spike_fixed_physics += timing.physics;
                     self.batch_heavy.fixed_snapshot_update += timing.snapshot_update;
                     self.batch_heavy.fixed_script_update += timing.script_fixed_update;
                     self.batch_heavy.fixed_physics_update += timing.physics;
@@ -198,8 +208,10 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 #[cfg(not(feature = "profile_heavy"))]
                 {
                     let update_start = Instant::now();
-                    self.app.fixed_update_runtime(variable_step);
+                    let timing = self.app.fixed_update_runtime_timed(variable_step);
                     runtime_update_duration += update_start.elapsed();
+                    spike_fixed_scripts += timing.script_fixed_update;
+                    spike_fixed_physics += timing.physics;
                 }
                 self.app.set_physics_render_alpha(1.0);
                 simulated_delta_seconds = variable_step as f64;
@@ -363,6 +375,38 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 fixed_catchup_dropped,
                 timestamp_ms: unix_timestamp_ms(),
                 draw: draw_frame_timing,
+            });
+        }
+        if let Some(spike_log) = self.spike_log.as_mut() {
+            let top_script_name = if spike_log.is_triggered(active_work_duration) {
+                runtime_timing
+                    .update_schedule
+                    .slowest_script_id
+                    .and_then(|id| self.app.runtime.nodes.get(id))
+                    .map(|node| node.get_name())
+            } else {
+                None
+            };
+            #[cfg(feature = "profile_heavy")]
+            let present_detail = Some(&present_timing.detail);
+            #[cfg(not(feature = "profile_heavy"))]
+            let present_detail = present_timing.as_ref().map(|timing| &timing.detail);
+            spike_log.observe(&spike_log::SpikeFrame {
+                frame_index,
+                frame_delta,
+                idle: idle_duration,
+                active_work: active_work_duration,
+                present_wait: present_wait_duration,
+                simulation: simulation_duration,
+                fixed: fixed_duration,
+                fixed_steps,
+                fixed_scripts: spike_fixed_scripts,
+                fixed_physics: spike_fixed_physics,
+                update: &runtime_timing,
+                top_script_name,
+                present_active: present_active_duration,
+                present: present_detail,
+                draw: &draw_frame_timing,
             });
         }
         if warmup_frame {

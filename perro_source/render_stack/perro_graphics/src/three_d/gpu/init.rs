@@ -42,6 +42,37 @@ pub(in super::super) fn indirect_compact_bgl_entries() -> [wgpu::BindGroupLayout
     ]
 }
 
+pub(in super::super) fn frustum_cull_bgl_entries() -> [wgpu::BindGroupLayoutEntry; 4] {
+    let storage = |binding: u32, read_only: bool| wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Storage { read_only },
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    };
+    [
+        wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::COMPUTE,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: Some(
+                    std::num::NonZeroU64::new(std::mem::size_of::<FrustumCullParamsGpu>() as u64)
+                        .expect("frustum cull params size must be non-zero"),
+                ),
+            },
+            count: None,
+        },
+        storage(1, true),
+        storage(2, true),
+        storage(3, false),
+    ]
+}
+
 // The compacted-command / count / run buffers are recreated together with the
 // indirect buffer on every grow + shrink, so their descriptors live here.
 // Contents are fully rewritten every frame (compaction pass + run upload), so
@@ -88,7 +119,7 @@ pub(in super::super) fn create_indirect_run_buffer(
     })
 }
 
-fn multimesh_cull_bgl_entries() -> [wgpu::BindGroupLayoutEntry; 11] {
+pub(in super::super) fn multimesh_cull_bgl_entries() -> [wgpu::BindGroupLayoutEntry; 11] {
     let uniform = |binding: u32| wgpu::BindGroupLayoutEntry {
         binding,
         visibility: wgpu::ShaderStages::COMPUTE,
@@ -261,6 +292,7 @@ impl Gpu3D {
             shader_variant_mode,
             shadow_pcf_high,
             shadow_scale_to_target,
+            shadows: shadows_allowed,
         } = config;
         let (gpu_occlusion_enabled, cpu_occlusion_enabled) = occlusion_flags(occlusion_culling);
         // Shared mesh arena handles. Two of them (blend-shape deltas, packed-LOD
@@ -753,73 +785,8 @@ impl Gpu3D {
         });
 
         let frustum_cull_enabled = frustum_cull_default(indirect_first_instance_enabled);
-        let frustum_shader = create_frustum_cull_shader_module(device);
-        let frustum_cull_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("perro_frustum_cull_bgl"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(
-                            std::num::NonZeroU64::new(
-                                std::mem::size_of::<FrustumCullParamsGpu>() as u64
-                            )
-                            .expect("frustum cull params size must be non-zero"),
-                        ),
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        });
-        let frustum_cull_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("perro_frustum_cull_layout"),
-            bind_group_layouts: &[Some(&frustum_cull_bgl)],
-            immediate_size: 0,
-        });
-        let frustum_cull_pipeline = crate::pipeline_cache::create_compute_pipeline(
-            device,
-            wgpu::ComputePipelineDescriptor {
-                label: Some("perro_frustum_cull_pipeline"),
-                layout: Some(&frustum_cull_layout),
-                module: &frustum_shader,
-                entry_point: Some("cs_main"),
-                compilation_options: Default::default(),
-                cache: None,
-            },
-        );
+        let frustum_cull_bgl = bgls.frustum_cull.clone();
+        let frustum_cull_pipeline = bgls.frustum_cull_pipeline.clone();
         let frustum_cull_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_frustum_cull_params"),
             size: std::mem::size_of::<FrustumCullParamsGpu>() as u64,
@@ -889,29 +856,8 @@ impl Gpu3D {
         // Indirect-count compaction: stream-compacts the culled indirect buffer
         // per state run so the main pass can draw with
         // multi_draw_indexed_indirect_count. Buffers track indirect_capacity.
-        let indirect_compact_shader = create_indirect_compact_shader_module(device);
-        let indirect_compact_bgl =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("perro_indirect_compact_bgl"),
-                entries: &indirect_compact_bgl_entries(),
-            });
-        let indirect_compact_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("perro_indirect_compact_layout"),
-                bind_group_layouts: &[Some(&indirect_compact_bgl)],
-                immediate_size: 0,
-            });
-        let indirect_compact_pipeline = crate::pipeline_cache::create_compute_pipeline(
-            device,
-            wgpu::ComputePipelineDescriptor {
-                label: Some("perro_indirect_compact_pipeline"),
-                layout: Some(&indirect_compact_layout),
-                module: &indirect_compact_shader,
-                entry_point: Some("cs_compact"),
-                compilation_options: Default::default(),
-                cache: None,
-            },
-        );
+        let indirect_compact_bgl = bgls.indirect_compact.clone();
+        let indirect_compact_pipeline = bgls.indirect_compact_pipeline.clone();
         // One params buffer per dispatch slot: queue writes all land before the
         // first command of a submission, so two dispatches in the same frame
         // cannot share one uniform buffer.
@@ -968,51 +914,10 @@ impl Gpu3D {
             });
 
         // Multimesh GPU cull resources (item 1).
-        let multimesh_cull_shader = create_multimesh_cull_shader_module(device);
-        let multimesh_cull_bgl =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("perro_multimesh_cull_bgl"),
-                entries: &multimesh_cull_bgl_entries(),
-            });
-        let multimesh_cull_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("perro_multimesh_cull_layout"),
-                bind_group_layouts: &[Some(&multimesh_cull_bgl)],
-                immediate_size: 0,
-            });
-        let multimesh_cull_pipeline = crate::pipeline_cache::create_compute_pipeline(
-            device,
-            wgpu::ComputePipelineDescriptor {
-                label: Some("perro_multimesh_cull_pipeline"),
-                layout: Some(&multimesh_cull_layout),
-                module: &multimesh_cull_shader,
-                entry_point: Some("cs_main"),
-                compilation_options: Default::default(),
-                cache: None,
-            },
-        );
-        let multimesh_cull_finalize_pipeline = crate::pipeline_cache::create_compute_pipeline(
-            device,
-            wgpu::ComputePipelineDescriptor {
-                label: Some("perro_multimesh_cull_finalize_pipeline"),
-                layout: Some(&multimesh_cull_layout),
-                module: &multimesh_cull_shader,
-                entry_point: Some("cs_finalize"),
-                compilation_options: Default::default(),
-                cache: None,
-            },
-        );
-        let multimesh_cull_hiz_pipeline = crate::pipeline_cache::create_compute_pipeline(
-            device,
-            wgpu::ComputePipelineDescriptor {
-                label: Some("perro_multimesh_cull_hiz_pipeline"),
-                layout: Some(&multimesh_cull_layout),
-                module: &multimesh_cull_shader,
-                entry_point: Some("cs_main_hiz"),
-                compilation_options: Default::default(),
-                cache: None,
-            },
-        );
+        let multimesh_cull_bgl = bgls.multimesh_cull.clone();
+        let multimesh_cull_pipeline = bgls.multimesh_cull_pipeline.clone();
+        let multimesh_cull_finalize_pipeline = bgls.multimesh_cull_finalize_pipeline.clone();
+        let multimesh_cull_hiz_pipeline = bgls.multimesh_cull_hiz_pipeline.clone();
         let multimesh_cull_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_multimesh_cull_params"),
             size: std::mem::size_of::<MultiMeshCullParamsGpu>() as u64,
@@ -1681,6 +1586,7 @@ impl Gpu3D {
             shadow_spot_map_size,
             shadow_point_map_size,
             shadow_scale_to_target,
+            shadows_allowed,
             last_uploaded_multimesh_instances_hash: None,
             last_uploaded_multimesh_draw_params_hash: None,
             last_uploaded_multimesh_cull_batches: Vec::new(),

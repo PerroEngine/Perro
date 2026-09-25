@@ -455,6 +455,9 @@ pub enum CameraStreamCommand {
     SuspendNode {
         node: NodeID,
     },
+    WarmThenSuspendNode {
+        node: NodeID,
+    },
     ResumeNode {
         node: NodeID,
     },

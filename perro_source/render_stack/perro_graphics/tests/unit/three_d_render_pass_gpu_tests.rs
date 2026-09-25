@@ -71,6 +71,7 @@ fn new_gpu_3d(device: &wgpu::Device, queue: &wgpu::Queue) -> Gpu3D {
             shader_variant_mode: crate::ShaderVariantMode::Generic,
             shadow_pcf_high: false,
             shadow_scale_to_target: false,
+            shadows: true,
         },
         pipelines,
         &mesh_arena,

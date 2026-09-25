@@ -32,6 +32,7 @@ pub(crate) fn create_render_pipeline(
     device: &wgpu::Device,
     descriptor: wgpu::RenderPipelineDescriptor<'_>,
 ) -> wgpu::RenderPipeline {
+    crate::spike_counters::render_pipeline_build();
     let descriptor = wgpu::RenderPipelineDescriptor {
         cache: cache(),
         ..descriptor
@@ -43,6 +44,7 @@ pub(crate) fn create_compute_pipeline(
     device: &wgpu::Device,
     descriptor: wgpu::ComputePipelineDescriptor<'_>,
 ) -> wgpu::ComputePipeline {
+    crate::spike_counters::compute_pipeline_build();
     let descriptor = wgpu::ComputePipelineDescriptor {
         cache: cache(),
         ..descriptor

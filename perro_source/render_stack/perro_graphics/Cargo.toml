@@ -37,19 +37,19 @@ perro_macros.workspace = true
 perro_wgsl.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]
-wgpu = { version = "30.0.0", default-features = false, features = ["std", "dx12", "vulkan", "wgsl"] }
+wgpu = { version = "30.0.0", default-features = false, features = ["std", "dx12", "vulkan", "wgsl", "counters"] }
 winit = { version = "0.30.12", default-features = false, features = ["rwh_06"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-wgpu = { version = "30.0.0", default-features = false, features = ["std", "vulkan", "wgsl"] }
+wgpu = { version = "30.0.0", default-features = false, features = ["std", "vulkan", "wgsl", "counters"] }
 winit = { version = "0.30.12", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-wgpu = { version = "30.0.0", default-features = false, features = ["std", "metal", "wgsl"] }
+wgpu = { version = "30.0.0", default-features = false, features = ["std", "metal", "wgsl", "counters"] }
 winit = { version = "0.30.12", default-features = false, features = ["rwh_06"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
-wgpu = { version = "30.0.0", default-features = false, features = ["std", "vulkan", "wgsl"] }
+wgpu = { version = "30.0.0", default-features = false, features = ["std", "vulkan", "wgsl", "counters"] }
 winit = { version = "0.30.12", default-features = false, features = ["rwh_06", "android-native-activity"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

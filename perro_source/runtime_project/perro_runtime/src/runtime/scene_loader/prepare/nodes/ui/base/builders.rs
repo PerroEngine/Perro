@@ -337,6 +337,21 @@ pub(super) fn build_ui_sub_view(data: &SceneDefNodeData) -> UiSubView {
                 node.suspend_when_hidden = v;
             }
         }
+        "shadows" => {
+            if let Some(v) = as_bool(value) {
+                node.shadows = v;
+            }
+        }
+        "ssao" => {
+            if let Some(v) = as_bool(value) {
+                node.ssao = v;
+            }
+        }
+        "occlusion_culling" => {
+            if let Some(v) = as_bool(value) {
+                node.occlusion_culling = v;
+            }
+        }
         _ => {}
     });
     node

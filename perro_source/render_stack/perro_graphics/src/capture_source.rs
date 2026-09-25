@@ -203,6 +203,7 @@ mod tests {
 
     fn stream(source: CameraStreamSourceState) -> Arc<CameraStreamState> {
         Arc::new(CameraStreamState {
+            passes_3d: Default::default(),
             ui_commands: Arc::from([]),
             source,
             tone_map_output: false,

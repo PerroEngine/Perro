@@ -18,6 +18,7 @@ impl Gpu {
         self.camera_stream_external_bindings.remove(&node);
         self.camera_stream_3d_bindings.remove(&node);
         self.camera_stream_3d.remove(&node);
+        self.camera_stream_passes_3d.remove(&node);
         self.camera_stream_2d.remove(&node);
         self.camera_stream_particles_3d.remove(&node);
         self.camera_stream_water.remove(&node);
@@ -342,6 +343,14 @@ impl Gpu {
                     resolution[1],
                     u64::from(resolution[0]) * u64::from(resolution[1]),
                 );
+            }
+            {
+                let px = u64::from(resolution[0]) * u64::from(resolution[1]);
+                let layers = 1
+                    + u64::from(needs_intermediate)
+                    + u64::from(needs_tonemap_input)
+                    + u64::from(needs_post_depth);
+                crate::spike_counters::stream_rt_alloc(px * 4 * layers);
             }
             self.next_camera_stream_post_view_key =
                 next_nonzero_generation(self.next_camera_stream_post_view_key);

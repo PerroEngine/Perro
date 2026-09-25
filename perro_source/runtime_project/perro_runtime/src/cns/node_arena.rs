@@ -567,6 +567,7 @@ impl NodeArena {
     ///
     /// Reuses a free slot when available. Otherwise appends a new slot.
     pub fn insert(&mut self, node: SceneNode) -> NodeID {
+        crate::spike_counters::node_created();
         self.bump_structural_revision();
         let name_hash = string_to_u64(node.get_name());
         let name_empty = node.get_name().is_empty();
@@ -774,6 +775,9 @@ impl NodeArena {
         self.bump_node_structural(index);
         self.generations[index] = self.generations[index].wrapping_add(1);
         let removed = self.nodes[index].take();
+        if removed.is_some() {
+            crate::spike_counters::node_removed();
+        }
         self.topology_trusted = false;
         if let Some(node) = &removed {
             if is_sub_view_type(node.node_type()) {

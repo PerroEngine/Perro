@@ -694,6 +694,7 @@ impl Runtime {
         &mut self,
         id: PreloadedSceneID,
     ) -> Result<NodeID, String> {
+        let _spike_timer = crate::spike_counters::SceneLoadTimer::start();
         let prepared = self
             .scene_runtime
             .preloaded_prepared_scenes
@@ -709,6 +710,7 @@ impl Runtime {
     }
 
     pub(crate) fn load_scene_doc_at_runtime(&mut self, scene: Scene) -> Result<NodeID, String> {
+        let _spike_timer = crate::spike_counters::SceneLoadTimer::start();
         let prepared = self.prepare_scene_with_project_styles(&scene, &|import_path| {
             self.resolve_scene_by_path(import_path)
         })?;
@@ -721,6 +723,7 @@ impl Runtime {
         path_hash: u64,
         path: &str,
     ) -> Result<NodeID, String> {
+        let _spike_timer = crate::spike_counters::SceneLoadTimer::start();
         let static_lookup = self
             .project()
             .and_then(|project| project.static_scene_lookup);

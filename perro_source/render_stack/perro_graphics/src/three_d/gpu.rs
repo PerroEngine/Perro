@@ -1284,6 +1284,8 @@ pub struct Gpu3D {
     shadow_point_map_size: u32,
     // Camera-stream / sub-view instance: atlases follow the target height.
     shadow_scale_to_target: bool,
+    // Instance-level shadow opt-out (see `Gpu3DConfig::shadows`).
+    shadows_allowed: bool,
     // True while the cull compute ran this frame (drives indirect draw path).
     multimesh_cull_active: bool,
     last_multimesh_cull_params: Option<MultiMeshCullParamsGpu>,
@@ -1790,6 +1792,10 @@ pub struct Gpu3DConfig {
     /// instances, whose targets are a fraction of the main view; the main view
     /// keeps the configured sizes.
     pub shadow_scale_to_target: bool,
+    /// Shadow maps allowed 4 this instance. False = shadow setup short-circuits
+    /// (no shadow passes, atlases stay at their empty 0-layer placeholders).
+    /// Sub-views opt out via `SubView::shadows`.
+    pub shadows: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]

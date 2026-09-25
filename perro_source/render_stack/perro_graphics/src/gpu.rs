@@ -866,6 +866,8 @@ pub struct Gpu {
     // exists after that view first submits content for the matching path.
     camera_stream_2d: AHashMap<NodeID, Box<Gpu2D>>,
     camera_stream_3d: AHashMap<NodeID, Box<Gpu3D>>,
+    // Pass opt-outs each cached stream Gpu3D was built with.
+    camera_stream_passes_3d: AHashMap<NodeID, perro_render_bridge::CameraStreamPasses3D>,
     camera_stream_particles_3d: AHashMap<NodeID, Box<GpuPointParticles3D>>,
     camera_stream_water: AHashMap<NodeID, Box<GpuWater>>,
     camera_stream_ui: AHashMap<NodeID, Box<CameraStreamUi>>,
@@ -1047,6 +1049,77 @@ fn camera_stream_cache_entry<T>(
         .entry(node)
         .or_insert_with(|| Box::new(create()))
         .as_mut()
+}
+
+/// Project SSAO / occlusion / shadow cfg narrowed by a stream's opt-outs.
+/// Opt-outs only ever turn a pass OFF; they never enable one the project
+/// config disabled.
+fn camera_stream_pass_config(
+    ssao: crate::SsaoQuality,
+    occlusion_culling: OcclusionCullingMode,
+    passes: perro_render_bridge::CameraStreamPasses3D,
+) -> (crate::SsaoQuality, OcclusionCullingMode, bool) {
+    (
+        if passes.ssao {
+            ssao
+        } else {
+            crate::SsaoQuality::Off
+        },
+        if passes.occlusion_culling {
+            occlusion_culling
+        } else {
+            OcclusionCullingMode::Off
+        },
+        passes.shadows,
+    )
+}
+
+impl Gpu {
+    /// Gpu3D cfg 4 one camera-stream / sub-view world.
+    fn camera_stream_gpu3d_config(&self, stream: &CameraStreamState) -> Gpu3DConfig {
+        let (ssao, occlusion_culling, shadows) =
+            camera_stream_pass_config(self.ssao, self.occlusion_culling, stream.passes_3d);
+        Gpu3DConfig {
+            sample_count: 1,
+            width: stream.resolution[0].max(1),
+            height: stream.resolution[1].max(1),
+            meshlets_enabled: self.meshlets_enabled,
+            dev_meshlets: self.dev_meshlets,
+            meshlet_debug_view: self.meshlet_debug_view,
+            occlusion_culling,
+            ssao,
+            indirect_first_instance_enabled: self.indirect_first_instance_enabled,
+            multi_draw_indirect_enabled: self.multi_draw_indirect_enabled,
+            multi_draw_indirect_count_enabled: self.multi_draw_indirect_count_enabled,
+            texture_filter: self.texture_filter,
+            shader_variant_mode: self.shader_variant_mode,
+            shadow_pcf_high: self.shadow_pcf_high,
+            shadow_scale_to_target: true,
+            shadows,
+        }
+    }
+}
+
+/// Drop a cached stream Gpu3D (+ the water pass bound to its layouts / depth
+/// views) when the stream's pass opt-outs changed since creation. Free fn over
+/// the disjoint caches: the frame loop holds other borrows of `Gpu`.
+fn sync_camera_stream_passes_3d(
+    passes_cache: &mut AHashMap<NodeID, perro_render_bridge::CameraStreamPasses3D>,
+    worlds: &mut AHashMap<NodeID, Box<Gpu3D>>,
+    waters: &mut AHashMap<NodeID, Box<GpuWater>>,
+    revisions: &mut AHashMap<NodeID, CameraStreamContentRevision>,
+    node: NodeID,
+    passes: perro_render_bridge::CameraStreamPasses3D,
+) {
+    match passes_cache.insert(node, passes) {
+        Some(prev) if prev != passes => {
+            worlds.remove(&node);
+            waters.remove(&node);
+            // Fresh world: force a full restage on its first prepare.
+            revisions.remove(&node);
+        }
+        _ => {}
+    }
 }
 
 fn camera_stream_needs_3d_world(stream: &CameraStreamState) -> bool {
@@ -1631,6 +1704,50 @@ mod camera_stream_revision_tests {
         assert_eq!(nodes.len(), 1_000);
         assert_eq!(two_d.len(), 10);
         assert_eq!(three_d.len(), 5);
+    }
+}
+
+#[cfg(test)]
+mod camera_stream_pass_config_tests {
+    use super::{OcclusionCullingMode, camera_stream_pass_config};
+    use crate::SsaoQuality;
+    use perro_render_bridge::CameraStreamPasses3D;
+
+    #[test]
+    fn default_passes_keep_project_config() {
+        assert_eq!(
+            camera_stream_pass_config(
+                SsaoQuality::High,
+                OcclusionCullingMode::Gpu,
+                CameraStreamPasses3D::default(),
+            ),
+            (SsaoQuality::High, OcclusionCullingMode::Gpu, true)
+        );
+    }
+
+    #[test]
+    fn opt_outs_turn_passes_off() {
+        let passes = CameraStreamPasses3D {
+            shadows: false,
+            ssao: false,
+            occlusion_culling: false,
+        };
+        assert_eq!(
+            camera_stream_pass_config(SsaoQuality::High, OcclusionCullingMode::Cpu, passes),
+            (SsaoQuality::Off, OcclusionCullingMode::Off, false)
+        );
+    }
+
+    #[test]
+    fn opt_in_never_enables_project_disabled_pass() {
+        assert_eq!(
+            camera_stream_pass_config(
+                SsaoQuality::Off,
+                OcclusionCullingMode::Off,
+                CameraStreamPasses3D::ALL,
+            ),
+            (SsaoQuality::Off, OcclusionCullingMode::Off, true)
+        );
     }
 }
 

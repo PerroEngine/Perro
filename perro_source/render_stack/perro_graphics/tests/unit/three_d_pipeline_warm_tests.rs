@@ -75,6 +75,7 @@ fn new_gpu_3d(device: &wgpu::Device, queue: &wgpu::Queue, arena: &SharedMeshAren
             shader_variant_mode: crate::ShaderVariantMode::Auto,
             shadow_pcf_high: false,
             shadow_scale_to_target: false,
+            shadows: true,
         },
         pipelines,
         arena,

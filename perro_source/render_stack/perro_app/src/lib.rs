@@ -18,8 +18,24 @@ pub struct App<B: GraphicsBackend> {
     pub graphics: B,
     command_buffer: Vec<perro_render_bridge::RenderCommand>,
     event_buffer: Vec<RenderEvent>,
+    /// Per-phase runtime/present timing without the `profile_heavy` build.
+    /// Set by the runner for `PERRO_SPIKE_LOG`; off = untimed fast paths.
+    detail_timing: bool,
 }
 
+/// Present sub-phase timings, filled only while `App::detail_timing` is on.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PresentDetailTiming {
+    pub extract_2d: Duration,
+    pub extract_3d: Duration,
+    pub extract_ui: Duration,
+    pub ui_layout: Duration,
+    pub ui_commands: Duration,
+    pub ui_dirty_nodes: u32,
+    pub drain_submit: Duration,
+    pub render_commands: u32,
+    pub apply_events: Duration,
+}
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PresentTiming {
     pub gpu_present: Duration,
@@ -29,6 +45,8 @@ pub struct PresentTiming {
     /// plain-old-data struct the backend already filled in, and the frame CSV
     /// needs it without the `profile_heavy` build.
     pub draw: Option<DrawFrameTiming>,
+    /// Zeroed unless `App::set_detail_timing(true)`.
+    pub detail: PresentDetailTiming,
     #[cfg(feature = "profile_heavy")]
     pub extract_2d: Duration,
     #[cfg(feature = "profile_heavy")]
@@ -157,11 +175,23 @@ impl<B: GraphicsBackend> App<B> {
             graphics,
             command_buffer: Vec::new(),
             event_buffer: Vec::new(),
+            detail_timing: false,
         }
     }
 
     pub fn with_empty_runtime(graphics: B) -> Self {
         Self::new(Runtime::new(), graphics)
+    }
+
+    /// Enable ungated per-phase timing (spike logging).
+    #[inline]
+    pub fn set_detail_timing(&mut self, enabled: bool) {
+        self.detail_timing = enabled;
+    }
+
+    #[inline]
+    pub fn detail_timing(&self) -> bool {
+        self.detail_timing
     }
 
     #[inline]
@@ -260,6 +290,9 @@ impl<B: GraphicsBackend> App<B> {
         }
         #[cfg(not(feature = "profile_heavy"))]
         {
+            if self.detail_timing {
+                return self.runtime.update_timed(delta_time);
+            }
             self.runtime.update(delta_time);
             perro_runtime::RuntimeUpdateTiming::default()
         }
@@ -508,6 +541,9 @@ impl<B: GraphicsBackend> App<B> {
         }
         #[cfg(not(feature = "profile_heavy"))]
         {
+            if self.detail_timing {
+                return self.runtime.fixed_update_timed(fixed_delta_time);
+            }
             self.runtime.fixed_update(fixed_delta_time);
             perro_runtime::RuntimeFixedUpdateTiming::default()
         }
@@ -581,39 +617,62 @@ impl<B: GraphicsBackend> App<B> {
         I: IntoIterator<Item = perro_render_bridge::RenderCommand>,
     {
         let total_start = Instant::now();
+        let detail_on = self.detail_timing;
+        let mut detail = PresentDetailTiming::default();
         #[cfg(feature = "profile_heavy")]
         let dirty_node_count = self.runtime.dirty_node_count() as u32;
-
         #[cfg(feature = "profile_heavy")]
         let extract_2d_start = Instant::now();
+        let clock = detail_on.then(Instant::now);
         self.runtime.extract_render_2d_commands();
+        if let Some(clock) = clock {
+            detail.extract_2d = clock.elapsed();
+        }
         #[cfg(feature = "profile_heavy")]
         let extract_2d = extract_2d_start.elapsed();
-
         #[cfg(feature = "profile_heavy")]
         let extract_3d_start = Instant::now();
+        let clock = detail_on.then(Instant::now);
         self.runtime.extract_render_3d_commands();
+        if let Some(clock) = clock {
+            detail.extract_3d = clock.elapsed();
+        }
         #[cfg(feature = "profile_heavy")]
         let extract_3d = extract_3d_start.elapsed();
-
         #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
         let ui_timing = self.runtime.extract_render_ui_commands_timed();
+        #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+        let ui_detail = Some(ui_timing);
         #[cfg(not(any(feature = "profile_heavy", feature = "ui_profile")))]
-        self.runtime.extract_render_ui_commands();
+        let ui_detail = if detail_on {
+            Some(self.runtime.extract_render_ui_commands_timed())
+        } else {
+            self.runtime.extract_render_ui_commands();
+            None
+        };
+        if detail_on && let Some(ui) = ui_detail {
+            detail.extract_ui = ui.total;
+            detail.ui_layout = ui.layout;
+            detail.ui_commands = ui.commands;
+            detail.ui_dirty_nodes = ui.dirty_nodes;
+        }
         #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
         let extract_ui_duration = ui_timing.total;
-
         #[cfg(feature = "profile_heavy")]
         let drain_commands_start = Instant::now();
+        let clock = detail_on.then(Instant::now);
         self.runtime.drain_render_commands(&mut self.command_buffer);
+        detail.render_commands = self.command_buffer.len().min(u32::MAX as usize) as u32;
         #[cfg(feature = "profile_heavy")]
         let render_command_count = self.command_buffer.len() as u32;
         #[cfg(feature = "profile_heavy")]
         let drain_commands = drain_commands_start.elapsed();
-
         #[cfg(feature = "profile_heavy")]
         let submit_start = Instant::now();
         self.graphics.submit_many(self.command_buffer.drain(..));
+        if let Some(clock) = clock {
+            detail.drain_submit = clock.elapsed();
+        }
         #[cfg(feature = "profile_heavy")]
         let submit_commands = submit_start.elapsed();
 
@@ -643,16 +702,20 @@ impl<B: GraphicsBackend> App<B> {
 
         #[cfg(feature = "profile_heavy")]
         let apply_events_start = Instant::now();
+        let clock = detail_on.then(Instant::now);
         self.runtime
             .apply_render_events(self.event_buffer.drain(..));
+        if let Some(clock) = clock {
+            detail.apply_events = clock.elapsed();
+        }
         #[cfg(feature = "profile_heavy")]
         let apply_events = apply_events_start.elapsed();
-
         PresentTiming {
             gpu_present,
             active,
             total: total_start.elapsed(),
             draw: draw_timing,
+            detail,
             #[cfg(feature = "profile_heavy")]
             extract_2d,
             #[cfg(feature = "profile_heavy")]
