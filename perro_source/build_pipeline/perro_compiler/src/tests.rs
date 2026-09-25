@@ -4,10 +4,10 @@ mod tests {
         ProjectBuildOptions, ProjectBuildTarget, SceneVarUsage, ScriptMethod, ScriptMethodParam,
         ScriptSourceSet, ScriptsBuildProfile, android_apk_artifact_path,
         append_private_path_remaps,
-        checked_res_relative_path, compile_scripts_with_profile, contains_ascii_case_insensitive,
-        contains_utf16le_ascii_case_insensitive, copy_file_overwriting,
+        checked_res_relative_path, compile_scripts_with_profile, copy_file_overwriting,
         emit_static_steam_app_id_fn, emit_web_route_html_files, export_project_android_bundle,
-        generate_call_method_body, generate_call_param_binding, generate_dlc_static_modules,
+        find_ascii_or_utf16le_case_insensitive, generate_call_method_body,
+        generate_call_param_binding, generate_dlc_static_modules,
         generate_embedded_entry_files, generate_perro_assets, generate_project_static_modules,
         has_nonempty_lifecycle_method, method_returns_variant_convertible,
         module_ident_from_path_part, native_output_artifact_name, native_output_folder_name,
@@ -259,20 +259,28 @@ name = "My Game Playtest"
     #[test]
     fn release_path_scan_catches_ascii_and_utf16() {
         let private = r"C:\Users\Builder\.cargo\registry\src";
-        assert!(contains_ascii_case_insensitive(
-            private.to_ascii_uppercase().as_bytes(),
-            private.as_bytes()
-        ));
+        let needles = vec![private.to_string()];
+        assert_eq!(
+            find_ascii_or_utf16le_case_insensitive(
+                private.to_ascii_uppercase().as_bytes(),
+                &needles
+            )
+            .expect("matcher"),
+            Some(private)
+        );
 
         let utf16 = private
             .encode_utf16()
             .flat_map(u16::to_le_bytes)
             .collect::<Vec<_>>();
-        assert!(contains_utf16le_ascii_case_insensitive(&utf16, private));
-        assert!(!contains_ascii_case_insensitive(
-            b"s/player.rs",
-            private.as_bytes()
-        ));
+        assert_eq!(
+            find_ascii_or_utf16le_case_insensitive(&utf16, &needles).expect("matcher"),
+            Some(private)
+        );
+        assert_eq!(
+            find_ascii_or_utf16le_case_insensitive(b"s/player.rs", &needles).expect("matcher"),
+            None
+        );
     }
 
     fn assert_methods_emitted(transpiled: &str, expected_method_names: &[&str]) {

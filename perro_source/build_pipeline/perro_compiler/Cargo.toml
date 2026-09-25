@@ -13,6 +13,7 @@ readme.workspace = true
 workspace = true
 
 [dependencies]
+aho-corasick = "1.1"
 perro_structs.workspace = true
 perro_assets.workspace = true
 perro_asset_formats.workspace = true

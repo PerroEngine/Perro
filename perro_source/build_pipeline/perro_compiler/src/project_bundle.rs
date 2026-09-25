@@ -545,6 +545,7 @@ fn export_project_binary(
         )));
     }
     if options.release {
+        println!("checking release binary paths...");
         verify_no_private_build_paths(&built_bin, project_root, project_name)?;
     }
 
@@ -677,38 +678,43 @@ fn verify_no_private_build_paths(
     needles.sort_by_key(|needle| std::cmp::Reverse(needle.len()));
     needles.dedup();
 
-    for needle in needles {
-        if needle.is_empty() || needle == project_name {
-            continue;
-        }
-        if contains_ascii_case_insensitive(&bytes, needle.as_bytes())
-            || contains_utf16le_ascii_case_insensitive(&bytes, &needle)
-        {
-            return Err(CompilerError::SceneParse(format!(
-                "release binary privacy check failed: private build path `{needle}` remains in {}",
-                binary.display()
-            )));
-        }
+    needles.retain(|needle| !needle.is_empty() && needle != project_name);
+    if let Some(needle) = find_ascii_or_utf16le_case_insensitive(&bytes, &needles)? {
+        return Err(CompilerError::SceneParse(format!(
+            "release binary privacy check failed: private build path `{needle}` remains in {}",
+            binary.display()
+        )));
     }
     Ok(())
 }
 
-fn contains_ascii_case_insensitive(haystack: &[u8], needle: &[u8]) -> bool {
-    !needle.is_empty()
-        && haystack.windows(needle.len()).any(|window| {
-            window
-                .iter()
-                .zip(needle)
-                .all(|(left, right)| left.eq_ignore_ascii_case(right))
-        })
-}
+fn find_ascii_or_utf16le_case_insensitive<'a>(
+    haystack: &[u8],
+    needles: &'a [String],
+) -> Result<Option<&'a str>, CompilerError> {
+    if needles.is_empty() {
+        return Ok(None);
+    }
 
-fn contains_utf16le_ascii_case_insensitive(haystack: &[u8], needle: &str) -> bool {
-    let encoded = needle
-        .encode_utf16()
-        .flat_map(u16::to_le_bytes)
-        .collect::<Vec<_>>();
-    contains_ascii_case_insensitive(haystack, &encoded)
+    let mut patterns = Vec::with_capacity(needles.len() * 2);
+    for needle in needles {
+        patterns.push(needle.as_bytes().to_vec());
+        patterns.push(
+            needle
+                .encode_utf16()
+                .flat_map(u16::to_le_bytes)
+                .collect::<Vec<_>>(),
+        );
+    }
+    let matcher = aho_corasick::AhoCorasickBuilder::new()
+        .ascii_case_insensitive(true)
+        .build(&patterns)
+        .map_err(|error| {
+            CompilerError::SceneParse(format!("release binary path matcher failed: {error}"))
+        })?;
+    Ok(matcher
+        .find(haystack)
+        .map(|found| needles[found.pattern().as_usize() / 2].as_str()))
 }
 
 fn print_exported_binary(path: &Path) {

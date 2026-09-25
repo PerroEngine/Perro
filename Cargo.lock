@@ -4600,6 +4600,7 @@ dependencies = [
 name = "perro_compiler"
 version = "0.1.0"
 dependencies = [
+ "aho-corasick",
  "perro_asset_formats",
  "perro_assets",
  "perro_ids",
