@@ -766,6 +766,44 @@ fn removing_stream_does_not_drop_reserved_picture_with_matching_id() {
 }
 
 #[test]
+fn camera_stream_resumes_are_spread_across_frames() {
+    let mut graphics = PerroGraphics::new();
+    graphics.submit(RenderCommand::TwoD(Command2D::UpsertRect {
+        node: NodeID::from_parts(100, 0),
+        rect: Rect2DCommand {
+            center: [0.0, 0.0],
+            size: [2.0, 2.0],
+            color: Color::WHITE,
+            z_index: 0,
+        },
+    }));
+    for index in 1..=5 {
+        graphics.submit(RenderCommand::CameraStream(
+            perro_render_bridge::CameraStreamCommand::SuspendNode {
+                node: NodeID::from_parts(index, 0),
+            },
+        ));
+    }
+    graphics.draw_frame();
+    assert_eq!(graphics.suspended_camera_streams.len(), 5);
+
+    for index in 1..=5 {
+        graphics.submit(RenderCommand::CameraStream(
+            perro_render_bridge::CameraStreamCommand::ResumeNode {
+                node: NodeID::from_parts(index, 0),
+            },
+        ));
+    }
+    graphics.draw_frame();
+    assert_eq!(graphics.suspended_camera_streams.len(), 1);
+    assert_eq!(graphics.pending_camera_stream_resumes.len(), 1);
+
+    graphics.draw_frame();
+    assert!(graphics.suspended_camera_streams.is_empty());
+    assert!(graphics.pending_camera_stream_resumes.is_empty());
+}
+
+#[test]
 fn render_target_camera_stream_registers_dims_without_cpu_pixels() {
     let mut graphics = PerroGraphics::new();
     let node = NodeID::from_parts(93, 0);

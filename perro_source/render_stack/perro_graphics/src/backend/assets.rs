@@ -222,7 +222,11 @@ impl PerroGraphics {
             || self.renderer_3d.retained_draw_count() > 0
             || self.renderer_3d.has_retained_non_draw_state()
             || self.particles_3d.retained_point_particle_count() > 0;
-        if !has_pending && !has_retained_scene && !has_pending_pipeline_warms {
+        if !has_pending
+            && !has_retained_scene
+            && !has_pending_pipeline_warms
+            && self.pending_camera_stream_resumes.is_empty()
+        {
             let mut presented = false;
             if self.redraw_requested
                 && let Some(gpu) = &mut self.gpu
