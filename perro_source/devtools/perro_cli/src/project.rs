@@ -1457,11 +1457,9 @@ fn dev_web_command(args: &[String], cwd: &Path) -> Result<(), String> {
     })?;
     log_done("Web Dev Bundle Built");
 
-    let output_dir = perro_compiler::bundle_output_root(
-        &project_dir,
-        args.iter().any(|a| a == "--demo"),
-    )
-    .join("web-dev");
+    let output_dir =
+        perro_compiler::bundle_output_root(&project_dir, args.iter().any(|a| a == "--demo"))
+            .join("web-dev");
     let (listener, port) = bind_web_dev_listener(&host, port)?;
     let url = format!("http://{host}:{port}/");
     log_note(&format!("Web Dev Bundle -> {}", output_dir.display()));

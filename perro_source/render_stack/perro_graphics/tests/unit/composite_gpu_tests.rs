@@ -360,6 +360,7 @@ impl Fixture {
                     resources: &self.resources,
                     shared_textures: &mut self.shared,
                     viewport: SIZE,
+                    render_viewport_override: None,
                     primitives: &primitives,
                     world_projections: &[],
                     textures_delta: paint.textures_delta,

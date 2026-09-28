@@ -187,11 +187,33 @@ fn render_ui_pixels_at(
     revision: u64,
     viewport: [u32; 2],
 ) -> Vec<u8> {
+    render_ui_pixels_for_target(
+        ui,
+        device,
+        queue,
+        primitives,
+        textures_delta,
+        revision,
+        viewport,
+        viewport,
+    )
+}
+
+fn render_ui_pixels_for_target(
+    ui: &mut GpuUi,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    primitives: &[Arc<ClippedPrimitive>],
+    textures_delta: &TexturesDelta,
+    revision: u64,
+    viewport: [u32; 2],
+    target: [u32; 2],
+) -> Vec<u8> {
     let output = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("ui alpha test output"),
         size: wgpu::Extent3d {
-            width: viewport[0],
-            height: viewport[1],
+            width: target[0],
+            height: target[1],
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
@@ -210,6 +232,7 @@ fn render_ui_pixels_at(
             resources: &ResourceStore::new(),
             shared_textures: &mut shared_textures,
             viewport,
+            render_viewport_override: (viewport != target).then_some(target),
             primitives,
             world_projections: &[],
             textures_delta,
@@ -235,10 +258,10 @@ fn render_ui_pixels_at(
         });
     }
     ui.render_pass(device, &mut encoder, &output_view, viewport, None);
-    let bytes_per_row = viewport[0] * 4;
+    let bytes_per_row = target[0] * 4;
     let staging = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("ui alpha test readback"),
-        size: u64::from(bytes_per_row * viewport[1]),
+        size: u64::from(bytes_per_row * target[1]),
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -249,12 +272,12 @@ fn render_ui_pixels_at(
             layout: wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(bytes_per_row),
-                rows_per_image: Some(viewport[1]),
+                rows_per_image: Some(target[1]),
             },
         },
         wgpu::Extent3d {
-            width: viewport[0],
-            height: viewport[1],
+            width: target[0],
+            height: target[1],
             depth_or_array_layers: 1,
         },
     );
@@ -274,6 +297,54 @@ fn render_ui_pixels_at(
 fn pixel(bytes: &[u8], x: u32, y: u32) -> [u8; 4] {
     let offset = ((y * VIEWPORT[0] + x) * 4) as usize;
     bytes[offset..offset + 4].try_into().expect("RGBA pixel")
+}
+
+#[test]
+fn capture_target_scales_window_ui_across_full_output() {
+    pollster::block_on(async {
+        let Some((device, queue)) = test_device().await else {
+            eprintln!("skip capture UI pixel test: no wgpu adapter");
+            return;
+        };
+        let mut ui = GpuUi::new(&device, OUTPUT_FORMAT, TextureFilterMode::Linear);
+        let primitives = [colored_rect(
+            0.0,
+            64.0,
+            TextureId::default(),
+            Color32::WHITE,
+        )];
+        let mut delta = TexturesDelta::default();
+        delta.set.push((
+            TextureId::default(),
+            epaint::ImageDelta::full(
+                epaint::ColorImage::new([1, 1], vec![Color32::WHITE]),
+                epaint::textures::TextureOptions::LINEAR,
+            ),
+        ));
+        let bytes = render_ui_pixels_for_target(
+            &mut ui,
+            &device,
+            &queue,
+            &primitives,
+            &delta,
+            1,
+            [64, 48],
+            VIEWPORT,
+        );
+        assert!(pixel(&bytes, 120, 48)[3] > 200);
+        assert_eq!(pixel(&bytes, 120, 8)[3], 0);
+        assert!(!ui.composite_is_idle([64, 48], 1));
+        render_ui_pixels_at(
+            &mut ui,
+            &device,
+            &queue,
+            &primitives,
+            &TexturesDelta::default(),
+            1,
+            [64, 48],
+        );
+        assert!(ui.composite_is_idle([64, 48], 1));
+    });
 }
 
 #[test]
@@ -390,6 +461,7 @@ fn cycle_at(
             resources: &resources,
             shared_textures: &mut shared_textures,
             viewport,
+            render_viewport_override: None,
             primitives,
             world_projections: &[],
             textures_delta: &textures_delta,
@@ -521,6 +593,7 @@ fn check_world_glyph_target(output_format: wgpu::TextureFormat) {
                     resources: &ResourceStore::new(),
                     shared_textures: &mut shared_textures,
                     viewport: VIEWPORT,
+                    render_viewport_override: None,
                     primitives: &primitives,
                     world_projections: &projections,
                     textures_delta: &delta,
@@ -690,6 +763,7 @@ fn sparse_ui_patch_matches_full_geometry_and_falls_back_on_layout_changes() {
                 resources: &resources,
                 shared_textures: &mut shared_textures,
                 viewport: VIEWPORT,
+                render_viewport_override: None,
                 primitives: &primitives,
                 world_projections: &depths,
                 textures_delta: &TexturesDelta::default(),
@@ -717,6 +791,7 @@ fn sparse_ui_patch_matches_full_geometry_and_falls_back_on_layout_changes() {
                 resources: &resources,
                 shared_textures: &mut shared_textures,
                 viewport: VIEWPORT,
+                render_viewport_override: None,
                 primitives: &primitives,
                 world_projections: &moved_depths,
                 textures_delta: &TexturesDelta::default(),
@@ -759,6 +834,7 @@ fn sparse_ui_resize_under_pixel_cap_rebuilds_all_scaled_vertices() {
                 resources: &resources,
                 shared_textures: &mut shared_textures,
                 viewport: [VIEWPORT[0] * 2, VIEWPORT[1] * 2],
+                render_viewport_override: None,
                 primitives: &primitives,
                 world_projections: &[],
                 textures_delta: &TexturesDelta::default(),

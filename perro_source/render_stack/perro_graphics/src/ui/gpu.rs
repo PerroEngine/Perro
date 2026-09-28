@@ -212,6 +212,7 @@ pub struct UiPrepareInput<'a> {
     pub resources: &'a ResourceStore,
     pub(crate) shared_textures: &'a mut SharedTextureStore,
     pub viewport: [u32; 2],
+    pub render_viewport_override: Option<[u32; 2]>,
     pub primitives: &'a [Arc<ClippedPrimitive>],
     pub world_projections: &'a [Option<crate::ui::painter::UiWorldProjection>],
     pub textures_delta: &'a TexturesDelta,
@@ -773,6 +774,7 @@ impl GpuUi {
             resources,
             shared_textures,
             viewport,
+            render_viewport_override,
             primitives,
             world_projections,
             textures_delta,
@@ -781,12 +783,14 @@ impl GpuUi {
             static_texture_lookup,
         } = input;
         let viewport = [viewport[0].max(1), viewport[1].max(1)];
-        let render_viewport = supersampled_size(
-            viewport,
-            self.supersample_scale(),
-            self.max_texture_dimension_2d,
-            self.max_render_pixels,
-        );
+        let render_viewport = render_viewport_override.unwrap_or_else(|| {
+            supersampled_size(
+                viewport,
+                self.supersample_scale(),
+                self.max_texture_dimension_2d,
+                self.max_render_pixels,
+            )
+        });
         let render_scale = viewport_scale(viewport, render_viewport);
         self.perf_counters = UiPerfCounters {
             draw_calls: self.meshes.len() as u32,
@@ -1048,12 +1052,8 @@ impl GpuUi {
         }
         self.used_since_shrink_tick = true;
         let viewport = [viewport[0].max(1), viewport[1].max(1)];
-        let render_viewport = supersampled_size(
-            viewport,
-            self.supersample_scale(),
-            self.max_texture_dimension_2d,
-            self.max_render_pixels,
-        );
+        debug_assert_eq!(viewport, self.prepared_viewport);
+        let render_viewport = self.prepared_render_viewport;
         let target_created = self.ensure_supersample_target(device, render_viewport);
         if self.supersample_target.is_none() {
             return;
@@ -2156,10 +2156,18 @@ impl GpuUi {
     /// Depth-tested UI is excluded outright: it samples the scene depth buffer,
     /// which the 3D pass rewrites under an unchanged view generation.
     pub(crate) fn composite_is_idle(&self, viewport: [u32; 2], revision: u64) -> bool {
+        let render_viewport = supersampled_size(
+            viewport,
+            self.supersample_scale(),
+            self.max_texture_dimension_2d,
+            self.max_render_pixels,
+        );
         !self.supersample_dirty
             && !self.prepared_uses_depth_test
             && self.prepared_revision == revision
             && self.prepared_viewport == viewport
+            && self.prepared_render_viewport == render_viewport
+            && self.rasterized_render_viewport == render_viewport
             && self.prepared_mesh_signature.is_some()
             && self.rasterized_signature == self.prepared_mesh_signature
     }

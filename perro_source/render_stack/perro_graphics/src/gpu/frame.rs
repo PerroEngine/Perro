@@ -1,5 +1,30 @@
 use super::*;
 
+fn output_viewport(
+    capture_active: bool,
+    capture_size: Option<[u32; 2]>,
+    surface_size: [u32; 2],
+) -> [u32; 2] {
+    if capture_active {
+        capture_size.unwrap_or(surface_size)
+    } else {
+        surface_size
+    }
+}
+
+#[cfg(test)]
+mod output_viewport_tests {
+    use super::output_viewport;
+
+    #[test]
+    fn idle_capture_uses_live_window_size() {
+        let surface = [1920, 1080];
+        let capture = Some([3840, 2160]);
+        assert_eq!(output_viewport(false, capture, surface), surface);
+        assert_eq!(output_viewport(true, capture, surface), capture.unwrap());
+    }
+}
+
 impl Gpu {
     pub fn render(&mut self, frame: RenderFrame<'_>) -> RenderGpuTiming {
         let total_start = Instant::now();
@@ -1341,6 +1366,7 @@ impl Gpu {
                         resources,
                         shared_textures: &mut self.shared_textures,
                         viewport: stream.resolution,
+                        render_viewport_override: None,
                         primitives: paint.primitives,
                         world_projections: paint.world_projections,
                         textures_delta: paint.textures_delta,
@@ -1741,11 +1767,13 @@ impl Gpu {
         // present) reproduces the image already on screen when these hold, so
         // the cheapest correct frame is no frame at all. See
         // `idle_frame_skip_allowed`.
-        let ui_viewport = self
-            .capture_target
-            .as_ref()
-            .map(|target| target.size)
-            .unwrap_or([self.config.width.max(1), self.config.height.max(1)]);
+        // A capture target may stay armed between readbacks. Present those
+        // frames at surface size, or the live window shrinks into one corner.
+        let ui_viewport = output_viewport(
+            capture_active,
+            self.capture_target.as_ref().map(|target| target.size),
+            [self.config.width.max(1), self.config.height.max(1)],
+        );
         let ui_idle = ui_textures_delta.is_empty()
             && !ui_primitives.is_empty()
             && self
@@ -1802,11 +1830,7 @@ impl Gpu {
         }
         // Rebuild from the clean scene on every presented frame. Never load a
         // previous frame's UI or effects into this composite.
-        let composite_size = self
-            .capture_target
-            .as_ref()
-            .map(|target| target.size)
-            .unwrap_or([self.config.width.max(1), self.config.height.max(1)]);
+        let composite_size = ui_viewport;
         self.composite
             .resize(&self.device, composite_size, &self.present);
         self.present
@@ -1972,10 +1996,12 @@ impl Gpu {
             }
             if let Some(ui) = self.ui.as_mut() {
                 let output_view = display_view.expect("surface acquired before display overlays");
-                let viewport = composite_size;
+                // UI mesh positions use window pixels. Capture frames raster
+                // them into the larger target without changing layout coords.
+                let viewport = [self.config.width.max(1), self.config.height.max(1)];
                 ui.set_max_render_pixels(
                     self.max_render_pixels
-                        .max(u64::from(viewport[0]) * u64::from(viewport[1])),
+                        .max(u64::from(composite_size[0]) * u64::from(composite_size[1])),
                 );
                 ui.prepare(
                     &self.device,
@@ -1984,6 +2010,7 @@ impl Gpu {
                         resources,
                         shared_textures: &mut self.shared_textures,
                         viewport,
+                        render_viewport_override: capture_active.then_some(composite_size),
                         primitives: ui_primitives,
                         world_projections: ui_world_projections,
                         textures_delta: ui_textures_delta,
