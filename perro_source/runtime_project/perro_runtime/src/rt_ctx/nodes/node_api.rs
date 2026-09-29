@@ -236,10 +236,15 @@ impl NodeAPI for Runtime {
         ) {
             self.nodes.mark_suspension_change();
         }
+        // Ancestor visibility changes affect renderable descendants even when
+        // the mutated node itself has no render payload (for example Node3D).
+        if visibility_changed {
+            self.mark_needs_rerender(id);
+        }
         if T::NODE_TYPE == NodeType::UiSubView {
             self.invalidate_physics_query_sync();
         }
-        if matches!(T::RENDERABLE, Renderable::True) {
+        if matches!(T::RENDERABLE, Renderable::True) && !visibility_changed {
             // UI payloads are fully fingerprinted by `ui_snapshot`, so a
             // no-op mutation (script reads through the mut accessor, or
             // writes identical values every frame) must not defeat the UI

@@ -19,6 +19,8 @@
 | `set_refresh_rate_cap` | [`set_refresh_rate_cap`](#set_refresh_rate_cap) |
 | `set_unlimited_frame_rate` | [`set_unlimited_frame_rate`](#set_unlimited_frame_rate) |
 | `get_active_refresh_rate` | [`get_active_refresh_rate`](#get_active_refresh_rate) |
+| `set_clipboard_text` | [`set_clipboard_text`](#set_clipboard_text) |
+| `get_clipboard_text` | [`get_clipboard_text`](#get_clipboard_text) |
 | `close_app` | [`close_app`](#close_app) |
 | `window_set_title` | [`window_set_title`](#window_set_title) |
 | `window_set_size` | [`window_set_size`](#window_set_size) |
@@ -26,6 +28,8 @@
 | `window_set_frame_rate_cap` | [`window_set_frame_rate_cap`](#window_set_frame_rate_cap) |
 | `window_set_frame_rate_limit` | [`window_set_frame_rate_limit`](#window_set_frame_rate_limit) |
 | `window_get_active_refresh_rate` | [`window_get_active_refresh_rate`](#window_get_active_refresh_rate) |
+| `window_set_clipboard_text` | [`window_set_clipboard_text`](#window_set_clipboard_text) |
+| `window_get_clipboard_text` | [`window_get_clipboard_text`](#window_get_clipboard_text) |
 | `close_app` | [`close_app`](#close_app-1) |
 
 ## Purpose
@@ -42,6 +46,7 @@ desktop" request that a pause menu needs.
 - Sync frame rate to the monitor: `ctx.run.Window().set_refresh_rate_cap()`, reading the panel rate back with `window_get_active_refresh_rate!(ctx.run)`.
 - Uncap for a benchmark or stress scene: `ctx.run.Window().set_unlimited_frame_rate()`.
 - Show the current level or save-slot name in the title bar: `window_set_title!(ctx.run, "Perro - Level 3")`.
+- Copy or read short text through the OS clipboard: `window_set_clipboard_text!(ctx.run, text)` and `window_get_clipboard_text!(ctx.run)`.
 - Quit to desktop from a pause menu button: `close_app!(ctx.run)` queues an app-close request for the app layer.
 
 ## Context
@@ -195,6 +200,28 @@ methods!({
 | Use when | Use `close_app` to close app on the app window; the platform may constrain the requested mode, size, or timing value. |
 | Fails when / edge behavior | Queues an app close request for the app layer to apply. |
 
+### `set_clipboard_text`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Window()` |
+| Signature | `pub fn set_clipboard_text(&mut self, text: impl Into<String>)` |
+| Params | `&mut self, text: impl Into<String>` |
+| Returns | `()` |
+| Use when | Use `set_clipboard_text` to write text to the OS clipboard. |
+| Fails when / edge behavior | No-op when clipboard access fails or platform lacks clipboard support; supported desktop targets use `arboard`. |
+
+### `get_clipboard_text`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Window()` |
+| Signature | `pub fn get_clipboard_text(&mut self) -> Option<String>` |
+| Params | `&mut self` |
+| Returns | `Option<String>` |
+| Use when | Use `get_clipboard_text` to read text from the OS clipboard. |
+| Fails when / edge behavior | Returns `None` when clipboard access fails, clipboard data lacks text, or platform lacks clipboard support. |
+
 ### `window_set_title`
 
 | Field | Detail |
@@ -271,3 +298,25 @@ methods!({
 | Returns | `()` |
 | Use when | Use `close_app` to close app on the app window; the platform may constrain the requested mode, size, or timing value. |
 | Fails when / edge behavior | Queues an app close request for the app layer to apply. |
+
+### `window_set_clipboard_text`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Window()` |
+| Signature | `window_set_clipboard_text!(ctx.run, text)` |
+| Params | `ctx, text` |
+| Returns | `()` |
+| Use when | Use `window_set_clipboard_text` to write text to the OS clipboard. |
+| Fails when / edge behavior | No-op when clipboard access fails or platform lacks clipboard support. |
+
+### `window_get_clipboard_text`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Window()` |
+| Signature | `window_get_clipboard_text!(ctx.run)` |
+| Params | `ctx` |
+| Returns | `Option<String>` |
+| Use when | Use `window_get_clipboard_text` to read text from the OS clipboard. |
+| Fails when / edge behavior | Returns `None` when clipboard access fails, clipboard data lacks text, or platform lacks clipboard support. |

@@ -141,3 +141,52 @@ fn seeded_rng_helpers_work() {
     assert!(rng.next_index(5).expect("test setup must succeed") < 5);
     let _ = rng.next_chance(0.5);
 }
+
+#[test]
+fn seeded_rng_mixes_are_repeatable_and_order_sensitive() {
+    let mut a = super::SeededRng::new(11);
+    let mut b = super::SeededRng::new(11);
+    a.mix(7);
+    a.mix_str("shop");
+    b.mix(7);
+    b.mix_str("shop");
+    let expected = a.next_u32();
+    assert_eq!(expected, b.next_u32());
+
+    let mut different_value = super::SeededRng::new(11);
+    different_value.mix(8);
+    different_value.mix_str("shop");
+    assert_ne!(expected, different_value.next_u32());
+
+    let mut different_order = super::SeededRng::new(11);
+    different_order.mix_str("shop");
+    different_order.mix(7);
+    assert_ne!(expected, different_order.next_u32());
+}
+
+#[test]
+fn seeded_rng_state_round_trip_restores_sequence() {
+    let mut original = super::SeededRng::new(77);
+    original.mix_str("save-slot");
+    original.mix(0xfeed_beef);
+    let state = original.state();
+    let mut restored = super::SeededRng::from_state(state);
+
+    for _ in 0..32 {
+        assert_eq!(original.next_u32(), restored.next_u32());
+    }
+}
+
+#[test]
+fn seeded_rng_fork_keeps_parent_and_derives_child() {
+    let mut parent = super::SeededRng::new(123);
+    parent.mix_str("run");
+    let state = parent.state();
+    let mut child = parent.fork("shop");
+    let mut sibling = parent.fork("offer");
+    let mut parent_copy = super::SeededRng::from_state(state);
+
+    assert_eq!(parent.state(), state);
+    assert_ne!(child.next_u32(), sibling.next_u32());
+    assert_ne!(child.next_u32(), parent_copy.next_u32());
+}

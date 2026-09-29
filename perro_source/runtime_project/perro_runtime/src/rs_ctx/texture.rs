@@ -293,6 +293,10 @@ impl TextureAPI for RuntimeResourceApi {
         }
         let state = self.state.lock().expect("resource api mutex poisoned");
         state.texture_loaded_by_id.contains(&id)
+            && !state
+                .texture_pending_id_by_request
+                .values()
+                .any(|pending| *pending == id)
     }
 
     fn webcam_texture(&self, webcam: WebcamID) -> TextureID {
@@ -421,5 +425,20 @@ mod tests {
         assert_ne!(next, preview);
         assert_ne!(next, picture);
         assert!(api.reserve_texture_id(picture));
+    }
+
+    #[test]
+    fn pending_texture_is_not_loaded_when_another_source_reports_same_id() {
+        let api = RuntimeResourceApi::new(None, None, None, None, None, None, None, None);
+        let pending = api.load_texture("res://pictures/pending.png");
+
+        api.state
+            .lock()
+            .expect("resource api mutex poisoned")
+            .texture_loaded_by_id
+            .insert(pending);
+
+        assert!(api.is_texture_id_pending(pending));
+        assert!(!api.is_texture_loaded(pending));
     }
 }

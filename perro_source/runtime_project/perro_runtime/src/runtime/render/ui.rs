@@ -8,12 +8,14 @@ use perro_ids::{NodeID, SignalID, TextureID};
 use perro_input_api::GamepadAxis;
 use perro_input_api::{GamepadButton, JoyConButton, KeyCode, MouseButton, PlayerBinding};
 use perro_nodes::{SceneNode, SceneNodeData};
+#[cfg(test)]
+use perro_render_bridge::ResourceCommand;
 use perro_render_bridge::{
-    CameraStreamSourceState, RenderCommand, ResourceCommand, UiCommand, UiCornerRadiiState,
-    UiDepthEffectState, UiFillKindState, UiImageScaleState, UiLinearGradientState, UiRectState,
-    UiTextAlignState,
+    CameraStreamSourceState, RenderCommand, UiCommand, UiCornerRadiiState, UiDepthEffectState,
+    UiFillKindState, UiImageScaleState, UiLinearGradientState, UiRectState, UiTextAlignState,
 };
-use perro_runtime_render::{UiDirtyMask, UiExtractionOptions, ui_image_texture_request};
+use perro_resource_api::sub_apis::TextureAPI;
+use perro_runtime_render::{UiDirtyMask, UiExtractionOptions};
 use perro_structs::{Color, UVector2, Vector2};
 use perro_ui::{
     ComputedUiRect, UiAnchor, UiButton, UiDropdownDirection, UiDropdownOpenAnimation, UiFontSizing,

@@ -97,9 +97,10 @@ pub mod prelude {
         timer_cancel, timer_finished, timer_is_active, timer_remaining, timer_start, timer_started,
         to_global_point_2d, to_global_point_3d, to_global_transform_2d, to_global_transform_3d,
         to_local_point_2d, to_local_point_3d, to_local_transform_2d, to_local_transform_3d,
-        window_get_active_refresh_rate, window_set_cursor_icon, window_set_frame_rate_cap,
-        window_set_frame_rate_limit, window_set_mode, window_set_size, window_set_title,
-        with_base_node, with_base_node_mut, with_node, with_node_mut, with_state, with_state_mut,
+        window_get_active_refresh_rate, window_get_clipboard_text, window_set_clipboard_text,
+        window_set_cursor_icon, window_set_frame_rate_cap, window_set_frame_rate_limit,
+        window_set_mode, window_set_size, window_set_title, with_base_node, with_base_node_mut,
+        with_node, with_node_mut, with_state, with_state_mut,
     };
 
     // Common id and variant helpers.

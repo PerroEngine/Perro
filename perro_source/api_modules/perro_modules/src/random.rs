@@ -3,6 +3,7 @@ const FNV1A_OFFSET: u32 = 0x811c_9dc5;
 const FNV1A_PRIME: u32 = 0x0100_0193;
 const FNV1A_OFFSET64: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV1A_PRIME64: u64 = 0x0000_0100_0000_01b3;
+const RNG_MIX_GAMMA64: u64 = 0x9e37_79b9_7f4a_7c15;
 
 pub trait HashToU32 {
     fn hash_to_u32(self) -> u32;
@@ -333,29 +334,61 @@ pub fn shuffle<T>(seed: u32, values: &mut [T]) {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SeededRng {
-    state: u32,
+    state: u64,
 }
 
 impl SeededRng {
     #[inline]
     pub const fn new(seed: u32) -> Self {
-        Self { state: seed }
+        Self { state: seed as u64 }
     }
 
     #[inline]
     pub const fn seed(&self) -> u32 {
-        self.state
+        self.state as u32
     }
 
     #[inline]
     pub fn reseed(&mut self, seed: u32) {
-        self.state = seed;
+        self.state = seed as u64;
+    }
+
+    /// Fold stable data into this stream without resetting its sequence.
+    #[inline]
+    pub fn mix(&mut self, value: u64) {
+        self.state = hash64_u64(self.state ^ value ^ RNG_MIX_GAMMA64);
+    }
+
+    /// Fold a stable string hash into this stream.
+    #[inline]
+    pub fn mix_str(&mut self, value: &str) {
+        self.mix(hash64_str(value));
+    }
+
+    /// Return exact stream state for save/restore.
+    #[inline]
+    pub const fn state(&self) -> u64 {
+        self.state
+    }
+
+    /// Restore an exact stream state from [`Self::state`].
+    #[inline]
+    pub const fn from_state(state: u64) -> Self {
+        Self { state }
+    }
+
+    /// Derive a child stream without advancing this stream.
+    #[inline]
+    pub fn fork(&self, label: &str) -> Self {
+        let mut child = Self::from_state(self.state);
+        child.mix_str(label);
+        child
     }
 
     #[inline]
     pub fn next_u32(&mut self) -> u32 {
-        self.state = self.state.wrapping_add(STREAM_GAMMA);
-        hash_u32(self.state)
+        self.state = self.state.wrapping_add(STREAM_GAMMA as u64);
+        hash_u32(self.state as u32 ^ (self.state >> 32) as u32)
     }
 
     #[inline]

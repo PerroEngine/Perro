@@ -2,6 +2,28 @@ use perro_runtime_api::sub_apis::{CursorIcon, FrameRateCap, WindowAPI, WindowMod
 
 use crate::Runtime;
 
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+fn set_clipboard_text_impl(text: String) {
+    let Ok(mut clipboard) = arboard::Clipboard::new() else {
+        return;
+    };
+    let _ = clipboard.set_text(text);
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+fn set_clipboard_text_impl(_text: String) {}
+
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+fn get_clipboard_text_impl() -> Option<String> {
+    let mut clipboard = arboard::Clipboard::new().ok()?;
+    clipboard.get_text().ok()
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+fn get_clipboard_text_impl() -> Option<String> {
+    None
+}
+
 impl WindowAPI for Runtime {
     fn set_window_title(&mut self, title: impl Into<String>) {
         self.window_requests
@@ -38,6 +60,14 @@ impl WindowAPI for Runtime {
 
     fn get_active_refresh_rate(&mut self) -> Option<f32> {
         self.active_refresh_rate()
+    }
+
+    fn set_clipboard_text(&mut self, text: impl Into<String>) {
+        set_clipboard_text_impl(text.into());
+    }
+
+    fn get_clipboard_text(&mut self) -> Option<String> {
+        get_clipboard_text_impl()
     }
 }
 

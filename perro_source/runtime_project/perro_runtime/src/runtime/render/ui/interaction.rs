@@ -172,36 +172,16 @@ impl Runtime {
             })?;
 
         if texture.is_nil() {
-            let request = ui_image_texture_request(node);
-            if let Some(crate::RuntimeRenderResult::Texture(id)) = self.take_render_result(request)
-            {
-                texture = id;
-            }
+            let source = self
+                .render_2d
+                .texture_sources
+                .get(&node)
+                .map(String::as_str)
+                .unwrap_or("__default__");
+            texture = self.resource_api.load_texture(source);
         }
 
-        if texture.is_nil() {
-            let request = ui_image_texture_request(node);
-            if !self.render.is_inflight(request) {
-                let source = self
-                    .render_2d
-                    .texture_sources
-                    .get(&node)
-                    .cloned()
-                    .unwrap_or_else(|| "__default__".to_string());
-                self.render.mark_inflight(request);
-                self.queue_render_command(RenderCommand::Resource(Box::new(
-                    ResourceCommand::CreateTexture {
-                        request,
-                        id: TextureID::nil(),
-                        source,
-                        reserved: false,
-                    },
-                )));
-            }
-            return None;
-        }
-
-        if self.resource_api.is_texture_id_pending(texture) {
+        if texture.is_nil() || self.resource_api.is_texture_id_pending(texture) {
             return None;
         }
 

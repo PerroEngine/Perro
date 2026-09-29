@@ -352,6 +352,11 @@ Use stream helpers when you need multiple stable random values from one base see
 - `SeededRng::new(seed: u32) -> SeededRng`
 - `seed(&self) -> u32`
 - `reseed(&mut self, seed: u32)`
+- `mix(&mut self, value: u64)`
+- `mix_str(&mut self, value: &str)`
+- `state(&self) -> u64`
+- `SeededRng::from_state(state: u64) -> SeededRng`
+- `fork(&self, label: &str) -> SeededRng` without advancing parent
 - `next_u32(&mut self) -> u32`
 - `next_01(&mut self) -> f32` in `[0, 1]`
 - `next_11(&mut self) -> f32` in `[-1, 1]`
@@ -373,5 +378,10 @@ let jitter = rand11_stream(base_seed, 0);
 let speed_scale = 0.8 + rand01_stream(base_seed, 1) * 0.4;
 
 let mut rng = SeededRng::new(base_seed);
+rng.mix_str("shop");
 let color_pick = rng.next_u32() % 4;
+let saved = rng.state();
+let mut restored = SeededRng::from_state(saved);
+assert_eq!(rng.next_u32(), restored.next_u32());
+let mut offer_rng = rng.fork("offer");
 ```

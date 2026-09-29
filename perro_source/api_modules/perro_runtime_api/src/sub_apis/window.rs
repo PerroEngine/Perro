@@ -35,6 +35,8 @@ pub trait WindowAPI {
     fn set_cursor_icon(&mut self, icon: CursorIcon);
     fn close_app(&mut self);
     fn get_active_refresh_rate(&mut self) -> Option<f32>;
+    fn set_clipboard_text(&mut self, text: impl Into<String>);
+    fn get_clipboard_text(&mut self) -> Option<String>;
 }
 
 pub struct WindowModule<'rt, R: WindowAPI + ?Sized> {
@@ -97,6 +99,14 @@ impl<'rt, R: WindowAPI + ?Sized> WindowModule<'rt, R> {
     pub fn get_active_refresh_rate(&mut self) -> Option<f32> {
         self.rt.get_active_refresh_rate()
     }
+
+    pub fn set_clipboard_text(&mut self, text: impl Into<String>) {
+        self.rt.set_clipboard_text(text);
+    }
+
+    pub fn get_clipboard_text(&mut self) -> Option<String> {
+        self.rt.get_clipboard_text()
+    }
 }
 
 #[macro_export]
@@ -152,5 +162,19 @@ macro_rules! close_app {
 macro_rules! window_get_active_refresh_rate {
     ($ctx:expr) => {
         $ctx.Window().get_active_refresh_rate()
+    };
+}
+
+#[macro_export]
+macro_rules! window_set_clipboard_text {
+    ($ctx:expr, $text:expr) => {
+        $ctx.Window().set_clipboard_text($text)
+    };
+}
+
+#[macro_export]
+macro_rules! window_get_clipboard_text {
+    ($ctx:expr) => {
+        $ctx.Window().get_clipboard_text()
     };
 }

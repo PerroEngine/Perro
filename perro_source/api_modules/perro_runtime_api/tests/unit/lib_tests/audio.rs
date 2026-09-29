@@ -85,6 +85,18 @@ mod audio {
     }
 
     #[test]
+    fn clipboard_methods_and_macros_forward() {
+        let mut rt = dummy_runtime();
+        let mut ctx = RuntimeWindow::new(&mut rt);
+
+        ctx.Window().set_clipboard_text("method");
+        assert_eq!(ctx.Window().get_clipboard_text(), Some("method".into()));
+
+        window_set_clipboard_text!(&mut ctx, "macro");
+        assert_eq!(window_get_clipboard_text!(&mut ctx), Some("macro".into()));
+    }
+
+    #[test]
     fn physics_solve_velocity_to_target_2d_hits_target() {
         let mut rt = dummy_runtime();
         let mut ctx = RuntimeWindow::new(&mut rt);

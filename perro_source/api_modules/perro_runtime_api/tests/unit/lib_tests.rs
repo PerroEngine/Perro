@@ -92,6 +92,14 @@ impl WindowAPI for DummyRuntime {
     fn get_active_refresh_rate(&mut self) -> Option<f32> {
         Some(60.0)
     }
+
+    fn set_clipboard_text(&mut self, text: impl Into<String>) {
+        self.state = Box::new(text.into());
+    }
+
+    fn get_clipboard_text(&mut self) -> Option<String> {
+        self.state.downcast_ref::<String>().cloned()
+    }
 }
 
 impl NodeAPI for DummyRuntime {

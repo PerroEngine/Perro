@@ -231,6 +231,52 @@ fn empty_ui_pass_keeps_pending_image_retry() {
     assert!(runtime.resource_api.is_texture_id_pending(texture));
 }
 
+#[test]
+fn scene_ui_texture_uses_runtime_allocator_and_dedupes_script_load() {
+    let mut runtime = Runtime::new();
+    let source = "res://textures/shared_ui.png";
+    let node = insert_ui_node(
+        &mut runtime,
+        SceneNodeData::UiImage(Box::new(perro_ui::UiImage::new())),
+    );
+    runtime
+        .render_2d
+        .texture_sources
+        .insert(node, source.to_string());
+
+    assert_eq!(runtime.resolve_ui_image_texture(node), None);
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    let scene_texture = commands
+        .iter()
+        .find_map(|command| match command {
+            RenderCommand::Resource(command) => match command.as_ref() {
+                ResourceCommand::CreateTexture {
+                    id, source: found, ..
+                } if found == source => Some(*id),
+                _ => None,
+            },
+            _ => None,
+        })
+        .expect("scene UI texture create command");
+    assert!(!scene_texture.is_nil());
+
+    let script_texture = runtime.resource_api.load_texture(source);
+    assert_eq!(script_texture, scene_texture);
+    runtime.drain_render_commands(&mut commands);
+    assert_eq!(
+        commands
+            .iter()
+            .filter(|command| matches!(
+                command,
+                RenderCommand::Resource(command)
+                    if matches!(command.as_ref(), ResourceCommand::CreateTexture { source: found, .. } if found == source)
+            ))
+            .count(),
+        1
+    );
+}
+
 fn attach_child(runtime: &mut Runtime, parent: NodeID, child: NodeID) {
     runtime
         .nodes

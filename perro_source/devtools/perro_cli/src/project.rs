@@ -23,7 +23,7 @@ use std::io::{self, IsTerminal, Write};
 use std::net::{TcpListener, TcpStream};
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command, ExitStatus};
 use std::sync::{
     Arc, LazyLock, Mutex,
     atomic::{AtomicBool, Ordering},
@@ -31,6 +31,79 @@ use std::sync::{
 };
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+static DEV_CTRL_C: AtomicBool = AtomicBool::new(false);
+
+#[cfg(windows)]
+struct DevJob {
+    handle: windows_sys::Win32::Foundation::HANDLE,
+}
+
+#[cfg(windows)]
+impl DevJob {
+    fn new() -> io::Result<Self> {
+        use windows_sys::Win32::System::JobObjects::{
+            CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
+            SetInformationJobObject,
+        };
+
+        let handle = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+        if handle == 0 {
+            return Err(io::Error::last_os_error());
+        }
+
+        let mut limits = unsafe { std::mem::zeroed::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() };
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        let result = unsafe {
+            SetInformationJobObject(
+                handle,
+                JobObjectExtendedLimitInformation,
+                (&limits as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            )
+        };
+        if result == 0 {
+            unsafe { windows_sys::Win32::Foundation::CloseHandle(handle) };
+            return Err(io::Error::last_os_error());
+        }
+
+        Ok(Self { handle })
+    }
+
+    fn assign(&self, child: &Child) -> io::Result<()> {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::System::JobObjects::AssignProcessToJobObject;
+
+        let result =
+            unsafe { AssignProcessToJobObject(self.handle, child.as_raw_handle() as isize) };
+        if result == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+impl Drop for DevJob {
+    fn drop(&mut self) {
+        unsafe { windows_sys::Win32::Foundation::CloseHandle(self.handle) };
+    }
+}
+
+#[cfg(not(windows))]
+struct DevJob;
+
+#[cfg(not(windows))]
+impl DevJob {
+    fn new() -> io::Result<Self> {
+        Ok(Self)
+    }
+
+    fn assign(&self, _child: &Child) -> io::Result<()> {
+        Ok(())
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CliTarget {
@@ -217,6 +290,9 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     if target == CliTarget::Android {
         return dev_android_command(args, cwd);
     }
+    let dev_job =
+        DevJob::new().map_err(|err| format!("failed to create dev process job: {err}"))?;
+    install_dev_ctrl_c_handler();
     let profile_requested = args.iter().any(|a| a == "--profile");
     let timings = args.iter().any(|a| a == "--timings");
     let ui_profile = args.iter().any(|a| a == "--ui-profile");
@@ -358,9 +434,19 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
         });
     }
     build_cmd.arg("--features").arg(features.join(","));
-    let build_status = build_cmd.status().map_err(|err| {
+    let mut build_child = build_cmd.spawn().map_err(|err| {
         format!(
             "failed to build dev runner + scripts from {}: {err}",
+            workspace_dir.display()
+        )
+    })?;
+    if let Err(err) = dev_job.assign(&build_child) {
+        let _ = build_child.kill();
+        return Err(format!("failed to assign dev build to process job: {err}"));
+    }
+    let build_status = wait_for_dev_child(build_child).map_err(|err| {
+        format!(
+            "failed while building dev runner + scripts from {}: {err}",
             workspace_dir.display()
         )
     })?;
@@ -437,10 +523,19 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
         run_cmd.env("PERRO_PROFILE_CSV", path.to_string_lossy().to_string());
     }
 
-    install_dev_ctrl_c_handler();
-    let run_status = run_cmd.status().map_err(|err| {
+    let mut run_child = run_cmd.spawn().map_err(|err| {
         format!(
             "failed to launch project dev runner at {}: {err}",
+            runner_path.display()
+        )
+    })?;
+    if let Err(err) = dev_job.assign(&run_child) {
+        let _ = run_child.kill();
+        return Err(format!("failed to assign dev runner to process job: {err}"));
+    }
+    let run_status = wait_for_dev_child(run_child).map_err(|err| {
+        format!(
+            "failed while waiting for project dev runner at {}: {err}",
             runner_path.display()
         )
     })?;
@@ -461,8 +556,20 @@ fn install_dev_ctrl_c_handler() {
         return;
     }
 
-    if let Err(err) = ctrlc::set_handler(|| {}) {
+    if let Err(err) = ctrlc::set_handler(|| DEV_CTRL_C.store(true, Ordering::SeqCst)) {
         eprintln!("perro warning: failed to install ctrl-c handler: {err}");
+    }
+}
+
+fn wait_for_dev_child(mut child: Child) -> io::Result<ExitStatus> {
+    loop {
+        if DEV_CTRL_C.swap(false, Ordering::SeqCst) {
+            let _ = child.kill();
+        }
+        if let Some(status) = child.try_wait()? {
+            return Ok(status);
+        }
+        thread::sleep(Duration::from_millis(50));
     }
 }
 

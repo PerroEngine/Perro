@@ -2,6 +2,35 @@ mod meshes {
     use super::*;
 
     #[test]
+    fn mesh_descendant_renders_after_hidden_node_3d_becomes_visible() {
+        let mut runtime = Runtime::new();
+        let mut parent_data = Node3D::new();
+        parent_data.visible = false;
+        let parent = runtime.nodes.insert(SceneNode::new(parent_data.into()));
+        let mut mesh = MeshInstance3D::new();
+        mesh.mesh = MeshID::from_parts(7, 0);
+        set_primary_material(&mut mesh, MaterialID::from_parts(9, 0));
+        let child = runtime.nodes.insert(SceneNode::new(mesh.into()));
+        assert!(NodeAPI::reparent(&mut runtime, parent, child));
+
+        runtime.extract_render_3d_commands();
+        assert!(!runtime.render_3d.retained_mesh_draws.contains_key(&child));
+        collect_commands(&mut runtime);
+        runtime.clear_dirty_flags();
+
+        assert_eq!(
+            NodeAPI::with_node_mut::<Node3D, _, _>(&mut runtime, parent, |node| {
+                node.visible = true;
+            }),
+            Some(())
+        );
+        runtime.extract_render_3d_commands();
+
+        assert!(runtime.render_3d.retained_mesh_draws.contains_key(&child));
+        assert!(runtime.render_3d.prev_visible.contains(&child));
+    }
+
+    #[test]
     fn reparent_mesh_between_main_world_and_subview_removes_stale_draw() {
         let mut runtime = Runtime::new();
         let world = runtime.nodes.insert(SceneNode::new(Node3D::new().into()));
