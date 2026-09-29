@@ -114,6 +114,7 @@ impl PerroGraphics {
             #[cfg(test)]
             retained_animated_material_scans: 0,
             used_ref_sprites_revision: u64::MAX,
+            used_ref_ui_texture_refs_revision: u64::MAX,
             global_post_processing: PostProcessSet::new(),
             global_post_processing_cache: Arc::from(Vec::new()),
             global_post_processing_cache_dirty: true,

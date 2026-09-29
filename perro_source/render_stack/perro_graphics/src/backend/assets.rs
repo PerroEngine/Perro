@@ -600,11 +600,19 @@ impl PerroGraphics {
                 self.retained_draw_resource_ref_recounts += 1;
             }
         }
+        let ui_texture_refs_revision = self.renderer_ui.texture_refs_revision();
+        let ui_texture_refs_changed =
+            self.used_ref_ui_texture_refs_revision != ui_texture_refs_revision;
+        if ui_texture_refs_changed {
+            self.used_ref_ui_texture_refs_revision = ui_texture_refs_revision;
+        }
 
         // stream upserts add/remove stream output textures referenced by ui
-        // images + sprites, so DIRTY_STREAMS gates the recount too.
+        // images + sprites, so DIRTY_STREAMS gates the recount too. UI texture
+        // revisions reach this point directly before the periodic GC tick.
         if sprites_refs_changed
             || draws_refs_changed
+            || ui_texture_refs_changed
             || (frame_dirty_bits & (DIRTY_RESOURCES | DIRTY_RESOURCE_REFS | DIRTY_STREAMS)) != 0
         {
             self.resources.reset_ref_counts();

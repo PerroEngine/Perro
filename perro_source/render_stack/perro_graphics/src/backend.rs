@@ -750,6 +750,7 @@ pub struct PerroGraphics {
     #[cfg(test)]
     retained_animated_material_scans: usize,
     used_ref_sprites_revision: u64,
+    used_ref_ui_texture_refs_revision: u64,
     global_post_processing: PostProcessSet,
     // Cached built effects Arc handed to the renderer each frame, rebuilt only
     // when `global_post_processing` is mutated instead of cloned+allocated every

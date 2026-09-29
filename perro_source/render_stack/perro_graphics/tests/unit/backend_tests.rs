@@ -129,6 +129,66 @@ fn resource_metadata_keeps_reference_work_without_gpu_resource_dirt() {
     assert_eq!(graphics.resources.mesh_ref_count(mesh), 1);
 }
 
+#[test]
+fn ui_nine_slice_readd_recounts_before_texture_gc() {
+    use perro_render_bridge::{RenderEvent, UiCommand, UiRectState};
+
+    fn nine_slice(node: NodeID, texture: TextureID) -> RenderCommand {
+        RenderCommand::Ui(Box::new(UiCommand::UpsertNineSlice {
+            node,
+            rect: UiRectState {
+                center: [0.0, 0.0],
+                size: [100.0, 100.0],
+                pivot: [0.5, 0.5],
+                rotation_radians: 0.0,
+                z_index: 0,
+            },
+            clip_rect: [-100.0, -100.0, 100.0, 100.0],
+            texture,
+            tint: [1.0; 4].into(),
+            uv_min: [0.0; 2],
+            uv_max: [1.0; 2],
+            margins: [8.0; 4],
+        }))
+    }
+
+    let mut graphics = PerroGraphics::new();
+    let node = NodeID::from_parts(41, 0);
+    let texture = graphics
+        .resources
+        .create_texture("__ui_gc_nine_slice__", false);
+
+    graphics.submit(nine_slice(node, texture));
+    graphics.draw_frame();
+    assert_eq!(graphics.resources.texture_ref_count(texture), 1);
+
+    graphics.submit(RenderCommand::Ui(Box::new(UiCommand::RemoveNode { node })));
+    graphics.submit(RenderCommand::Resource(Box::new(
+        ResourceCommand::SetTextureReserved {
+            id: texture,
+            reserved: false,
+        },
+    )));
+    graphics.draw_frame();
+    assert_eq!(graphics.resources.texture_ref_count(texture), 0);
+
+    graphics.submit(nine_slice(node, texture));
+    graphics.draw_frame();
+    assert_eq!(graphics.resources.texture_ref_count(texture), 1);
+
+    for _ in 0..(GC_INTERVAL_FRAMES * 2) {
+        graphics.draw_frame();
+    }
+
+    assert!(graphics.resources.has_texture(texture));
+    assert!(
+        !graphics
+            .events
+            .iter()
+            .any(|event| matches!(event, RenderEvent::TextureDropped { id } if *id == texture))
+    );
+}
+
 #[path = "../../benches/fixtures/mesh_load.rs"]
 mod mesh_load_fixture;
 

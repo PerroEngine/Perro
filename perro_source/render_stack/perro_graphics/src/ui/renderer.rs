@@ -152,6 +152,7 @@ pub(crate) enum UiDraw {
 pub struct UiRenderer {
     nodes: AHashMap<NodeID, UiDraw>,
     revision: u64,
+    texture_refs_revision: u64,
     painter: EpaintUiPainter,
     static_font_lookup: Option<crate::StaticFontLookup>,
     default_font: perro_ui::UiFont,
@@ -175,6 +176,7 @@ impl UiRenderer {
         Self {
             nodes: AHashMap::new(),
             revision: 0,
+            texture_refs_revision: 0,
             painter: EpaintUiPainter::new(),
             static_font_lookup: None,
             default_font: perro_ui::UiFont::Default,
@@ -537,7 +539,11 @@ impl UiRenderer {
             UiCommand::RemoveNode { node } => {
                 let order_removed = self.painter.remove_draw_order(node);
                 let visibility_removed = self.painter.remove_visibility(node);
-                if self.nodes.remove(&node).is_some() || order_removed || visibility_removed {
+                let removed = self.nodes.remove(&node);
+                if removed.as_ref().and_then(Self::draw_texture).is_some() {
+                    self.bump_texture_refs_revision();
+                }
+                if removed.is_some() || order_removed || visibility_removed {
                     self.bump_revision();
                 }
             }
@@ -545,6 +551,13 @@ impl UiRenderer {
                 self.painter.clear_draw_orders();
                 self.painter.clear_visibility();
                 if !self.nodes.is_empty() {
+                    if self
+                        .nodes
+                        .values()
+                        .any(|draw| Self::draw_texture(draw).is_some())
+                    {
+                        self.bump_texture_refs_revision();
+                    }
                     self.nodes.clear();
                     self.bump_revision();
                 }
@@ -564,6 +577,11 @@ impl UiRenderer {
     /// depends on the retained set on it.
     pub(crate) fn revision(&self) -> u64 {
         self.revision
+    }
+
+    /// Bumped only when retained UI image/nine-slice texture refs change.
+    pub(crate) fn texture_refs_revision(&self) -> u64 {
+        self.texture_refs_revision
     }
 
     pub(crate) fn set_nine_slice_texture_sizes(
@@ -606,12 +624,31 @@ impl UiRenderer {
         if self.nodes.get(&node) == Some(&draw) {
             return;
         }
+        let old_texture = self.nodes.get(&node).and_then(Self::draw_texture);
+        let new_texture = Self::draw_texture(&draw);
         self.nodes.insert(node, draw);
+        if old_texture != new_texture {
+            self.bump_texture_refs_revision();
+        }
         self.bump_revision();
+    }
+
+    #[inline]
+    fn draw_texture(draw: &UiDraw) -> Option<TextureID> {
+        match draw {
+            UiDraw::Image(image) => Some(image.texture),
+            UiDraw::NineSlice(image) => Some(image.texture),
+            _ => None,
+        }
     }
 
     fn bump_revision(&mut self) {
         self.revision = self.revision.wrapping_add(1);
+    }
+
+    #[inline]
+    fn bump_texture_refs_revision(&mut self) {
+        self.texture_refs_revision = self.texture_refs_revision.wrapping_add(1);
     }
 }
 
