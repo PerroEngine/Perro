@@ -3,7 +3,7 @@ use crate::rs_ctx::RuntimeResourceApi;
 use crate::runtime_project::RuntimeProject;
 use perro_nodes::{NodeType, SceneNode};
 use perro_project::LocalizationConfig;
-use perro_render_bridge::{RenderCommand, UiCommand};
+use perro_render_bridge::{RenderCommand, RenderEvent, ResourceCommand, UiCommand};
 use perro_resource_api::sub_apis::{Locale, LocalizationAPI};
 use perro_scene::{Parser, Scene, SceneKey, SceneNodeData, SceneNodeEntry};
 use std::{
@@ -747,6 +747,76 @@ fn runtime_scene_load_marks_ui_dirty_for_same_frame_extract() {
     assert!(commands.iter().any(|cmd| matches!(
         cmd,
         RenderCommand::Ui(b0) if matches!(&**b0, UiCommand::UpsertPanel { node, rect, .. } if *node == loaded_panel && rect.size == [400.0, 300.0]))));
+}
+
+#[test]
+fn hidden_scene_ui_nine_slice_binds_texture_before_first_visibility() {
+    let scene = Parser::new(
+        r##"
+            $root = @hidden_card
+
+            [hidden_card]
+            [UiNineSlice]
+                texture = "res://ui/hidden_card.png"
+                visible = false
+                size = (120, 40)
+            [/UiNineSlice]
+            [/hidden_card]
+            "##,
+    )
+    .parse_scene();
+    let prepared = prepare_scene_with_loader_and_styles(&scene, &|_| unreachable!(), None)
+        .expect("prepare hidden UI scene");
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let merged = merge_prepared_scene(&mut runtime, prepared).expect("merge hidden UI scene");
+    let hidden = merged.scene_root;
+    let texture = runtime
+        .nodes
+        .get(hidden)
+        .and_then(|node| match &node.data {
+            perro_nodes::SceneNodeData::UiNineSlice(nine) => Some(nine.texture),
+            _ => None,
+        })
+        .expect("hidden nine slice");
+    assert!(
+        !texture.is_nil(),
+        "merge binds source texture before visibility"
+    );
+
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    let request = commands
+        .iter()
+        .find_map(|command| match command {
+            RenderCommand::Resource(command) => match command.as_ref() {
+                ResourceCommand::CreateTexture { request, id, .. } if *id == texture => {
+                    Some(*request)
+                }
+                _ => None,
+            },
+            _ => None,
+        })
+        .expect("texture create request");
+    runtime.apply_render_event(RenderEvent::TextureCreated {
+        request,
+        id: texture,
+    });
+    if let Some(mut node) = runtime.nodes.get_mut(hidden)
+        && let perro_nodes::SceneNodeData::UiNineSlice(nine) = &mut node.data
+    {
+        nine.visible = true;
+    }
+    runtime.mark_needs_rerender(hidden);
+    runtime.extract_render_ui_commands();
+    commands.clear();
+    runtime.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::Ui(command)
+            if matches!(command.as_ref(), UiCommand::UpsertNineSlice { node, texture: id, .. }
+                if *node == hidden && *id == texture)
+    )));
 }
 
 #[test]

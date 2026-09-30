@@ -234,7 +234,28 @@ pub(super) fn merge_prepared_scene(
             }
         }
         if let Some(source) = texture_source {
+            let texture = matches!(
+                node_type,
+                perro_nodes::NodeType::UiImage
+                    | perro_nodes::NodeType::UiImageButton
+                    | perro_nodes::NodeType::UiNineSliceButton
+                    | perro_nodes::NodeType::UiNineSlice
+                    | perro_nodes::NodeType::UiAnimatedImage
+            )
+            .then(|| res.Textures().load(&source));
             runtime.render_2d.texture_sources.insert(node, source);
+            if let Some(texture) = texture
+                && let Some(mut node_data) = runtime.nodes.get_mut(node)
+            {
+                match &mut node_data.data {
+                    SceneNodeData::UiImage(image) => image.texture = texture,
+                    SceneNodeData::UiImageButton(image) => image.texture = texture,
+                    SceneNodeData::UiNineSliceButton(image) => image.texture = texture,
+                    SceneNodeData::UiNineSlice(image) => image.texture = texture,
+                    SceneNodeData::UiAnimatedImage(image) => image.texture = texture,
+                    _ => {}
+                }
+            }
         }
         if decal_texture_sources.iter().any(Option::is_some)
             && let Some(mut node_data) = runtime.nodes.get_mut(node)
