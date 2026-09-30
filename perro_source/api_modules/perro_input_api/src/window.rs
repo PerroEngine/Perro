@@ -267,6 +267,39 @@ impl<'ipt, IP: InputAPI + ?Sized> ActionModule<'ipt, IP> {
     pub fn rebind_result(&self) -> Option<&'ipt RebindResult> {
         self.ipt.rebind_result()
     }
+
+    /// Return the active bindings of the named action (empty when unknown).
+    #[inline]
+    pub fn bindings(&self, name: &str) -> &'ipt [InputBinding] {
+        self.bindings_hash(action_hash(name))
+    }
+
+    /// Return the active bindings of the hashed action (empty when unknown).
+    #[inline]
+    pub fn bindings_hash(&self, action_hash: u64) -> &'ipt [InputBinding] {
+        self.ipt
+            .input_map()
+            .action_by_hash(action_hash)
+            .map(|action| action.bindings.as_slice())
+            .unwrap_or(&[])
+    }
+
+    /// Queue a full binding replacement for the named action.
+    #[inline]
+    pub fn set_bindings(&self, name: &str, bindings: Vec<InputBinding>) {
+        self.set_bindings_hash(action_hash(name), bindings);
+    }
+
+    /// Queue a full binding replacement for the hashed action.
+    #[inline]
+    pub fn set_bindings_hash(&self, action_hash: u64, bindings: Vec<InputBinding>) {
+        if let Some(buffer) = self.ipt.command_buffer() {
+            buffer.borrow_mut().push(InputCommand::SetBindings {
+                action_hash,
+                bindings,
+            });
+        }
+    }
 }
 
 /// Compact keyboard key query module.

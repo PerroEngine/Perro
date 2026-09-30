@@ -117,6 +117,23 @@ macro_rules! action_start_rebind {
 }
 
 #[macro_export]
+/// Queue a full binding replacement for an action name (applies next input frame).
+macro_rules! action_set_bindings {
+    ($ipt:expr, $action:expr, $bindings:expr) => {
+        $ipt.Actions()
+            .set_bindings_hash($crate::action_hash($action), $bindings)
+    };
+}
+
+#[macro_export]
+/// Read the active bindings of an action name.
+macro_rules! action_bindings {
+    ($ipt:expr, $action:expr) => {
+        $ipt.Actions().bindings_hash($crate::action_hash($action))
+    };
+}
+
+#[macro_export]
 /// Cancel active native live rebinding.
 macro_rules! action_cancel_rebind {
     ($ipt:expr) => {{ $ipt.Actions().cancel_rebind() }};

@@ -12,19 +12,6 @@ fn output_viewport(
     }
 }
 
-#[cfg(test)]
-mod output_viewport_tests {
-    use super::output_viewport;
-
-    #[test]
-    fn idle_capture_uses_live_window_size() {
-        let surface = [1920, 1080];
-        let capture = Some([3840, 2160]);
-        assert_eq!(output_viewport(false, capture, surface), surface);
-        assert_eq!(output_viewport(true, capture, surface), capture.unwrap());
-    }
-}
-
 impl Gpu {
     pub fn render(&mut self, frame: RenderFrame<'_>) -> RenderGpuTiming {
         let total_start = Instant::now();
@@ -2246,5 +2233,19 @@ impl Gpu {
         if let Some(water) = self.water.as_mut() {
             water.drain_body_samples(out);
         }
+    }
+}
+
+#[cfg(test)]
+mod output_viewport_tests {
+    use super::output_viewport;
+
+    #[test]
+    fn idle_capture_uses_live_window_size() {
+        let surface = [1920, 1080];
+        let capture_size = [3840, 2160];
+        let capture = Some(capture_size);
+        assert_eq!(output_viewport(false, capture, surface), surface);
+        assert_eq!(output_viewport(true, capture, surface), capture_size);
     }
 }

@@ -194,8 +194,7 @@ fn render_ui_pixels_at(
         primitives,
         textures_delta,
         revision,
-        viewport,
-        viewport,
+        (viewport, viewport),
     )
 }
 
@@ -206,8 +205,7 @@ fn render_ui_pixels_for_target(
     primitives: &[Arc<ClippedPrimitive>],
     textures_delta: &TexturesDelta,
     revision: u64,
-    viewport: [u32; 2],
-    target: [u32; 2],
+    (viewport, target): ([u32; 2], [u32; 2]),
 ) -> Vec<u8> {
     let output = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("ui alpha test output"),
@@ -328,8 +326,7 @@ fn capture_target_scales_window_ui_across_full_output() {
             &primitives,
             &delta,
             1,
-            [64, 48],
-            VIEWPORT,
+            ([64, 48], VIEWPORT),
         );
         assert!(pixel(&bytes, 120, 48)[3] > 200);
         assert_eq!(pixel(&bytes, 120, 8)[3], 0);

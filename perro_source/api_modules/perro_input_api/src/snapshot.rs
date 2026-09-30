@@ -331,6 +331,14 @@ impl InputSnapshot {
                 InputCommand::CancelRebind => {
                     self.rebind_action = None;
                 }
+                InputCommand::SetBindings {
+                    action_hash,
+                    bindings,
+                } => {
+                    if self.input_map.set_bindings_hash(action_hash, bindings) {
+                        self.refresh_all_action_states();
+                    }
+                }
                 InputCommand::RequestJoyConCalibration { index } => {
                     let Some(state) = self.joycon_mut(index) else {
                         continue;
@@ -857,6 +865,11 @@ pub enum InputCommand {
     StartRebind { action_hash: u64 },
     /// Stop an active live rebind.
     CancelRebind,
+    /// Replace every binding of an action (restore saved or merged bindings).
+    SetBindings {
+        action_hash: u64,
+        bindings: Vec<InputBinding>,
+    },
     /// Request Joy-Con calibration for a slot.
     RequestJoyConCalibration { index: usize },
     /// Request mouse mode change.

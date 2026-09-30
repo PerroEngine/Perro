@@ -21,6 +21,8 @@
 | `cancel_rebind` | [`cancel_rebind`](#cancel_rebind) |
 | `is_rebinding` | [`is_rebinding`](#is_rebinding) |
 | `rebind_result` | [`rebind_result`](#rebind_result) |
+| `bindings` | [`bindings`](#bindings) |
+| `set_bindings` | [`set_bindings`](#set_bindings) |
 | Rebind Macros | [Rebind Macros](#rebind-macros) |
 | Query Macros | [Query Macros](#query-macros) |
 
@@ -254,6 +256,25 @@ hash. Both methods return `false` when the action does not exist.
 | Use when | Detect completion and save developer-owned settings. |
 | Edge behavior | Remains available until another rebind starts. Perro does not save it automatically. |
 
+### `bindings`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.ipt.Actions()` |
+| Signature | `pub fn bindings(&self, name: &str) -> &[InputBinding]` (+ `bindings_hash`) |
+| Returns | Active bindings of the action; empty slice when unknown. |
+| Use when | Show current bindings in a controls menu; keep other-device bindings on rebind. |
+
+### `set_bindings`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.ipt.Actions()` |
+| Signature | `pub fn set_bindings(&self, name: &str, bindings: Vec<InputBinding>)` (+ `set_bindings_hash`) |
+| Returns | `()` |
+| Use when | Restore saved bindings at boot, reset to defaults, or merge a rebind result with kept bindings (e.g. keep the gamepad binding after a keyboard rebind). |
+| Edge behavior | Queued command; applies next input frame. Unknown actions are ignored. |
+
 ### Rebind Macros
 
 Use macro forms when script code prefers the compact input API:
@@ -270,6 +291,10 @@ if let Some(result) = action_rebind_result!(ctx.ipt) {
 }
 
 action_cancel_rebind!(ctx.ipt);
+
+// Read / replace an action's full binding list (replace is queued).
+let current = action_bindings!(ctx.ipt, "jump").to_vec();
+action_set_bindings!(ctx.ipt, "jump", current);
 ```
 
 Literal action names use a compile-time action hash. Runtime string expressions

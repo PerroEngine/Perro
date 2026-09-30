@@ -1,6 +1,7 @@
 use crate::{
-    action_cancel_rebind, action_down, action_is_rebinding, action_pressed, action_rebind_result,
-    action_released, action_start_rebind, joycon_generation, mouse_mode, mouse_set_mode,
+    action_bindings, action_cancel_rebind, action_down, action_is_rebinding, action_pressed,
+    action_rebind_result, action_released, action_set_bindings, action_start_rebind,
+    joycon_generation, mouse_mode, mouse_set_mode,
 };
 
 use super::{
@@ -260,6 +261,41 @@ fn live_rebind_macros_queue_query_and_report() {
     action_cancel_rebind!(&window);
     input.apply_queued_commands();
     assert!(!action_is_rebinding!(InputWindow::new(&input)));
+}
+
+#[test]
+fn set_bindings_command_replaces_and_reads_back() {
+    let mut input = InputSnapshot::new();
+    input.set_input_map(InputMap::from_actions(vec![InputAction::new(
+        "jump",
+        vec![InputBinding::Key(KeyCode::Space)],
+    )]));
+
+    let window = InputWindow::new(&input);
+    action_set_bindings!(
+        &window,
+        "jump",
+        vec![
+            InputBinding::Key(KeyCode::Enter),
+            InputBinding::Gamepad(GamepadButton::Bottom),
+        ]
+    );
+    assert_eq!(
+        action_bindings!(&window, "jump"),
+        &[InputBinding::Key(KeyCode::Space)]
+    );
+    input.apply_queued_commands();
+    let window = InputWindow::new(&input);
+    assert_eq!(
+        action_bindings!(&window, "jump"),
+        &[
+            InputBinding::Key(KeyCode::Enter),
+            InputBinding::Gamepad(GamepadButton::Bottom),
+        ]
+    );
+    assert!(action_bindings!(&window, "missing").is_empty());
+    input.set_key_state(KeyCode::Enter, true);
+    assert!(InputWindow::new(&input).Actions().down("jump"));
 }
 
 #[test]
