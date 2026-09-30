@@ -965,6 +965,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn nine_slice_margin_clamp_keeps_corner_aspect() {
+        // A 9px-tall bar with 12px margins must shrink every margin alike, not just top/bottom.
+        assert_eq!(clamp_nine_margins([12.0; 4], 200.0, 9.0), [4.5; 4]);
+        assert_eq!(clamp_nine_margins([12.0; 4], 200.0, 100.0), [12.0; 4]);
+    }
+
+    #[test]
     fn nine_slice_maps_pixel_margins_into_full_uv_region() {
         let image = UiNineSliceDraw {
             rect: UiRectState {

@@ -317,10 +317,12 @@ pub(super) fn push_nine_slice_shapes(
     let (ul, ur, vt, vb) = if auto {
         (uw / 3.0, uw / 3.0, vh / 3.0, vh / 3.0)
     } else if texture_size[0] > 0.0 && texture_size[1] > 0.0 {
-        let ul = (l / texture_size[0]).min(uw);
-        let ur = (r / texture_size[0]).min((uw - ul).max(0.0));
-        let vt = (t / texture_size[1]).min(vh);
-        let vb = (b / texture_size[1]).min((vh - vt).max(0.0));
+        // Sample the authored corner size; only the on-screen corners shrink.
+        let [tl, tt, tr, tb] = margins;
+        let ul = (tl / texture_size[0]).min(uw);
+        let ur = (tr / texture_size[0]).min((uw - ul).max(0.0));
+        let vt = (tt / texture_size[1]).min(vh);
+        let vb = (tb / texture_size[1]).min((vh - vt).max(0.0));
         (ul, ur, vt, vb)
     } else {
         // Keep the full image visible while texture data is still pending.
@@ -441,10 +443,12 @@ pub(super) fn clamp_nine_margins(margins: [f32; 4], w: f32, h: f32) -> [f32; 4] 
     let mut b = margins[3].max(0.0);
     let sx = (w / (l + r).max(w)).min(1.0);
     let sy = (h / (t + b).max(h)).min(1.0);
-    l *= sx;
-    r *= sx;
-    t *= sy;
-    b *= sy;
+    // One factor for both axes: corners shrink without distorting (thin bars stay pills).
+    let s = sx.min(sy);
+    l *= s;
+    r *= s;
+    t *= s;
+    b *= s;
     [l, t, r, b]
 }
 
