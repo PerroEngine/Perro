@@ -149,6 +149,145 @@ fn exposure_config_skips_post_chain_passes() {
 }
 
 #[test]
+fn identity_effects_skip_post_chain_work() {
+    let effects = [
+        PostProcessEffect::Blur { strength: 0.0 },
+        PostProcessEffect::Warp {
+            waves: 0.0,
+            strength: 1.0,
+        },
+        PostProcessEffect::Crt {
+            scanline_strength: 0.0,
+            curvature: 0.0,
+            chromatic: 0.0,
+            vignette: 0.0,
+        },
+        PostProcessEffect::Bloom {
+            strength: 0.0,
+            threshold: 0.7,
+            radius: 1.25,
+        },
+        PostProcessEffect::Vignette {
+            strength: 0.0,
+            radius: 0.55,
+            softness: 0.25,
+        },
+        PostProcessEffect::Saturate { amount: 1.0 },
+        PostProcessEffect::BlackWhite { amount: -1.0 },
+        PostProcessEffect::ColorFilter {
+            color: [0.0, 0.0, 0.0],
+            strength: -1.0,
+        },
+        PostProcessEffect::ReverseFilter {
+            color: [1.0, 1.0, 1.0],
+            strength: 0.0,
+            softness: 0.2,
+        },
+        PostProcessEffect::Lut2D {
+            texture_path: "unused.lut".into(),
+            size: 32,
+            strength: 0.0,
+        },
+        PostProcessEffect::Lut3D {
+            texture_path: "unused-3d.lut".into(),
+            size: 32,
+            strength: 0.0,
+        },
+    ];
+    let mut steps = Vec::new();
+    let mut descriptors = Vec::new();
+
+    build_chain_steps_into(&effects, &mut steps, &mut descriptors);
+
+    assert_eq!(steps.len(), 1);
+    assert!(matches!(steps[0], ChainStep::Copy));
+    assert!(descriptors.is_empty());
+    // Chain selection stays unchanged: only Exposure alone disables post.
+    assert!(PostProcessor::has_effects(&effects));
+}
+
+#[test]
+fn identity_effects_drop_around_active_ops_without_reordering() {
+    let effects = [
+        PostProcessEffect::ColorFilter {
+            color: [0.0, 0.0, 0.0],
+            strength: 0.0,
+        },
+        PostProcessEffect::Saturate { amount: 1.0 },
+        PostProcessEffect::ColorFilter {
+            color: [0.8, 0.9, 1.0],
+            strength: 0.5,
+        },
+        PostProcessEffect::Bloom {
+            strength: 0.0,
+            threshold: 0.7,
+            radius: 1.25,
+        },
+    ];
+    let mut steps = Vec::new();
+    let mut descriptors = Vec::new();
+
+    build_chain_steps_into(&effects, &mut steps, &mut descriptors);
+
+    assert_eq!(steps.len(), 1);
+    assert!(matches!(steps[0], ChainStep::Single(2)));
+    assert!(descriptors.is_empty());
+    assert!(effect_needs_hdr_intermediates(&effects[3]));
+}
+
+#[test]
+fn identity_between_active_mergeable_ops_stays_merged() {
+    let effects = [
+        PostProcessEffect::Saturate { amount: 1.2 },
+        PostProcessEffect::ColorFilter {
+            color: [1.0, 0.0, 0.0],
+            strength: 0.0,
+        },
+        PostProcessEffect::BlackWhite { amount: 0.5 },
+    ];
+    let mut steps = Vec::new();
+    let mut descriptors = Vec::new();
+
+    build_chain_steps_into(&effects, &mut steps, &mut descriptors);
+
+    assert_eq!(steps.len(), 1);
+    let ChainStep::Merged {
+        ops,
+        descriptors: range,
+    } = &steps[0]
+    else {
+        panic!("expected merged active ops");
+    };
+    assert_eq!(*ops, 2);
+    let descriptors = &descriptors[range.clone()];
+    assert_eq!(descriptors.len(), 3 + 3);
+    assert_eq!(descriptors[0][0] as u32, EFFECT_SATURATE);
+    assert_eq!(descriptors[3][0] as u32, EFFECT_BLACK_WHITE);
+}
+
+#[test]
+fn identity_after_active_single_drops_descriptor() {
+    let effects = [
+        PostProcessEffect::ColorFilter {
+            color: [0.8, 0.9, 1.0],
+            strength: 0.5,
+        },
+        PostProcessEffect::ColorFilter {
+            color: [0.0, 0.0, 0.0],
+            strength: 0.0,
+        },
+    ];
+    let mut steps = Vec::new();
+    let mut descriptors = Vec::new();
+
+    build_chain_steps_into(&effects, &mut steps, &mut descriptors);
+
+    assert_eq!(steps.len(), 1);
+    assert!(matches!(steps[0], ChainStep::Single(0)));
+    assert!(descriptors.is_empty());
+}
+
+#[test]
 fn bloom_params_keep_scene_threshold_and_radius() {
     let encoded = encode_effect_params(&PostProcessEffect::Bloom {
         strength: 0.7,

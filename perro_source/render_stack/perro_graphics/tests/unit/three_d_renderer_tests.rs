@@ -59,6 +59,49 @@ fn sparse_draw_updates_patch_only_changed_rows_without_rebuild() {
     assert_eq!(renderer.draw_cache_rebuilds, 1);
 }
 
+#[test]
+fn dirty_hint_tracks_sorted_rows_and_rejects_topology_edits() {
+    let (mut renderer, resources) = seeded_points(100);
+    let base = renderer.draw_revision();
+    queue_point(&mut renderer, NodeID::from_parts(50, 0), 12.0);
+    renderer.prepare_frame(&resources);
+    let hint = renderer.draw_dirty_hint().expect("sparse hint");
+    assert_eq!(hint.base_revision, base);
+    assert_eq!(hint.final_revision, base + 1);
+    assert_eq!(hint.indices, [49]);
+
+    // Reusing same frame input must not make GPU accept stale base/final pair.
+    assert_eq!(
+        renderer
+            .draw_dirty_hint()
+            .expect("hint stays available before next prepare")
+            .indices,
+        [49]
+    );
+    renderer.remove_node(NodeID::from_parts(50, 0));
+    assert!(renderer.draw_dirty_hint().is_none());
+    renderer.prepare_frame(&resources);
+    assert!(renderer.draw_dirty_hint().is_none());
+}
+
+#[test]
+fn dirty_hint_coalesces_updates_but_caps_dense_change() {
+    let (mut renderer, resources) = seeded_points(16);
+    let base = renderer.draw_revision();
+    queue_point(&mut renderer, NodeID::from_parts(2, 0), 20.0);
+    queue_point(&mut renderer, NodeID::from_parts(3, 0), 30.0);
+    renderer.prepare_frame(&resources);
+    let hint = renderer.draw_dirty_hint().expect("coalesced hint");
+    assert_eq!(hint.base_revision, base);
+    assert_eq!(hint.indices, [1, 2]);
+
+    for id in 1..=16 {
+        queue_point(&mut renderer, NodeID::from_parts(id, 0), id as f32 + 100.0);
+    }
+    renderer.prepare_frame(&resources);
+    assert!(renderer.draw_dirty_hint().is_none());
+}
+
 fn dense_draw(count: usize) -> DenseMultiMeshDraw3D {
     DenseMultiMeshDraw3D {
         node_model: glam::Mat4::IDENTITY.to_cols_array_2d(),
@@ -170,6 +213,7 @@ fn missing_bindings_bump_only_when_requested_resources_become_retained() {
     };
     queue(&mut renderer, mesh_a, material_a, 0.0);
     renderer.prepare_frame(&resources);
+    renderer.retained_draws_sorted();
     let binding_revision = renderer.resource_binding_revision();
     let count_revision = renderer.instance_count_revision();
 
@@ -177,6 +221,10 @@ fn missing_bindings_bump_only_when_requested_resources_become_retained() {
     renderer.prepare_frame(&resources);
     assert_eq!(renderer.resource_binding_revision(), binding_revision);
     assert_eq!(renderer.instance_count_revision(), count_revision);
+    assert!(
+        renderer.draw_dirty_hint().is_some(),
+        "unready transform update keeps stable row hint"
+    );
     let retained = renderer.retained_draw(node).expect("retained draw");
     assert_eq!(retained.kind, Draw3DKind::Mesh(mesh_a));
     assert_eq!(retained.surfaces, draw_surface(material_a));
@@ -199,6 +247,10 @@ fn missing_bindings_bump_only_when_requested_resources_become_retained() {
     renderer.prepare_frame(&resources);
     assert_eq!(renderer.resource_binding_revision(), binding_revision + 1);
     assert_eq!(renderer.instance_count_revision(), count_revision);
+    assert!(
+        renderer.draw_dirty_hint().is_some(),
+        "resource-ready update keeps row hint; GPU resource dirty bit forces full path"
+    );
     let retained = renderer.retained_draw(node).expect("retained draw");
     assert_eq!(retained.kind, Draw3DKind::Mesh(mesh_b));
     assert_eq!(retained.surfaces, draw_surface(material_b));

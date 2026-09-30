@@ -52,21 +52,33 @@ fn view_distance(pixel: vec2<i32>, depth: f32) -> f32 {
         return 1.0;
     }
     let center_distance = view_distance(center_full, center_depth);
+    // Avoid non-finite center values changing the old NaN/Inf path.
+    let center_finite = center_distance == center_distance
+        && abs(center_distance) <= 3.402823466e+38;
+    let sigma_finite = params.depth_sigma == params.depth_sigma
+        && abs(params.depth_sigma) <= 3.402823466e+38;
     var sum = 0.0;
     var weight_sum = 0.0;
     for (var y = -1; y <= 1; y++) {
         for (var x = -1; x <= 1; x++) {
-            let q = clamp(pixel + vec2<i32>(x, y), vec2<i32>(0), target_size - vec2<i32>(1));
-            let q_full = full_pixel(q, divisor);
-            let q_depth = textureLoad(depth_tex, q_full, 0);
-            if q_depth < 0.999999 {
-                let q_distance = view_distance(q_full, q_depth);
-                let relative_depth = abs(q_distance - center_distance) / max(center_distance, 1.0e-3);
-                let spatial = exp(-0.75 * f32(x * x + y * y));
-                let edge = exp(-relative_depth * params.depth_sigma * 0.33);
-                let weight = spatial * edge;
-                sum += textureLoad(ao_tex, q, 0).r * weight;
-                weight_sum += weight;
+            if x == 0 && y == 0 && center_finite && sigma_finite {
+                // q == pixel here. Keep center weight exact: exp(-0) = 1
+                // for finite values, so skip duplicate coordinate/depth/world loads.
+                sum += textureLoad(ao_tex, pixel, 0).r;
+                weight_sum += 1.0;
+            } else {
+                let q = clamp(pixel + vec2<i32>(x, y), vec2<i32>(0), target_size - vec2<i32>(1));
+                let q_full = full_pixel(q, divisor);
+                let q_depth = textureLoad(depth_tex, q_full, 0);
+                if q_depth < 0.999999 {
+                    let q_distance = view_distance(q_full, q_depth);
+                    let relative_depth = abs(q_distance - center_distance) / max(center_distance, 1.0e-3);
+                    let spatial = exp(-0.75 * f32(x * x + y * y));
+                    let edge = exp(-relative_depth * params.depth_sigma * 0.33);
+                    let weight = spatial * edge;
+                    sum += textureLoad(ao_tex, q, 0).r * weight;
+                    weight_sum += weight;
+                }
             }
         }
     }

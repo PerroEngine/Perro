@@ -319,6 +319,7 @@ impl ShadowHarness {
                 lighting: &self.lighting,
                 draws,
                 draws_revision: self.revision,
+                draw_dirty_hint: None,
                 force_full_rebuild: false,
                 decals: &[],
                 decals_revision: 0,

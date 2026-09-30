@@ -813,3 +813,110 @@ fn scene_effects_stop_before_ui_and_accessibility_covers_final_composite() {
         );
     });
 }
+
+#[test]
+fn identity_post_effects_match_gpu_reference_for_hdr_alpha_and_order() {
+    pollster::block_on(async {
+        let Some((device, queue)) = device().await else {
+            eprintln!("skip composite GPU test: no adapter");
+            return;
+        };
+        let access = VisualAccessibilitySettings::default();
+
+        let active_hdr = [
+            PostProcessEffect::Bloom {
+                strength: 0.7,
+                threshold: 0.8,
+                radius: 1.2,
+            },
+            PostProcessEffect::ColorGrade {
+                exposure: 0.1,
+                contrast: 1.2,
+                brightness: -0.05,
+                saturation: 1.3,
+                gamma: 0.95,
+                temperature: 0.2,
+                tint: -0.1,
+                hue_shift: 0.05,
+                vibrance: 0.4,
+                lift: [0.01, 0.02, 0.03],
+                gain: [1.1, 1.05, 1.0],
+                offset: [-0.01, -0.02, -0.03],
+            },
+        ];
+        let mut hdr_reference = Fixture::new(&device, &queue);
+        let hdr_reference_output =
+            hdr_reference.frame(&device, &queue, &active_hdr, &[], access, false);
+        let mut hdr_candidate = Fixture::new(&device, &queue);
+        let hdr_candidate_output = hdr_candidate.frame(
+            &device,
+            &queue,
+            &[
+                PostProcessEffect::Vignette {
+                    strength: 0.0,
+                    radius: 0.55,
+                    softness: 0.25,
+                },
+                active_hdr[0].clone(),
+                PostProcessEffect::Saturate { amount: 1.0 },
+                PostProcessEffect::ColorFilter {
+                    color: [0.0, 0.0, 0.0],
+                    strength: 0.0,
+                },
+                active_hdr[1].clone(),
+                PostProcessEffect::Bloom {
+                    strength: 0.0,
+                    threshold: 0.8,
+                    radius: 1.2,
+                },
+            ],
+            &[],
+            access,
+            false,
+        );
+        assert_eq!(
+            hdr_candidate_output, hdr_reference_output,
+            "identity FX must preserve ordered HDR chain"
+        );
+
+        let alpha = PostProcessEffect::ChromaKey {
+            color: perro_structs::Color::GREEN,
+            tolerance: 0.1,
+            softness: 0.05,
+        };
+        let mut alpha_reference = Fixture::new(&device, &queue);
+        let alpha_reference_output = alpha_reference.frame(
+            &device,
+            &queue,
+            std::slice::from_ref(&alpha),
+            &[],
+            access,
+            false,
+        );
+        let mut alpha_candidate = Fixture::new(&device, &queue);
+        let alpha_candidate_output = alpha_candidate.frame(
+            &device,
+            &queue,
+            &[
+                PostProcessEffect::Vignette {
+                    strength: 0.0,
+                    radius: 0.55,
+                    softness: 0.25,
+                },
+                alpha,
+                PostProcessEffect::BlackWhite { amount: 0.0 },
+                PostProcessEffect::ColorFilter {
+                    color: [1.0, 0.0, 0.0],
+                    strength: 0.0,
+                },
+            ],
+            &[],
+            access,
+            false,
+        );
+        assert_eq!(
+            alpha_candidate_output, alpha_reference_output,
+            "identity FX must preserve alpha chain"
+        );
+    });
+}

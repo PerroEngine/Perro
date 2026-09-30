@@ -1141,6 +1141,7 @@ pub struct RenderFrame<'a> {
     pub lighting_3d: &'a Lighting3DState,
     pub draws_3d: &'a [Draw3DInstance],
     pub draws_3d_revision: u64,
+    pub draws_3d_dirty_hint: Option<crate::three_d::renderer::DrawDirtyHint<'a>>,
     pub point_particles_3d: &'a [(NodeID, PointParticles3DState)],
     pub point_particles_3d_revision: u64,
     pub waters_3d: &'a [(NodeID, Water3DState)],

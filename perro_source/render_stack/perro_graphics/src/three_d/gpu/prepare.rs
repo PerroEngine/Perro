@@ -68,6 +68,91 @@ fn camera_only_reuses_staging(
     draws_unchanged && (!camera_changed || !camera_dependent_staging)
 }
 
+fn sparse_hint_revisions_valid(
+    base_revision: u64,
+    final_revision: u64,
+    last_revision: u64,
+    current_revision: u64,
+    draw_count: usize,
+    indices: &[usize],
+) -> bool {
+    base_revision == last_revision
+        && final_revision == current_revision
+        && base_revision != final_revision
+        && base_revision != u64::MAX
+        && final_revision != u64::MAX
+        && !indices.is_empty()
+        && indices.windows(2).all(|pair| pair[0] < pair[1])
+        && indices.iter().all(|&index| index < draw_count)
+}
+
+#[cfg(test)]
+mod sparse_hint_tests {
+    use super::sparse_hint_revisions_valid;
+
+    #[test]
+    fn skipped_revision_rejects_hint() {
+        assert!(!sparse_hint_revisions_valid(4, 6, 5, 6, 8, &[2]));
+        assert!(sparse_hint_revisions_valid(5, 6, 5, 6, 8, &[2]));
+    }
+
+    #[test]
+    fn malformed_indices_reject_hint() {
+        assert!(!sparse_hint_revisions_valid(5, 6, 5, 6, 8, &[]));
+        assert!(!sparse_hint_revisions_valid(5, 6, 5, 6, 8, &[2, 2]));
+        assert!(!sparse_hint_revisions_valid(5, 6, 5, 6, 8, &[8]));
+    }
+}
+
+enum DirtyDrawIndices<'a> {
+    Sparse(std::slice::Iter<'a, usize>),
+    All(std::ops::Range<usize>),
+}
+
+impl<'a> DirtyDrawIndices<'a> {
+    fn new(indices: Option<&'a [usize]>, draw_count: usize) -> Self {
+        match indices {
+            Some(indices) => Self::Sparse(indices.iter()),
+            None => Self::All(0..draw_count),
+        }
+    }
+}
+
+impl Iterator for DirtyDrawIndices<'_> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Sparse(indices) => indices.next().copied(),
+            Self::All(indices) => indices.next(),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum TransformOnlyClasses<'a> {
+    Dense(&'a [TransformOnlyDrawClass]),
+    Sparse(&'a [(usize, TransformOnlyDrawClass)]),
+}
+
+fn for_each_transform_only_class(
+    classes: TransformOnlyClasses<'_>,
+    mut f: impl FnMut(usize, &TransformOnlyDrawClass),
+) {
+    match classes {
+        TransformOnlyClasses::Dense(classes) => {
+            for (index, class) in classes.iter().enumerate() {
+                f(index, class);
+            }
+        }
+        TransformOnlyClasses::Sparse(classes) => {
+            for (index, class) in classes {
+                f(*index, class);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod camera_only_tests {
     use super::camera_only_reuses_staging;
@@ -90,6 +175,21 @@ fn animation_bounds_valid(bounds: &[u32], draw_count: usize, staged_len: usize) 
     bounds.len() == draw_count + 1
         && bounds.last().is_some_and(|end| *end as usize <= staged_len)
         && bounds.windows(2).all(|pair| pair[0] <= pair[1])
+}
+
+fn animation_draw_ranges_valid(
+    bounds: &[u32],
+    draw_count: usize,
+    staged_len: usize,
+    indices: &[usize],
+) -> bool {
+    bounds.len() == draw_count + 1
+        && indices.iter().all(|&index| {
+            let Some((&start, &end)) = bounds.get(index).zip(bounds.get(index + 1)) else {
+                return false;
+            };
+            start <= end && (end as usize) <= staged_len
+        })
 }
 
 /// Field-wise adoption of `src` into `dst` that only touches the `Arc` lanes
@@ -267,6 +367,17 @@ impl Gpu3D {
         }
     }
 
+    fn sync_last_draw_indices(&mut self, draws: &[Draw3DInstance], indices: &[usize]) {
+        if self.last_draws.len() != draws.len() {
+            return;
+        }
+        for &index in indices {
+            if let (Some(dst), Some(src)) = (self.last_draws.get_mut(index), draws.get(index)) {
+                adopt_draw_in_place(dst, src);
+            }
+        }
+    }
+
     /// Writes the per-frame shader globals (time / resolution) into the scene
     /// uniform tail. Runs inside `prepare`, and standalone on frames where
     /// prepare is skipped so `perro_time()`-driven shaders keep animating.
@@ -334,6 +445,7 @@ impl Gpu3D {
             lighting,
             draws,
             draws_revision,
+            draw_dirty_hint,
             force_full_rebuild,
             decals,
             decals_revision,
@@ -416,49 +528,123 @@ impl Gpu3D {
                 self.last_sky_time_seconds = -1.0;
             }
         }
-        let draws_unchanged = prepare_fast_path_eligible(
-            force_full_rebuild,
-            draws_semantically_unchanged(
-                self.last_draws_revision,
-                draws_revision,
-                &self.last_draws,
-                draws,
-            ),
+        let camera_changed = self.last_scene != Some(uniform);
+        let next_lod_ratio_scale = lod_ratio_scale(
+            height,
+            projection_y_scale_from_projection(camera.projection),
         );
+        let lod_scale_changed = self.lod_ratio_scale != next_lod_ratio_scale;
+        let sparse_indices = (!force_full_rebuild && !camera_changed && !lod_scale_changed)
+            .then_some(draw_dirty_hint)
+            .flatten()
+            .filter(|hint| {
+                sparse_hint_revisions_valid(
+                    hint.base_revision,
+                    hint.final_revision,
+                    self.last_draws_revision,
+                    draws_revision,
+                    draws.len(),
+                    hint.indices,
+                ) && self.last_draws.len() == draws.len()
+                    && hint.indices.iter().all(|&index| {
+                        index < draws.len() && self.last_draws[index].node == draws[index].node
+                    })
+            })
+            .map(|hint| hint.indices);
+        let draws_unchanged = if sparse_indices.is_some() {
+            false
+        } else {
+            prepare_fast_path_eligible(
+                force_full_rebuild,
+                draws_semantically_unchanged(
+                    self.last_draws_revision,
+                    draws_revision,
+                    &self.last_draws,
+                    draws,
+                ),
+            )
+        };
         // Classify each draw pair: single-instance regular draws (model-only)
         // and dense multimeshes whose poses are unchanged (node_model-only) both
         // stay on the transform-only fast path. A multimesh present but unchanged
         // no longer forces a full rebuild.
         let mut transform_only_kinds = std::mem::take(&mut self.transform_only_kinds_scratch);
-        let transform_only_semantic = prepare_fast_path_eligible(
-            force_full_rebuild,
-            !draws_unchanged
-                && classify_transform_only_scene(
-                    &self.last_draws,
-                    draws,
-                    &mut transform_only_kinds,
-                ),
-        );
+        self.sparse_transform_only_kinds_scratch.clear();
+        let sparse_transform_only = sparse_indices.is_some_and(|indices| {
+            indices.iter().all(|&index| {
+                let Some(class) =
+                    classify_transform_only_draw(&self.last_draws[index], &draws[index])
+                else {
+                    return false;
+                };
+                self.sparse_transform_only_kinds_scratch
+                    .push((index, class));
+                true
+            })
+        });
+        let sparse_indices = if sparse_transform_only {
+            sparse_indices
+        } else {
+            None
+        };
+        let transform_only_semantic = if sparse_transform_only {
+            true
+        } else {
+            prepare_fast_path_eligible(
+                force_full_rebuild,
+                !draws_unchanged
+                    && classify_transform_only_scene(
+                        &self.last_draws,
+                        draws,
+                        &mut transform_only_kinds,
+                    ),
+            )
+        };
         // Multimesh patch needs the param-range bookkeeping to line up with the
         // current draw list; otherwise fall back to a full rebuild.
-        let stable_multimesh_ranges = !transform_only_semantic
-            || (self.last_draw_multimesh_param_ranges.len() == draws.len()
-                && self.last_draw_multimesh_param_ranges.iter().all(|range| {
-                    range.start <= range.end
-                        && (range.end as usize) <= self.staged_multimesh_draw_params.len()
-                }));
-        let stable_instance_ranges = self.last_draw_instance_span_ranges.len() == draws.len()
-            && self
-                .last_draw_instance_span_ranges
-                .iter()
-                .all(|span_range| {
+        let stable_multimesh_ranges = if let Some(indices) = sparse_indices {
+            self.last_draw_multimesh_param_ranges.len() == draws.len()
+                && indices.iter().all(|&index| {
+                    self.last_draw_multimesh_param_ranges[index].start
+                        <= self.last_draw_multimesh_param_ranges[index].end
+                        && (self.last_draw_multimesh_param_ranges[index].end as usize)
+                            <= self.staged_multimesh_draw_params.len()
+                })
+        } else {
+            !transform_only_semantic
+                || (self.last_draw_multimesh_param_ranges.len() == draws.len()
+                    && self.last_draw_multimesh_param_ranges.iter().all(|range| {
+                        range.start <= range.end
+                            && (range.end as usize) <= self.staged_multimesh_draw_params.len()
+                    }))
+        };
+        let stable_instance_ranges = if let Some(indices) = sparse_indices {
+            self.last_draw_instance_span_ranges.len() == draws.len()
+                && indices.iter().all(|&index| {
+                    let span_range = self.last_draw_instance_span_ranges[index].clone();
                     span_range.start <= span_range.end
                         && span_range.end <= self.last_draw_instance_spans.len()
+                        && self.last_draw_instance_spans[span_range]
+                            .iter()
+                            .all(|range| {
+                                range.start <= range.end
+                                    && (range.end as usize) <= self.staged_instance_transforms.len()
+                            })
                 })
-            && self.last_draw_instance_spans.iter().all(|range| {
-                range.start <= range.end
-                    && (range.end as usize) <= self.staged_instance_transforms.len()
-            });
+        } else {
+            self.last_draw_instance_span_ranges.len() == draws.len()
+                && self
+                    .last_draw_instance_span_ranges
+                    .iter()
+                    .all(|span_range| {
+                        span_range.start <= span_range.end
+                            && span_range.end <= self.last_draw_instance_spans.len()
+                    })
+                && self.last_draw_instance_spans.iter().all(|range| {
+                    range.start <= range.end
+                        && (range.end as usize) <= self.staged_instance_transforms.len()
+                })
+        };
         // Animation-only lanes (bone palettes / blend-shape weights) ride the
         // same fast path: the classification above already proved the draw is
         // otherwise identical and the lanes keep their row counts, so the staged
@@ -466,20 +652,39 @@ impl Gpu3D {
         // frame -- which used to fail `same_draw_except_model` and force a full
         // restage + batch sort + compaction + cull rebuild every single frame --
         // on the patch path.
-        let animation_changed =
-            transform_only_semantic && transform_only_kinds.iter().any(|class| class.anim.any());
+        let animation_changed = if sparse_transform_only {
+            self.sparse_transform_only_kinds_scratch
+                .iter()
+                .any(|(_, class)| class.anim.any())
+        } else {
+            transform_only_semantic && transform_only_kinds.iter().any(|class| class.anim.any())
+        };
         // Patching needs the per-draw boundaries the last full rebuild recorded
         // to still describe the standing staging vectors.
         let stable_animation_ranges = !animation_changed
-            || (animation_bounds_valid(
-                &self.last_draw_skeleton_bounds,
-                draws.len(),
-                self.staged_skeletons.len(),
-            ) && animation_bounds_valid(
-                &self.last_draw_blend_meta_bounds,
-                draws.len(),
-                self.staged_blend_shape_instance_meta.len(),
-            ));
+            || if let Some(indices) = sparse_indices {
+                animation_draw_ranges_valid(
+                    &self.last_draw_skeleton_bounds,
+                    draws.len(),
+                    self.staged_skeletons.len(),
+                    indices,
+                ) && animation_draw_ranges_valid(
+                    &self.last_draw_blend_meta_bounds,
+                    draws.len(),
+                    self.staged_blend_shape_instance_meta.len(),
+                    indices,
+                )
+            } else {
+                animation_bounds_valid(
+                    &self.last_draw_skeleton_bounds,
+                    draws.len(),
+                    self.staged_skeletons.len(),
+                ) && animation_bounds_valid(
+                    &self.last_draw_blend_meta_bounds,
+                    draws.len(),
+                    self.staged_blend_shape_instance_meta.len(),
+                )
+            };
         let transform_only_changed = !draws_unchanged
             && transform_only_semantic
             && stable_instance_ranges
@@ -487,7 +692,6 @@ impl Gpu3D {
             && stable_animation_ranges;
         let animation_changed = animation_changed && transform_only_changed;
         self.transform_only_kinds_scratch = transform_only_kinds;
-        let camera_changed = self.last_scene != Some(uniform);
         let scene_changed = camera_changed || !draws_unchanged;
         if camera_changed {
             queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uniform));
@@ -503,8 +707,6 @@ impl Gpu3D {
         }
         self.last_aspect = (width.max(1) as f32) / (height.max(1) as f32);
         self.last_proj_y_scale = projection_y_scale_from_projection(camera.projection);
-        let next_lod_ratio_scale = lod_ratio_scale(height, self.last_proj_y_scale);
-        let lod_scale_changed = self.lod_ratio_scale != next_lod_ratio_scale;
         self.lod_ratio_scale = next_lod_ratio_scale;
 
         let camera_needs_restage = self.camera_dependent_staging
@@ -572,13 +774,13 @@ impl Gpu3D {
             return;
         }
         if transform_only_changed {
+            let sparse_classes = sparse_transform_only
+                .then(|| std::mem::take(&mut self.sparse_transform_only_kinds_scratch));
             let mut caster_lanes_changed = false;
             self.dirty_instance_spans_scratch.clear();
-            for (draw_index, (draw, span_range)) in draws
-                .iter()
-                .zip(self.last_draw_instance_span_ranges.iter())
-                .enumerate()
-            {
+            for draw_index in DirtyDrawIndices::new(sparse_indices, draws.len()) {
+                let draw = &draws[draw_index];
+                let span_range = &self.last_draw_instance_span_ranges[draw_index];
                 let Some(model) = draw.instance_mats.first() else {
                     continue;
                 };
@@ -655,11 +857,9 @@ impl Gpu3D {
             // patch just the MultiMeshDrawParamGpu rows and upload those slots.
             // No per-instance re-pack, no instance buffer re-upload.
             self.dirty_instance_spans_scratch.clear();
-            for (draw_index, (draw, param_range)) in draws
-                .iter()
-                .zip(self.last_draw_multimesh_param_ranges.iter())
-                .enumerate()
-            {
+            for draw_index in DirtyDrawIndices::new(sparse_indices, draws.len()) {
+                let draw = &draws[draw_index];
+                let param_range = &self.last_draw_multimesh_param_ranges[draw_index];
                 let Some(dense) = draw.dense_multimesh.as_ref() else {
                     continue;
                 };
@@ -909,29 +1109,47 @@ impl Gpu3D {
             // feed no cull input at all (batch bounds come from the local mesh
             // sphere and the instance model, neither of which animation moves).
             if animation_changed {
-                let classes = std::mem::take(&mut self.transform_only_kinds_scratch);
-                caster_lanes_changed |= draws
-                    .iter()
-                    .zip(&classes)
-                    .any(|(draw, class)| draw.cast_shadows && class.anim.any());
-                self.patch_animation_lanes(queue, draws, &classes);
-                self.transform_only_kinds_scratch = classes;
+                if let Some(classes) = sparse_classes.as_deref() {
+                    caster_lanes_changed |= classes
+                        .iter()
+                        .any(|(index, class)| draws[*index].cast_shadows && class.anim.any());
+                    self.patch_animation_lanes(queue, draws, TransformOnlyClasses::Sparse(classes));
+                } else {
+                    let classes = std::mem::take(&mut self.transform_only_kinds_scratch);
+                    caster_lanes_changed |= draws
+                        .iter()
+                        .zip(&classes)
+                        .any(|(draw, class)| draw.cast_shadows && class.anim.any());
+                    self.patch_animation_lanes(queue, draws, TransformOnlyClasses::Dense(&classes));
+                    self.transform_only_kinds_scratch = classes;
+                }
             }
             // The multimesh staging itself is untouched by a transform patch
             // (only the draw params' model rows moved, in place), so the reuse
             // snapshots stay valid -- refresh them with the draws that are now
             // reflected in the staged rows, keeping pose-Arc identity fresh.
-            self.sync_multimesh_staging_cache_transforms(draws);
+            if let Some(indices) = sparse_indices {
+                self.sync_multimesh_staging_cache_transform_indices(draws, indices);
+            } else {
+                self.sync_multimesh_staging_cache_transforms(draws);
+            }
             // Noncasters share these buffers, but neither their transforms nor
             // their animation lanes reach a shadow depth pass or focus fit.
             // Preserve any earlier target/resource invalidation independently.
             self.shadow_casters_dirty |= caster_lanes_changed;
             self.update_shadow_state(device, queue, &camera, lighting, self.has_shadow_casters);
-            self.sync_last_draws(draws);
+            if let Some(indices) = sparse_indices {
+                self.sync_last_draw_indices(draws, indices);
+            } else {
+                self.sync_last_draws(draws);
+            }
             self.last_draws_revision = draws_revision;
             self.last_total_drawn =
                 self.staged_instance_transforms.len() + self.staged_multimesh_instances.len();
             self.last_prepare_step_timing = step_timing;
+            if let Some(classes) = sparse_classes {
+                self.sparse_transform_only_kinds_scratch = classes;
+            }
             return;
         }
 
@@ -1017,6 +1235,9 @@ impl Gpu3D {
             self.multimesh_custom_params_tail_revision =
                 self.multimesh_custom_params_tail_revision.wrapping_add(1);
             self.multimesh_staging_cache.clear();
+            self.multimesh_staging_cache_draw_indices.clear();
+            self.multimesh_staging_cache_draw_indices
+                .reserve(draws.len());
             self.multimesh_staging_cache_valid = false;
         }
         self.multimesh_pose_pack_cache_seen.clear();
@@ -1075,6 +1296,14 @@ impl Gpu3D {
                 .push(self.staged_skeletons.len() as u32);
             self.last_draw_blend_meta_bounds
                 .push(self.staged_blend_shape_instance_meta.len() as u32);
+            if !multimesh_reuse {
+                self.multimesh_staging_cache_draw_indices
+                    .push(if draw.dense_multimesh.is_some() {
+                        self.multimesh_staging_cache.len()
+                    } else {
+                        usize::MAX
+                    });
+            }
             // Reused multimesh: the staged rows for this draw are already in
             // place from the previous build, so only the per-draw range
             // bookkeeping (and the pose-cache retention mark) is replayed.
@@ -2578,35 +2807,35 @@ impl Gpu3D {
         &mut self,
         queue: &wgpu::Queue,
         draws: &[Draw3DInstance],
-        classes: &[TransformOnlyDrawClass],
+        classes: TransformOnlyClasses<'_>,
     ) {
         // Bone palettes: whole-range overwrite, compared first so a producer
         // that reallocated an identical pose still sends nothing.
         self.dirty_animation_spans_scratch.clear();
-        for (draw_index, class) in classes.iter().enumerate() {
+        for_each_transform_only_class(classes, |draw_index, class| {
             if !class.anim.skeleton {
-                continue;
+                return;
             }
             let Some(skeleton) = draws[draw_index]
                 .skeleton
                 .as_ref()
                 .filter(|skeleton| !skeleton.matrices.is_empty())
             else {
-                continue;
+                return;
             };
             let Some(range) =
                 Self::draw_animation_range(&self.last_draw_skeleton_bounds, draw_index)
             else {
-                continue;
+                return;
             };
             let rows = &mut self.staged_skeletons[range.clone()];
             if rows.len() != skeleton.matrices.len() || rows == skeleton.matrices.as_ref() {
-                continue;
+                return;
             }
             rows.copy_from_slice(&skeleton.matrices);
             self.dirty_animation_spans_scratch
                 .push(range.start as u32..range.end as u32);
-        }
+        });
         Self::merge_dirty_spans(
             &mut self.dirty_animation_spans_scratch,
             &mut self.merged_animation_spans_scratch,
@@ -2629,15 +2858,15 @@ impl Gpu3D {
         // meta rows, which the classification proved unchanged (same weight
         // length -> same `weight_count` against the same mesh).
         self.dirty_animation_spans_scratch.clear();
-        for (draw_index, class) in classes.iter().enumerate() {
+        for_each_transform_only_class(classes, |draw_index, class| {
             if !class.anim.blend_weights {
-                continue;
+                return;
             }
             let weights = draws[draw_index].blend_shape_weights.as_ref();
             let Some(meta_range) =
                 Self::draw_animation_range(&self.last_draw_blend_meta_bounds, draw_index)
             else {
-                continue;
+                return;
             };
             for meta_index in meta_range {
                 let meta = self.staged_blend_shape_instance_meta[meta_index];
@@ -2666,7 +2895,7 @@ impl Gpu3D {
                         .push(start as u32..end as u32);
                 }
             }
-        }
+        });
         Self::merge_dirty_spans(
             &mut self.dirty_animation_spans_scratch,
             &mut self.merged_animation_spans_scratch,
@@ -3025,6 +3254,42 @@ impl Gpu3D {
         }
         if index != self.multimesh_staging_cache.len() {
             self.multimesh_staging_cache_valid = false;
+        }
+    }
+
+    fn sync_multimesh_staging_cache_transform_indices(
+        &mut self,
+        draws: &[Draw3DInstance],
+        indices: &[usize],
+    ) {
+        if !self.multimesh_staging_cache_valid
+            || self.multimesh_staging_cache_draw_indices.len() != draws.len()
+        {
+            return;
+        }
+        for &draw_index in indices {
+            let Some(&cache_index) = self.multimesh_staging_cache_draw_indices.get(draw_index)
+            else {
+                self.multimesh_staging_cache_valid = false;
+                return;
+            };
+            if cache_index == usize::MAX {
+                continue;
+            }
+            let Some(draw) = draws.get(draw_index) else {
+                self.multimesh_staging_cache_valid = false;
+                return;
+            };
+            let Some(dense) = draw.dense_multimesh.as_ref() else {
+                self.multimesh_staging_cache_valid = false;
+                return;
+            };
+            let Some(snapshot) = self.multimesh_staging_cache.get_mut(cache_index) else {
+                self.multimesh_staging_cache_valid = false;
+                return;
+            };
+            snapshot.node_model = dense.node_model;
+            adopt_draw_in_place(&mut snapshot.draw, draw);
         }
     }
 

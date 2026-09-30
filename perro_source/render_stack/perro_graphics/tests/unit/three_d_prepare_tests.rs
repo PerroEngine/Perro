@@ -4,7 +4,7 @@
 //! a note when no adapter is available.
 use super::*;
 use crate::resources::ResourceStore;
-use crate::three_d::renderer::DenseMultiMeshDraw3D;
+use crate::three_d::renderer::{DenseMultiMeshDraw3D, DrawDirtyHint};
 use perro_ids::{MaterialID, MeshID, NodeID};
 use perro_render_bridge::{
     CustomMaterial3D, CustomMaterialLighting3D, CustomMaterialParam3D, CustomMaterialParamValue3D,
@@ -285,13 +285,32 @@ impl Harness {
         self.prepare_with_camera(draws, force_full_rebuild, Camera3DState::default())
     }
 
+    fn prepare_with_dirty_hint(&mut self, draws: &[Draw3DInstance], indices: &[usize]) -> Duration {
+        self.prepare_with_camera_and_hint(draws, false, Camera3DState::default(), Some(indices))
+    }
+
     fn prepare_with_camera(
         &mut self,
         draws: &[Draw3DInstance],
         force_full_rebuild: bool,
         camera: Camera3DState,
     ) -> Duration {
+        self.prepare_with_camera_and_hint(draws, force_full_rebuild, camera, None)
+    }
+
+    fn prepare_with_camera_and_hint(
+        &mut self,
+        draws: &[Draw3DInstance],
+        force_full_rebuild: bool,
+        camera: Camera3DState,
+        dirty_indices: Option<&[usize]>,
+    ) -> Duration {
         self.revision += 1;
+        let dirty_hint = dirty_indices.map(|indices| DrawDirtyHint {
+            base_revision: self.revision - 1,
+            final_revision: self.revision,
+            indices,
+        });
         let start = Instant::now();
         self.gpu.prepare(
             &self.device,
@@ -305,6 +324,7 @@ impl Harness {
                 lighting: &self.lighting,
                 draws,
                 draws_revision: self.revision,
+                draw_dirty_hint: dirty_hint,
                 force_full_rebuild,
                 decals: &[],
                 decals_revision: 0,
@@ -1002,6 +1022,79 @@ fn moved_and_reposed_in_one_frame_patches_both_lanes() {
         assert_eq!(
             harness.gpu.staged_instance_transforms[span.start as usize].model_row_0[3],
             99.0
+        );
+    });
+}
+
+#[test]
+fn sparse_hint_matches_full_rebuild_for_moved_skinned_row() {
+    pollster::block_on(async {
+        let Some((device, queue)) = test_device().await else {
+            eprintln!("skip sparse hint equivalence test: no wgpu adapter");
+            return;
+        };
+        let (mut harness, mesh, material) = upload_harness(device, queue, false);
+        let mut draws: Vec<Draw3DInstance> = (0..UPLOAD_SCENE_DRAWS)
+            .map(|i| regular_draw(i, mesh, material, Color::WHITE))
+            .collect();
+        draws.push(skinned_draw(UPLOAD_SCENE_DRAWS, mesh, material, 0.0));
+        harness.prepare(&draws, true);
+        let changed = draws.len() - 1;
+        draws[changed] = skinned_draw(UPLOAD_SCENE_DRAWS, mesh, material, 1.0);
+        draws[changed].instance_mats = Arc::from([identity_at(99.0)]);
+
+        harness.prepare_with_dirty_hint(&draws, &[changed]);
+        assert_eq!(harness.gpu.last_prepare_step_timing.full_rebuilds, 0);
+        let sparse_batches = batch_keys(&harness.gpu);
+        let sparse_rows =
+            bytemuck::cast_slice::<_, u8>(harness.gpu.staged_instance_transforms.as_slice())
+                .to_vec();
+        let sparse_skeletons =
+            bytemuck::cast_slice::<_, u8>(harness.gpu.staged_skeletons.as_slice()).to_vec();
+
+        harness.prepare(&draws, true);
+        assert_eq!(harness.gpu.last_prepare_step_timing.full_rebuilds, 1);
+        assert_eq!(batch_keys(&harness.gpu), sparse_batches);
+        assert_eq!(
+            bytemuck::cast_slice::<_, u8>(harness.gpu.staged_instance_transforms.as_slice()),
+            sparse_rows.as_slice()
+        );
+        assert_eq!(
+            bytemuck::cast_slice::<_, u8>(harness.gpu.staged_skeletons.as_slice()),
+            sparse_skeletons.as_slice()
+        );
+    });
+}
+
+#[test]
+fn sparse_hint_matches_full_rebuild_for_dense_node_transform() {
+    pollster::block_on(async {
+        let Some((device, queue)) = test_device().await else {
+            eprintln!("skip sparse dense hint equivalence test: no wgpu adapter");
+            return;
+        };
+        let (mut harness, mesh, material) = upload_harness(device, queue, false);
+        let mut draws = vec![dense_draw(0, mesh, material)];
+        draws.extend(
+            (0..REGULAR_DRAWS).map(|index| regular_draw(index, mesh, material, Color::WHITE)),
+        );
+        harness.prepare(&draws, true);
+
+        let mut moved = draws.clone();
+        moved[0]
+            .dense_multimesh
+            .as_mut()
+            .expect("dense draw")
+            .node_model[3][0] += 7.0;
+        harness.prepare_with_dirty_hint(&moved, &[0]);
+        assert_eq!(harness.gpu.last_prepare_step_timing.full_rebuilds, 0);
+        let sparse = snapshot(&harness.gpu);
+
+        harness.prepare(&moved, true);
+        assert_eq!(harness.gpu.last_prepare_step_timing.full_rebuilds, 1);
+        assert!(
+            sparse == snapshot(&harness.gpu),
+            "dense sparse staging diverges from full rebuild"
         );
     });
 }
@@ -1835,6 +1928,7 @@ fn material_texture_upload_is_shared_across_gpu3d_instances() {
                     lighting: &lighting,
                     draws: &draws,
                     draws_revision: 1,
+                    draw_dirty_hint: None,
                     force_full_rebuild: true,
                     decals: &[],
                     decals_revision: 0,

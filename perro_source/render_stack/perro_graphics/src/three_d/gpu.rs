@@ -2,8 +2,8 @@
 
 use super::{
     renderer::{
-        DenseMultiMeshDraw3D, Draw3DInstance, Draw3DKind, Lighting3DState, MAX_POINT_LIGHTS,
-        MAX_RAY_LIGHTS, MAX_SPOT_LIGHTS,
+        DenseMultiMeshDraw3D, Draw3DInstance, Draw3DKind, DrawDirtyHint, Lighting3DState,
+        MAX_POINT_LIGHTS, MAX_RAY_LIGHTS, MAX_SPOT_LIGHTS,
     },
     shaders::{
         BuiltinShaderKind, MAX_MULTIVIEW_SHADOW_VIEWS, MaterialShaderFeatures,
@@ -1237,6 +1237,9 @@ pub struct Gpu3D {
     // All-or-nothing reuse of the staged multimesh buffers across full
     // rebuilds. See MultiMeshDrawSnapshot.
     multimesh_staging_cache: Vec<MultiMeshDrawSnapshot>,
+    // Dense draw index -> multimesh staging snapshot index; stable while the
+    // draw topology remains stable, so sparse transform patches avoid a scan.
+    multimesh_staging_cache_draw_indices: Vec<usize>,
     multimesh_staging_cache_valid: bool,
     // Camera the staged rows were packed at, kept as the cheap skip for the
     // per-draw LOD-band recompute: same camera => same band, no math.
@@ -1692,6 +1695,7 @@ pub struct Gpu3D {
     dirty_animation_spans_scratch: Vec<Range<u32>>,
     merged_animation_spans_scratch: Vec<Range<u32>>,
     transform_only_kinds_scratch: Vec<draw::TransformOnlyDrawClass>,
+    sparse_transform_only_kinds_scratch: Vec<(usize, draw::TransformOnlyDrawClass)>,
     debug_point_instances_scratch: Vec<BuiltInstanceParts>,
     debug_edge_instances_scratch: Vec<BuiltInstanceParts>,
     camera_bind_group_generation: u32,
@@ -1734,6 +1738,7 @@ pub struct Prepare3D<'a> {
     pub lighting: &'a Lighting3DState,
     pub draws: &'a [Draw3DInstance],
     pub draws_revision: u64,
+    pub draw_dirty_hint: Option<DrawDirtyHint<'a>>,
     pub force_full_rebuild: bool,
     pub decals: &'a [(perro_ids::NodeID, perro_render_bridge::Decal3DState)],
     pub decals_revision: u64,
@@ -3030,3 +3035,7 @@ mod indirect_compact_tests;
 #[cfg(test)]
 #[path = "../../tests/unit/three_d_pipeline_warm_tests.rs"]
 mod pipeline_warm_tests;
+
+#[cfg(test)]
+#[path = "../../tests/unit/three_d_shader_equivalence_tests.rs"]
+mod shader_equivalence_tests;

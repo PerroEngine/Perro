@@ -81,6 +81,19 @@ struct DrawChanges {
     instance_count: bool,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct DrawDirtyHint<'a> {
+    pub base_revision: u64,
+    pub final_revision: u64,
+    pub indices: &'a [usize],
+}
+
+struct DrawDirtyHintOwned {
+    base_revision: u64,
+    final_revision: u64,
+    indices: Vec<usize>,
+}
+
 impl DrawChanges {
     fn between(previous: Option<&Draw3DInstance>, next: &Draw3DInstance) -> Self {
         let Some(previous) = previous else {
@@ -240,6 +253,11 @@ pub struct Renderer3D {
     retained_draws_sorted_cache: Vec<Draw3DInstance>,
     node_to_sorted_draw_index: AHashMap<NodeID, usize>,
     draws_membership_dirty: bool,
+    pending_draw_dirty_base_revision: Option<u64>,
+    pending_draw_dirty_nodes: Vec<NodeID>,
+    pending_draw_dirty_structural: bool,
+    draw_dirty_indices_scratch: Vec<usize>,
+    last_draw_dirty_hint: Option<DrawDirtyHintOwned>,
     #[cfg(test)]
     draw_cache_rebuilds: usize,
     #[cfg(test)]
@@ -474,6 +492,8 @@ impl Renderer3D {
 
     pub fn remove_node(&mut self, node: NodeID) {
         if let Some(removed) = self.remove_retained_draw(node) {
+            self.clear_last_draw_dirty_hint();
+            self.pending_draw_dirty_structural = true;
             self.draw_revision = self.draw_revision.wrapping_add(1);
             self.resource_binding_revision = self.resource_binding_revision.wrapping_add(1);
             if removed.retained_instance_count() != 0 {
@@ -587,6 +607,7 @@ impl Renderer3D {
         &mut self,
         resources: &ResourceStore,
     ) -> (Camera3DState, Renderer3DStats, Lighting3DState) {
+        self.clear_last_draw_dirty_hint();
         let mut stats = Renderer3DStats::default();
         let mut draw_changes = DrawChanges::default();
         let now = Instant::now();
@@ -621,7 +642,9 @@ impl Renderer3D {
                 if draw_ready {
                     let changes = DrawChanges::between(self.retained_draw_ref(draw.node), &draw);
                     if changes.any {
+                        let node = draw.node;
                         self.upsert_retained_draw(draw);
+                        self.note_draw_change(node);
                         draw_changes.merge(changes);
                     }
                     stats.accepted_draws = stats.accepted_draws.saturating_add(1);
@@ -637,6 +660,7 @@ impl Renderer3D {
                         );
                         if changes.any {
                             self.patch_sorted_draw(draw.node);
+                            self.note_draw_change(draw.node);
                             draw_changes.merge(changes);
                         }
                     }
@@ -655,6 +679,7 @@ impl Renderer3D {
         if draw_changes.instance_count {
             self.instance_count_revision = self.instance_count_revision.wrapping_add(1);
         }
+        self.finish_draw_dirty_hint();
 
         let mut lighting = Lighting3DState {
             // Hourly wrap keeps f32 time sub-millisecond precise for shaders.
@@ -739,7 +764,9 @@ impl Renderer3D {
                     std::mem::swap(&mut self.retained_draws_sorted_cache[index], draw);
                     let owned = self.retained_draws_sorted_cache[index].clone();
                     let retained_index = self.node_to_draw_index[&owned.node];
+                    let node = owned.node;
                     self.retained_draws[retained_index] = owned;
+                    self.note_draw_change(node);
                     draw_changes.merge(changes);
                 }
                 stats.accepted_draws = stats.accepted_draws.saturating_add(1);
@@ -750,6 +777,7 @@ impl Renderer3D {
                     if changes.any {
                         let retained_updated = retained.clone();
                         self.retained_draws_sorted_cache[index] = retained_updated;
+                        self.note_draw_change(draw.node);
                         draw_changes.merge(changes);
                     }
                 }
@@ -798,8 +826,27 @@ impl Renderer3D {
         &self.retained_draws_sorted_cache
     }
 
+    pub fn retained_draws_sorted_with_dirty_hint(
+        &mut self,
+    ) -> (&[Draw3DInstance], Option<DrawDirtyHint<'_>>) {
+        if self.draws_membership_dirty {
+            self.rebuild_sorted_draws_cache();
+        }
+        let hint = self.draw_dirty_hint();
+        (&self.retained_draws_sorted_cache, hint)
+    }
+
     pub fn draw_revision(&self) -> u64 {
         self.draw_revision
+    }
+
+    pub fn draw_dirty_hint(&self) -> Option<DrawDirtyHint<'_>> {
+        let hint = self.last_draw_dirty_hint.as_ref()?;
+        Some(DrawDirtyHint {
+            base_revision: hint.base_revision,
+            final_revision: hint.final_revision,
+            indices: &hint.indices,
+        })
     }
 
     #[inline]
@@ -944,6 +991,75 @@ impl Renderer3D {
         self.node_to_draw_index
             .insert(self.retained_draws[idx].node, idx);
         self.draws_membership_dirty = true;
+        self.pending_draw_dirty_structural = true;
+    }
+
+    fn note_draw_change(&mut self, node: NodeID) {
+        if self.pending_draw_dirty_structural || self.draws_membership_dirty {
+            return;
+        }
+        let max_sparse = self.retained_draws_sorted_cache.len().div_ceil(8).max(1);
+        if self.pending_draw_dirty_nodes.len() >= max_sparse {
+            self.pending_draw_dirty_nodes.clear();
+            self.pending_draw_dirty_structural = true;
+            return;
+        }
+        self.pending_draw_dirty_base_revision
+            .get_or_insert(self.draw_revision);
+        self.pending_draw_dirty_nodes.push(node);
+    }
+
+    fn clear_last_draw_dirty_hint(&mut self) {
+        if let Some(hint) = self.last_draw_dirty_hint.take() {
+            self.draw_dirty_indices_scratch = hint.indices;
+        }
+    }
+
+    fn finish_draw_dirty_hint(&mut self) {
+        let base_revision = self.pending_draw_dirty_base_revision.take();
+        let structural = std::mem::take(&mut self.pending_draw_dirty_structural);
+        if structural || self.draws_membership_dirty || self.pending_draw_dirty_nodes.is_empty() {
+            self.pending_draw_dirty_nodes.clear();
+            return;
+        }
+        let Some(base_revision) = base_revision else {
+            self.pending_draw_dirty_nodes.clear();
+            return;
+        };
+        let final_revision = self.draw_revision;
+        if base_revision == final_revision
+            || base_revision == u64::MAX
+            || final_revision == u64::MAX
+        {
+            self.pending_draw_dirty_nodes.clear();
+            return;
+        }
+        let mut indices = std::mem::take(&mut self.draw_dirty_indices_scratch);
+        indices.clear();
+        indices.reserve(self.pending_draw_dirty_nodes.len());
+        for node_index in 0..self.pending_draw_dirty_nodes.len() {
+            let node = self.pending_draw_dirty_nodes[node_index];
+            let Some(&index) = self.node_to_sorted_draw_index.get(&node) else {
+                self.draw_dirty_indices_scratch = indices;
+                self.pending_draw_dirty_nodes.clear();
+                return;
+            };
+            indices.push(index);
+        }
+        indices.sort_unstable();
+        indices.dedup();
+        let max_sparse = self.retained_draws_sorted_cache.len().div_ceil(8).max(1);
+        if indices.is_empty() || indices.len() > max_sparse {
+            self.draw_dirty_indices_scratch = indices;
+            self.pending_draw_dirty_nodes.clear();
+            return;
+        }
+        self.pending_draw_dirty_nodes.clear();
+        self.last_draw_dirty_hint = Some(DrawDirtyHintOwned {
+            base_revision,
+            final_revision,
+            indices,
+        });
     }
 
     fn retained_draw_mut(&mut self, node: NodeID) -> Option<&mut Draw3DInstance> {
@@ -1086,6 +1202,11 @@ impl Default for Renderer3D {
             retained_draws_sorted_cache: Vec::new(),
             node_to_sorted_draw_index: AHashMap::new(),
             draws_membership_dirty: false,
+            pending_draw_dirty_base_revision: None,
+            pending_draw_dirty_nodes: Vec::new(),
+            pending_draw_dirty_structural: false,
+            draw_dirty_indices_scratch: Vec::new(),
+            last_draw_dirty_hint: None,
             #[cfg(test)]
             draw_cache_rebuilds: 0,
             #[cfg(test)]

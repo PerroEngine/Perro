@@ -73,6 +73,41 @@ const LDR_INTERMEDIATE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8U
 // the hysteresis only guards the (re)allocation churn on mixed workloads.
 const LDR_DEMOTE_CHAIN_RUNS: u32 = 120;
 
+/// True when an effect has no visible work for its current params.
+///
+/// Keep this list aligned with shader early-outs / identity endpoints. Only
+/// chain pass construction uses this gate; chain selection + target format
+/// rules stay unchanged.
+#[inline]
+fn is_identity_effect(effect: &PostProcessEffect) -> bool {
+    match effect {
+        PostProcessEffect::Blur { strength } => *strength <= 0.001,
+        PostProcessEffect::Warp { waves, .. } => *waves <= 0.001,
+        PostProcessEffect::Vignette { strength, .. } => *strength <= 0.001,
+        PostProcessEffect::Crt {
+            scanline_strength,
+            curvature,
+            chromatic,
+            vignette,
+        } => {
+            *scanline_strength <= 0.0 && *curvature <= 0.0 && *chromatic == 0.0 && *vignette <= 0.0
+        }
+        PostProcessEffect::ColorFilter { strength, .. }
+        | PostProcessEffect::ReverseFilter { strength, .. }
+        | PostProcessEffect::Bloom { strength, .. }
+        | PostProcessEffect::Lut2D { strength, .. }
+        | PostProcessEffect::Lut3D { strength, .. } => *strength <= 0.0,
+        PostProcessEffect::Saturate { amount } => *amount == 1.0,
+        PostProcessEffect::BlackWhite { amount } => *amount <= 0.0,
+        PostProcessEffect::Pixelate { .. }
+        | PostProcessEffect::PixelArt { .. }
+        | PostProcessEffect::ChromaKey { .. }
+        | PostProcessEffect::ColorGrade { .. }
+        | PostProcessEffect::Exposure { .. }
+        | PostProcessEffect::Custom { .. } => false,
+    }
+}
+
 /// True when an effect needs float (HDR) intermediate targets: bloom
 /// thresholds HDR values, blur redistributes >1.0 energy, and custom shaders
 /// are unknown, so anything not explicitly classified defaults to HDR
@@ -108,6 +143,9 @@ struct PostUniformFrameCtx {
 /// One executable step in the resolved chain. Consecutive cheap color ops fold
 /// into a single Merged step so they cost one pass instead of one pass each.
 enum ChainStep {
+    /// Copy input to output when an identity-only chain still owns the post
+    /// target selected by the caller.
+    Copy,
     Single(usize),
     /// A merged run of color ops. `ops` is the op count; `descriptors` packs
     /// each op as a header vec4 ([type, param_vec4_count, _, _]) followed by
@@ -156,36 +194,54 @@ fn build_chain_steps_into(
     steps.clear();
     merged_descriptors.clear();
     steps.reserve(effects.len().saturating_sub(steps.len()));
+    let mut has_identity = false;
     let mut i = 0;
     while i < effects.len() {
         if matches!(effects[i], PostProcessEffect::Exposure { .. }) {
             i += 1;
             continue;
         }
+        if is_identity_effect(&effects[i]) {
+            has_identity = true;
+            i += 1;
+            continue;
+        }
         if is_mergeable_color_op(&effects[i]) {
-            let start = i;
-            while i < effects.len() && is_mergeable_color_op(&effects[i]) {
+            let descriptor_start = merged_descriptors.len();
+            let mut active_ops = 0usize;
+            let mut first_active = None;
+            while i < effects.len()
+                && (is_mergeable_color_op(&effects[i]) || is_identity_effect(&effects[i]))
+            {
+                if !is_identity_effect(&effects[i]) && is_mergeable_color_op(&effects[i]) {
+                    first_active.get_or_insert(i);
+                    active_ops += 1;
+                    encode_merged_op(&effects[i], merged_descriptors);
+                }
                 i += 1;
             }
-            if i - start >= 2 {
-                let descriptor_start = merged_descriptors.len();
-                for effect in &effects[start..i] {
-                    encode_merged_op(effect, merged_descriptors);
-                }
+            if active_ops >= 2 {
                 let descriptor_end = merged_descriptors.len();
                 steps.push(ChainStep::Merged {
-                    ops: (i - start) as u32,
+                    ops: active_ops as u32,
                     descriptors: descriptor_start..descriptor_end,
                 });
                 continue;
             }
-            // Single mergeable op: keep the normal path.
-            steps.push(ChainStep::Single(start));
-            i = start + 1;
+            // Single mergeable op: keep normal path + rm staged descriptor.
+            merged_descriptors.truncate(descriptor_start);
+            if let Some(index) = first_active {
+                steps.push(ChainStep::Single(index));
+            }
             continue;
         }
         steps.push(ChainStep::Single(i));
         i += 1;
+    }
+    // `has_effects` keeps selecting the post target for identity-only chains.
+    // Retain one input->output copy so that target still receives pixels.
+    if steps.is_empty() && has_identity {
+        steps.push(ChainStep::Copy);
     }
 }
 
@@ -971,6 +1027,7 @@ impl PostProcessor {
         let merged_params: usize = steps
             .iter()
             .map(|step| match step {
+                ChainStep::Copy => 0,
                 ChainStep::Merged { descriptors, .. } => descriptors.len(),
                 ChainStep::Single(_) => 0,
             })
@@ -1014,6 +1071,72 @@ impl PostProcessor {
             } else {
                 self.ping_b_view.clone()
             };
+
+            if matches!(step, ChainStep::Copy) {
+                let uniform = PostUniform {
+                    effect_type: EFFECT_CUSTOM,
+                    param_count: 0,
+                    projection_mode,
+                    _pad0: 0,
+                    params0: [0.0; 4],
+                    params1: [0.0; 4],
+                    params2: [0.0; 4],
+                    params3: [0.0; 4],
+                    params4: [0.0; 4],
+                    params5: [0.0; 4],
+                    resolution: [width, height],
+                    inv_resolution: [inv_width, inv_height],
+                    near,
+                    far,
+                    time: [time, time],
+                };
+                let uniform_offset = index as u64 * self.uniform_stride;
+                let Ok(dynamic_offset) = u32::try_from(uniform_offset) else {
+                    continue;
+                };
+                queue.write_buffer(
+                    &self.uniform_buffer,
+                    uniform_offset,
+                    bytemuck::bytes_of(&uniform),
+                );
+                let input_pk = match input_kind {
+                    0 => PostInputKind::External,
+                    1 => PostInputKind::PingA,
+                    _ => PostInputKind::PingB,
+                };
+                let bind_group =
+                    self.merged_bind_group(device, input_pk, &current_input, depth_view, view_keys);
+                {
+                    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("perro_post_copy_pass"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &target_view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                                store: wgpu::StoreOp::Store,
+                            },
+                            depth_slice: None,
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                        multiview_mask: None,
+                    });
+                    pass.set_pipeline(self.builtin_pipeline_for_target(!last));
+                    pass.set_bind_group(0, &bind_group, &[dynamic_offset]);
+                    pass.draw(0..3, 0..1);
+                }
+                input_kind = if last {
+                    input_kind
+                } else if use_ping_a {
+                    1
+                } else {
+                    2
+                };
+                use_ping_a = !use_ping_a;
+                continue;
+            }
 
             // Merged run of cheap color ops: one pass applies the whole run.
             if let ChainStep::Merged { ops, descriptors } = step {

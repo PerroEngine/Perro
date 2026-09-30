@@ -399,7 +399,8 @@ impl PerroGraphics {
                 .extend_from_slice(self.renderer_3d.retained_decals_sorted());
             self.retained_decals_3d_cache_revision = decals_3d_revision;
         }
-        let retained_draws_3d = self.renderer_3d.retained_draws_sorted();
+        let (retained_draws_3d, draws_3d_dirty_hint) =
+            self.renderer_3d.retained_draws_sorted_with_dirty_hint();
         if draw_instance_counts_revision != self.retained_draw_instance_counts_revision {
             self.retained_draw_instances_cache =
                 retained_draws_3d.iter().fold(0u32, |acc, draw| {
@@ -814,6 +815,7 @@ impl PerroGraphics {
                 lighting_3d: &lighting_3d,
                 draws_3d: retained_draws_3d,
                 draws_3d_revision: draws_revision,
+                draws_3d_dirty_hint,
                 point_particles_3d: &self.retained_point_particles_cache,
                 point_particles_3d_revision: self.retained_point_particles_cache_revision,
                 waters_3d: &self.retained_waters_3d_cache,

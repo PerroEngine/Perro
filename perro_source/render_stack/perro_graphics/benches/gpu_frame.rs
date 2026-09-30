@@ -570,6 +570,135 @@ fn main() {
                 redraw: redraw_2d,
             },
             BenchCase {
+                name: "post_identity_zero",
+                setup: |w| {
+                    setup_post(
+                        w,
+                        PostProcessEffect::Bloom {
+                            strength: 0.0,
+                            threshold: 0.8,
+                            radius: 1.2,
+                        },
+                    )
+                },
+                redraw: redraw_2d,
+            },
+            BenchCase {
+                name: "post_identity_ordered_ref",
+                setup: |w| {
+                    setup_post_chain(
+                        w,
+                        vec![
+                            PostProcessEffect::Bloom {
+                                strength: 0.7,
+                                threshold: 0.8,
+                                radius: 1.2,
+                            },
+                            PostProcessEffect::ColorGrade {
+                                exposure: 0.1,
+                                contrast: 1.2,
+                                brightness: -0.05,
+                                saturation: 1.3,
+                                gamma: 0.95,
+                                temperature: 0.2,
+                                tint: -0.1,
+                                hue_shift: 0.05,
+                                vibrance: 0.4,
+                                lift: [0.01, 0.02, 0.03],
+                                gain: [1.1, 1.05, 1.0],
+                                offset: [-0.01, -0.02, -0.03],
+                            },
+                        ],
+                    )
+                },
+                redraw: redraw_2d,
+            },
+            BenchCase {
+                name: "post_identity_ordered_mixed",
+                setup: |w| {
+                    setup_post_chain(
+                        w,
+                        vec![
+                            PostProcessEffect::Vignette {
+                                strength: 0.0,
+                                radius: 0.55,
+                                softness: 0.25,
+                            },
+                            PostProcessEffect::Bloom {
+                                strength: 0.7,
+                                threshold: 0.8,
+                                radius: 1.2,
+                            },
+                            PostProcessEffect::Saturate { amount: 1.0 },
+                            PostProcessEffect::ColorFilter {
+                                color: [0.0, 0.0, 0.0],
+                                strength: 0.0,
+                            },
+                            PostProcessEffect::ColorGrade {
+                                exposure: 0.1,
+                                contrast: 1.2,
+                                brightness: -0.05,
+                                saturation: 1.3,
+                                gamma: 0.95,
+                                temperature: 0.2,
+                                tint: -0.1,
+                                hue_shift: 0.05,
+                                vibrance: 0.4,
+                                lift: [0.01, 0.02, 0.03],
+                                gain: [1.1, 1.05, 1.0],
+                                offset: [-0.01, -0.02, -0.03],
+                            },
+                            PostProcessEffect::Bloom {
+                                strength: 0.0,
+                                threshold: 0.8,
+                                radius: 1.2,
+                            },
+                        ],
+                    )
+                },
+                redraw: redraw_2d,
+            },
+            BenchCase {
+                name: "post_identity_alpha_ref",
+                setup: |w| {
+                    setup_post_chain(
+                        w,
+                        vec![PostProcessEffect::ChromaKey {
+                            color: perro_structs::Color::GREEN,
+                            tolerance: 0.1,
+                            softness: 0.05,
+                        }],
+                    )
+                },
+                redraw: redraw_2d,
+            },
+            BenchCase {
+                name: "post_identity_alpha_mixed",
+                setup: |w| {
+                    setup_post_chain(
+                        w,
+                        vec![
+                            PostProcessEffect::Vignette {
+                                strength: 0.0,
+                                radius: 0.55,
+                                softness: 0.25,
+                            },
+                            PostProcessEffect::ChromaKey {
+                                color: perro_structs::Color::GREEN,
+                                tolerance: 0.1,
+                                softness: 0.05,
+                            },
+                            PostProcessEffect::BlackWhite { amount: 0.0 },
+                            PostProcessEffect::ColorFilter {
+                                color: [1.0, 0.0, 0.0],
+                                strength: 0.0,
+                            },
+                        ],
+                    )
+                },
+                redraw: redraw_2d,
+            },
+            BenchCase {
                 name: "post_blur",
                 setup: |w| setup_post(w, PostProcessEffect::Blur { strength: 2.0 }),
                 redraw: redraw_2d,
@@ -1018,9 +1147,13 @@ fn setup_multimesh_dense(window: &Arc<Window>, count: u32) -> PerroGraphics {
 }
 
 fn setup_post(window: &Arc<Window>, effect: PostProcessEffect) -> PerroGraphics {
+    setup_post_chain(window, vec![effect])
+}
+
+fn setup_post_chain(window: &Arc<Window>, effects: Vec<PostProcessEffect>) -> PerroGraphics {
     let mut graphics = setup_rects(window, 10_000);
     graphics.submit(RenderCommand::PostProcessing(
-        PostProcessingCommand::SetGlobal(PostProcessSet::from_effects(vec![effect])),
+        PostProcessingCommand::SetGlobal(PostProcessSet::from_effects(effects)),
     ));
     let _ = graphics.draw_frame_timed();
     graphics
