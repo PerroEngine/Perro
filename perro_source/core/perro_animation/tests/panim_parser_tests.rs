@@ -4,7 +4,7 @@ use perro_animation::{
     AnimationKeyMode, AnimationParam, AnimationTrackValue, parse_panim,
 };
 use perro_scene::{
-    MeshInstance3DField, Node2DField, Node3DField, NodeField, NodeType, Sprite2DField,
+    MeshInstance3DField, Node2DField, Node3DField, NodeField, NodeType, Sprite2DField, UiNodeField,
 };
 
 #[test]
@@ -939,4 +939,195 @@ Rig = Skeleton2D
         track.keys[0].value,
         AnimationTrackValue::Transform2D(_)
     ));
+}
+
+fn ui_track<'a>(
+    clip: &'a perro_animation::AnimationClip,
+    object: &str,
+    field: UiNodeField,
+) -> &'a perro_animation::AnimationObjectTrack {
+    clip.object_tracks
+        .iter()
+        .find(|t| t.object.as_ref() == object && t.field == NodeField::UiNode(field))
+        .unwrap_or_else(|| panic!("missing ui track {field:?} on {object}"))
+}
+
+#[test]
+fn parses_ui_node_layout_and_transform_tracks() {
+    let src = r#"
+[Animation]
+name = "UiPulse"
+fps = 60
+[/Animation]
+
+[Objects]
+Logo = UiImage
+[/Objects]
+
+[Frame0]
+@Logo { scale = (1.0, 1.0)  translation_ratio = (0.0, 0.29) }
+[/Frame0]
+
+[Frame60]
+@Logo { scale = (1.07, 1.07)  translation_ratio = (0.0, 0.30)  tint = (1, 1, 1, 0.5) }
+[/Frame60]
+"#;
+
+    let clip = parse_panim(src).expect("expected valid ui panim");
+    assert_eq!(clip.objects[0].node_type, NodeType::UiImage);
+
+    let scale = ui_track(&clip, "Logo", UiNodeField::Scale);
+    assert_eq!(scale.keys.len(), 2);
+    assert!(matches!(
+        scale.keys[0].value,
+        AnimationTrackValue::Vec2([1.0, 1.0])
+    ));
+    assert!(matches!(
+        scale.keys[1].value,
+        AnimationTrackValue::Vec2([1.07, 1.07])
+    ));
+    assert_eq!(scale.keys[1].frame, 60);
+
+    let tr = ui_track(&clip, "Logo", UiNodeField::TranslationRatio);
+    assert!(matches!(
+        tr.keys[0].value,
+        AnimationTrackValue::Vec2([0.0, 0.29])
+    ));
+    assert!(matches!(
+        tr.keys[1].value,
+        AnimationTrackValue::Vec2([0.0, 0.30])
+    ));
+
+    // `tint` resolves to the UiNode base modulate channel.
+    let tint = ui_track(&clip, "Logo", UiNodeField::Modulate);
+    assert_eq!(tint.keys.len(), 1);
+    assert!(matches!(
+        tint.keys[0].value,
+        AnimationTrackValue::Vec4([1.0, 1.0, 1.0, 0.5])
+    ));
+}
+
+#[test]
+fn parses_all_ui_node_fields_on_ui_types() {
+    for node_type in [
+        "UiNode",
+        "UiImage",
+        "UiImageButton",
+        "UiNineSlice",
+        "UiNineSliceButton",
+        "UiAnimatedImage",
+        "UiLabel",
+    ] {
+        let src = format!(
+            r#"
+[Objects]
+W = {node_type}
+[/Objects]
+
+[Frame0]
+@W {{
+    scale = (2, 3)
+    rotation_deg = 90
+    visible = false
+    size_percent = (50, 25)
+    translation_ratio = (0.1, -0.2)
+    self_translation_ratio = (0.5, 0.5)
+    pivot_ratio = (0, 1)
+    modulate = (1, 0, 0)
+    self_modulate = (0, 1, 0, 0.25)
+    z_index = 4
+}}
+[/Frame0]
+"#
+        );
+        let clip = parse_panim(&src).unwrap_or_else(|e| panic!("{node_type}: {e}"));
+        assert_eq!(clip.object_tracks.len(), 10, "{node_type}");
+
+        match ui_track(&clip, "W", UiNodeField::Rotation).keys[0].value {
+            AnimationTrackValue::F32(v) => {
+                assert!((v - std::f32::consts::FRAC_PI_2).abs() < 1e-5)
+            }
+            ref other => panic!("rotation: {other:?}"),
+        }
+        assert!(matches!(
+            ui_track(&clip, "W", UiNodeField::Visible).keys[0].value,
+            AnimationTrackValue::Bool(false)
+        ));
+        assert!(matches!(
+            ui_track(&clip, "W", UiNodeField::SizeRatio).keys[0].value,
+            AnimationTrackValue::Vec2([0.5, 0.25])
+        ));
+        assert!(matches!(
+            ui_track(&clip, "W", UiNodeField::SelfTranslationRatio).keys[0].value,
+            AnimationTrackValue::Vec2([0.5, 0.5])
+        ));
+        assert!(matches!(
+            ui_track(&clip, "W", UiNodeField::PivotRatio).keys[0].value,
+            AnimationTrackValue::Vec2([0.0, 1.0])
+        ));
+        assert!(matches!(
+            ui_track(&clip, "W", UiNodeField::Modulate).keys[0].value,
+            AnimationTrackValue::Vec4([1.0, 0.0, 0.0, 1.0])
+        ));
+        assert!(matches!(
+            ui_track(&clip, "W", UiNodeField::SelfModulate).keys[0].value,
+            AnimationTrackValue::Vec4([0.0, 1.0, 0.0, 0.25])
+        ));
+        assert!(matches!(
+            ui_track(&clip, "W", UiNodeField::ZIndex).keys[0].value,
+            AnimationTrackValue::I32(4)
+        ));
+    }
+}
+
+#[test]
+fn ui_track_controls_apply_to_ui_channels() {
+    let src = r#"
+[Objects]
+Panel = UiNineSlice
+[/Objects]
+
+[Frame0]
+@Panel {
+    translation_ratio.interp = "step"
+    scale.ease = "ease_in_out"
+    translation_ratio = (0, 0)
+    scale = (1, 1)
+}
+[/Frame0]
+
+[Frame10]
+@Panel { translation_ratio = (0, 1)  scale = (2, 2) }
+[/Frame10]
+"#;
+    let clip = parse_panim(src).expect("expected valid ui panim");
+    let tr = ui_track(&clip, "Panel", UiNodeField::TranslationRatio);
+    assert_eq!(tr.interpolation, AnimationInterpolation::Step);
+    assert_eq!(tr.keys[0].interpolation, AnimationInterpolation::Step);
+    let scale = ui_track(&clip, "Panel", UiNodeField::Scale);
+    assert_eq!(scale.ease, AnimationEase::EaseInOut);
+}
+
+#[test]
+fn rejects_ui_position_and_bad_color() {
+    let pos = r#"
+[Objects]
+W = UiNode
+[/Objects]
+[Frame0]
+@W { position = (0, 0) }
+[/Frame0]
+"#;
+    let err = parse_panim(pos).expect_err("ui position must be rejected");
+    assert!(err.contains("translation_ratio"), "{err}");
+
+    let color = r#"
+[Objects]
+W = UiNode
+[/Objects]
+[Frame0]
+@W { modulate = 1.0 }
+[/Frame0]
+"#;
+    assert!(parse_panim(color).is_err());
 }

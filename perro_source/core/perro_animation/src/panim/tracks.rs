@@ -225,6 +225,16 @@ fn build_tracks_and_events(
                     default_ease,
                 );
             }
+            ObjectFieldAction::UiNode(action) => {
+                apply_ui_node_action(
+                    frame,
+                    object,
+                    action,
+                    &mut tracks_map,
+                    default_interpolation,
+                    default_ease,
+                );
+            }
         }
         for ((track_object, _), track) in tracks_map.iter_mut() {
             if track_object == &object_for_mode && let Some(key) = track.keys.get_mut(&frame) {
@@ -1003,6 +1013,49 @@ fn apply_spot_light_3d_action(
             default_ease,
         ),
     }
+}
+
+fn apply_ui_node_action(
+    frame: u32,
+    object: String,
+    action: UiNodeAction,
+    tracks_map: &mut BTreeMap<(String, String), TrackAccumulator>,
+    default_interpolation: AnimationInterpolation,
+    default_ease: AnimationEase,
+) {
+    let vec2 = |v: Vector2| AnimationTrackValue::Vec2([v.x, v.y]);
+    let (field, value) = match action {
+        UiNodeAction::Scale(v) => (UiNodeField::Scale, vec2(v)),
+        UiNodeAction::Rotation(v) => (UiNodeField::Rotation, AnimationTrackValue::F32(v)),
+        UiNodeAction::Visible(v) => (UiNodeField::Visible, AnimationTrackValue::Bool(v)),
+        UiNodeAction::ZIndex(v) => (UiNodeField::ZIndex, AnimationTrackValue::I32(v)),
+        UiNodeAction::InputEnabled(v) => (UiNodeField::InputEnabled, AnimationTrackValue::Bool(v)),
+        UiNodeAction::ClipChildren(v) => (UiNodeField::ClipChildren, AnimationTrackValue::Bool(v)),
+        UiNodeAction::Modulate(v) => (UiNodeField::Modulate, AnimationTrackValue::Vec4(v)),
+        UiNodeAction::SelfModulate(v) => (UiNodeField::SelfModulate, AnimationTrackValue::Vec4(v)),
+        UiNodeAction::ChildrenModulate(v) => {
+            (UiNodeField::ChildrenModulate, AnimationTrackValue::Vec4(v))
+        }
+        UiNodeAction::SizeRatio(v) => (UiNodeField::SizeRatio, vec2(v)),
+        UiNodeAction::TranslationRatio(v) => (UiNodeField::TranslationRatio, vec2(v)),
+        UiNodeAction::SelfTranslationRatio(v) => (UiNodeField::SelfTranslationRatio, vec2(v)),
+        UiNodeAction::PivotRatio(v) => (UiNodeField::PivotRatio, vec2(v)),
+    };
+    let Some(channel) = ui_node_channel_key(field) else {
+        return;
+    };
+    insert_track_key(
+        tracks_map,
+        object,
+        channel,
+        NodeField::UiNode(field),
+        frame,
+        value,
+        0,
+        0,
+        default_interpolation,
+        default_ease,
+    );
 }
 
 fn default_object_state_2d() -> ObjectState2D {

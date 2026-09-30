@@ -529,6 +529,18 @@ pub(in super::super) fn resolve_base_node_field(
             "input_enabled" => Some(NodeField::UiNode(UiNodeField::InputEnabled)),
             "clip_children" => Some(NodeField::UiNode(UiNodeField::ClipChildren)),
             "z_index" => Some(NodeField::UiNode(UiNodeField::ZIndex)),
+            "size_ratio" | "size_percent" | "size_pct" => {
+                Some(NodeField::UiNode(UiNodeField::SizeRatio))
+            }
+            "translation_ratio" | "translation_percent" | "translation_pct" => {
+                Some(NodeField::UiNode(UiNodeField::TranslationRatio))
+            }
+            "self_translation_ratio" | "self_translation_percent" | "self_translation_pct" => {
+                Some(NodeField::UiNode(UiNodeField::SelfTranslationRatio))
+            }
+            "pivot_ratio" | "pivot_percent" | "pivot_pct" => {
+                Some(NodeField::UiNode(UiNodeField::PivotRatio))
+            }
             _ => None,
         };
     }

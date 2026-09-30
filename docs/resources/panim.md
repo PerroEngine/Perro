@@ -316,6 +316,40 @@ Semantics:
 
 - `range`, `inner_angle_radians`, `outer_angle_radians`
 
+UI nodes (`UiNode` and every type built on it: `UiImage`, `UiImageButton`,
+`UiNineSlice`, `UiNineSliceButton`, `UiAnimatedImage`, `UiLabel`, layouts, ...):
+
+- `scale` (vec2), `rotation` (radians; `rotation_deg` accepted), `visible`, `z_index`
+- `size_ratio`, `translation_ratio`, `self_translation_ratio`, `pivot_ratio` (vec2 ratios)
+- `size_percent`, `translation_percent`, `self_translation_percent`, `pivot_percent`
+  (same channels; percent / 100 at parse time, `_pct` aliases accepted)
+- `modulate` / `tint`, `self_modulate`, `children_modulate` (color: `(r, g, b, a)` or `(r, g, b)`)
+- `input_enabled`, `clip_children`
+
+```text
+[Objects]
+Logo = UiImage
+[/Objects]
+
+[Frame0]
+@Logo { scale = (1.0, 1.0)  translation_ratio = (0.0, 0.29) }
+[/Frame0]
+
+[Frame60]
+@Logo { scale = (1.07, 1.07)  translation_ratio = (0.0, 0.30)  tint = (1, 1, 1, 1) }
+[/Frame60]
+```
+
+UI notes:
+
+- Each UI field is its own track (`scale` and `translation_ratio` key independently).
+- Values are absolute (not offsets): sampled values overwrite the node field.
+- Writes go through the UI base mutation path (same as `with_base_node_mut!`),
+  so layout/render invalidate normally; an unchanged sampled value is skipped.
+- `tint` in `.panim` is the UI base `modulate` (multiplies node + children),
+  not the image widget's own `tint` field used by `.scn` on image/nine-slice types.
+- UI `position` is not animatable; use `translation_ratio`.
+
 `Skeleton2D` / `Skeleton3D`:
 
 - `bones[index].position`, `bones[index].rotation`, `bones[index].scale`

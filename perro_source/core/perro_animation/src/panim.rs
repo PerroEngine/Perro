@@ -8,7 +8,8 @@ use crate::{
 use perro_scene::{
     Camera3DField, Light3DField, MeshInstance3DField, Node2DField, Node3DField, NodeField,
     NodeType, Parser as SceneParser, PointLight3DField, SceneObjectField, SceneValue,
-    Skeleton2DField, Skeleton3DField, SpotLight3DField, Sprite2DField, resolve_node_field,
+    Skeleton2DField, Skeleton3DField, SpotLight3DField, Sprite2DField, UiNodeField,
+    resolve_node_field,
 };
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use std::borrow::Cow;

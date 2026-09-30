@@ -94,6 +94,10 @@ pub(super) fn default_ui_node_field_value(field: UiNodeField) -> Option<SceneVal
         UiNodeField::InputEnabled => SceneValue::Bool(node.input_enabled),
         UiNodeField::ClipChildren => SceneValue::Bool(node.clip_children),
         UiNodeField::ZIndex => SceneValue::I32(node.layout.z_index),
+        UiNodeField::SizeRatio => ui_vec2_ratio_value(node.layout.size),
+        UiNodeField::TranslationRatio => vec2_value(node.transform.translation),
+        UiNodeField::SelfTranslationRatio => vec2_value(node.transform.self_translation),
+        UiNodeField::PivotRatio => ui_vec2_ratio_value(node.transform.pivot),
     })
 }
 

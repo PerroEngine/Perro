@@ -129,6 +129,14 @@ pub enum UiNodeField {
     InputEnabled,
     ClipChildren,
     ZIndex,
+    /// `layout.size` as parent ratio (`size_ratio`; `size_percent` = ratio * 100).
+    SizeRatio,
+    /// `transform.translation` as parent ratio (`translation_ratio` / `translation_percent`).
+    TranslationRatio,
+    /// `transform.self_translation` as own-size ratio.
+    SelfTranslationRatio,
+    /// `transform.pivot` as own-size ratio (`pivot_ratio` / `pivot_percent`).
+    PivotRatio,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

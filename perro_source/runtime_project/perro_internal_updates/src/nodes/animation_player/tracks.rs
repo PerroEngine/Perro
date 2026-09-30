@@ -756,7 +756,131 @@ where
                 n.outer_angle_radians
             ))
         }
+        NodeField::UiNode(field) => {
+            with_base_node!(ctx, UiNode, node_id, |node| read_ui_node_field(node, field)).flatten()
+        }
         _ => None,
+    }
+}
+
+/// UI base field read as the same units `.panim` UI tracks author
+/// (ratios for layout, radians for rotation, RGBA for modulate).
+pub(in super::super) fn read_ui_node_field(node: &UiNode, field: UiNodeField) -> Option<Variant> {
+    Some(match field {
+        UiNodeField::Scale => Variant::from(node.transform.scale),
+        UiNodeField::Rotation => Variant::from(node.transform.rotation),
+        UiNodeField::Visible => Variant::from(node.visible),
+        UiNodeField::ZIndex => Variant::from(node.layout.z_index),
+        UiNodeField::InputEnabled => Variant::from(node.input_enabled),
+        UiNodeField::ClipChildren => Variant::from(node.clip_children),
+        UiNodeField::Modulate => Variant::from(node.modulate.modulate),
+        UiNodeField::SelfModulate => Variant::from(node.modulate.self_modulate),
+        UiNodeField::ChildrenModulate => Variant::from(node.modulate.children_modulate),
+        UiNodeField::SizeRatio => Variant::from(ui_vector_ratio(node.layout.size)),
+        UiNodeField::TranslationRatio => Variant::from(node.transform.translation),
+        UiNodeField::SelfTranslationRatio => Variant::from(node.transform.self_translation),
+        UiNodeField::PivotRatio => Variant::from(ui_vector_ratio(node.transform.pivot)),
+        UiNodeField::Position => return None,
+    })
+}
+
+#[inline]
+fn ui_vector_ratio(v: UiVector2) -> Vector2 {
+    let axis = |u: UiUnit| match u {
+        UiUnit::Percent(p) => p * 0.01,
+        UiUnit::Pixels(px) => px,
+    };
+    Vector2::new(axis(v.x), axis(v.y))
+}
+
+/// Write one sampled UI track value into a UI base. Returns `true` when the
+/// node changed. Pure so it can be unit-tested; the runtime path wraps it in
+/// `with_base_node_mut!(UiNode)`, which marks layout/render dirty exactly like
+/// a script mutation.
+pub(in super::super) fn apply_ui_node_value(
+    node: &mut UiNode,
+    field: UiNodeField,
+    value: &AnimationTrackValue,
+) -> bool {
+    fn set<T: PartialEq>(slot: &mut T, v: T) -> bool {
+        if *slot == v {
+            false
+        } else {
+            *slot = v;
+            true
+        }
+    }
+    let vec2 = |value: &AnimationTrackValue| match value {
+        AnimationTrackValue::Vec2([x, y]) => Some(Vector2::new(*x, *y)),
+        _ => None,
+    };
+    let color = |value: &AnimationTrackValue| match value {
+        AnimationTrackValue::Vec4(c) => Some(Color::from(*c)),
+        AnimationTrackValue::Vec3([r, g, b]) => Some(Color::rgb(*r, *g, *b)),
+        _ => None,
+    };
+    let boolean = |value: &AnimationTrackValue| match value {
+        AnimationTrackValue::Bool(v) => Some(*v),
+        _ => None,
+    };
+    match field {
+        UiNodeField::Scale => vec2(value).is_some_and(|v| set(&mut node.transform.scale, v)),
+        UiNodeField::Rotation => {
+            as_f32_track(value).is_some_and(|v| set(&mut node.transform.rotation, v))
+        }
+        UiNodeField::Visible => boolean(value).is_some_and(|v| set(&mut node.visible, v)),
+        UiNodeField::ZIndex => {
+            as_i32_track(value).is_some_and(|v| set(&mut node.layout.z_index, v))
+        }
+        UiNodeField::InputEnabled => {
+            boolean(value).is_some_and(|v| set(&mut node.input_enabled, v))
+        }
+        UiNodeField::ClipChildren => {
+            boolean(value).is_some_and(|v| set(&mut node.clip_children, v))
+        }
+        UiNodeField::Modulate => color(value).is_some_and(|c| set(&mut node.modulate.modulate, c)),
+        UiNodeField::SelfModulate => {
+            color(value).is_some_and(|c| set(&mut node.modulate.self_modulate, c))
+        }
+        UiNodeField::ChildrenModulate => {
+            color(value).is_some_and(|c| set(&mut node.modulate.children_modulate, c))
+        }
+        UiNodeField::SizeRatio => {
+            vec2(value).is_some_and(|v| set(&mut node.layout.size, UiVector2::ratio(v.x, v.y)))
+        }
+        UiNodeField::TranslationRatio => {
+            vec2(value).is_some_and(|v| set(&mut node.transform.translation, v))
+        }
+        UiNodeField::SelfTranslationRatio => {
+            vec2(value).is_some_and(|v| set(&mut node.transform.self_translation, v))
+        }
+        UiNodeField::PivotRatio => {
+            vec2(value).is_some_and(|v| set(&mut node.transform.pivot, UiVector2::ratio(v.x, v.y)))
+        }
+        UiNodeField::Position => false,
+    }
+}
+
+/// Probe on a shared borrow first: an unchanged value (held key, looping
+/// clip resting between keys) never enters the mutable path, so it costs no
+/// dirty-mark or UI snapshot work.
+fn apply_ui_track<RT>(
+    ctx: &mut RuntimeWindow<'_, RT>,
+    node_id: NodeID,
+    field: UiNodeField,
+    value: &AnimationTrackValue,
+) where
+    RT: RuntimeAPI + ?Sized,
+{
+    let needs_apply = with_base_node!(ctx, UiNode, node_id, |node| {
+        let mut probe = node.clone();
+        apply_ui_node_value(&mut probe, field, value)
+    })
+    .unwrap_or(false);
+    if needs_apply {
+        let _ = with_base_node_mut!(ctx, UiNode, node_id, |node| {
+            apply_ui_node_value(node, field, value);
+        });
     }
 }
 
@@ -1194,6 +1318,7 @@ pub(in super::super) fn apply_track_value<RT>(
                 });
             }
         }
+        NodeField::UiNode(field) => apply_ui_track(ctx, node_id, field, value),
         _ => {}
     }
 }

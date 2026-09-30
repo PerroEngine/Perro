@@ -76,6 +76,9 @@ fn parse_object_field_action(
         NodeField::SpotLight3D(field) => {
             ObjectFieldAction::SpotLight3D(parse_spot_light_3d_action(field, value, key, line_no)?)
         }
+        NodeField::UiNode(field) => {
+            ObjectFieldAction::UiNode(parse_ui_node_action(field, value, key, line_no)?)
+        }
         _ => {
             return Err(format!(
                 "line {}: `{}` is valid for `{}` but not yet animatable in `.panim`",
@@ -116,6 +119,89 @@ fn parse_node_2d_action(
                 line_no, key
             ));
         }
+    })
+}
+
+fn parse_ui_node_action(
+    field: UiNodeField,
+    value: &SceneValue,
+    key: &str,
+    line_no: usize,
+) -> Result<UiNodeAction, String> {
+    Ok(match field {
+        UiNodeField::Scale => UiNodeAction::Scale(expect_vec2(value, key, line_no)?),
+        UiNodeField::Rotation if is_rotation_deg_key(key) => {
+            UiNodeAction::Rotation(expect_f32(value, key, line_no)?.to_radians())
+        }
+        UiNodeField::Rotation => UiNodeAction::Rotation(expect_f32(value, key, line_no)?),
+        UiNodeField::Visible => UiNodeAction::Visible(expect_bool(value, key, line_no)?),
+        UiNodeField::ZIndex => UiNodeAction::ZIndex(expect_i32(value, key, line_no)?),
+        UiNodeField::InputEnabled => UiNodeAction::InputEnabled(expect_bool(value, key, line_no)?),
+        UiNodeField::ClipChildren => UiNodeAction::ClipChildren(expect_bool(value, key, line_no)?),
+        UiNodeField::Modulate => UiNodeAction::Modulate(expect_color4(value, key, line_no)?),
+        UiNodeField::SelfModulate => {
+            UiNodeAction::SelfModulate(expect_color4(value, key, line_no)?)
+        }
+        UiNodeField::ChildrenModulate => {
+            UiNodeAction::ChildrenModulate(expect_color4(value, key, line_no)?)
+        }
+        UiNodeField::SizeRatio => UiNodeAction::SizeRatio(expect_ui_ratio(value, key, line_no)?),
+        UiNodeField::TranslationRatio => {
+            UiNodeAction::TranslationRatio(expect_ui_ratio(value, key, line_no)?)
+        }
+        UiNodeField::SelfTranslationRatio => {
+            UiNodeAction::SelfTranslationRatio(expect_ui_ratio(value, key, line_no)?)
+        }
+        UiNodeField::PivotRatio => UiNodeAction::PivotRatio(expect_ui_ratio(value, key, line_no)?),
+        UiNodeField::Position => {
+            return Err(format!(
+                "line {}: `{}` is valid but not animatable in `.panim` (use `translation_ratio`)",
+                line_no, key
+            ));
+        }
+    })
+}
+
+/// `*_percent` / `*_pct` keys author percent; tracks always store ratios.
+fn expect_ui_ratio(value: &SceneValue, key: &str, line_no: usize) -> Result<Vector2, String> {
+    let v = expect_vec2(value, key, line_no)?;
+    let key = key.trim();
+    if key.ends_with("_percent") || key.ends_with("_pct") {
+        Ok(Vector2::new(v.x * 0.01, v.y * 0.01))
+    } else {
+        Ok(v)
+    }
+}
+
+fn expect_color4(value: &SceneValue, key: &str, line_no: usize) -> Result<[f32; 4], String> {
+    if let Some((r, g, b, a)) = value.as_vec4() {
+        return Ok([r, g, b, a]);
+    }
+    if let Some((r, g, b)) = value.as_vec3() {
+        return Ok([r, g, b, 1.0]);
+    }
+    Err(format!(
+        "line {}: `{}` expects color vec4 (r, g, b, a) or vec3 (r, g, b)",
+        line_no, key
+    ))
+}
+
+fn ui_node_channel_key(field: UiNodeField) -> Option<&'static str> {
+    Some(match field {
+        UiNodeField::Scale => "ui.scale",
+        UiNodeField::Rotation => "ui.rotation",
+        UiNodeField::Visible => "ui.visible",
+        UiNodeField::ZIndex => "ui.z_index",
+        UiNodeField::InputEnabled => "ui.input_enabled",
+        UiNodeField::ClipChildren => "ui.clip_children",
+        UiNodeField::Modulate => "ui.modulate",
+        UiNodeField::SelfModulate => "ui.self_modulate",
+        UiNodeField::ChildrenModulate => "ui.children_modulate",
+        UiNodeField::SizeRatio => "ui.size_ratio",
+        UiNodeField::TranslationRatio => "ui.translation_ratio",
+        UiNodeField::SelfTranslationRatio => "ui.self_translation_ratio",
+        UiNodeField::PivotRatio => "ui.pivot_ratio",
+        UiNodeField::Position => return None,
     })
 }
 
@@ -781,6 +867,13 @@ fn resolve_animatable_channel(
             NodeField::SpotLight3D(SpotLight3DField::OuterAngleRadians),
             None,
         )),
+        NodeField::UiNode(field) => match ui_node_channel_key(field) {
+            Some(channel) => Ok((channel.to_string(), NodeField::UiNode(field), None)),
+            None => Err(format!(
+                "line {}: `{}` is valid but not animatable in `.panim`",
+                line_no, key
+            )),
+        },
         _ => Err(format!(
             "line {}: `{}` is valid for `{}` but not yet animatable in `.panim`",
             line_no, key, node_type
@@ -798,6 +891,23 @@ enum ObjectFieldAction {
     Light3D(Light3DAction),
     PointLight3D(PointLight3DAction),
     SpotLight3D(SpotLight3DAction),
+    UiNode(UiNodeAction),
+}
+
+enum UiNodeAction {
+    Scale(Vector2),
+    Rotation(f32),
+    Visible(bool),
+    ZIndex(i32),
+    InputEnabled(bool),
+    ClipChildren(bool),
+    Modulate([f32; 4]),
+    SelfModulate([f32; 4]),
+    ChildrenModulate([f32; 4]),
+    SizeRatio(Vector2),
+    TranslationRatio(Vector2),
+    SelfTranslationRatio(Vector2),
+    PivotRatio(Vector2),
 }
 
 enum Node2DAction {

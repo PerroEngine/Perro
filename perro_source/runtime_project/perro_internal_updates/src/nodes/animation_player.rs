@@ -11,7 +11,7 @@ use perro_nodes::animation_player::{
 };
 use perro_nodes::{
     AmbientLight3D, AnimationPlayer, Camera3D, MeshInstance3D, Node2D, Node3D, PointLight3D,
-    RayLight3D, Skeleton2D, Skeleton3D, SpotLight3D, Sprite2D,
+    RayLight3D, Skeleton2D, Skeleton3D, SpotLight3D, Sprite2D, UiNode, UiUnit, UiVector2,
 };
 use perro_runtime_api::perro_structs::{
     Color, Quaternion, Transform2D, Transform3D, Vector2, Vector3,
@@ -19,7 +19,7 @@ use perro_runtime_api::perro_structs::{
 use perro_runtime_api::perro_variant::Variant;
 use perro_scene::{
     Camera3DField, Light3DField, MeshInstance3DField, Node2DField, Node3DField, NodeField,
-    PointLight3DField, SpotLight3DField, Sprite2DField, resolve_node_field,
+    PointLight3DField, SpotLight3DField, Sprite2DField, UiNodeField, resolve_node_field,
 };
 use std::collections::{HashMap, hash_map::DefaultHasher};
 use std::hash::{Hash, Hasher};
@@ -514,6 +514,118 @@ mod tests {
             skeleton.bones[0].pose.rotation,
             (rest.rotation * delta).normalized()
         );
+    }
+
+    #[test]
+    fn ui_track_values_write_layout_transform_and_modulate() {
+        let mut node = UiNode::new();
+        let vec2 = |x: f32, y: f32| AnimationTrackValue::Vec2([x, y]);
+
+        assert!(apply_ui_node_value(
+            &mut node,
+            UiNodeField::Scale,
+            &vec2(1.07, 1.07)
+        ));
+        assert!(apply_ui_node_value(
+            &mut node,
+            UiNodeField::TranslationRatio,
+            &vec2(0.0, 0.29)
+        ));
+        assert!(apply_ui_node_value(
+            &mut node,
+            UiNodeField::SelfTranslationRatio,
+            &vec2(0.5, 0.0)
+        ));
+        assert!(apply_ui_node_value(
+            &mut node,
+            UiNodeField::SizeRatio,
+            &vec2(0.4, 0.2)
+        ));
+        assert!(apply_ui_node_value(
+            &mut node,
+            UiNodeField::PivotRatio,
+            &vec2(0.0, 1.0)
+        ));
+        assert!(apply_ui_node_value(
+            &mut node,
+            UiNodeField::Rotation,
+            &AnimationTrackValue::F32(0.5)
+        ));
+        assert!(apply_ui_node_value(
+            &mut node,
+            UiNodeField::Visible,
+            &AnimationTrackValue::Bool(false)
+        ));
+        assert!(apply_ui_node_value(
+            &mut node,
+            UiNodeField::Modulate,
+            &AnimationTrackValue::Vec4([1.0, 1.0, 1.0, 0.5])
+        ));
+
+        assert_eq!(node.transform.scale, Vector2::new(1.07, 1.07));
+        assert_eq!(node.transform.translation, Vector2::new(0.0, 0.29));
+        assert_eq!(node.transform.self_translation, Vector2::new(0.5, 0.0));
+        assert_eq!(node.layout.size, UiVector2::ratio(0.4, 0.2));
+        assert_eq!(node.transform.pivot, UiVector2::ratio(0.0, 1.0));
+        assert_eq!(node.transform.rotation, 0.5);
+        assert!(!node.visible);
+        assert_eq!(node.modulate.modulate, Color::new(1.0, 1.0, 1.0, 0.5));
+
+        // Same value again is a no-op (no dirty-mark on held keys).
+        assert!(!apply_ui_node_value(
+            &mut node,
+            UiNodeField::Scale,
+            &vec2(1.07, 1.07)
+        ));
+        // Wrong value kind is ignored.
+        assert!(!apply_ui_node_value(
+            &mut node,
+            UiNodeField::Scale,
+            &AnimationTrackValue::F32(2.0)
+        ));
+        assert_eq!(node.transform.scale, Vector2::new(1.07, 1.07));
+    }
+
+    #[test]
+    fn ui_field_read_round_trips_track_units() {
+        let mut node = UiNode::new();
+        apply_ui_node_value(
+            &mut node,
+            UiNodeField::SizeRatio,
+            &AnimationTrackValue::Vec2([0.25, 0.75]),
+        );
+        assert_eq!(
+            read_ui_node_field(&node, UiNodeField::SizeRatio),
+            Some(Variant::from(Vector2::new(0.25, 0.75)))
+        );
+        assert_eq!(
+            read_ui_node_field(&node, UiNodeField::PivotRatio),
+            Some(Variant::from(Vector2::new(0.5, 0.5)))
+        );
+        assert_eq!(read_ui_node_field(&node, UiNodeField::Position), None);
+    }
+
+    #[test]
+    fn ui_track_sampling_interpolates_vec2_between_keys() {
+        let key = |frame: u32, y: f32| AnimationObjectKey {
+            frame,
+            mode: AnimationKeyMode::Closed,
+            interpolation: AnimationInterpolation::Linear,
+            ease: AnimationEase::Linear,
+            value: AnimationTrackValue::Vec2([0.0, y]),
+        };
+        let track = AnimationObjectTrack {
+            field: NodeField::UiNode(UiNodeField::TranslationRatio),
+            keys: Cow::Owned(vec![key(0, 0.29), key(60, 0.30)]),
+            ..Default::default()
+        };
+        match sample_track_value(&track, 30) {
+            Some(AnimationTrackValue::Vec2([x, y])) => {
+                assert_eq!(x, 0.0);
+                assert!((y - 0.295).abs() < 1e-6);
+            }
+            other => panic!("expected Vec2, got {other:?}"),
+        }
     }
 
     #[test]
